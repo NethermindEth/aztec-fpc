@@ -1,0 +1,13 @@
+[package]
+name = "fpc"
+type = "contract"
+authors = []
+compiler_version = ">=0.25.0"
+
+# Path dependencies assume aztec-packages is checked out as a sibling of this repo:
+#   ../../../aztec-packages/kind-moore  →  <worktrees-root>/aztec-packages/kind-moore
+#
+# Adjust these paths if your checkout is elsewhere.
+[dependencies]
+aztec = { path = "../../../aztec-packages/kind-moore/noir-projects/aztec-nr/aztec" }
+token  = { path = "../../../aztec-packages/kind-moore/noir-projects/noir-contracts/contracts/app/token_contract" }
