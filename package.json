@@ -1,0 +1,33 @@
+{
+  "name": "aztec-fpc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "attestation": "pnpm --filter @aztec-fpc/attestation",
+    "topup": "pnpm --filter @aztec-fpc/topup",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.8.0",
+  "dependencies": {
+    "@aztec/accounts": "v4.0.0-devnet.2-patch.0",
+    "@aztec/aztec.js": "v4.0.0-devnet.2-patch.0",
+    "@aztec/foundation": "v4.0.0-devnet.2-patch.0",
+    "@aztec/kv-store": "v4.0.0-devnet.2-patch.0",
+    "@aztec/stdlib": "v4.0.0-devnet.2-patch.0",
+    "@aztec/test-wallet": "v4.0.0-devnet.1-patch.0",
+    "fastify": "^4.28.0",
+    "viem": "^2.18.0",
+    "yaml": "^2.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}
