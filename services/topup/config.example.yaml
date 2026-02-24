@@ -1,0 +1,31 @@
+# Top-up Service Configuration
+# Copy to config.yaml and fill in your values.
+
+# The deployed MultiAssetFPC contract address on Aztec L2
+fpc_address: "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+# Aztec node URL (for reading L2 Fee Juice balance)
+aztec_node_url: "http://localhost:8080"
+
+# ─── L1 configuration ─────────────────────────────────────────────────────────
+l1_rpc_url: "http://localhost:8545"
+
+# The Fee Juice portal contract address on L1 (bridges ETH → Fee Juice on L2)
+# Find this from your Aztec deployment's l1ContractAddresses.feeJuicePortalAddress
+fee_juice_portal_address: "0x0000000000000000000000000000000000000001"
+
+# TODO: In production, inject the private key from a secrets manager or HSM.
+#       Never store plaintext keys in config files committed to version control.
+l1_operator_private_key: "0x0000000000000000000000000000000000000000000000000000000000000001"
+
+# ─── Top-up thresholds ────────────────────────────────────────────────────────
+# Bridge when FPC Fee Juice balance drops below this (in wei / smallest unit)
+# Example: 1e18 = 1 FeeJuice unit
+threshold: "1000000000000000000"
+
+# Amount to bridge each time the threshold is hit (in wei)
+# Example: 10e18 = 10 FeeJuice units
+top_up_amount: "10000000000000000000"
+
+# How often to check the balance (milliseconds). 60000 = every minute.
+check_interval_ms: 60000
