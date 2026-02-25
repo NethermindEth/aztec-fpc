@@ -7,6 +7,8 @@
     "services/*"
   ],
   "scripts": {
+    "biome:check": "biome check --write",
+    "biome:ci": "biome ci",
     "build": "bun run --workspaces --if-present build",
     "format": "biome format --write .",
     "lint": "biome lint .",

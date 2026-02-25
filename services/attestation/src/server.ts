@@ -1,8 +1,8 @@
-import Fastify from "fastify";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import type { QuoteAuthwitSigner } from "./signer.js";
+import Fastify from "fastify";
 import type { Config } from "./config.js";
 import { computeFinalRate } from "./config.js";
+import type { QuoteAuthwitSigner } from "./signer.js";
 import { signQuote } from "./signer.js";
 
 function badRequest(message: string) {

@@ -4,15 +4,15 @@
 
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import {
+  type Chain,
   createPublicClient,
   createWalletClient,
   defineChain,
   getAddress,
+  type Hex,
   http,
   isAddress,
   parseAbi,
-  type Chain,
-  type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import * as viemChains from "viem/chains";
