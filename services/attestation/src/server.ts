@@ -6,11 +6,11 @@ import type { Config } from "./config.js";
 import { computeFinalRate } from "./config.js";
 import { signQuote } from "./signer.js";
 
-export function buildServer(
-  config: Config,
-  quoteSigner: QuoteAuthwitSigner,
-  pxe?: PXE,
-) {
+function badRequest(message: string) {
+  return { error: { code: "BAD_REQUEST", message } };
+}
+
+export function buildServer(config: Config, quoteSigner: QuoteAuthwitSigner) {
   const app = Fastify({ logger: true });
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const acceptedAsset = AztecAddress.fromString(config.accepted_asset_address);
@@ -38,54 +38,66 @@ export function buildServer(
   // The quote binds to `user` — the operator signs acknowledging it knows this
   // user's address and will track private note receipts via their viewing key.
 
-  app.get<{ Querystring: { user: string } }>("/quote", async (req, reply) => {
-    const { user: userAddress } = req.query;
+  app.get<{ Querystring: { user?: string } }>("/quote", async (req, reply) => {
+    const userAddress = req.query.user?.trim();
     if (!userAddress) {
       return reply
         .code(400)
-        .send({ error: "Missing required query param: user" });
+        .send(badRequest("Missing required query param: user"));
     }
     let parsedUserAddress: AztecAddress;
     try {
       parsedUserAddress = AztecAddress.fromString(userAddress);
     } catch {
-      return reply.code(400).send({ error: "Invalid user address" });
+      return reply.code(400).send(badRequest("Invalid user address"));
     }
 
-    // Register the sender in the local PXE so it can discover private
-    // fee-payment notes sent by this user.  Idempotent — safe to call
-    // on every request.
-    if (pxe) {
-      try {
-        await pxe.registerSender(parsedUserAddress);
-        req.log.info({ sender: userAddress }, "Registered sender in PXE");
-      } catch (err) {
-        req.log.warn(
-          { sender: userAddress, err },
-          "Failed to register sender in PXE",
-        );
-      }
+    try {
+      const { rate_num, rate_den } = computeFinalRate(config);
+      const expiry = validUntil();
+
+      const authwit = await signQuote(quoteSigner, {
+        fpcAddress,
+        acceptedAsset,
+        rateNum: rate_num,
+        rateDen: rate_den,
+        validUntil: expiry,
+        userAddress: parsedUserAddress,
+      });
+
+      req.log.info(
+        {
+          event: "quote_issued",
+          user: parsedUserAddress.toString(),
+          valid_until: expiry.toString(),
+          rate_num: rate_num.toString(),
+          rate_den: rate_den.toString(),
+        },
+        "Quote issued",
+      );
+
+      return {
+        accepted_asset: config.accepted_asset_address,
+        rate_num: rate_num.toString(),
+        rate_den: rate_den.toString(),
+        valid_until: expiry.toString(),
+        authwit,
+      };
+    } catch (error) {
+      req.log.error(
+        {
+          err: error,
+          user: parsedUserAddress.toString(),
+        },
+        "Failed to issue quote",
+      );
+      return reply.code(500).send({
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Internal server error",
+        },
+      });
     }
-
-    const { rate_num, rate_den } = computeFinalRate(config);
-    const expiry = validUntil();
-
-    const authwit = await signQuote(quoteSigner, {
-      fpcAddress,
-      acceptedAsset,
-      rateNum: rate_num,
-      rateDen: rate_den,
-      validUntil: expiry,
-      userAddress: parsedUserAddress,
-    });
-
-    return {
-      accepted_asset: config.accepted_asset_address,
-      rate_num: rate_num.toString(),
-      rate_den: rate_den.toString(),
-      valid_until: expiry.toString(),
-      authwit,
-    };
   });
 
   return app;
