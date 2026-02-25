@@ -32,6 +32,8 @@ async function main() {
   console.log(`  Threshold:     ${threshold} wei`);
   console.log(`  Top-up amount: ${topUpAmount} wei`);
   console.log(`  Check interval: ${config.check_interval_ms}ms`);
+  console.log(`  L1 chain id:   ${config.l1_chain_id}`);
+  console.log(`  L1 portal:     ${config.fee_juice_portal_address}`);
   console.log(
     `  Fee Juice contract: ${balanceReader.feeJuiceAddress.toString()} (${balanceReader.addressSource})`,
   );
@@ -65,16 +67,18 @@ async function main() {
     bridgeInFlight = true;
 
     try {
-      const claim = await bridgeFeeJuice(
-        pxe,
+      const result = await bridgeFeeJuice(
         config.l1_rpc_url,
+        config.l1_chain_id,
         config.l1_operator_private_key,
+        config.fee_juice_portal_address,
         fpcAddress,
         topUpAmount,
       );
 
+      console.log(`Bridge submitted. L1 tx: ${result.l1TxHash}`);
       console.log(
-        `Bridge complete. claimAmount=${claim.claimAmount}, messageHash=${claim.messageHash}, messageLeafIndex=${claim.messageLeafIndex}`,
+        `Bridged ${result.amount} wei. Waiting for L2 confirmation...`,
       );
 
       // Wait for the L2 message to be processed. L1→L2 message processing
