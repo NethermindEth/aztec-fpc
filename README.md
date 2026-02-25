@@ -19,6 +19,7 @@ aztec-fpc/
 │           └── test/           ← Contract integration/unit tests
 ├── services/
 │   ├── attestation/            ← Quote-signing REST service (TypeScript)
+│   │   └── test/               ← Local-devnet smoke test flow
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
 └── docs/
     └── spec.md                 ← Full protocol specification
@@ -70,6 +71,9 @@ aztec start --local-network
 ```bash
 bash scripts/contract/fee-entrypoint-devnet-smoke.sh
 ```
+
+Smoke implementation file:
+`services/attestation/test/fee-entrypoint-devnet-smoke.ts`
 
 Optional overrides:
 

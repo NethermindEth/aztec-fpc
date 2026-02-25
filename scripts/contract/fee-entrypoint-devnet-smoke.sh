@@ -26,4 +26,4 @@ echo "[smoke] Compiling contracts"
 aztec compile
 
 echo "[smoke] Running fee entrypoint devnet smoke flow"
-"$REPO_ROOT/node_modules/.bin/tsx" "$REPO_ROOT/services/attestation/src/fee-entrypoint-devnet-smoke.ts"
+"$REPO_ROOT/node_modules/.bin/tsx" "$REPO_ROOT/services/attestation/test/fee-entrypoint-devnet-smoke.ts"
