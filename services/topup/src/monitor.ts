@@ -1,37 +1,17 @@
-import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode, NodeInfo } from "@aztec/aztec.js/node";
 import { getFeeJuiceBalance as getSdkFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { deriveStorageSlotInMap } from "@aztec/stdlib/hash";
-import type { Config } from "./config.js";
 
 const FEE_JUICE_BALANCES_STORAGE_SLOT = new Fr(1);
 
-type FeeJuiceAddressSource = "config" | "node_info";
+type FeeJuiceAddressSource = "node_info";
 
 export interface FeeJuiceBalanceReader {
   feeJuiceAddress: AztecAddress;
   addressSource: FeeJuiceAddressSource;
   getBalance(owner: AztecAddress): Promise<bigint>;
-}
-
-function parseConfiguredFeeJuiceAddress(config: Config): AztecAddress | null {
-  if (!config.fee_juice_address) {
-    return null;
-  }
-
-  try {
-    const address = AztecAddress.fromString(config.fee_juice_address);
-    if (address.isZero()) {
-      throw new Error("fee_juice_address must not be zero");
-    }
-    return address;
-  } catch (error) {
-    throw new Error(
-      `Invalid fee_juice_address config value: ${config.fee_juice_address}`,
-      { cause: error },
-    );
-  }
 }
 
 function getFeeJuiceFromNodeInfo(nodeInfo: NodeInfo): AztecAddress {
@@ -58,19 +38,11 @@ async function readFeeJuiceBalanceFromStorage(
   return value.toBigInt();
 }
 
-export async function resolveFeeJuiceAddress(
-  config: Config,
-  node: AztecNode,
-): Promise<{
+export async function resolveFeeJuiceAddress(node: AztecNode): Promise<{
   address: AztecAddress;
   source: FeeJuiceAddressSource;
-  nodeInfo?: NodeInfo;
+  nodeInfo: NodeInfo;
 }> {
-  const configuredAddress = parseConfiguredFeeJuiceAddress(config);
-  if (configuredAddress) {
-    return { address: configuredAddress, source: "config" };
-  }
-
   const nodeInfo = await node.getNodeInfo();
   return {
     address: getFeeJuiceFromNodeInfo(nodeInfo),
@@ -80,11 +52,10 @@ export async function resolveFeeJuiceAddress(
 }
 
 export async function createFeeJuiceBalanceReader(
-  config: Config,
   node: AztecNode,
 ): Promise<FeeJuiceBalanceReader> {
-  const resolution = await resolveFeeJuiceAddress(config, node);
-  let sdkPathEnabled = resolution.source === "node_info";
+  const resolution = await resolveFeeJuiceAddress(node);
+  let sdkPathEnabled = true;
 
   return {
     feeJuiceAddress: resolution.address,
@@ -95,9 +66,7 @@ export async function createFeeJuiceBalanceReader(
           return await getSdkFeeJuiceBalance(owner, node);
         } catch (error) {
           sdkPathEnabled = false;
-          const nodeInfoSummary = resolution.nodeInfo
-            ? `nodeVersion=${resolution.nodeInfo.nodeVersion}, rollupVersion=${resolution.nodeInfo.rollupVersion}`
-            : "node info unavailable";
+          const nodeInfoSummary = `nodeVersion=${resolution.nodeInfo.nodeVersion}, rollupVersion=${resolution.nodeInfo.rollupVersion}`;
           console.warn(
             `aztec.js getFeeJuiceBalance failed; falling back to direct storage reads (${nodeInfoSummary})`,
             error,

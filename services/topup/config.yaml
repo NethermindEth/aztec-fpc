@@ -7,17 +7,11 @@ fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac
 # Aztec node URL (for reading L2 Fee Juice balance)
 aztec_node_url: "http://localhost:8080"
 
-# Optional L2 FeeJuice contract override. If omitted, service reads
-# nodeInfo.protocolContractAddresses.feeJuice from the connected node.
-# fee_juice_address: "0x0000000000000000000000000000000000000000000000000000000000000005"
-
 # ─── L1 configuration ─────────────────────────────────────────────────────────
-l1_chain_id: 31337
 l1_rpc_url: "http://localhost:8545"
 
-# Fee Juice portal contract on L1.
-# Find this in nodeInfo.l1ContractAddresses.feeJuicePortalAddress.
-fee_juice_portal_address: "0x6770742ecff10f57ac1f2e33ef54dca228ff9411"
+# L1 chain id and Fee Juice portal/token addresses are discovered from
+# nodeInfo on the connected Aztec node and validated against this RPC.
 
 # TODO: In production, inject the private key from a secrets manager or HSM.
 #       Prefer env var L1_OPERATOR_PRIVATE_KEY; avoid plaintext keys on disk.

@@ -57,7 +57,9 @@ export function createTopupChecker(
 
     try {
       const result = await deps.bridge(config.topUpAmount);
-      logger.log(`Bridge submitted. L1 tx: ${result.l1TxHash}`);
+      logger.log(
+        `Bridge submitted. l1_to_l2_message_hash=${result.messageHash} leaf_index=${result.messageLeafIndex} claim_secret_hash=${result.claimSecretHash}`,
+      );
       logger.log(
         `Bridged ${result.amount} wei. Waiting for L2 confirmation...`,
       );
