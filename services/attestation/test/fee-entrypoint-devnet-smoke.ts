@@ -58,6 +58,7 @@ type SmokeConfig = {
   l2GasLimit: number;
   feePerDaGasOverride: bigint | null;
   feePerL2GasOverride: bigint | null;
+  relayAdvanceBlocks: number;
 };
 
 function readEnvBigInt(name: string, fallback: bigint): bigint {
@@ -136,6 +137,7 @@ function getConfig(): SmokeConfig {
   const l2GasLimit = readEnvNumber("FPC_SMOKE_L2_GAS_LIMIT", 1_000_000);
   const feePerDaGasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_DA_GAS");
   const feePerL2GasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_L2_GAS");
+  const relayAdvanceBlocks = readEnvNumber("FPC_SMOKE_RELAY_ADVANCE_BLOCKS", 2);
 
   if (rateDen === 0n) {
     throw new Error("FPC_SMOKE_RATE_DEN must be non-zero");
@@ -155,11 +157,27 @@ function getConfig(): SmokeConfig {
     l2GasLimit,
     feePerDaGasOverride,
     feePerL2GasOverride,
+    relayAdvanceBlocks,
   };
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function advanceL2Blocks(
+  token: Contract,
+  operator: AztecAddress,
+  user: AztecAddress,
+  blocks: number,
+): Promise<void> {
+  for (let i = 0; i < blocks; i += 1) {
+    await token.methods.mint_to_private(user, 1n).send({
+      from: operator,
+      wait: { timeout: 180 },
+    });
+    console.log(`[smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`);
+  }
 }
 
 async function topUpFpcFeeJuice(
@@ -249,9 +267,9 @@ async function topUpFpcFeeJuice(
     );
   }
 
-  // Local network requires at least 2 L2 blocks before an L1->L2 message can be consumed.
-  await token.methods.mint_to_private(user, 1n).send({ from: operator });
-  await token.methods.mint_to_private(user, 1n).send({ from: operator });
+  // Local network requires additional L2 blocks before an L1->L2 message can
+  // be consumed. Force block production with lightweight mock txs.
+  await advanceL2Blocks(token, operator, user, config.relayAdvanceBlocks);
 
   await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
     timeoutSeconds: Math.floor(config.feeJuiceWaitTimeoutMs / 1000),
@@ -343,12 +361,12 @@ async function main() {
   console.log(`[smoke] operator=${operator.toString()}`);
   console.log(`[smoke] user=${user.toString()}`);
 
-  const token = await Contract.deploy(wallet, tokenArtifact, [
-    operator,
-    "SmokeToken000000000000000000000",
-    "SMK0000000000000000000000000000",
-    18,
-  ]).send({ from: operator });
+  const token = await Contract.deploy(
+    wallet,
+    tokenArtifact,
+    ["SmokeToken", "SMK", 18, operator, operator],
+    "constructor_with_minter",
+  ).send({ from: operator });
   console.log(`[smoke] token=${token.address.toString()}`);
 
   const fpc = await Contract.deploy(wallet, fpcArtifact, [
@@ -389,6 +407,7 @@ async function main() {
   await token.methods
     .mint_to_private(user, mintAmount)
     .send({ from: operator });
+  await token.methods.mint_to_public(user, 2n).send({ from: operator });
 
   const latestBlock = await node.getBlock("latest");
   if (!latestBlock) {
@@ -413,7 +432,7 @@ async function main() {
   });
 
   const transferAuthwitNonce = Fr.random();
-  const transferCall = token.methods.transfer_in_private(
+  const transferCall = token.methods.transfer_private_to_private(
     user,
     operator,
     expectedCharge,
@@ -421,7 +440,7 @@ async function main() {
   );
   const transferAuthwit = await wallet.createAuthWit(user, {
     caller: fpc.address,
-    call: await transferCall.getFunctionCall(),
+    action: transferCall,
   });
 
   const userBefore = BigInt(
@@ -460,17 +479,19 @@ async function main() {
   };
 
   // Execute a normal user action while paying fees through FPC.
-  const receipt = await token.methods.transfer(user, 1n).send({
-    from: user,
-    fee: {
-      paymentMethod: fpcPaymentMethod,
-      gasSettings: {
-        gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-        maxFeePerGas: { feePerDaGas, feePerL2Gas },
+  const receipt = await token.methods
+    .transfer_public_to_public(user, user, 1n, Fr.random())
+    .send({
+      from: user,
+      fee: {
+        paymentMethod: fpcPaymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+        },
       },
-    },
-    wait: { timeout: 180 },
-  });
+      wait: { timeout: 180 },
+    });
 
   const userAfter = BigInt(
     (

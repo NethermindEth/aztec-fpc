@@ -19,8 +19,11 @@ aztec-fpc/
 │           └── test/           ← Contract integration/unit tests
 ├── services/
 │   ├── attestation/            ← Quote-signing REST service (TypeScript)
-│   │   └── test/               ← Local-devnet smoke test flow
+│   │   └── test/               ← Contract + service smoke harnesses
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
+├── scripts/
+│   ├── contract/               ← Contract-focused smoke script
+│   └── services/               ← Service-integrated smoke script
 ├── vendor/
 │   └── aztec-standards/        ← Git submodule (token contract dependency)
 └── docs/
@@ -98,7 +101,13 @@ bun run typecheck
 bun run ci
 ```
 
-### 5. Run local-devnet smoke test (end-to-end)
+### CI workflow coverage
+
+- `build-contract.yml`: noir format + compile + `aztec test --package fpc`
+- `ts-packages.yml`: biome + typecheck + TS build/tests
+- `spec-services-smoke.yml`: service-integrated local-network smoke against `docs/spec.md` flow (`/quote`, topup bridge decision, `fee_entrypoint` payment)
+
+### 5. Run local-devnet contract smoke test (end-to-end)
 
 This runs a full payment flow outside TXE tests:
 
@@ -132,10 +141,37 @@ Optional overrides:
 - `FPC_SMOKE_DA_GAS_LIMIT`, `FPC_SMOKE_L2_GAS_LIMIT`
 - `FPC_SMOKE_FEE_PER_DA_GAS`, `FPC_SMOKE_FEE_PER_L2_GAS` (default: current node min fees)
 - `FPC_SMOKE_FEE_JUICE_TOPUP_WEI` (default: conservative auto-top-up from configured gas settings)
+- `FPC_SMOKE_RELAY_ADVANCE_BLOCKS` (default: `2`; sends this many mock L2 txs after L1 bridge submit to unblock local relay)
 - `FPC_SMOKE_QUOTE_TTL_SECONDS`
 - `FPC_SMOKE_RESET_LOCAL_STATE` (default `1`; set `0` to reuse existing `wallet_data_*`/`pxe_data_*`)
 
-### 6. Deploy the contract
+### 6. Run local-devnet services smoke test (attestation + topup + fee_entrypoint)
+
+This script implements Step 8 from the services plan:
+
+1. builds both services,
+2. deploys `Token` + `FPC`,
+3. starts attestation and topup with generated test configs,
+4. requests `/quote?user=<address>`,
+5. submits a transaction using `AuthWitness.fromString(quote.authwit)`,
+6. confirms topup balance-read/bridge behavior and transaction acceptance.
+
+```bash
+bun run smoke:services
+# or:
+bash scripts/services/fpc-services-smoke.sh
+```
+
+Useful overrides:
+
+- `FPC_SERVICES_SMOKE_START_LOCAL_NETWORK` (default `1`; auto-starts `aztec start --local-network` if 8080/8545 are unavailable)
+- `FPC_SERVICES_SMOKE_RESET_LOCAL_STATE` (default `1` only when script starts local network, otherwise `0`)
+- `FPC_SERVICES_SMOKE_L1_PRIVATE_KEY` (default local anvil key)
+- `FPC_SERVICES_SMOKE_TOPUP_WEI`, `FPC_SERVICES_SMOKE_THRESHOLD_WEI`
+- `FPC_SERVICES_SMOKE_ATTESTATION_PORT` (default `3300`)
+- `FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS` (default: `2`; sends mock L2 txs after bridge submit so local relay can finalize)
+
+### 7. Deploy the contract
 
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
@@ -147,7 +183,7 @@ aztec deploy \
 
 Record the deployed address.
 
-### 7. Configure and start the attestation service
+### 8. Configure and start the attestation service
 
 ```bash
 cd services/attestation
@@ -157,7 +193,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 8. Configure and start the top-up service
+### 9. Configure and start the top-up service
 
 ```bash
 cd services/topup
@@ -169,7 +205,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 9. Verify
+### 10. Verify
 
 ```bash
 curl http://localhost:3000/health

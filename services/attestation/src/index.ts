@@ -76,7 +76,15 @@ async function main() {
   );
 
   // ── Start HTTP server ────────────────────────────────────────────────────────
-  const app = buildServer(config, quoteSigner);
+  const app = buildServer(config, quoteSigner, {
+    nowUnixSeconds: async () => {
+      const latest = await node.getBlock("latest");
+      if (latest) {
+        return latest.timestamp;
+      }
+      return BigInt(Math.floor(Date.now() / 1000));
+    },
+  });
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
   console.log(`Attestation service listening on port ${config.port}`);

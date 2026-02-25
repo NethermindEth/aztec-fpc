@@ -9,14 +9,25 @@ function badRequest(message: string) {
   return { error: { code: "BAD_REQUEST", message } };
 }
 
-export function buildServer(config: Config, quoteSigner: QuoteAuthwitSigner) {
+export interface QuoteClock {
+  nowUnixSeconds?: () => Promise<bigint> | bigint;
+}
+
+export function buildServer(
+  config: Config,
+  quoteSigner: QuoteAuthwitSigner,
+  clock: QuoteClock = {},
+) {
   const app = Fastify({ logger: true });
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const acceptedAsset = AztecAddress.fromString(config.accepted_asset_address);
 
-  function validUntil(): bigint {
-    return BigInt(
-      Math.floor(Date.now() / 1000) + config.quote_validity_seconds,
+  const nowUnixSeconds =
+    clock.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000)));
+
+  async function validUntil(): Promise<bigint> {
+    return (
+      BigInt(await nowUnixSeconds()) + BigInt(config.quote_validity_seconds)
     );
   }
 
@@ -53,7 +64,7 @@ export function buildServer(config: Config, quoteSigner: QuoteAuthwitSigner) {
 
     try {
       const { rate_num, rate_den } = computeFinalRate(config);
-      const expiry = validUntil();
+      const expiry = await validUntil();
 
       const authwit = await signQuote(quoteSigner, {
         fpcAddress,
