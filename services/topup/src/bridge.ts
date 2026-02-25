@@ -20,12 +20,13 @@
 import {
   createWalletClient,
   createPublicClient,
+  extractChain,
   http,
   type Hex,
   parseAbi,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { mainnet } from 'viem/chains';
+import * as viemChains from 'viem/chains';
 
 // Minimal ABI — only the deposit function we need.
 // Full ABI available in @aztec/l1-artifacts if the package is present.
@@ -56,16 +57,21 @@ export async function bridgeFeeJuice(
 ): Promise<BridgeResult> {
   const account = privateKeyToAccount(privateKey);
 
-  // Use the chain from environment or default to mainnet — adjust for your network.
-  // TODO: pass chain config rather than hardcoding mainnet here.
-  const walletClient = createWalletClient({
-    account,
-    chain: mainnet,
+  const publicClient = createPublicClient({
     transport: http(l1RpcUrl),
   });
 
-  const publicClient = createPublicClient({
-    chain: mainnet,
+  const allChains = Object.values(viemChains);
+  type ChainId = (typeof allChains)[number]['id'];
+  const chainId = await publicClient.getChainId() as ChainId;
+  const chain = extractChain({
+    chains: allChains,
+    id: chainId,
+  });
+
+  const walletClient = createWalletClient({
+    account,
+    chain,
     transport: http(l1RpcUrl),
   });
 

@@ -2,7 +2,7 @@
 # Copy to config.yaml and fill in your values.
 
 # The deployed MultiAssetFPC contract address on Aztec L2
-fpc_address: "0x0000000000000000000000000000000000000000000000000000000000000000"
+fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac"
 
 # Aztec node URL (for reading L2 Fee Juice balance)
 aztec_node_url: "http://localhost:8080"
@@ -16,12 +16,12 @@ fee_juice_portal_address: "0x0000000000000000000000000000000000000001"
 
 # TODO: In production, inject the private key from a secrets manager or HSM.
 #       Never store plaintext keys in config files committed to version control.
-l1_operator_private_key: "0x0000000000000000000000000000000000000000000000000000000000000001"
+l1_operator_private_key: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 
 # ─── Top-up thresholds ────────────────────────────────────────────────────────
 # Bridge when FPC Fee Juice balance drops below this (in wei / smallest unit)
 # Example: 1e18 = 1 FeeJuice unit
-threshold: "1000000000000000000"
+threshold: "1000000000000000000000000"
 
 # Amount to bridge each time the threshold is hit (in wei)
 # Example: 10e18 = 10 FeeJuice units
