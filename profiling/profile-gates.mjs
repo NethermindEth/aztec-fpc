@@ -164,12 +164,13 @@ async function main() {
   );
 
   // ── Deploy Token ───────────────────────────────────────────────────────────
-  // Constructor: (admin, name, symbol, decimals)
-  // userAddress doubles as admin/minter for this profiling run.
+  // constructor_with_minter(name, symbol, decimals, minter, upgrade_authority)
+  // userAddress doubles as minter for this profiling run.
   console.log('\nDeploying Token...');
   const tokenDeploy = await Contract.deploy(
     wallet, tokenArtifact,
-    [userAddress, 'TestToken', 'TST', 18n],
+    ['TestToken', 'TST', 18, userAddress, AztecAddress.ZERO],
+    'constructor_with_minter',
   ).send({ from: userAddress });
   const tokenAddress = tokenDeploy.address;
   console.log('Token:', tokenAddress.toString());
@@ -226,10 +227,10 @@ async function main() {
   console.log('Quote authwit created.');
 
   // ── Transfer authwit: user authorises FPC to pull `charge` tokens ──────────
-  // FPC calls: Token.transfer_in_private(user, operator, charge, TX_NONCE)
+  // FPC calls: Token.transfer_private_to_private(user, operator, charge, TX_NONCE)
   const transferAuthWit = await wallet.createAuthWit(userAddress, {
     caller: fpcAddress,
-    action: tokenAsUser.methods.transfer_in_private(
+    action: tokenAsUser.methods.transfer_private_to_private(
       userAddress, operatorAddress, charge, TX_NONCE,
     ),
   });
@@ -246,11 +247,11 @@ async function main() {
   );
 
   // ── Profile ────────────────────────────────────────────────────────────────
-  // Dummy app tx: Token.transfer_in_private(user→user, 1, nonce=0).
+  // Dummy app tx: Token.transfer_private_to_private(user→user, 1, nonce=0).
   // When from == msg_sender the token contract requires nonce=0 (no authwit path).
   console.log('\nProfiling (this takes a few minutes)...');
   const result = await tokenAsUser.methods
-    .transfer_in_private(userAddress, userAddress, 1n, 0n)
+    .transfer_private_to_private(userAddress, userAddress, 1n, 0n)
     .profile({
       fee: { paymentMethod: feePayment, gasSettings },
       from: userAddress,
