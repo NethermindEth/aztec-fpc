@@ -10,7 +10,8 @@
  *   node dist/index.js [--config path/to/config.yaml]
  */
 
-import { AztecAddress, createPXEClient } from '@aztec/aztec.js';
+import { AztecAddress } from '@aztec/aztec.js/addresses';
+import { createAztecNodeClient } from '@aztec/aztec.js/node';
 import type { Hex } from 'viem';
 import { loadConfig } from './config.js';
 import { getFeeJuiceBalance } from './monitor.js';
@@ -20,7 +21,7 @@ const configPath = process.argv.find((_, i, a) => a[i - 1] === '--config') ?? 'c
 
 async function main() {
   const config = loadConfig(configPath);
-  const pxe = createPXEClient(config.aztec_node_url);
+  const pxe = createAztecNodeClient(config.aztec_node_url);
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const threshold = BigInt(config.threshold);
   const topUpAmount = BigInt(config.top_up_amount);

@@ -8,15 +8,15 @@
  * We read the balance using the node's public storage API.
  */
 
-import { AztecAddress, createPXEClient } from '@aztec/aztec.js';
-import type { PXE } from '@aztec/aztec.js';
+import { AztecAddress } from '@aztec/aztec.js/addresses';
+import type { AztecNode } from '@aztec/aztec.js/node';
 
 // The Fee Juice contract address is a protocol constant.
 // Import from @aztec/protocol-contracts or read from node deployment info.
 // We fetch it from the node at startup so the service works across deployments.
 let feeJuiceAddress: AztecAddress | null = null;
 
-async function getFeeJuiceAddress(pxe: PXE): Promise<AztecAddress> {
+async function getFeeJuiceAddress(pxe: AztecNode): Promise<AztecAddress> {
   if (feeJuiceAddress) return feeJuiceAddress;
   const info = await pxe.getNodeInfo();
   feeJuiceAddress = info.l1ContractAddresses
@@ -37,7 +37,7 @@ async function getFeeJuiceAddress(pxe: PXE): Promise<AztecAddress> {
  * For MVP we use the node's getBalance helper if available.
  */
 export async function getFeeJuiceBalance(
-  pxe: PXE,
+  pxe: AztecNode,
   fpcAddress: AztecAddress,
 ): Promise<bigint> {
   // The node exposes getBalance(address, tokenAddress) for public token balances.

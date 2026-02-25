@@ -17,9 +17,21 @@
  * authWitnesses array.
  */
 
-import { AztecAddress, Fr } from '@aztec/aztec.js';
-import { computeInnerAuthWitHash } from '@aztec/stdlib/auth-witness';
-import type { AccountWallet } from '@aztec/aztec.js';
+import { AztecAddress } from '@aztec/aztec.js/addresses';
+import { Fr } from '@aztec/aztec.js/fields';
+import { computeInnerAuthWitHash, type AuthWitness } from '@aztec/stdlib/auth-witness';
+import { computeAuthWitMessageHash } from '@aztec/aztec.js/authorization';
+
+/** Matches ChainInfo from @aztec/entrypoints/interfaces */
+export interface ChainInfo {
+  chainId: Fr;
+  version: Fr;
+}
+
+/** Minimal auth witness provider (signs a message hash) */
+export interface AuthWitnessProvider {
+  createAuthWit(messageHash: Fr): Promise<AuthWitness>;
+}
 
 // Must match QUOTE_DOMAIN_SEPARATOR in main.nr ("FPC" = 0x465043)
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString('0x465043');
@@ -38,7 +50,7 @@ export interface QuoteParams {
  * Compute the inner hash for a quote, matching the contract's
  * compute_inner_authwit_hash([DOMAIN_SEP, fpc, accepted_asset, rate_num, rate_den, valid_until, user]).
  */
-export function computeQuoteInnerHash(params: QuoteParams): Fr {
+export function computeQuoteInnerHash(params: QuoteParams): Promise<Fr> {
   return computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     params.fpcAddress.toField(),
@@ -51,21 +63,25 @@ export function computeQuoteInnerHash(params: QuoteParams): Fr {
 }
 
 /**
- * Sign a quote with the operator wallet and return the AuthWitness as a hex string.
+ * Sign a quote with the operator's auth witness provider and return
+ * the AuthWitness as a hex string.
  *
  * The witness is serialised to hex for HTTP transport. The user's SDK
  * deserialises it and adds it to their transaction's authWitnesses array.
  */
 export async function signQuote(
-  wallet: AccountWallet,
+  authWitnessProvider: AuthWitnessProvider,
+  chainInfo: ChainInfo,
   params: QuoteParams,
 ): Promise<string> {
-  const innerHash = computeQuoteInnerHash(params);
+  const innerHash = await computeQuoteInnerHash(params);
 
-  const authwit = await wallet.createAuthWit(wallet.getAddress(), {
-    consumer: params.fpcAddress,
-    innerHash,
-  });
+  const messageHash = await computeAuthWitMessageHash(
+    { consumer: params.fpcAddress, innerHash },
+    chainInfo,
+  );
+
+  const authwit = await authWitnessProvider.createAuthWit(messageHash);
 
   return authwit.toString();
 }
