@@ -18,16 +18,13 @@
  */
 
 import {
-  createWalletClient,
   createPublicClient,
-  extractChain,
+  createWalletClient,
   http,
   type Hex,
   parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { mainnet } from "viem/chains";
-
 
 // Minimal ABI — only the deposit function we need.
 // Full ABI available in @aztec/l1-artifacts if the package is present.
@@ -62,28 +59,20 @@ export async function bridgeFeeJuice(
     transport: http(l1RpcUrl),
   });
 
-  const allChains = Object.values(viemChains);
-  type ChainId = (typeof allChains)[number]['id'];
-  const chainId = await publicClient.getChainId() as ChainId;
-  const chain = extractChain({
-    chains: allChains,
-    id: chainId,
-  });
-
   const walletClient = createWalletClient({
     account,
-    chain,
     transport: http(l1RpcUrl),
   });
 
   // Convert L2 address to bytes32 (left-padded)
-  const recipientBytes32 = ("0x" +
-    fpcL2Address.replace("0x", "").padStart(64, "0")) as Hex;
+  const recipientBytes32 =
+    `0x${fpcL2Address.replace("0x", "").padStart(64, "0")}` as Hex;
 
   // secretHash = 0x0 lets the L2 protocol auto-claim the message
   const secretHash = `0x${"00".repeat(32)}` as Hex;
 
   const hash = await walletClient.writeContract({
+    chain: undefined,
     address: portalAddress,
     abi: FEE_JUICE_PORTAL_ABI,
     functionName: "depositToAztecPublic",
