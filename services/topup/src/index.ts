@@ -16,6 +16,7 @@ import { bridgeFeeJuice } from "./bridge.js";
 import { createTopupChecker } from "./checker.js";
 import { loadConfig } from "./config.js";
 import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
+import { assertL1RpcChainIdMatches } from "./l1.js";
 import { createFeeJuiceBalanceReader } from "./monitor.js";
 
 const configPath =
@@ -39,17 +40,43 @@ async function main() {
   }
   const pxe = createAztecNodeClient(config.aztec_node_url);
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
+  if (fpcAddress.isZero()) {
+    throw new Error("Invalid fpc_address: zero address is not allowed");
+  }
+  const nodeInfo = await pxe.getNodeInfo();
+  const l1ChainId = nodeInfo.l1ChainId;
+  if (!Number.isInteger(l1ChainId) || l1ChainId <= 0) {
+    throw new Error(
+      `Node info returned invalid l1ChainId=${String(l1ChainId)}`,
+    );
+  }
+  const feeJuicePortalAddress =
+    nodeInfo.l1ContractAddresses.feeJuicePortalAddress;
+  const feeJuiceAddress = nodeInfo.l1ContractAddresses.feeJuiceAddress;
+  if (feeJuicePortalAddress.isZero()) {
+    throw new Error(
+      "Node info returned zero l1ContractAddresses.feeJuicePortalAddress",
+    );
+  }
+  if (feeJuiceAddress.isZero()) {
+    throw new Error(
+      "Node info returned zero l1ContractAddresses.feeJuiceAddress",
+    );
+  }
+  await assertL1RpcChainIdMatches(config.l1_rpc_url, l1ChainId);
+
   const threshold = BigInt(config.threshold);
   const topUpAmount = BigInt(config.top_up_amount);
-  const balanceReader = await createFeeJuiceBalanceReader(config, pxe);
+  const balanceReader = await createFeeJuiceBalanceReader(pxe);
 
   console.log(`Top-up service started`);
   console.log(`  FPC address:   ${config.fpc_address}`);
   console.log(`  Threshold:     ${threshold} wei`);
   console.log(`  Top-up amount: ${topUpAmount} wei`);
   console.log(`  Check interval: ${config.check_interval_ms}ms`);
-  console.log(`  L1 chain id:   ${config.l1_chain_id}`);
-  console.log(`  L1 portal:     ${config.fee_juice_portal_address}`);
+  console.log(`  L1 chain id:   ${l1ChainId}`);
+  console.log(`  L1 portal:     ${feeJuicePortalAddress.toString()}`);
+  console.log(`  L1 fee juice:  ${feeJuiceAddress.toString()}`);
   console.log(`  Confirm timeout: ${config.confirmation_timeout_ms}ms`);
   console.log(
     `  Confirm poll:  ${config.confirmation_poll_initial_ms}ms -> ${config.confirmation_poll_max_ms}ms`,
@@ -64,14 +91,14 @@ async function main() {
       getBalance: () => balanceReader.getBalance(fpcAddress),
       bridge: (amount) =>
         bridgeFeeJuice(
+          pxe,
           config.l1_rpc_url,
-          config.l1_chain_id,
+          l1ChainId,
           config.l1_operator_private_key,
-          config.fee_juice_portal_address,
           fpcAddress,
           amount,
         ),
-      confirm: (baselineBalance) =>
+      confirm: (baselineBalance, bridgeResult) =>
         waitForFeeJuiceBridgeConfirmation({
           balanceReader,
           fpcAddress,
@@ -79,6 +106,11 @@ async function main() {
           timeoutMs: config.confirmation_timeout_ms,
           initialPollMs: config.confirmation_poll_initial_ms,
           maxPollMs: config.confirmation_poll_max_ms,
+          messageContext: {
+            node: pxe,
+            messageHash: bridgeResult.messageHash,
+            forPublicConsumption: false,
+          },
         }),
     },
   );

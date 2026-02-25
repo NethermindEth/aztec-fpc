@@ -43,7 +43,7 @@ Aztec L2
                            │ monitors & bridges when low
                     Top-up Service
                            │
-                    L1 FeeJuicePortal.depositToAztecPublic(fpc, amount)
+                    L1 SDK portal manager bridge
 ```
 
 ---
@@ -179,7 +179,7 @@ The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) t
 ### 5.1 Responsibilities
 
 - Periodically read the FPC's Fee Juice balance on L2
-- When balance < `threshold`, call `FeeJuicePortal.depositToAztecPublic` on L1
+- When balance < `threshold`, bridge via `L1FeeJuicePortalManager.bridgeTokensPublic(...)` on L1
 - Prevent multiple concurrent bridges with an in-flight guard
 
 ### 5.2 Configuration
@@ -189,18 +189,19 @@ The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) t
 | `fpc_address` | FPC contract on L2 |
 | `aztec_node_url` | PXE/node RPC |
 | `l1_rpc_url` | L1 Ethereum RPC |
-| `fee_juice_portal_address` | L1 portal contract (from deployment manifest) |
 | `l1_operator_private_key` | L1 wallet key (TODO: replace with KMS) |
 | `threshold` | Bridge when balance below this (wei) |
 | `top_up_amount` | Amount to bridge per event (wei) |
 | `check_interval_ms` | Polling interval |
 
+`l1_chain_id` and Fee Juice L1 contract addresses are derived from `nodeInfo` and the service validates that the configured `l1_rpc_url` matches the node's L1 chain id.
+
 ### 5.3 Bridge Mechanics
 
-1. Service calls L1 portal: `depositToAztecPublic(fpcAddress, amount, 0x0)` with ETH value
-2. L1 emits a message into the Aztec L1→L2 message queue
-3. Aztec sequencer processes the message within the next L2 block, minting Fee Juice to `fpcAddress`
-4. Service waits 2 minutes post-L1-confirmation before re-checking (bridge cool-down)
+1. Service builds an L1 wallet client and uses `L1FeeJuicePortalManager.new(node, client, logger)`
+2. Manager performs Fee Juice token approval and portal deposit, returning L1→L2 message metadata
+3. Service waits for L1→L2 message readiness (`waitForL1ToL2MessageReady`) using the returned message hash
+4. Service still polls FPC Fee Juice balance and treats positive balance delta as the final fallback/confirmation signal
 
 ---
 
@@ -244,7 +245,8 @@ bun run start
 ```bash
 cd services/topup
 cp config.example.yaml config.yaml
-# Edit config.yaml: set fpc_address, l1_operator_private_key, fee_juice_portal_address
+# Edit config.yaml: set fpc_address, aztec_node_url, l1_rpc_url, l1_operator_private_key
+# l1_chain_id and fee juice L1 addresses come from nodeInfo
 bun install
 bun run build
 bun run start
@@ -334,4 +336,4 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 - **Operator tracks revenue off-chain.** All payments arrive as private notes in the operator's balance. The operator must use their PXE to discover incoming notes and maintain off-chain accounting.
 - **Charge pre-computation required.** Wallets must replicate the `ceil(max_gas_cost_no_teardown × rate_num / rate_den)` calculation client-side to create the correct token transfer authwit. If gas settings differ at submission time, the authwit may not match.
 - **No oracle integration.** Rates are set manually in config. A service restart reloads from config.yaml.
-- **Top-up service bridge wait is a fixed sleep.** A proper implementation would poll for L2 message confirmation rather than waiting an arbitrary 2 minutes.
+- **Top-up service confirmation now combines message readiness + balance checks.** If message checks fail transiently, the balance-delta fallback still prevents blind success reporting.

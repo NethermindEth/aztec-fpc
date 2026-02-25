@@ -1,53 +1,72 @@
 /**
- * L1 -> L2 Fee Juice bridge via FeeJuicePortal.depositToAztecPublic.
+ * L1 -> L2 Fee Juice bridge via Aztec SDK L1FeeJuicePortalManager.
  */
 
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import {
+  L1FeeJuicePortalManager,
+  type L2AmountClaim,
+} from "@aztec/aztec.js/ethereum";
+import type { AztecNode } from "@aztec/aztec.js/node";
+import { createLogger, type Logger } from "@aztec/foundation/log";
+import {
   type Chain,
-  createPublicClient,
   createWalletClient,
   defineChain,
-  getAddress,
   type Hex,
   http,
-  isAddress,
-  parseAbi,
+  publicActions,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import * as viemChains from "viem/chains";
 
-// Minimal ABI for the FeeJuice portal entrypoint.
-const FEE_JUICE_PORTAL_ABI = parseAbi([
-  "function depositToAztecPublic(bytes32 to, uint256 amount, bytes32 secretHash) payable returns (bytes32)",
-]);
-
-const ZERO_SECRET_HASH = `0x${"00".repeat(32)}` as Hex;
-
 export interface BridgeResult {
-  l1TxHash: Hex;
   amount: bigint;
+  claimSecret: string;
+  claimSecretHash: string;
+  messageHash: Hex;
+  messageLeafIndex: bigint;
+}
+
+type ExtendedWalletClient = Parameters<typeof L1FeeJuicePortalManager.new>[1];
+
+interface FeeJuicePortalManagerLike {
+  bridgeTokensPublic(to: AztecAddress, amount: bigint): Promise<L2AmountClaim>;
+}
+
+type CreatePortalManager = (
+  node: AztecNode,
+  extendedClient: ExtendedWalletClient,
+  logger: Logger,
+) => Promise<FeeJuicePortalManagerLike>;
+
+const createPortalManager: CreatePortalManager = async (
+  node,
+  extendedClient,
+  logger,
+) => L1FeeJuicePortalManager.new(node, extendedClient, logger);
+
+function makeBridgeLogger(): Logger {
+  return createLogger("topup:bridge");
 }
 
 export interface BridgeDeps {
-  createPublicClient: typeof createPublicClient;
   createWalletClient: typeof createWalletClient;
   defineChain: typeof defineChain;
-  getAddress: typeof getAddress;
   http: typeof http;
-  isAddress: typeof isAddress;
   privateKeyToAccount: typeof privateKeyToAccount;
+  createPortalManager: CreatePortalManager;
+  createLogger: () => Logger;
   knownChains: Chain[];
 }
 
 const DEFAULT_BRIDGE_DEPS: BridgeDeps = {
-  createPublicClient,
   createWalletClient,
   defineChain,
-  getAddress,
   http,
-  isAddress,
   privateKeyToAccount,
+  createPortalManager,
+  createLogger: makeBridgeLogger,
   knownChains: Object.values(viemChains).filter(isChain),
 };
 
@@ -99,70 +118,49 @@ function resolveL1Chain(
   });
 }
 
-function normalizePortalAddress(portalAddress: string, deps: BridgeDeps): Hex {
-  if (!deps.isAddress(portalAddress)) {
-    throw new Error(
-      `Invalid fee_juice_portal_address: expected 20-byte 0x-prefixed hex, got ${portalAddress}`,
-    );
-  }
-  return deps.getAddress(portalAddress);
-}
-
-function normalizeRecipientBytes32(fpcL2Address: AztecAddress): Hex {
-  const asHex = fpcL2Address.toString();
-  if (!/^0x[0-9a-fA-F]{64}$/.test(asHex)) {
-    throw new Error(
-      `Invalid fpc_address: expected 32-byte 0x-prefixed hex, got ${asHex}`,
-    );
-  }
-  if (fpcL2Address.isZero()) {
-    throw new Error("Invalid fpc_address: zero address is not allowed");
-  }
-  return asHex as Hex;
-}
-
 /**
  * Bridge `amount` wei of Fee Juice from L1 to the FPC's L2 address.
  */
 export async function bridgeFeeJuice(
+  node: AztecNode,
   l1RpcUrl: string,
   l1ChainId: number,
   privateKey: string,
-  portalAddress: string,
   fpcL2Address: AztecAddress,
   amount: bigint,
   depsOverride: Partial<BridgeDeps> = {},
 ): Promise<BridgeResult> {
+  if (fpcL2Address.isZero()) {
+    throw new Error("Invalid fpc_address: zero address is not allowed");
+  }
+  if (amount <= 0n) {
+    throw new Error("Invalid top_up_amount: amount must be greater than zero");
+  }
+
   const deps: BridgeDeps = { ...DEFAULT_BRIDGE_DEPS, ...depsOverride };
   const chain = resolveL1Chain(l1ChainId, l1RpcUrl, deps);
   const account = deps.privateKeyToAccount(privateKey as Hex);
-  const normalizedPortalAddress = normalizePortalAddress(portalAddress, deps);
-  const recipientBytes32 = normalizeRecipientBytes32(fpcL2Address);
-
-  const publicClient = deps.createPublicClient({
-    chain,
-    transport: deps.http(l1RpcUrl),
-  });
-
   const walletClient = deps.createWalletClient({
     account,
     chain,
     transport: deps.http(l1RpcUrl),
   });
+  const extendedClient = walletClient.extend(
+    publicActions,
+  ) as unknown as ExtendedWalletClient;
+  const portalManager = await deps.createPortalManager(
+    node,
+    extendedClient,
+    deps.createLogger(),
+  );
 
-  const hash = await walletClient.writeContract({
-    address: normalizedPortalAddress,
-    abi: FEE_JUICE_PORTAL_ABI,
-    functionName: "depositToAztecPublic",
-    args: [recipientBytes32, amount, ZERO_SECRET_HASH],
-    value: amount,
-    chain,
-  });
+  const claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
 
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") {
-    throw new Error(`L1 bridge transaction reverted: ${hash}`);
-  }
-
-  return { l1TxHash: hash, amount };
+  return {
+    amount: claim.claimAmount,
+    claimSecret: claim.claimSecret.toString(),
+    claimSecretHash: claim.claimSecretHash.toString(),
+    messageHash: claim.messageHash,
+    messageLeafIndex: claim.messageLeafIndex,
+  };
 }

@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import { createTopupChecker } from "../src/checker.js";
 
 const HASH = `0x${"ab".repeat(32)}` as `0x${string}`;
+const SECRET = `0x${"11".repeat(32)}`;
+const SECRET_HASH = `0x${"22".repeat(32)}`;
 
 describe("checker", () => {
   it("does not bridge when balance is at or above threshold", async () => {
@@ -14,9 +16,15 @@ describe("checker", () => {
         getBalance: async () => 5n,
         bridge: async () => {
           bridgeCalls += 1;
-          return { l1TxHash: HASH, amount: 2n };
+          return {
+            amount: 2n,
+            claimSecret: SECRET,
+            claimSecretHash: SECRET_HASH,
+            messageHash: HASH,
+            messageLeafIndex: 1n,
+          };
         },
-        confirm: async () => {
+        confirm: async (_baselineBalance, _bridgeResult) => {
           confirmCalls += 1;
           return {
             status: "confirmed",
@@ -27,6 +35,9 @@ describe("checker", () => {
             elapsedMs: 1,
             attempts: 1,
             pollErrors: 0,
+            messageCheckAttempted: true,
+            messageReady: true,
+            messageCheckFailed: false,
           };
         },
       },
@@ -44,11 +55,20 @@ describe("checker", () => {
     let confirmBaseline: bigint | undefined;
 
     let resolveBridge:
-      | ((value: { l1TxHash: `0x${string}`; amount: bigint }) => void)
+      | ((value: {
+          amount: bigint;
+          claimSecret: string;
+          claimSecretHash: string;
+          messageHash: `0x${string}`;
+          messageLeafIndex: bigint;
+        }) => void)
       | undefined;
     const bridgePromise = new Promise<{
-      l1TxHash: `0x${string}`;
       amount: bigint;
+      claimSecret: string;
+      claimSecretHash: string;
+      messageHash: `0x${string}`;
+      messageLeafIndex: bigint;
     }>((resolve) => {
       resolveBridge = resolve;
     });
@@ -61,7 +81,7 @@ describe("checker", () => {
           bridgeCalls += 1;
           return bridgePromise;
         },
-        confirm: async (baselineBalance) => {
+        confirm: async (baselineBalance, _bridgeResult) => {
           confirmCalls += 1;
           confirmBaseline = baselineBalance;
           return {
@@ -73,6 +93,9 @@ describe("checker", () => {
             elapsedMs: 1,
             attempts: 1,
             pollErrors: 0,
+            messageCheckAttempted: true,
+            messageReady: false,
+            messageCheckFailed: false,
           };
         },
       },
@@ -85,7 +108,13 @@ describe("checker", () => {
     await checker.checkAndTopUp();
     assert.equal(bridgeCalls, 1);
 
-    resolveBridge?.({ l1TxHash: HASH, amount: 2n });
+    resolveBridge?.({
+      amount: 2n,
+      claimSecret: SECRET,
+      claimSecretHash: SECRET_HASH,
+      messageHash: HASH,
+      messageLeafIndex: 1n,
+    });
     await firstRun;
 
     assert.equal(confirmCalls, 1);

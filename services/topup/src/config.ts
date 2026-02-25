@@ -3,7 +3,6 @@ import { parse } from "yaml";
 import { z } from "zod";
 
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
-const ETH_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const PRIVATE_KEY_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const UINT_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 
@@ -25,16 +24,7 @@ const ConfigSchema = z
         "must be a 32-byte 0x-prefixed hex address",
       ),
     aztec_node_url: z.string().url(),
-    /** Optional override for the L2 FeeJuice protocol contract address. */
-    fee_juice_address: z
-      .string()
-      .regex(AZTEC_ADDRESS_PATTERN, "must be a 32-byte 0x-prefixed hex address")
-      .optional(),
-    l1_chain_id: z.number().int().positive(),
     l1_rpc_url: z.string().url(),
-    fee_juice_portal_address: z
-      .string()
-      .regex(ETH_ADDRESS_PATTERN, "must be a 20-byte 0x-prefixed hex address"),
     /** Optional when L1_OPERATOR_PRIVATE_KEY is provided via env. */
     l1_operator_private_key: z.string().optional(),
     /** Bridge when FPC balance drops below this (bigint string, wei units). */
