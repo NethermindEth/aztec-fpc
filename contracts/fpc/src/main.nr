@@ -1,3 +1,5 @@
+mod test;
+
 use ::aztec::macros::aztec;
 
 /// Fee Payment Contract (FPC)
@@ -35,10 +37,7 @@ pub contract FPC {
     use aztec::{
         authwit::auth::{assert_inner_hash_valid_authwit, compute_inner_authwit_hash},
         context::PrivateContext,
-        macros::{
-            functions::{external, initializer, allow_phase_change},
-            storage::storage,
-        },
+        macros::{functions::{allow_phase_change, external, initializer}, storage::storage},
         protocol::{address::AztecAddress, traits::ToField},
         state_vars::PublicImmutable,
     };
@@ -83,12 +82,7 @@ pub contract FPC {
 
     #[external("private")]
     #[allow_phase_change]
-    fn fee_entrypoint(
-        authwit_nonce: Field,
-        rate_num: u128,
-        rate_den: u128,
-        valid_until: u64,
-    ) {
+    fn fee_entrypoint(authwit_nonce: Field, rate_num: u128, rate_den: u128, valid_until: u64) {
         let operator = self.storage.operator.read();
         let accepted_asset = self.storage.accepted_asset.read();
         let sender = self.msg_sender();
@@ -113,9 +107,9 @@ pub contract FPC {
         );
 
         // Transfer user private -> operator private. Nothing is visible on-chain.
-        Token::at(accepted_asset)
-            .transfer_in_private(sender, operator, charge, authwit_nonce)
-            .call(self.context);
+        Token::at(accepted_asset).transfer_in_private(sender, operator, charge, authwit_nonce).call(
+            self.context,
+        );
 
         self.context.set_as_fee_payer();
         self.context.end_setup();
