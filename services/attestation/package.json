@@ -10,12 +10,12 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@aztec/aztec.js": "*",
-    "@aztec/stdlib": "*",
-    "@aztec/foundation": "*",
-    "fastify": "*",
-    "yaml": "*",
-    "zod": "*"
+    "@aztec/accounts": "catalog:",
+    "@aztec/aztec.js": "catalog:",
+    "@aztec/stdlib": "catalog:",
+    "fastify": "catalog:",
+    "yaml": "catalog:",
+    "zod": "catalog:"
   },
   "engines": {
     "node": ">=18.0.0"

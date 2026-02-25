@@ -1,11 +1,11 @@
 import Fastify from 'fastify';
-import { AztecAddress } from '@aztec/aztec.js';
-import type { AccountWallet } from '@aztec/aztec.js';
+import { AztecAddress } from '@aztec/aztec.js/addresses';
+import type { AuthWitnessProvider, ChainInfo } from './signer.js';
 import type { Config } from './config.js';
 import { computeFinalRate } from './config.js';
 import { signQuote } from './signer.js';
 
-export function buildServer(config: Config, wallet: AccountWallet) {
+export function buildServer(config: Config, authWitnessProvider: AuthWitnessProvider, chainInfo: ChainInfo) {
   const app = Fastify({ logger: true });
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const acceptedAsset = AztecAddress.fromString(config.accepted_asset_address);
@@ -40,7 +40,7 @@ export function buildServer(config: Config, wallet: AccountWallet) {
     const { rate_num, rate_den } = computeFinalRate(config);
     const expiry = validUntil();
 
-    const authwit = await signQuote(wallet, {
+    const authwit = await signQuote(authWitnessProvider, chainInfo, {
       fpcAddress,
       acceptedAsset,
       rateNum: rate_num,
