@@ -140,3 +140,5 @@ vite.config.ts.timestamp-*
 
 # Aztec
 target/
+wallet_data*
+pxe_data*

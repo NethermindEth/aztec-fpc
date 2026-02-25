@@ -13,7 +13,9 @@
     "@aztec/accounts": "catalog:",
     "@aztec/aztec.js": "catalog:",
     "@aztec/stdlib": "catalog:",
+    "@aztec/wallets": "catalog:",
     "fastify": "catalog:",
+    "viem": "catalog:",
     "yaml": "catalog:",
     "zod": "catalog:"
   },
