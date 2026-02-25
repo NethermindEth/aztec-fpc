@@ -2,7 +2,7 @@
 # Copy to config.yaml and fill in your values.
 
 # The deployed FPC contract address on Aztec L2
-fpc_address: "0x0000000000000000000000000000000000000000000000000000000000000000"
+fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac"
 
 # Aztec node PXE URL
 aztec_node_url: "http://localhost:8080"
