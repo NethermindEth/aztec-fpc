@@ -1,3 +1,2 @@
 [workspace]
 members = ["contracts/fpc","vendor/aztec-standards/src/token_contract"]
-default-member = "contracts/fpc"

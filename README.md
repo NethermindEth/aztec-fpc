@@ -48,7 +48,7 @@ aztec compile
 
 ```bash
 nargo fmt
-aztec test
+aztec test --package fpc
 ```
 
 ### TypeScript quality checks
