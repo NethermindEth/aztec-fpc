@@ -36,7 +36,7 @@ pub contract FPC {
         authwit::auth::{assert_inner_hash_valid_authwit, compute_inner_authwit_hash},
         context::PrivateContext,
         macros::{
-            functions::{external, initializer, nophasecheck},
+            functions::{external, initializer, allow_phase_change},
             storage::storage,
         },
         protocol::{address::AztecAddress, traits::ToField},
@@ -82,7 +82,7 @@ pub contract FPC {
     // =========================================================================
 
     #[external("private")]
-    #[nophasecheck]
+    #[allow_phase_change]
     fn fee_entrypoint(
         authwit_nonce: Field,
         rate_num: u128,
@@ -159,7 +159,7 @@ pub contract FPC {
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");
-        context.set_include_by_timestamp(valid_until);
+        context.set_expiration_timestamp(valid_until);
     }
 
     /// Convert a fee-juice amount to payment-asset units using ceiling division.
