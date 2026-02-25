@@ -29,6 +29,28 @@ export interface BridgeResult {
   amount: bigint;
 }
 
+export interface BridgeDeps {
+  createPublicClient: typeof createPublicClient;
+  createWalletClient: typeof createWalletClient;
+  defineChain: typeof defineChain;
+  getAddress: typeof getAddress;
+  http: typeof http;
+  isAddress: typeof isAddress;
+  privateKeyToAccount: typeof privateKeyToAccount;
+  knownChains: Chain[];
+}
+
+const DEFAULT_BRIDGE_DEPS: BridgeDeps = {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  getAddress,
+  http,
+  isAddress,
+  privateKeyToAccount,
+  knownChains: Object.values(viemChains).filter(isChain),
+};
+
 function isChain(value: unknown): value is Chain {
   if (!value || typeof value !== "object") {
     return false;
@@ -49,10 +71,12 @@ function isChain(value: unknown): value is Chain {
   );
 }
 
-const KNOWN_CHAINS = Object.values(viemChains).filter(isChain);
-
-function resolveL1Chain(chainId: number, rpcUrl: string): Chain {
-  const known = KNOWN_CHAINS.find((chain) => chain.id === chainId);
+function resolveL1Chain(
+  chainId: number,
+  rpcUrl: string,
+  deps: BridgeDeps,
+): Chain {
+  const known = deps.knownChains.find((chain) => chain.id === chainId);
   if (known) {
     return {
       ...known,
@@ -64,7 +88,7 @@ function resolveL1Chain(chainId: number, rpcUrl: string): Chain {
     };
   }
 
-  return defineChain({
+  return deps.defineChain({
     id: chainId,
     name: `L1 Chain ${chainId}`,
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
@@ -75,13 +99,13 @@ function resolveL1Chain(chainId: number, rpcUrl: string): Chain {
   });
 }
 
-function normalizePortalAddress(portalAddress: string): Hex {
-  if (!isAddress(portalAddress)) {
+function normalizePortalAddress(portalAddress: string, deps: BridgeDeps): Hex {
+  if (!deps.isAddress(portalAddress)) {
     throw new Error(
       `Invalid fee_juice_portal_address: expected 20-byte 0x-prefixed hex, got ${portalAddress}`,
     );
   }
-  return getAddress(portalAddress);
+  return deps.getAddress(portalAddress);
 }
 
 function normalizeRecipientBytes32(fpcL2Address: AztecAddress): Hex {
@@ -107,21 +131,23 @@ export async function bridgeFeeJuice(
   portalAddress: string,
   fpcL2Address: AztecAddress,
   amount: bigint,
+  depsOverride: Partial<BridgeDeps> = {},
 ): Promise<BridgeResult> {
-  const chain = resolveL1Chain(l1ChainId, l1RpcUrl);
-  const account = privateKeyToAccount(privateKey as Hex);
-  const normalizedPortalAddress = normalizePortalAddress(portalAddress);
+  const deps: BridgeDeps = { ...DEFAULT_BRIDGE_DEPS, ...depsOverride };
+  const chain = resolveL1Chain(l1ChainId, l1RpcUrl, deps);
+  const account = deps.privateKeyToAccount(privateKey as Hex);
+  const normalizedPortalAddress = normalizePortalAddress(portalAddress, deps);
   const recipientBytes32 = normalizeRecipientBytes32(fpcL2Address);
 
-  const publicClient = createPublicClient({
+  const publicClient = deps.createPublicClient({
     chain,
-    transport: http(l1RpcUrl),
+    transport: deps.http(l1RpcUrl),
   });
 
-  const walletClient = createWalletClient({
+  const walletClient = deps.createWalletClient({
     account,
     chain,
-    transport: http(l1RpcUrl),
+    transport: deps.http(l1RpcUrl),
   });
 
   const hash = await walletClient.writeContract({
