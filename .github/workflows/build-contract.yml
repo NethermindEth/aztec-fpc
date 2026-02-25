@@ -2,13 +2,21 @@ name: Build contract
 
 on:
   push:
+    branches:
+      - main
+    tags:
+      - "**"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
 
       - name: Read Aztec version
         id: aztec-version
