@@ -1,6 +1,6 @@
-import { readFileSync } from 'fs';
-import { parse } from 'yaml';
-import { z } from 'zod';
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
+import { z } from "zod";
 
 const ConfigSchema = z.object({
   fpc_address: z.string(),
@@ -22,7 +22,7 @@ const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 export function loadConfig(path: string): Config {
-  const raw = readFileSync(path, 'utf8');
+  const raw = readFileSync(path, "utf8");
   const parsed = parse(raw);
   return ConfigSchema.parse(parsed);
 }
@@ -35,8 +35,12 @@ export function loadConfig(path: string): Config {
  * ceiling-divides, so the operator is guaranteed to collect at least
  * fee_bips of margin.
  */
-export function computeFinalRate(config: Config): { rate_num: bigint; rate_den: bigint } {
-  const rate_num = BigInt(config.market_rate_num) * BigInt(10000 + config.fee_bips);
+export function computeFinalRate(config: Config): {
+  rate_num: bigint;
+  rate_den: bigint;
+} {
+  const rate_num =
+    BigInt(config.market_rate_num) * BigInt(10000 + config.fee_bips);
   const rate_den = BigInt(config.market_rate_den) * BigInt(10000);
   return { rate_num, rate_den };
 }

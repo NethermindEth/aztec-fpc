@@ -31,7 +31,7 @@ aztec-fpc/
 
 ### Prerequisites
 
-- Node.js ≥ 18
+- Bun `1.3.9`
 - Aztec CLI
 
 ```bash
@@ -52,6 +52,15 @@ aztec compile
 ```bash
 nargo fmt
 aztec test
+```
+
+### TypeScript quality checks
+
+```bash
+bun run format
+bun run lint
+bun run typecheck
+bun run ci
 ```
 
 ### 3. Run local-devnet smoke test (end-to-end)
@@ -84,6 +93,7 @@ Optional overrides:
 - `FPC_SMOKE_FEE_PER_DA_GAS`, `FPC_SMOKE_FEE_PER_L2_GAS` (default: current node min fees)
 - `FPC_SMOKE_FEE_JUICE_TOPUP_WEI` (default: conservative auto-top-up from configured gas settings)
 - `FPC_SMOKE_QUOTE_TTL_SECONDS`
+- `FPC_SMOKE_RESET_LOCAL_STATE` (default `1`; set `0` to reuse existing `wallet_data_*`/`pxe_data_*`)
 
 ### 4. Deploy the contract
 
@@ -103,7 +113,7 @@ Record the deployed address.
 cd services/attestation
 cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, operator_secret_key, accepted_asset_*, rates
-npm install && npm run build && npm start
+bun install && bun run build && bun run start
 ```
 
 ### 6. Configure and start the top-up service
@@ -112,7 +122,7 @@ npm install && npm run build && npm start
 cd services/topup
 cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, l1_operator_private_key, fee_juice_portal_address
-npm install && npm run build && npm start
+bun install && bun run build && bun run start
 ```
 
 ### 7. Verify

@@ -1,27 +1,33 @@
-import Fastify from 'fastify';
-import { AztecAddress } from '@aztec/aztec.js/addresses';
-import type { AuthWitnessProvider, ChainInfo } from './signer.js';
-import type { Config } from './config.js';
-import { computeFinalRate } from './config.js';
-import { signQuote } from './signer.js';
+import Fastify from "fastify";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AuthWitnessProvider, ChainInfo } from "./signer.js";
+import type { Config } from "./config.js";
+import { computeFinalRate } from "./config.js";
+import { signQuote } from "./signer.js";
 
-export function buildServer(config: Config, authWitnessProvider: AuthWitnessProvider, chainInfo: ChainInfo) {
+export function buildServer(
+  config: Config,
+  authWitnessProvider: AuthWitnessProvider,
+  chainInfo: ChainInfo,
+) {
   const app = Fastify({ logger: true });
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const acceptedAsset = AztecAddress.fromString(config.accepted_asset_address);
 
   function validUntil(): bigint {
-    return BigInt(Math.floor(Date.now() / 1000) + config.quote_validity_seconds);
+    return BigInt(
+      Math.floor(Date.now() / 1000) + config.quote_validity_seconds,
+    );
   }
 
   // ── GET /health ─────────────────────────────────────────────────────────────
 
-  app.get('/health', async () => ({ status: 'ok' }));
+  app.get("/health", async () => ({ status: "ok" }));
 
   // ── GET /asset ───────────────────────────────────────────────────────────────
   // Returns the single accepted asset name and address.
 
-  app.get('/asset', async () => ({
+  app.get("/asset", async () => ({
     name: config.accepted_asset_name,
     address: config.accepted_asset_address,
   }));
@@ -31,10 +37,12 @@ export function buildServer(config: Config, authWitnessProvider: AuthWitnessProv
   // The quote binds to `user` — the operator signs acknowledging it knows this
   // user's address and will track private note receipts via their viewing key.
 
-  app.get<{ Querystring: { user: string } }>('/quote', async (req, reply) => {
+  app.get<{ Querystring: { user: string } }>("/quote", async (req, reply) => {
     const { user: userAddress } = req.query;
     if (!userAddress) {
-      return reply.code(400).send({ error: 'Missing required query param: user' });
+      return reply
+        .code(400)
+        .send({ error: "Missing required query param: user" });
     }
 
     const { rate_num, rate_den } = computeFinalRate(config);

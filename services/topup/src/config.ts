@@ -1,6 +1,6 @@
-import { readFileSync } from 'fs';
-import { parse } from 'yaml';
-import { z } from 'zod';
+import { readFileSync } from "node:fs";
+import { parse } from "yaml";
+import { z } from "zod";
 
 const ConfigSchema = z.object({
   fpc_address: z.string(),
@@ -19,7 +19,7 @@ const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 export function loadConfig(path: string): Config {
-  const raw = readFileSync(path, 'utf8');
+  const raw = readFileSync(path, "utf8");
   const parsed = parse(raw);
   return ConfigSchema.parse(parsed);
 }

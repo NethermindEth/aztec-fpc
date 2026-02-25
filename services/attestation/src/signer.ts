@@ -17,10 +17,13 @@
  * authWitnesses array.
  */
 
-import { AztecAddress } from '@aztec/aztec.js/addresses';
-import { Fr } from '@aztec/aztec.js/fields';
-import { computeInnerAuthWitHash, type AuthWitness } from '@aztec/stdlib/auth-witness';
-import { computeAuthWitMessageHash } from '@aztec/aztec.js/authorization';
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
+import { Fr } from "@aztec/aztec.js/fields";
+import {
+  computeInnerAuthWitHash,
+  type AuthWitness,
+} from "@aztec/stdlib/auth-witness";
+import { computeAuthWitMessageHash } from "@aztec/aztec.js/authorization";
 
 /** Matches ChainInfo from @aztec/entrypoints/interfaces */
 export interface ChainInfo {
@@ -34,7 +37,7 @@ export interface AuthWitnessProvider {
 }
 
 // Must match QUOTE_DOMAIN_SEPARATOR in main.nr ("FPC" = 0x465043)
-const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString('0x465043');
+const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 
 export interface QuoteParams {
   fpcAddress: AztecAddress;

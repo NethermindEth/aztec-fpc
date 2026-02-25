@@ -234,9 +234,9 @@ Record the deployed contract address — you'll need it in both service configs.
 cd services/attestation
 cp config.example.yaml config.yaml
 # Edit config.yaml: set fpc_address, operator_secret_key, accepted_asset_*, rates
-npm install
-npm run build
-npm start
+bun install
+bun run build
+bun run start
 ```
 
 ### 6.4 Start the Top-up Service
@@ -245,9 +245,9 @@ npm start
 cd services/topup
 cp config.example.yaml config.yaml
 # Edit config.yaml: set fpc_address, l1_operator_private_key, fee_juice_portal_address
-npm install
-npm run build
-npm start
+bun install
+bun run build
+bun run start
 ```
 
 ### 6.5 Verify Everything Works

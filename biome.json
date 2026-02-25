@@ -1,0 +1,22 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "package.json",
+      "tsconfig.base.json",
+      "services/*/src/**/*.ts",
+      "services/*/test/**/*.ts",
+      "services/*/package.json",
+      "scripts/**/*.ts",
+      "scripts/*/package.json"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space"
+  },
+  "linter": {
+    "enabled": true
+  }
+}
