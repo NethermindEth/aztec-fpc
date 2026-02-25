@@ -34,3 +34,8 @@ top_up_amount: "10000000000000000000"
 
 # How often to check the balance (milliseconds). 60000 = every minute.
 check_interval_ms: 60000
+
+# Confirmation polling settings after an L1 bridge is mined.
+confirmation_timeout_ms: 180000
+confirmation_poll_initial_ms: 1000
+confirmation_poll_max_ms: 15000

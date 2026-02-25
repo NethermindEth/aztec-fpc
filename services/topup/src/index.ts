@@ -14,6 +14,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { loadConfig } from "./config.js";
 import { bridgeFeeJuice } from "./bridge.js";
+import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
 import { createFeeJuiceBalanceReader } from "./monitor.js";
 
 const configPath =
@@ -34,6 +35,10 @@ async function main() {
   console.log(`  Check interval: ${config.check_interval_ms}ms`);
   console.log(`  L1 chain id:   ${config.l1_chain_id}`);
   console.log(`  L1 portal:     ${config.fee_juice_portal_address}`);
+  console.log(`  Confirm timeout: ${config.confirmation_timeout_ms}ms`);
+  console.log(
+    `  Confirm poll:  ${config.confirmation_poll_initial_ms}ms -> ${config.confirmation_poll_max_ms}ms`,
+  );
   console.log(
     `  Fee Juice contract: ${balanceReader.feeJuiceAddress.toString()} (${balanceReader.addressSource})`,
   );
@@ -81,15 +86,26 @@ async function main() {
         `Bridged ${result.amount} wei. Waiting for L2 confirmation...`,
       );
 
-      // Wait for the L2 message to be processed. L1→L2 message processing
-      // happens within the next few L2 blocks after L1 confirmation.
-      // We wait a generous period before re-enabling checks.
-      // TODO: replace with a proper L2 message confirmation check using
-      //   pxe.getL1ToL2MembershipWitness or similar once the tx hash is known.
-      await sleep(120_000); // 2 minutes
-      console.log("Bridge cool-down complete. Resuming balance checks.");
+      const confirmation = await waitForFeeJuiceBridgeConfirmation({
+        balanceReader,
+        fpcAddress,
+        baselineBalance: balance,
+        timeoutMs: config.confirmation_timeout_ms,
+        initialPollMs: config.confirmation_poll_initial_ms,
+        maxPollMs: config.confirmation_poll_max_ms,
+      });
+
+      if (confirmation.status === "confirmed") {
+        console.log(
+          `Bridge confirmation outcome=confirmed delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} current=${confirmation.lastObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} elapsed_ms=${confirmation.elapsedMs}`,
+        );
+      } else {
+        console.warn(
+          `Bridge confirmation outcome=timeout delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} max_observed=${confirmation.maxObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} elapsed_ms=${confirmation.elapsedMs}`,
+        );
+      }
     } catch (err) {
-      console.error("Bridge failed:", err);
+      console.error("Bridge confirmation outcome=failed", err);
     } finally {
       bridgeInFlight = false;
     }
@@ -99,11 +115,6 @@ async function main() {
   await checkAndTopUp();
   setInterval(checkAndTopUp, config.check_interval_ms);
 }
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 main().catch((err) => {
   console.error("Fatal error:", err);
   process.exit(1);
