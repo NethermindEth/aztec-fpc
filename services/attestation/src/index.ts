@@ -18,8 +18,6 @@ import {
 } from "@aztec/accounts/schnorr";
 import { CompleteAddress } from "@aztec/stdlib/contract";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
-import { createPXE, getPXEConfig } from "@aztec/pxe/server";
-import type { PXE } from "@aztec/pxe/server";
 import { createQuoteAuthwitSigner } from "./signer.js";
 import { loadConfig } from "./config.js";
 import { buildServer } from "./server.js";
@@ -65,22 +63,8 @@ async function main() {
     `Accepted asset:    ${config.accepted_asset_name} (${config.accepted_asset_address})`,
   );
 
-  // ── Optional: spin up a local PXE for sender registration ───────────────────
-  let pxe: PXE | undefined;
-  if (config.pxe_data_directory) {
-    console.log(
-      `Starting local PXE (data dir: ${config.pxe_data_directory}) …`,
-    );
-    const pxeConfig = {
-      ...getPXEConfig(),
-      dataDirectory: config.pxe_data_directory,
-    };
-    pxe = await createPXE(node, pxeConfig);
-    console.log("Local PXE ready");
-  }
-
   // ── Start HTTP server ────────────────────────────────────────────────────────
-  const app = buildServer(config, quoteSigner, pxe);
+  const app = buildServer(config, quoteSigner);
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
   console.log(`Attestation service listening on port ${config.port}`);

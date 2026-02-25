@@ -123,7 +123,7 @@ bun install && bun run build && bun run start
 ```bash
 cd services/topup
 cp config.example.yaml config.yaml
-# Edit config.yaml — set fpc_address, l1_operator_private_key, fee_juice_portal_address
+# Edit config.yaml — set fpc_address, l1_chain_id, l1_operator_private_key, fee_juice_portal_address
 bun install && bun run build && bun run start
 ```
 
