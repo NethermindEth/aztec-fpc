@@ -2,17 +2,41 @@ name: Build contract
 
 on:
   push:
+    branches:
+      - main
+    tags:
+      - "**"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
 
       - name: Read Aztec version
         id: aztec-version
         run: echo "version=$(cat .aztecrc | tr -d '\n')" >> $GITHUB_OUTPUT
+
+      - name: Debug
+        run: |
+          echo "HOME: $HOME"
+
+      - name: Cache Aztec toolchain
+        uses: actions/cache@v5
+        with:
+          path: ~/.aztec
+          key: aztec-${{ runner.os }}-${{ steps.aztec-version.outputs.version }}
 
       - name: Install Aztec
         env:
@@ -26,11 +50,14 @@ jobs:
           echo "$HOME/.aztec/current/node_modules/.bin" >> $GITHUB_PATH
           echo "$HOME/.aztec/bin" >> $GITHUB_PATH
 
+      - name: Debug
+        run: which aztec
+
       - name: Format check
         run: nargo fmt --check
 
-      - name: Build
+      - name: Build contracts
         run: aztec compile
 
-      - name: Test
+      - name: Test contracts
         run: aztec test
