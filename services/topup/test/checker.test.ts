@@ -24,7 +24,7 @@ describe("checker", () => {
             messageLeafIndex: 1n,
           };
         },
-        confirm: async () => {
+        confirm: async (_baselineBalance, _bridgeResult) => {
           confirmCalls += 1;
           return {
             status: "confirmed",
@@ -35,6 +35,9 @@ describe("checker", () => {
             elapsedMs: 1,
             attempts: 1,
             pollErrors: 0,
+            messageCheckAttempted: true,
+            messageReady: true,
+            messageCheckFailed: false,
           };
         },
       },
@@ -78,7 +81,7 @@ describe("checker", () => {
           bridgeCalls += 1;
           return bridgePromise;
         },
-        confirm: async (baselineBalance) => {
+        confirm: async (baselineBalance, _bridgeResult) => {
           confirmCalls += 1;
           confirmBaseline = baselineBalance;
           return {
@@ -90,6 +93,9 @@ describe("checker", () => {
             elapsedMs: 1,
             attempts: 1,
             pollErrors: 0,
+            messageCheckAttempted: true,
+            messageReady: false,
+            messageCheckFailed: false,
           };
         },
       },

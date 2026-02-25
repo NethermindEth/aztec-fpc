@@ -164,6 +164,7 @@ cd services/topup
 cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, aztec_node_url, l1_rpc_url
 # l1_chain_id and fee juice L1 addresses are auto-discovered from nodeInfo
+# Bridge confirmation uses L1->L2 message readiness plus Fee Juice balance-delta fallback
 # Provide L1 key via L1_OPERATOR_PRIVATE_KEY (preferred) or config.l1_operator_private_key
 bun install && bun run build && bun run start
 ```

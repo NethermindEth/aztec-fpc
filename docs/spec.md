@@ -200,7 +200,8 @@ The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) t
 
 1. Service builds an L1 wallet client and uses `L1FeeJuicePortalManager.new(node, client, logger)`
 2. Manager performs Fee Juice token approval and portal deposit, returning L1→L2 message metadata
-3. Service polls the FPC Fee Juice balance until it observes a positive delta or times out
+3. Service waits for L1→L2 message readiness (`waitForL1ToL2MessageReady`) using the returned message hash
+4. Service still polls FPC Fee Juice balance and treats positive balance delta as the final fallback/confirmation signal
 
 ---
 
@@ -335,4 +336,4 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 - **Operator tracks revenue off-chain.** All payments arrive as private notes in the operator's balance. The operator must use their PXE to discover incoming notes and maintain off-chain accounting.
 - **Charge pre-computation required.** Wallets must replicate the `ceil(max_gas_cost_no_teardown × rate_num / rate_den)` calculation client-side to create the correct token transfer authwit. If gas settings differ at submission time, the authwit may not match.
 - **No oracle integration.** Rates are set manually in config. A service restart reloads from config.yaml.
-- **Top-up service bridge wait is a fixed sleep.** A proper implementation would poll for L2 message confirmation rather than waiting an arbitrary 2 minutes.
+- **Top-up service confirmation now combines message readiness + balance checks.** If message checks fail transiently, the balance-delta fallback still prevents blind success reporting.

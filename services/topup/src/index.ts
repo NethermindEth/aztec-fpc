@@ -12,28 +12,15 @@
 
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { createPublicClient, http } from "viem";
 import { bridgeFeeJuice } from "./bridge.js";
 import { createTopupChecker } from "./checker.js";
 import { loadConfig } from "./config.js";
 import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
+import { assertL1RpcChainIdMatches } from "./l1.js";
 import { createFeeJuiceBalanceReader } from "./monitor.js";
 
 const configPath =
   process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
-
-async function assertL1RpcChainIdMatches(
-  l1RpcUrl: string,
-  expectedChainId: number,
-): Promise<void> {
-  const publicClient = createPublicClient({ transport: http(l1RpcUrl) });
-  const rpcChainId = await publicClient.getChainId();
-  if (rpcChainId !== expectedChainId) {
-    throw new Error(
-      `L1 chain mismatch: aztec node expects chain_id=${expectedChainId}, but RPC ${l1RpcUrl} reports chain_id=${rpcChainId}`,
-    );
-  }
-}
 
 async function main() {
   const config = loadConfig(configPath);
@@ -111,7 +98,7 @@ async function main() {
           fpcAddress,
           amount,
         ),
-      confirm: (baselineBalance) =>
+      confirm: (baselineBalance, bridgeResult) =>
         waitForFeeJuiceBridgeConfirmation({
           balanceReader,
           fpcAddress,
@@ -119,6 +106,11 @@ async function main() {
           timeoutMs: config.confirmation_timeout_ms,
           initialPollMs: config.confirmation_poll_initial_ms,
           maxPollMs: config.confirmation_poll_max_ms,
+          messageContext: {
+            node: pxe,
+            messageHash: bridgeResult.messageHash,
+            forPublicConsumption: false,
+          },
         }),
     },
   );

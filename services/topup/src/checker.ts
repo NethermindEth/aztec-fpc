@@ -9,7 +9,10 @@ export interface TopupCheckerConfig {
 export interface TopupCheckerDependencies {
   getBalance: () => Promise<bigint>;
   bridge: (amount: bigint) => Promise<BridgeResult>;
-  confirm: (baselineBalance: bigint) => Promise<BridgeConfirmationResult>;
+  confirm: (
+    baselineBalance: bigint,
+    bridgeResult: BridgeResult,
+  ) => Promise<BridgeConfirmationResult>;
   logger?: Pick<Console, "log" | "warn" | "error">;
 }
 
@@ -64,14 +67,14 @@ export function createTopupChecker(
         `Bridged ${result.amount} wei. Waiting for L2 confirmation...`,
       );
 
-      const confirmation = await deps.confirm(balance);
+      const confirmation = await deps.confirm(balance, result);
       if (confirmation.status === "confirmed") {
         logger.log(
-          `Bridge confirmation outcome=confirmed delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} current=${confirmation.lastObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} elapsed_ms=${confirmation.elapsedMs}`,
+          `Bridge confirmation outcome=confirmed delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} current=${confirmation.lastObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} message_ready=${confirmation.messageReady} message_check_attempted=${confirmation.messageCheckAttempted} message_check_failed=${confirmation.messageCheckFailed} elapsed_ms=${confirmation.elapsedMs}`,
         );
       } else {
         logger.warn(
-          `Bridge confirmation outcome=timeout delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} max_observed=${confirmation.maxObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} elapsed_ms=${confirmation.elapsedMs}`,
+          `Bridge confirmation outcome=timeout delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} max_observed=${confirmation.maxObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} message_ready=${confirmation.messageReady} message_check_attempted=${confirmation.messageCheckAttempted} message_check_failed=${confirmation.messageCheckFailed} elapsed_ms=${confirmation.elapsedMs}`,
         );
       }
     } catch (err) {
