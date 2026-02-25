@@ -1,4 +1,4 @@
-FROM node:18-alpine AS builder
+FROM node:24.14.0-alpine AS builder
 
 ARG SERVICE=attestation
 
@@ -15,7 +15,7 @@ COPY services ./services
 RUN pnpm install --frozen-lockfile --filter "@aztec-fpc/${SERVICE}..."
 RUN pnpm --filter "@aztec-fpc/${SERVICE}" run build
 
-FROM node:18-alpine AS runtime
+FROM node:24.14.0-alpine AS runtime
 
 ARG SERVICE=attestation
 
