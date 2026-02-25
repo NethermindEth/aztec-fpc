@@ -19,7 +19,9 @@ export async function assertL1RpcChainIdMatches(
   depsOverride: Partial<L1ChainDeps> = {},
 ): Promise<void> {
   const deps: L1ChainDeps = { ...DEFAULT_L1_CHAIN_DEPS, ...depsOverride };
-  const publicClient = deps.createPublicClient({ transport: deps.http(l1RpcUrl) });
+  const publicClient = deps.createPublicClient({
+    transport: deps.http(l1RpcUrl),
+  });
   const rpcChainId = await publicClient.getChainId();
   if (rpcChainId !== expectedChainId) {
     throw new Error(

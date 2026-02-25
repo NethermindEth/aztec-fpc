@@ -8,7 +8,8 @@ import { waitForFeeJuiceBridgeConfirmation } from "../src/confirm.js";
 const FPC = AztecAddress.fromString(
   "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
 );
-const MESSAGE_HASH = "0x0000000000000000000000000000000000000000000000000000000000000123";
+const MESSAGE_HASH =
+  "0x0000000000000000000000000000000000000000000000000000000000000123";
 
 describe("confirm", () => {
   it("confirms on balance delta when message check is still pending", async () => {
@@ -29,7 +30,10 @@ describe("confirm", () => {
         initialPollMs: 1,
         maxPollMs: 5,
         messageContext: {
-          node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+          node: {} as Pick<
+            AztecNode,
+            "getBlockNumber" | "getL1ToL2MessageBlock"
+          >,
           messageHash: MESSAGE_HASH,
           forPublicConsumption: false,
         },
@@ -67,7 +71,10 @@ describe("confirm", () => {
         initialPollMs: 1,
         maxPollMs: 5,
         messageContext: {
-          node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+          node: {} as Pick<
+            AztecNode,
+            "getBlockNumber" | "getL1ToL2MessageBlock"
+          >,
           messageHash: MESSAGE_HASH,
           forPublicConsumption: false,
         },
@@ -100,7 +107,10 @@ describe("confirm", () => {
         initialPollMs: 1,
         maxPollMs: 5,
         messageContext: {
-          node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+          node: {} as Pick<
+            AztecNode,
+            "getBlockNumber" | "getL1ToL2MessageBlock"
+          >,
           messageHash: MESSAGE_HASH,
           forPublicConsumption: false,
         },
@@ -134,7 +144,10 @@ describe("confirm", () => {
           initialPollMs: 1,
           maxPollMs: 5,
           messageContext: {
-            node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+            node: {} as Pick<
+              AztecNode,
+              "getBlockNumber" | "getL1ToL2MessageBlock"
+            >,
             messageHash: MESSAGE_HASH,
             forPublicConsumption: false,
           },
