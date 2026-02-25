@@ -1,3 +1,4 @@
+mod fee_math;
 mod test;
 
 use ::aztec::macros::aztec;
@@ -34,6 +35,7 @@ use ::aztec::macros::aztec;
 ///                                     Enforced on every call.
 #[aztec]
 pub contract FPC {
+    use crate::fee_math::fee_juice_to_asset;
     use aztec::{
         authwit::auth::{assert_inner_hash_valid_authwit, compute_inner_authwit_hash},
         context::PrivateContext,
@@ -151,28 +153,6 @@ pub contract FPC {
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");
         context.set_expiration_timestamp(valid_until);
-    }
-
-    /// Convert a fee-juice amount to payment-asset units using ceiling division.
-    ///
-    ///   payment_asset_amount = ceil(fee_juice_amount * rate_num / rate_den)
-    ///
-    /// Ceiling ensures the FPC always collects at least the actual fee cost.
-    /// Overflow is checked explicitly since Noir does not panic on u128 overflow.
-    #[contract_library_method]
-    fn fee_juice_to_asset(fee_juice_amount: u128, rate_num: u128, rate_den: u128) -> u128 {
-        assert(rate_den != 0, "invalid exchange rate denominator");
-        let max_u128: u128 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-
-        if fee_juice_amount != 0 {
-            assert(rate_num <= max_u128 / fee_juice_amount, "exchange rate overflow");
-        }
-        let product = fee_juice_amount * rate_num;
-
-        // ceil(product / rate_den) = (product + rate_den - 1) / rate_den
-        let addend = rate_den - 1;
-        assert(product <= max_u128 - addend, "exchange rate overflow");
-        (product + addend) / rate_den
     }
 
     /// Maximum possible fee for this tx excluding teardown gas.
