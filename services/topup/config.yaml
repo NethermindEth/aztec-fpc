@@ -7,6 +7,10 @@ fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac
 # Aztec node URL (for reading L2 Fee Juice balance)
 aztec_node_url: "http://localhost:8080"
 
+# Optional L2 FeeJuice contract override. If omitted, service reads
+# nodeInfo.protocolContractAddresses.feeJuice from the connected node.
+# fee_juice_address: "0x0000000000000000000000000000000000000000000000000000000000000005"
+
 # ─── L1 configuration ─────────────────────────────────────────────────────────
 l1_rpc_url: "http://localhost:8545"
 
