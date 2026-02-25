@@ -5,6 +5,8 @@ import { z } from "zod";
 const ConfigSchema = z.object({
   fpc_address: z.string(),
   aztec_node_url: z.string().url(),
+  /** Optional override for the L2 FeeJuice protocol contract address. */
+  fee_juice_address: z.string().optional(),
   l1_rpc_url: z.string().url(),
   fee_juice_portal_address: z.string(),
   /** TODO: replace with KMS/HSM lookup in production. */

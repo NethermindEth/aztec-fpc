@@ -14,8 +14,8 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import type { Hex } from "viem";
 import { loadConfig } from "./config.js";
-import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { bridgeFeeJuice } from "./bridge.js";
+import { createFeeJuiceBalanceReader } from "./monitor.js";
 
 const configPath =
   process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
@@ -26,12 +26,16 @@ async function main() {
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const threshold = BigInt(config.threshold);
   const topUpAmount = BigInt(config.top_up_amount);
+  const balanceReader = await createFeeJuiceBalanceReader(config, pxe);
 
   console.log(`Top-up service started`);
   console.log(`  FPC address:   ${config.fpc_address}`);
   console.log(`  Threshold:     ${threshold} wei`);
   console.log(`  Top-up amount: ${topUpAmount} wei`);
   console.log(`  Check interval: ${config.check_interval_ms}ms`);
+  console.log(
+    `  Fee Juice contract: ${balanceReader.feeJuiceAddress.toString()} (${balanceReader.addressSource})`,
+  );
 
   // Track whether a bridge is in-flight to avoid stacking multiple concurrent bridges
   let bridgeInFlight = false;
@@ -44,7 +48,7 @@ async function main() {
 
     let balance: bigint;
     try {
-      balance = await getFeeJuiceBalance(fpcAddress, pxe);
+      balance = await balanceReader.getBalance(fpcAddress);
     } catch (err) {
       console.error("Failed to read Fee Juice balance:", err);
       return;
