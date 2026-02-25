@@ -31,6 +31,12 @@ aztec-fpc/
 ### Prerequisites
 
 - Node.js ≥ 18
+- Aztec CLI
+
+```bash
+VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.1)
+```
+
 - A running Aztec node (PXE at `http://localhost:8080`)
 - L1 Ethereum RPC endpoint
 
@@ -47,7 +53,31 @@ nargo fmt
 aztec test
 ```
 
-### 3. Deploy the contract
+### 3. Run local-devnet smoke test (end-to-end)
+
+This runs a full payment flow outside TXE tests:
+
+1. compile artifacts,
+2. deploy `Token` + `FPC`,
+3. mint user private balance,
+4. execute `fee_entrypoint` with quote + transfer authwits,
+5. assert operator private balance increased by the expected charge.
+
+```bash
+bash scripts/contract/fee-entrypoint-devnet-smoke.sh
+```
+
+Optional overrides:
+
+- `AZTEC_NODE_URL` (default `http://localhost:8080`)
+- `FPC_SMOKE_NODE_TIMEOUT_MS` (default `30000`)
+- `FPC_SMOKE_RATE_NUM`, `FPC_SMOKE_RATE_DEN` (defaults: `0` / `1` for deterministic smoke)
+- `FPC_SMOKE_DA_GAS_LIMIT`, `FPC_SMOKE_L2_GAS_LIMIT`
+- `FPC_SMOKE_FEE_PER_DA_GAS`, `FPC_SMOKE_FEE_PER_L2_GAS` (default: current node min fees)
+- `FPC_SMOKE_FEE_JUICE_TOPUP_WEI` (default: conservative auto-top-up from configured gas settings)
+- `FPC_SMOKE_QUOTE_TTL_SECONDS`
+
+### 4. Deploy the contract
 
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
@@ -59,7 +89,7 @@ aztec deploy \
 
 Record the deployed address.
 
-### 4. Configure and start the attestation service
+### 5. Configure and start the attestation service
 
 ```bash
 cd services/attestation
@@ -68,7 +98,7 @@ cp config.example.yaml config.yaml
 npm install && npm run build && npm start
 ```
 
-### 5. Configure and start the top-up service
+### 6. Configure and start the top-up service
 
 ```bash
 cd services/topup
@@ -77,7 +107,7 @@ cp config.example.yaml config.yaml
 npm install && npm run build && npm start
 ```
 
-### 6. Verify
+### 7. Verify
 
 ```bash
 curl http://localhost:3000/health
