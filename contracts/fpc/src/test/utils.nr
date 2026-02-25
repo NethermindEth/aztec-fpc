@@ -15,11 +15,12 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
     let user = env.create_contract_account();
     let operator = env.create_contract_account();
 
-    let token_initializer = Token::interface().constructor(
-        operator,
+    let token_initializer = Token::interface().constructor_with_minter(
         "TestToken0000000000000000000000",
         "TT00000000000000000000000000000",
         18,
+        operator,
+        AztecAddress::zero(),
     );
     let token_address =
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
