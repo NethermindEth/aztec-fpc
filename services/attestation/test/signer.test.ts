@@ -6,9 +6,9 @@ import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 import {
   computeQuoteInnerHash,
   createQuoteAuthwitSigner,
-  signQuote,
   type MessageHashAuthwitSigner,
   type QuoteParams,
+  signQuote,
 } from "../src/signer.js";
 
 const FPC = AztecAddress.fromString(

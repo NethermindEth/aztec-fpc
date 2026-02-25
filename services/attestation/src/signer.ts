@@ -18,12 +18,12 @@
  */
 
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
+import { computeAuthWitMessageHash } from "@aztec/aztec.js/authorization";
 import { Fr } from "@aztec/aztec.js/fields";
 import {
-  computeInnerAuthWitHash,
   type AuthWitness,
+  computeInnerAuthWitHash,
 } from "@aztec/stdlib/auth-witness";
-import { computeAuthWitMessageHash } from "@aztec/aztec.js/authorization";
 
 /** Matches ChainInfo from @aztec/entrypoints/interfaces */
 export interface ChainInfo {

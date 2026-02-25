@@ -10,17 +10,17 @@
  *   node dist/index.js [--config path/to/config.yaml]
  */
 
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { Fr } from "@aztec/aztec.js/fields";
 import {
   getSchnorrAccountContractAddress,
   SchnorrAccountContract,
 } from "@aztec/accounts/schnorr";
+import { Fr } from "@aztec/aztec.js/fields";
+import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { CompleteAddress } from "@aztec/stdlib/contract";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
-import { createQuoteAuthwitSigner } from "./signer.js";
 import { loadConfig } from "./config.js";
 import { buildServer } from "./server.js";
+import { createQuoteAuthwitSigner } from "./signer.js";
 
 const configPath =
   process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";

@@ -3,8 +3,8 @@ import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Config } from "../src/config.js";
 import { buildServer } from "../src/server.js";
-import { computeQuoteInnerHash } from "../src/signer.js";
 import type { QuoteAuthwitSigner } from "../src/signer.js";
+import { computeQuoteInnerHash } from "../src/signer.js";
 
 const VALID_USER =
   "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";

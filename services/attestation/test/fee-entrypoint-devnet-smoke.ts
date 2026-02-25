@@ -2,17 +2,17 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
+import { Contract } from "@aztec/aztec.js/contracts";
+import { Fr } from "@aztec/aztec.js/fields";
+import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import {
   FeeJuiceContract,
   ProtocolContractAddress,
 } from "@aztec/aztec.js/protocol";
-import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
-import { Contract } from "@aztec/aztec.js/contracts";
-import { Fr } from "@aztec/aztec.js/fields";
-import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import {
   loadContractArtifact,
@@ -26,9 +26,9 @@ import {
   createPublicClient,
   createWalletClient,
   decodeEventLog,
+  type Hex,
   http,
   parseAbi,
-  type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 

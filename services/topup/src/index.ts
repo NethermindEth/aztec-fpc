@@ -12,9 +12,9 @@
 
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { loadConfig } from "./config.js";
 import { bridgeFeeJuice } from "./bridge.js";
 import { createTopupChecker } from "./checker.js";
+import { loadConfig } from "./config.js";
 import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
 import { createFeeJuiceBalanceReader } from "./monitor.js";
 
