@@ -2,10 +2,17 @@ import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { z } from "zod";
 
+export const MAX_QUOTE_VALIDITY_SECONDS = 3600;
+
 const ConfigSchema = z.object({
   fpc_address: z.string(),
   aztec_node_url: z.string().url(),
-  quote_validity_seconds: z.number().int().positive().default(300),
+  quote_validity_seconds: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_QUOTE_VALIDITY_SECONDS)
+    .default(300),
   port: z.number().int().positive().default(3000),
   /** The single token contract address this FPC accepts. Must match accepted_asset in the deployed contract. */
   accepted_asset_address: z.string(),
