@@ -1,0 +1,40 @@
+services:
+  attestation:
+    profiles:
+      - fpc-services
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: attestation
+    image: aztec-fpc-attestation:local
+    container_name: aztec-fpc-attestation
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./services/attestation/config.yaml:/app/services/attestation/config.yaml:ro
+
+  topup:
+    profiles:
+      - fpc-services
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: topup
+    image: aztec-fpc-topup:local
+    container_name: aztec-fpc-topup
+    restart: unless-stopped
+    volumes:
+      - ./services/topup/config.yaml:/app/services/topup/config.yaml:ro
+
+  cli:
+    build:
+      context: .
+      dockerfile: Dockerfile.aztec-cli
+    profiles:
+      - cli
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace

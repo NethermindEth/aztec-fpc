@@ -34,6 +34,56 @@ aztec-fpc/
 - A running Aztec node (PXE at `http://localhost:8080`)
 - L1 Ethereum RPC endpoint
 
+### Container Environment (Docker)
+
+If you prefer not to install local toolchains, you can run everything through Docker.
+
+1) Create service configs:
+
+```bash
+cp services/attestation/config.example.yaml services/attestation/config.yaml
+cp services/topup/config.example.yaml services/topup/config.yaml
+```
+
+2) Build and use the CLI container (`Dockerfile.aztec-cli`):
+
+```bash
+# Build CLI image
+docker compose --profile cli build cli
+
+# Open CLI help
+docker compose --profile cli run --rm cli --help
+
+# Compile / test contracts from repo root
+docker compose --profile cli run --rm cli compile
+docker compose --profile cli run --rm cli test
+
+# Deploy (replace args with real addresses)
+docker compose --profile cli run --rm cli deploy \
+  --artifact target/fpc-FPC.json \
+  --args <operator_address> <accepted_asset_address>
+```
+
+3) Build and start both services:
+
+```bash
+docker compose --profile fpc-services up --build -d
+```
+
+4) Verify attestation endpoints:
+
+```bash
+curl http://localhost:3000/health
+curl http://localhost:3000/asset
+curl "http://localhost:3000/quote?user=<your_aztec_address>"
+```
+
+5) Stop services:
+
+```bash
+docker compose --profile fpc-services down
+```
+
 ### 1. Compile the contract
 
 ```bash

@@ -1,0 +1,27 @@
+FROM node:24-bookworm-slim
+
+SHELL ["/bin/bash", "-lc"]
+ARG AZTEC_VERSION=4.0.0-devnet.2-patch.1
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      bash \
+      ca-certificates \
+      curl \
+      g++ \
+      git \
+      jq \
+      make \
+      python3 \
+      xz-utils && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Aztec CLI (user-requested installer command).
+RUN VERSION=${AZTEC_VERSION} bash -i <(curl -sL https://install.aztec.network/${AZTEC_VERSION})
+
+ENV PATH="/root/.aztec/current/bin:/root/.aztec/current/node_modules/.bin:/root/.aztec/current/node_modules/.bin/bb:/root/.aztec/bin:/root/.local/bin:${PATH}:/root/.nargo/bin"
+
+WORKDIR /workspace
+
+ENTRYPOINT ["aztec"]
+CMD ["--help"]
