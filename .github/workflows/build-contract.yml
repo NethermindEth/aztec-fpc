@@ -1,0 +1,36 @@
+name: Build contract
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Aztec version
+        id: aztec-version
+        run: echo "version=$(cat .aztecrc | tr -d '\n')" >> $GITHUB_OUTPUT
+
+      - name: Install Aztec
+        env:
+          VERSION: ${{ steps.aztec-version.outputs.version }}
+        run: |
+          bash -i <(curl -sL https://install.aztec.network/$VERSION)
+
+      - name: Add Aztec to PATH
+        run: |
+          echo "$HOME/.aztec/current/bin" >> $GITHUB_PATH
+          echo "$HOME/.aztec/current/node_modules/.bin" >> $GITHUB_PATH
+          echo "$HOME/.aztec/bin" >> $GITHUB_PATH
+
+      - name: Format check
+        run: nargo fmt --check
+
+      - name: Build
+        run: aztec compile
+
+      - name: Test
+        run: aztec test
