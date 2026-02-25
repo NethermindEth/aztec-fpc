@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { PXE } from "@aztec/pxe/server";
 import type { QuoteAuthwitSigner } from "./signer.js";
 import type { Config } from "./config.js";
 import { computeFinalRate } from "./config.js";

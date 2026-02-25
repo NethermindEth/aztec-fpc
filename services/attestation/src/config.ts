@@ -24,6 +24,10 @@ const ConfigSchema = z.object({
   fee_bips: z.number().int().min(0).max(10000),
   /** TODO: replace with KMS/HSM lookup in production — never store raw keys on disk. */
   operator_secret_key: z.string(),
+  /** Optional directory for local PXE persistent state (LMDB).
+   *  When set, the service spins up a local PXE so it can call
+   *  registerSender() and discover private fee-payment notes. */
+  pxe_data_directory: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
