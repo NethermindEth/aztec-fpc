@@ -1,2 +1,2 @@
 [workspace]
-members = ["contracts/fpc"]
+members = ["contracts/fpc", "contracts/token_contract"]
