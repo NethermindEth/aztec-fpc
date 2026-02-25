@@ -21,6 +21,8 @@ aztec-fpc/
 │   ├── attestation/            ← Quote-signing REST service (TypeScript)
 │   │   └── test/               ← Local-devnet smoke test flow
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
+├── vendor/
+│   └── aztec-standards/        ← Git submodule (token contract dependency)
 └── docs/
     └── spec.md                 ← Full protocol specification
 ```
@@ -38,13 +40,49 @@ aztec-fpc/
 VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.1)
 ```
 
-### 1. Compile the contract
+### 1. Clone the repository with submodules (required)
+
+The `fpc` tests deploy the token contract from `vendor/aztec-standards`. If submodules are not initialized, tests will fail.
+
+Fresh clone:
 
 ```bash
-aztec compile
+git clone --recurse-submodules https://github.com/NethermindEth/aztec-fpc.git
+cd aztec-fpc
 ```
 
-### 2. Format and run tests locally
+If you already cloned without submodules:
+
+```bash
+git submodule sync --recursive
+git submodule update --init --recursive
+```
+
+Verify submodule is present:
+
+```bash
+git submodule status --recursive
+```
+
+You should see `vendor/aztec-standards` in the output.
+
+### 2. Install dependencies
+
+```bash
+bun install
+```
+
+### 3. Compile contracts (workspace)
+
+Compile the full workspace so both artifacts exist:
+- `target/fpc-FPC.json`
+- `target/token_contract-Token.json`
+
+```bash
+aztec compile --workspace --force
+```
+
+### 4. Format and run tests locally
 
 ```bash
 nargo fmt
@@ -60,7 +98,7 @@ bun run typecheck
 bun run ci
 ```
 
-### 3. Run local-devnet smoke test (end-to-end)
+### 5. Run local-devnet smoke test (end-to-end)
 
 This runs a full payment flow outside TXE tests:
 
@@ -97,7 +135,7 @@ Optional overrides:
 - `FPC_SMOKE_QUOTE_TTL_SECONDS`
 - `FPC_SMOKE_RESET_LOCAL_STATE` (default `1`; set `0` to reuse existing `wallet_data_*`/`pxe_data_*`)
 
-### 4. Deploy the contract
+### 6. Deploy the contract
 
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
@@ -109,7 +147,7 @@ aztec deploy \
 
 Record the deployed address.
 
-### 5. Configure and start the attestation service
+### 7. Configure and start the attestation service
 
 ```bash
 cd services/attestation
@@ -119,7 +157,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 6. Configure and start the top-up service
+### 8. Configure and start the top-up service
 
 ```bash
 cd services/topup
@@ -129,12 +167,27 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 7. Verify
+### 9. Verify
 
 ```bash
 curl http://localhost:3000/health
 curl http://localhost:3000/asset
 curl "http://localhost:3000/quote?user=<your_aztec_address>"
+```
+
+### Troubleshooting
+
+If you see errors like:
+- `ENOENT: ... target/token_contract-Token.json`
+- `No constructor found with name constructor_with_minter`
+
+run:
+
+```bash
+git submodule sync --recursive
+git submodule update --init --recursive
+aztec compile --workspace --force
+aztec test --package fpc
 ```
 
 ---
