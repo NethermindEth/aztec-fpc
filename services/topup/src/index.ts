@@ -12,7 +12,6 @@
 
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import type { Hex } from "viem";
 import { loadConfig } from "./config.js";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { bridgeFeeJuice } from "./bridge.js";
@@ -62,17 +61,16 @@ async function main() {
     bridgeInFlight = true;
 
     try {
-      const result = await bridgeFeeJuice(
+      const claim = await bridgeFeeJuice(
+        pxe,
         config.l1_rpc_url,
-        config.l1_operator_private_key as Hex,
-        config.fee_juice_portal_address as Hex,
-        config.fpc_address,
+        config.l1_operator_private_key,
+        fpcAddress,
         topUpAmount,
       );
 
-      console.log(`Bridge submitted. L1 tx: ${result.l1TxHash}`);
       console.log(
-        `Bridged ${result.amount} wei. Waiting for L2 confirmation...`,
+        `Bridge complete. claimAmount=${claim.claimAmount}, messageHash=${claim.messageHash}, messageLeafIndex=${claim.messageLeafIndex}`,
       );
 
       // Wait for the L2 message to be processed. L1→L2 message processing
