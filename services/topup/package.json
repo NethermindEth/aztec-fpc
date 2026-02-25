@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@aztec/aztec.js": "4.0.0-devnet.2-patch.1",
+    "@aztec/ethereum": "4.0.0-devnet.2-patch.1",
     "@aztec/foundation": "4.0.0-devnet.2-patch.1",
     "@aztec/stdlib": "4.0.0-devnet.2-patch.1",
     "viem": "^2.18.0",

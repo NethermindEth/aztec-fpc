@@ -6,7 +6,6 @@ const ConfigSchema = z.object({
   fpc_address: z.string(),
   aztec_node_url: z.string().url(),
   l1_rpc_url: z.string().url(),
-  fee_juice_portal_address: z.string(),
   /** TODO: replace with KMS/HSM lookup in production. */
   l1_operator_private_key: z.string(),
   /** Bridge when FPC balance drops below this (bigint string, wei units). */
