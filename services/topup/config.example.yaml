@@ -20,7 +20,8 @@ l1_rpc_url: "http://localhost:8545"
 fee_juice_portal_address: "0x6770742ecff10f57ac1f2e33ef54dca228ff9411"
 
 # TODO: In production, inject the private key from a secrets manager or HSM.
-#       Never store plaintext keys in config files committed to version control.
+#       Prefer env var L1_OPERATOR_PRIVATE_KEY; avoid plaintext keys on disk.
+# Optional when L1_OPERATOR_PRIVATE_KEY is set.
 l1_operator_private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
 # ─── Top-up thresholds ────────────────────────────────────────────────────────
