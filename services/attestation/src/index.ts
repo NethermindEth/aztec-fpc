@@ -16,8 +16,9 @@ import {
   getSchnorrAccountContractAddress,
   SchnorrAccountContract,
 } from "@aztec/accounts/schnorr";
+import { CompleteAddress } from "@aztec/stdlib/contract";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
-import type { CompleteAddress } from "@aztec/stdlib/contract";
+import { createQuoteAuthwitSigner } from "./signer.js";
 import { loadConfig } from "./config.js";
 import { buildServer } from "./server.js";
 
@@ -41,9 +42,11 @@ async function main() {
     Fr.ZERO,
   );
   const accountContract = new SchnorrAccountContract(signingKey);
-  // getAuthWitnessProvider ignores the address — it only needs the signing key
+  // This API currently requires a CompleteAddress, but Schnorr provider creation
+  // only depends on the signing key.
+  const operatorCompleteAddress = await CompleteAddress.random();
   const authWitnessProvider = accountContract.getAuthWitnessProvider(
-    operatorAddress as unknown as CompleteAddress,
+    operatorCompleteAddress,
   );
 
   // ── Fetch chain info for authwit signing ───────────────────────────────────────
@@ -52,6 +55,7 @@ async function main() {
     node.getVersion(),
   ]);
   const chainInfo = { chainId: new Fr(chainId), version: new Fr(version) };
+  const quoteSigner = createQuoteAuthwitSigner(authWitnessProvider, chainInfo);
 
   console.log(`Operator address:  ${operatorAddress}`);
   console.log(`FPC address:       ${config.fpc_address}`);
@@ -60,7 +64,7 @@ async function main() {
   );
 
   // ── Start HTTP server ────────────────────────────────────────────────────────
-  const app = buildServer(config, authWitnessProvider, chainInfo);
+  const app = buildServer(config, quoteSigner);
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
   console.log(`Attestation service listening on port ${config.port}`);
