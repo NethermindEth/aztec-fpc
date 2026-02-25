@@ -18,7 +18,7 @@ use ::aztec::macros::aztec;
 /// 3. User creates two authwits:
 ///    a. Quote authwit  -- returned by the attestation service
 ///    b. Token transfer authwit -- authorises FPC to call
-///       `transfer_in_private(user -> operator, charge, nonce)`
+///       `transfer_private_to_private(user -> operator, charge, nonce)`
 /// 4. User submits their tx with `fee_entrypoint` as the fee payment:
 ///    - Quote authwit is verified against `operator`
 ///    - Charge is computed from gas settings
@@ -109,12 +109,9 @@ pub contract FPC {
         );
 
         // Transfer user private -> operator private. Nothing is visible on-chain.
-        self.call(Token::at(accepted_asset).transfer_in_private(
-            sender,
-            operator,
-            charge,
-            authwit_nonce,
-        ));
+        Token::at(accepted_asset)
+            .transfer_private_to_private(sender, operator, charge, authwit_nonce)
+            .call(self.context);
 
         self.context.set_as_fee_payer();
         if !self.context.in_revertible_phase() {

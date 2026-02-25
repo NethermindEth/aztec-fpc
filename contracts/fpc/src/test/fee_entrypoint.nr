@@ -29,7 +29,8 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
         user,
     );
 
-    let transfer_call = token.transfer_in_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call =
+        token.transfer_private_to_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE);
     add_private_authwit_from_call(env, user, fpc_address, transfer_call);
 
     let user_balance_before = utils::private_balance(env, token_address, user);
@@ -71,7 +72,8 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
         user,
     );
 
-    let transfer_call = token.transfer_in_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call =
+        token.transfer_private_to_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE);
     add_private_authwit_from_call(env, user, fpc_address, transfer_call);
 
     env.call_private(
@@ -143,7 +145,8 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     // Ensure transfer authwit and balance are valid for `other_user` so this test
     // fails specifically on quote binding (user mismatch), not transfer authwit.
     env.call_private(operator, token.mint_to_private(other_user, charge + (100 as u128)));
-    let transfer_call = token.transfer_in_private(other_user, operator, charge, authwit_nonce);
+    let transfer_call =
+        token.transfer_private_to_private(other_user, operator, charge, authwit_nonce);
     add_private_authwit_from_call(env, other_user, fpc_address, transfer_call);
 
     utils::add_quote_authwit(
