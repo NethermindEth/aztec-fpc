@@ -86,6 +86,11 @@ type QuoteResponse = {
   authwit: string;
 };
 
+type AssetResponse = {
+  name: string;
+  address: string;
+};
+
 function readEnvNumber(name: string, fallback: number): number {
   const value = process.env[name];
   if (!value) return fallback;
@@ -321,6 +326,16 @@ async function waitForPositiveFeeJuiceBalance(
   throw new Error(`Timed out waiting for Fee Juice balance on ${fpcAddress}`);
 }
 
+async function getCurrentChainUnixSeconds(
+  node: ReturnType<typeof createAztecNodeClient>,
+): Promise<bigint> {
+  const latest = await node.getBlock("latest");
+  if (latest) {
+    return latest.timestamp;
+  }
+  return BigInt(Math.floor(Date.now() / 1000));
+}
+
 async function advanceL2Blocks(
   token: Contract,
   operator: AztecAddress,
@@ -348,6 +363,7 @@ async function topUpFpcFeeJuiceManually(
   l1RpcUrl: string,
   l1PrivateKey: Hex,
   timeoutMs: number,
+  pollMs: number,
 ): Promise<bigint> {
   const nodeInfo = await node.getNodeInfo();
   const l1Addresses = nodeInfo.l1ContractAddresses as Record<string, unknown>;
@@ -452,7 +468,7 @@ async function topUpFpcFeeJuiceManually(
     node,
     AztecAddress.fromString(fpcAddress),
     timeoutMs,
-    2_000,
+    pollMs,
   );
 }
 
@@ -490,6 +506,41 @@ async function fetchQuote(
   }
 
   throw new Error(`Timed out requesting quote. Last error: ${lastError}`);
+}
+
+async function fetchAsset(
+  assetUrl: string,
+  timeoutMs: number,
+): Promise<AssetResponse> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: string | undefined;
+
+  while (Date.now() <= deadline) {
+    try {
+      const response = await fetch(assetUrl);
+      const bodyText = await response.text();
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}: ${bodyText}`;
+      } else {
+        const parsed = JSON.parse(bodyText) as AssetResponse;
+        if (
+          typeof parsed.name === "string" &&
+          typeof parsed.address === "string"
+        ) {
+          return parsed;
+        }
+        lastError = `Invalid asset payload: ${bodyText}`;
+      }
+    } catch (error) {
+      lastError = (error as Error).message;
+    }
+
+    await sleep(500);
+  }
+
+  throw new Error(
+    `Timed out requesting asset metadata. Last error: ${lastError}`,
+  );
 }
 
 function assertPrivateKeyHex(value: string, fieldName: string): void {
@@ -655,6 +706,23 @@ async function main() {
     const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
     await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
     console.log("[services-smoke] PASS: attestation service health endpoint");
+    const asset = await fetchAsset(
+      `${attestationBaseUrl}/asset`,
+      config.httpTimeoutMs,
+    );
+    if (asset.name !== "SmokeToken") {
+      throw new Error(
+        `Asset name mismatch. expected=SmokeToken got=${asset.name}`,
+      );
+    }
+    if (
+      asset.address.toLowerCase() !== token.address.toString().toLowerCase()
+    ) {
+      throw new Error(
+        `Asset address mismatch. expected=${token.address.toString()} got=${asset.address}`,
+      );
+    }
+    console.log("[services-smoke] PASS: asset endpoint matches deployed token");
 
     const topup = startManagedProcess(
       "topup",
@@ -708,16 +776,24 @@ async function main() {
         config.l1RpcUrl,
         l1PrivateKey as Hex,
         config.topupWaitTimeoutMs,
+        config.topupPollMs,
       );
     }
     console.log(
       `[services-smoke] fpc_fee_juice_after_topup=${bridgedFeeJuiceBalance}`,
     );
+    await waitForLog(
+      topup,
+      "Bridge confirmation outcome=confirmed",
+      config.topupWaitTimeoutMs,
+    );
 
+    const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
     const quote = await fetchQuote(
       `${attestationBaseUrl}/quote?user=${user.toString()}`,
       config.httpTimeoutMs,
     );
+    const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
     const quoteAuthwit = AuthWitness.fromString(quote.authwit);
     const rateNum = BigInt(quote.rate_num);
     const rateDen = BigInt(quote.rate_den);
@@ -725,6 +801,42 @@ async function main() {
 
     if (rateDen === 0n) {
       throw new Error("Attestation quote returned zero denominator");
+    }
+    if (
+      quote.accepted_asset.toLowerCase() !==
+      token.address.toString().toLowerCase()
+    ) {
+      throw new Error(
+        `Quote accepted_asset mismatch. expected=${token.address.toString()} got=${quote.accepted_asset}`,
+      );
+    }
+    const expectedRateNum =
+      BigInt(config.marketRateNum) * BigInt(10_000 + config.feeBips);
+    const expectedRateDen = BigInt(config.marketRateDen) * 10_000n;
+    if (rateNum !== expectedRateNum || rateDen !== expectedRateDen) {
+      throw new Error(
+        `Quote rate mismatch. expected_num=${expectedRateNum} expected_den=${expectedRateDen} got_num=${rateNum} got_den=${rateDen}`,
+      );
+    }
+    const chainNowMin =
+      chainNowBeforeQuote < chainNowAfterQuote
+        ? chainNowBeforeQuote
+        : chainNowAfterQuote;
+    const chainNowMax =
+      chainNowBeforeQuote > chainNowAfterQuote
+        ? chainNowBeforeQuote
+        : chainNowAfterQuote;
+    const minExpectedValidUntil =
+      chainNowMin + BigInt(config.quoteValiditySeconds);
+    const maxExpectedValidUntil =
+      chainNowMax + BigInt(config.quoteValiditySeconds) + 5n;
+    if (
+      validUntil < minExpectedValidUntil ||
+      validUntil > maxExpectedValidUntil
+    ) {
+      throw new Error(
+        `Quote validity window mismatch. chain_now_before=${chainNowBeforeQuote} chain_now_after=${chainNowAfterQuote} valid_until=${validUntil} expected_range=[${minExpectedValidUntil}, ${maxExpectedValidUntil}]`,
+      );
     }
 
     const expectedCharge = ceilDiv(maxGasCostNoTeardown * rateNum, rateDen);
