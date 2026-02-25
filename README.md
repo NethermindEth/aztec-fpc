@@ -38,9 +38,6 @@ aztec-fpc/
 VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.1)
 ```
 
-- A running Aztec node (PXE at `http://localhost:8080`)
-- L1 Ethereum RPC endpoint
-
 ### 1. Compile the contract
 
 ```bash
@@ -77,6 +74,10 @@ This runs a full payment flow outside TXE tests:
 aztec start --local-network
 ```
 
+Default local-network endpoints:
+- Aztec node / PXE RPC: `http://localhost:8080`
+- Anvil L1 RPC (spawned by `aztec start --local-network`): `http://127.0.0.1:8545`
+
 ```bash
 bash scripts/contract/fee-entrypoint-devnet-smoke.sh
 ```
@@ -87,6 +88,7 @@ Smoke implementation file:
 Optional overrides:
 
 - `AZTEC_NODE_URL` (default `http://localhost:8080`)
+- `FPC_SMOKE_L1_RPC_URL` (default `http://127.0.0.1:8545`)
 - `FPC_SMOKE_NODE_TIMEOUT_MS` (default `30000`)
 - `FPC_SMOKE_RATE_NUM`, `FPC_SMOKE_RATE_DEN` (defaults: `0` / `1` for deterministic smoke)
 - `FPC_SMOKE_DA_GAS_LIMIT`, `FPC_SMOKE_L2_GAS_LIMIT`

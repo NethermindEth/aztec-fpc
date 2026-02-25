@@ -32,8 +32,13 @@ export interface ChainInfo {
 }
 
 /** Minimal auth witness provider (signs a message hash) */
-export interface AuthWitnessProvider {
+export interface MessageHashAuthwitSigner {
   createAuthWit(messageHash: Fr): Promise<AuthWitness>;
+}
+
+/** Quote-specific adapter boundary used by the HTTP layer. */
+export interface QuoteAuthwitSigner {
+  createForQuote(consumer: AztecAddress, innerHash: Fr): Promise<string>;
 }
 
 // Must match QUOTE_DOMAIN_SEPARATOR in main.nr ("FPC" = 0x465043)
@@ -47,6 +52,26 @@ export interface QuoteParams {
   validUntil: bigint;
   /** The user's Aztec address. Always non-zero — all quotes are user-specific. */
   userAddress: AztecAddress;
+}
+
+/**
+ * Build a quote signer from an installed account/wallet API that can sign
+ * authwit message hashes.
+ */
+export function createQuoteAuthwitSigner(
+  messageHashSigner: MessageHashAuthwitSigner,
+  chainInfo: ChainInfo,
+): QuoteAuthwitSigner {
+  return {
+    async createForQuote(consumer: AztecAddress, innerHash: Fr) {
+      const messageHash = await computeAuthWitMessageHash(
+        { consumer, innerHash },
+        chainInfo,
+      );
+      const authwit = await messageHashSigner.createAuthWit(messageHash);
+      return authwit.toString();
+    },
+  };
 }
 
 /**
@@ -73,18 +98,9 @@ export function computeQuoteInnerHash(params: QuoteParams): Promise<Fr> {
  * deserialises it and adds it to their transaction's authWitnesses array.
  */
 export async function signQuote(
-  authWitnessProvider: AuthWitnessProvider,
-  chainInfo: ChainInfo,
+  quoteSigner: QuoteAuthwitSigner,
   params: QuoteParams,
 ): Promise<string> {
   const innerHash = await computeQuoteInnerHash(params);
-
-  const messageHash = await computeAuthWitMessageHash(
-    { consumer: params.fpcAddress, innerHash },
-    chainInfo,
-  );
-
-  const authwit = await authWitnessProvider.createAuthWit(messageHash);
-
-  return authwit.toString();
+  return quoteSigner.createForQuote(params.fpcAddress, innerHash);
 }
