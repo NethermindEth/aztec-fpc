@@ -1,4 +1,4 @@
-use dep::aztec::macros::aztec;
+use ::aztec::macros::aztec;
 
 /// Fee Payment Contract (FPC)
 ///
@@ -13,22 +13,22 @@ use dep::aztec::macros::aztec;
 /// 2. Attestation service returns a quote signed by `operator`, binding the rate
 ///    and the user's address.
 /// 3. User creates two authwits:
-///    a. Quote authwit  — returned by the attestation service
-///    b. Token transfer authwit — authorises FPC to call
-///       `transfer_in_private(user → operator, charge, nonce)`
+///    a. Quote authwit  -- returned by the attestation service
+///    b. Token transfer authwit -- authorises FPC to call
+///       `transfer_in_private(user -> operator, charge, nonce)`
 /// 4. User submits their tx with `fee_entrypoint` as the fee payment:
 ///    - Quote authwit is verified against `operator`
 ///    - Charge is computed from gas settings
-///    - Token transfers private: user → operator
+///    - Token transfers private: user -> operator
 ///    - FPC declares itself fee payer
 ///    - Setup completes; protocol deducts Fee Juice from FPC's balance
 ///
 /// ## Storage
 ///
-/// - operator      (PublicImmutable) — single key. Receives fee revenue as
+/// - operator      (PublicImmutable) -- single key. Receives fee revenue as
 ///                                     private notes. Signs all quotes.
 ///                                     Set once at construction.
-/// - accepted_asset (PublicImmutable) — the one token contract this FPC accepts.
+/// - accepted_asset (PublicImmutable) -- the one token contract this FPC accepts.
 ///                                     Enforced on every call.
 #[aztec]
 pub contract FPC {
@@ -44,7 +44,7 @@ pub contract FPC {
     };
     use token::Token;
 
-    // Domain separator for quote hashes — "FPC" as a field.
+    // Domain separator for quote hashes -- "FPC" as a field.
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
 
     // =========================================================================
@@ -73,7 +73,7 @@ pub contract FPC {
     }
 
     // =========================================================================
-    // Fee entrypoint — private source, private receipt (confidential)
+    // Fee entrypoint -- private source, private receipt (confidential)
     //
     // Transfers the fee charge from the user's private balance directly to the
     // operator's private balance. No tokens ever appear in this contract's
@@ -112,7 +112,7 @@ pub contract FPC {
             rate_den,
         );
 
-        // Transfer user private → operator private. Nothing is visible on-chain.
+        // Transfer user private -> operator private. Nothing is visible on-chain.
         self.call(Token::at(accepted_asset).transfer_in_private(
             sender,
             operator,
@@ -134,7 +134,7 @@ pub contract FPC {
     ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, rate_num, rate_den,
     ///              valid_until, user_address])
     ///
-    /// user_address is always msg_sender for this FPC — all quotes are
+    /// user_address is always msg_sender for this FPC -- all quotes are
     /// user-specific (confidential).
     #[contract_library_method]
     fn assert_valid_quote(
