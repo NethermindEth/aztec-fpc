@@ -114,7 +114,8 @@ Record the deployed address.
 ```bash
 cd services/attestation
 cp config.example.yaml config.yaml
-# Edit config.yaml — set fpc_address, operator_secret_key, accepted_asset_*, rates
+# Edit config.yaml — set fpc_address, accepted_asset_*, rates
+# Provide operator key via OPERATOR_SECRET_KEY (preferred) or config.operator_secret_key
 bun install && bun run build && bun run start
 ```
 
@@ -123,7 +124,8 @@ bun install && bun run build && bun run start
 ```bash
 cd services/topup
 cp config.example.yaml config.yaml
-# Edit config.yaml — set fpc_address, l1_chain_id, l1_operator_private_key, fee_juice_portal_address
+# Edit config.yaml — set fpc_address, l1_chain_id, fee_juice_portal_address
+# Provide L1 key via L1_OPERATOR_PRIVATE_KEY (preferred) or config.l1_operator_private_key
 bun install && bun run build && bun run start
 ```
 

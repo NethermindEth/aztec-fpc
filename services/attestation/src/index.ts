@@ -27,6 +27,18 @@ const configPath =
 
 async function main() {
   const config = loadConfig(configPath);
+  if (config.operator_secret_key_dual_source) {
+    console.warn(
+      "Both OPERATOR_SECRET_KEY and config.operator_secret_key are set; using OPERATOR_SECRET_KEY",
+    );
+  }
+  if (config.operator_secret_key_source === "env") {
+    console.log("Operator secret key source: env (OPERATOR_SECRET_KEY)");
+  } else {
+    console.warn(
+      "Operator secret key source: config file (operator_secret_key); prefer OPERATOR_SECRET_KEY in non-dev environments",
+    );
+  }
 
   // ── Connect to Aztec node ────────────────────────────────────────────────────
   const node = createAztecNodeClient(config.aztec_node_url);

@@ -22,6 +22,20 @@ const configPath =
 
 async function main() {
   const config = loadConfig(configPath);
+  if (config.l1_operator_private_key_dual_source) {
+    console.warn(
+      "Both L1_OPERATOR_PRIVATE_KEY and config.l1_operator_private_key are set; using L1_OPERATOR_PRIVATE_KEY",
+    );
+  }
+  if (config.l1_operator_private_key_source === "env") {
+    console.log(
+      "L1 operator private key source: env (L1_OPERATOR_PRIVATE_KEY)",
+    );
+  } else {
+    console.warn(
+      "L1 operator private key source: config file (l1_operator_private_key); prefer L1_OPERATOR_PRIVATE_KEY in non-dev environments",
+    );
+  }
   const pxe = createAztecNodeClient(config.aztec_node_url);
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const threshold = BigInt(config.threshold);

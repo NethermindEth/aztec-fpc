@@ -12,6 +12,10 @@ const PositiveBigIntString = z
   .regex(UINT_DECIMAL_PATTERN, "must be an unsigned integer string")
   .refine((value) => BigInt(value) > 0n, "must be greater than zero");
 
+const PrivateKeySchema = z
+  .string()
+  .regex(PRIVATE_KEY_PATTERN, "must be a 32-byte 0x-prefixed hex private key");
+
 const ConfigSchema = z
   .object({
     fpc_address: z
@@ -31,13 +35,8 @@ const ConfigSchema = z
     fee_juice_portal_address: z
       .string()
       .regex(ETH_ADDRESS_PATTERN, "must be a 20-byte 0x-prefixed hex address"),
-    /** TODO: replace with KMS/HSM lookup in production. */
-    l1_operator_private_key: z
-      .string()
-      .regex(
-        PRIVATE_KEY_PATTERN,
-        "must be a 32-byte 0x-prefixed hex private key",
-      ),
+    /** Optional when L1_OPERATOR_PRIVATE_KEY is provided via env. */
+    l1_operator_private_key: z.string().optional(),
     /** Bridge when FPC balance drops below this (bigint string, wei units). */
     threshold: PositiveBigIntString,
     /** Amount to bridge per top-up (bigint string, wei units). */
@@ -67,10 +66,36 @@ const ConfigSchema = z
     }
   });
 
-export type Config = z.infer<typeof ConfigSchema>;
+type ParsedConfig = z.infer<typeof ConfigSchema>;
+type SecretSource = "env" | "config";
+
+export type Config = Omit<ParsedConfig, "l1_operator_private_key"> & {
+  l1_operator_private_key: string;
+  l1_operator_private_key_source: SecretSource;
+  l1_operator_private_key_dual_source: boolean;
+};
 
 export function loadConfig(path: string): Config {
   const raw = readFileSync(path, "utf8");
   const parsed = parse(raw);
-  return ConfigSchema.parse(parsed);
+  const config = ConfigSchema.parse(parsed);
+
+  const envSecret = process.env.L1_OPERATOR_PRIVATE_KEY?.trim();
+  const fileSecret = config.l1_operator_private_key?.trim();
+  const selectedSecret = envSecret ?? fileSecret;
+
+  if (!selectedSecret) {
+    throw new Error(
+      "Missing L1 operator private key: set L1_OPERATOR_PRIVATE_KEY env var or l1_operator_private_key in config file",
+    );
+  }
+
+  PrivateKeySchema.parse(selectedSecret);
+
+  return {
+    ...config,
+    l1_operator_private_key: selectedSecret,
+    l1_operator_private_key_source: envSecret ? "env" : "config",
+    l1_operator_private_key_dual_source: Boolean(envSecret && fileSecret),
+  };
 }

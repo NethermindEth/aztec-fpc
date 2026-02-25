@@ -31,7 +31,7 @@ accepted_asset_address: "0x00000000000000000000000000000000000000000000000000000
 
 # ─── Exchange rate ────────────────────────────────────────────────────────────
 # market_rate_num / market_rate_den = base rate (accepted_asset per 1 FeeJuice)
-# Example: 1 FeeJuice = 0.001 USDC → market_rate_num=1, market_rate_den=1000
+# Example: 1 FeeJuice = 0.001 USDC -> market_rate_num=1, market_rate_den=1000
 #
 # fee_bips: operator margin in basis points (100 = 1%).
 # The user sees only the final combined rate in their quote.
