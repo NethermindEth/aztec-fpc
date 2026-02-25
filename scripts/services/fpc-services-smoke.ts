@@ -814,7 +814,7 @@ async function main() {
           paymentMethod: fpcPaymentMethod,
           gasSettings: {
             gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-            maxFeePerGas: { feePerDaGas, feePerL2Gas },
+            maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           },
         },
         wait: { timeout: 180 },
