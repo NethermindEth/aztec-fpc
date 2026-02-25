@@ -10,17 +10,19 @@
  *   node dist/index.js [--config path/to/config.yaml]
  */
 
-import { createAztecNodeClient } from '@aztec/aztec.js/node';
-import { Fr } from '@aztec/aztec.js/fields';
+import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { Fr } from "@aztec/aztec.js/fields";
 import {
   getSchnorrAccountContractAddress,
   SchnorrAccountContract,
-} from '@aztec/accounts/schnorr';
-import { deriveSigningKey } from '@aztec/stdlib/keys';
-import { loadConfig } from './config.js';
-import { buildServer } from './server.js';
+} from "@aztec/accounts/schnorr";
+import { deriveSigningKey } from "@aztec/stdlib/keys";
+import type { CompleteAddress } from "@aztec/stdlib/contract";
+import { loadConfig } from "./config.js";
+import { buildServer } from "./server.js";
 
-const configPath = process.argv.find((_, i, a) => a[i - 1] === '--config') ?? 'config.yaml';
+const configPath =
+  process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
 
 async function main() {
   const config = loadConfig(configPath);
@@ -34,10 +36,15 @@ async function main() {
   //       plaintext — use environment injection or a secrets manager.
   const secretKey = Fr.fromHexString(config.operator_secret_key);
   const signingKey = deriveSigningKey(secretKey);
-  const operatorAddress = await getSchnorrAccountContractAddress(secretKey, Fr.ZERO);
+  const operatorAddress = await getSchnorrAccountContractAddress(
+    secretKey,
+    Fr.ZERO,
+  );
   const accountContract = new SchnorrAccountContract(signingKey);
   // getAuthWitnessProvider ignores the address — it only needs the signing key
-  const authWitnessProvider = accountContract.getAuthWitnessProvider(undefined as any);
+  const authWitnessProvider = accountContract.getAuthWitnessProvider(
+    operatorAddress as unknown as CompleteAddress,
+  );
 
   // ── Fetch chain info for authwit signing ───────────────────────────────────────
   const [chainId, version] = await Promise.all([
@@ -48,16 +55,18 @@ async function main() {
 
   console.log(`Operator address:  ${operatorAddress}`);
   console.log(`FPC address:       ${config.fpc_address}`);
-  console.log(`Accepted asset:    ${config.accepted_asset_name} (${config.accepted_asset_address})`);
+  console.log(
+    `Accepted asset:    ${config.accepted_asset_name} (${config.accepted_asset_address})`,
+  );
 
   // ── Start HTTP server ────────────────────────────────────────────────────────
   const app = buildServer(config, authWitnessProvider, chainInfo);
 
-  await app.listen({ port: config.port, host: '0.0.0.0' });
+  await app.listen({ port: config.port, host: "0.0.0.0" });
   console.log(`Attestation service listening on port ${config.port}`);
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err);
+main().catch((err) => {
+  console.error("Fatal error:", err);
   process.exit(1);
 });

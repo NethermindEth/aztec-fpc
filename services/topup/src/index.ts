@@ -10,14 +10,15 @@
  *   node dist/index.js [--config path/to/config.yaml]
  */
 
-import { AztecAddress } from '@aztec/aztec.js/addresses';
-import { createAztecNodeClient } from '@aztec/aztec.js/node';
-import type { Hex } from 'viem';
-import { loadConfig } from './config.js';
-import { getFeeJuiceBalance } from '@aztec/aztec.js/utils';
-import { bridgeFeeJuice } from './bridge.js';
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import type { Hex } from "viem";
+import { loadConfig } from "./config.js";
+import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { bridgeFeeJuice } from "./bridge.js";
 
-const configPath = process.argv.find((_, i, a) => a[i - 1] === '--config') ?? 'config.yaml';
+const configPath =
+  process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
 
 async function main() {
   const config = loadConfig(configPath);
@@ -37,7 +38,7 @@ async function main() {
 
   async function checkAndTopUp() {
     if (bridgeInFlight) {
-      console.log('Bridge already in-flight, skipping check');
+      console.log("Bridge already in-flight, skipping check");
       return;
     }
 
@@ -45,15 +46,19 @@ async function main() {
     try {
       balance = await getFeeJuiceBalance(fpcAddress, pxe);
     } catch (err) {
-      console.error('Failed to read Fee Juice balance:', err);
+      console.error("Failed to read Fee Juice balance:", err);
       return;
     }
 
-    console.log(`FPC Fee Juice balance: ${balance} wei (threshold: ${threshold})`);
+    console.log(
+      `FPC Fee Juice balance: ${balance} wei (threshold: ${threshold})`,
+    );
 
     if (balance >= threshold) return;
 
-    console.log(`Balance below threshold — initiating bridge of ${topUpAmount} wei`);
+    console.log(
+      `Balance below threshold — initiating bridge of ${topUpAmount} wei`,
+    );
     bridgeInFlight = true;
 
     try {
@@ -66,7 +71,9 @@ async function main() {
       );
 
       console.log(`Bridge submitted. L1 tx: ${result.l1TxHash}`);
-      console.log(`Bridged ${result.amount} wei. Waiting for L2 confirmation...`);
+      console.log(
+        `Bridged ${result.amount} wei. Waiting for L2 confirmation...`,
+      );
 
       // Wait for the L2 message to be processed. L1→L2 message processing
       // happens within the next few L2 blocks after L1 confirmation.
@@ -74,9 +81,9 @@ async function main() {
       // TODO: replace with a proper L2 message confirmation check using
       //   pxe.getL1ToL2MembershipWitness or similar once the tx hash is known.
       await sleep(120_000); // 2 minutes
-      console.log('Bridge cool-down complete. Resuming balance checks.');
+      console.log("Bridge cool-down complete. Resuming balance checks.");
     } catch (err) {
-      console.error('Bridge failed:', err);
+      console.error("Bridge failed:", err);
     } finally {
       bridgeInFlight = false;
     }
@@ -88,10 +95,10 @@ async function main() {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err);
+main().catch((err) => {
+  console.error("Fatal error:", err);
   process.exit(1);
 });
