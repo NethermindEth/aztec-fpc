@@ -1,11 +1,16 @@
 import Fastify from "fastify";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { PXE } from "@aztec/pxe/server";
 import type { QuoteAuthwitSigner } from "./signer.js";
 import type { Config } from "./config.js";
 import { computeFinalRate } from "./config.js";
 import { signQuote } from "./signer.js";
 
-export function buildServer(config: Config, quoteSigner: QuoteAuthwitSigner) {
+export function buildServer(
+  config: Config,
+  quoteSigner: QuoteAuthwitSigner,
+  pxe?: PXE,
+) {
   const app = Fastify({ logger: true });
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const acceptedAsset = AztecAddress.fromString(config.accepted_asset_address);
@@ -45,6 +50,21 @@ export function buildServer(config: Config, quoteSigner: QuoteAuthwitSigner) {
       parsedUserAddress = AztecAddress.fromString(userAddress);
     } catch {
       return reply.code(400).send({ error: "Invalid user address" });
+    }
+
+    // Register the sender in the local PXE so it can discover private
+    // fee-payment notes sent by this user.  Idempotent — safe to call
+    // on every request.
+    if (pxe) {
+      try {
+        await pxe.registerSender(parsedUserAddress);
+        req.log.info({ sender: userAddress }, "Registered sender in PXE");
+      } catch (err) {
+        req.log.warn(
+          { sender: userAddress, err },
+          "Failed to register sender in PXE",
+        );
+      }
     }
 
     const { rate_num, rate_den } = computeFinalRate(config);
