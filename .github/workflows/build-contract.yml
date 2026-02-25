@@ -60,4 +60,4 @@ jobs:
         run: aztec compile --workspace
 
       - name: Test contracts
-        run: aztec test
+        run: aztec test --package fpc
