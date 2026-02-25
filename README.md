@@ -8,31 +8,18 @@ Full protocol specification: [docs/spec.md](docs/spec.md)
 
 ## Repository Layout
 
-```
-FPC-MVP/
+```text
+aztec-fpc/
 ├── contracts/
-│   └── multi_asset_fpc/
-│       ├── Nargo.toml          ← Noir package (path deps → aztec-packages)
+│   └── fpc/
+│       ├── Nargo.toml          ← Noir package (git-pinned Aztec deps)
 │       └── src/
-│           └── main.nr         ← The FPC contract
-│
+│           ├── main.nr         ← FPC contract
+│           ├── fee_math.nr     ← Fee math helpers
+│           └── test/           ← Contract integration/unit tests
 ├── services/
 │   ├── attestation/            ← Quote-signing REST service (TypeScript)
-│   │   ├── src/
-│   │   │   ├── index.ts        entry point
-│   │   │   ├── config.ts       config loading + rate computation
-│   │   │   ├── signer.ts       authwit quote signing
-│   │   │   └── server.ts       Fastify routes
-│   │   └── config.example.yaml
-│   │
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
-│       ├── src/
-│       │   ├── index.ts        entry point + polling loop
-│       │   ├── config.ts       config loading
-│       │   ├── monitor.ts      L2 Fee Juice balance reader
-│       │   └── bridge.ts       L1 → L2 bridge via FeeJuicePortal
-│       └── config.example.yaml
-│
 └── docs/
     └── spec.md                 ← Full protocol specification
 ```
@@ -43,12 +30,6 @@ FPC-MVP/
 
 ### Prerequisites
 
-- `aztec-packages` checked out as a sibling directory:
-  ```
-  parent/
-    aztec-packages/kind-moore/   ← the aztec-packages checkout
-    FPC-MVP/                     ← this repo
-  ```
 - Node.js ≥ 18
 - A running Aztec node (PXE at `http://localhost:8080`)
 - L1 Ethereum RPC endpoint
@@ -56,11 +37,17 @@ FPC-MVP/
 ### 1. Compile the contract
 
 ```bash
-cd contracts/multi_asset_fpc
-nargo compile
+aztec compile
 ```
 
-### 2. Deploy the contract
+### 2. Format and run tests locally
+
+```bash
+nargo fmt
+aztec test
+```
+
+### 3. Deploy the contract
 
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
@@ -72,7 +59,7 @@ aztec deploy \
 
 Record the deployed address.
 
-### 3. Configure and start the attestation service
+### 4. Configure and start the attestation service
 
 ```bash
 cd services/attestation
@@ -81,7 +68,7 @@ cp config.example.yaml config.yaml
 npm install && npm run build && npm start
 ```
 
-### 4. Configure and start the top-up service
+### 5. Configure and start the top-up service
 
 ```bash
 cd services/topup
@@ -90,7 +77,7 @@ cp config.example.yaml config.yaml
 npm install && npm run build && npm start
 ```
 
-### 5. Verify
+### 6. Verify
 
 ```bash
 curl http://localhost:3000/health
