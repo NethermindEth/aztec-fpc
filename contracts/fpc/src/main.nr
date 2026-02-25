@@ -109,12 +109,17 @@ pub contract FPC {
         );
 
         // Transfer user private -> operator private. Nothing is visible on-chain.
-        Token::at(accepted_asset).transfer_in_private(sender, operator, charge, authwit_nonce).call(
-            self.context,
-        );
+        self.call(Token::at(accepted_asset).transfer_in_private(
+            sender,
+            operator,
+            charge,
+            authwit_nonce,
+        ));
 
         self.context.set_as_fee_payer();
-        self.context.end_setup();
+        if !self.context.in_revertible_phase() {
+            self.context.end_setup();
+        }
     }
 
     // =========================================================================
