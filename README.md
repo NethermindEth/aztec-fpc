@@ -64,6 +64,10 @@ This runs a full payment flow outside TXE tests:
 5. assert operator private balance increased by the expected charge.
 
 ```bash
+aztec start --local-network
+```
+
+```bash
 bash scripts/contract/fee-entrypoint-devnet-smoke.sh
 ```
 
