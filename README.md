@@ -54,6 +54,15 @@ nargo fmt
 aztec test
 ```
 
+### TypeScript quality checks
+
+```bash
+bun run format
+bun run lint
+bun run typecheck
+bun run ci
+```
+
 ### 3. Run local-devnet smoke test (end-to-end)
 
 This runs a full payment flow outside TXE tests:
