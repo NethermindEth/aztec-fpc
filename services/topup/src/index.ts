@@ -14,7 +14,7 @@ import { AztecAddress } from '@aztec/aztec.js/addresses';
 import { createAztecNodeClient } from '@aztec/aztec.js/node';
 import type { Hex } from 'viem';
 import { loadConfig } from './config.js';
-import { getFeeJuiceBalance } from './monitor.js';
+import { getFeeJuiceBalance } from '@aztec/aztec.js/utils';
 import { bridgeFeeJuice } from './bridge.js';
 
 const configPath = process.argv.find((_, i, a) => a[i - 1] === '--config') ?? 'config.yaml';
@@ -43,7 +43,7 @@ async function main() {
 
     let balance: bigint;
     try {
-      balance = await getFeeJuiceBalance(pxe, fpcAddress);
+      balance = await getFeeJuiceBalance(fpcAddress, pxe);
     } catch (err) {
       console.error('Failed to read Fee Juice balance:', err);
       return;
