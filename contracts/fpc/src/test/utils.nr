@@ -21,11 +21,8 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         "TT00000000000000000000000000000",
         18,
     );
-    let token_address = env
-        .deploy(
-            "../../nargo/github.com/AztecProtocol/aztec-packages/v4.0.0-devnet.2-patch.1/noir-projects/noir-contracts@token_contract/Token",
-        )
-        .with_public_initializer(operator, token_initializer);
+    let token_address =
+        env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let fpc_initializer = FPC::interface().constructor(operator, token_address);
     let fpc_address = env.deploy("FPC").with_public_initializer(operator, fpc_initializer);
