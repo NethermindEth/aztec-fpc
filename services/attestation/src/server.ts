@@ -2,7 +2,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import Fastify from "fastify";
 import type { Config } from "./config.js";
 import { computeFinalRate } from "./config.js";
-import type { QuoteAuthwitSigner } from "./signer.js";
+import type { QuoteSchnorrSigner } from "./signer.js";
 import { signQuote } from "./signer.js";
 
 function badRequest(message: string) {
@@ -15,7 +15,7 @@ export interface QuoteClock {
 
 export function buildServer(
   config: Config,
-  quoteSigner: QuoteAuthwitSigner,
+  quoteSigner: QuoteSchnorrSigner,
   clock: QuoteClock = {},
 ) {
   const app = Fastify({ logger: true });
@@ -36,7 +36,6 @@ export function buildServer(
   app.get("/health", async () => ({ status: "ok" }));
 
   // ── GET /asset ───────────────────────────────────────────────────────────────
-  // Returns the single accepted asset name and address.
 
   app.get("/asset", async () => ({
     name: config.accepted_asset_name,
@@ -44,9 +43,6 @@ export function buildServer(
   }));
 
   // ── GET /quote?user=<address> ─────────────────────────────────────────────
-  // Returns a user-specific (confidential) quote for the given user address.
-  // The quote binds to `user` — the operator signs acknowledging it knows this
-  // user's address and will track private note receipts via their viewing key.
 
   app.get<{ Querystring: { user?: string } }>("/quote", async (req, reply) => {
     const userAddress = req.query.user?.trim();
@@ -66,7 +62,7 @@ export function buildServer(
       const { rate_num, rate_den } = computeFinalRate(config);
       const expiry = await validUntil();
 
-      const authwit = await signQuote(quoteSigner, {
+      const signature = await signQuote(quoteSigner, {
         fpcAddress,
         acceptedAsset,
         rateNum: rate_num,
@@ -91,7 +87,7 @@ export function buildServer(
         rate_num: rate_num.toString(),
         rate_den: rate_den.toString(),
         valid_until: expiry.toString(),
-        authwit,
+        signature,
       };
     } catch (error) {
       req.log.error(

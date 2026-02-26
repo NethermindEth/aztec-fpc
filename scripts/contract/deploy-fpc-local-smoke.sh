@@ -121,7 +121,7 @@ DEPLOY_OUTPUT="${FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT:-$TMP_DIR/deploy-fpc-local.json}
 AZTEC_NODE_URL="http://${NODE_HOST}:${NODE_PORT}"
 L1_RPC_URL="http://${L1_HOST}:${L1_PORT}"
 
-echo "[deploy-smoke] Running local deploy command"
+echo "[deploy-smoke] Running local deploy command (FPC + CreditFPC)"
 AZTEC_NODE_URL="$AZTEC_NODE_URL" \
 L1_RPC_URL="$L1_RPC_URL" \
 FPC_LOCAL_OUT="$DEPLOY_OUTPUT" \
@@ -132,7 +132,7 @@ if [[ ! -f "$DEPLOY_OUTPUT" ]]; then
   exit 1
 fi
 
-echo "[deploy-smoke] Running relay-aware first-use smoke checks"
+echo "[deploy-smoke] Running relay-aware first-use smoke checks (FPC + CreditFPC)"
 NODE_PATH="$REPO_ROOT/services/attestation/node_modules${NODE_PATH:+:$NODE_PATH}" \
 AZTEC_NODE_URL="$AZTEC_NODE_URL" \
 FPC_DEPLOY_SMOKE_L1_RPC_URL="$L1_RPC_URL" \

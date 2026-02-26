@@ -10,17 +10,14 @@
  *   node dist/index.js [--config path/to/config.yaml]
  */
 
-import {
-  getSchnorrAccountContractAddress,
-  SchnorrAccountContract,
-} from "@aztec/accounts/schnorr";
+import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { CompleteAddress } from "@aztec/stdlib/contract";
+import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { loadConfig } from "./config.js";
 import { buildServer } from "./server.js";
-import { createQuoteAuthwitSigner } from "./signer.js";
+import type { QuoteSchnorrSigner } from "./signer.js";
 
 const configPath =
   process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
@@ -56,23 +53,24 @@ async function main() {
     secretKey,
     Fr.ZERO,
   );
-  const accountContract = new SchnorrAccountContract(signingKey);
-  // This API currently requires a CompleteAddress, but Schnorr provider creation
-  // only depends on the signing key.
-  const operatorCompleteAddress = await CompleteAddress.random();
-  const authWitnessProvider = accountContract.getAuthWitnessProvider(
-    operatorCompleteAddress,
-  );
 
-  // ── Fetch chain info for authwit signing ───────────────────────────────────────
-  const [chainId, version] = await Promise.all([
-    node.getChainId(),
-    node.getVersion(),
-  ]);
-  const chainInfo = { chainId: new Fr(chainId), version: new Fr(version) };
-  const quoteSigner = createQuoteAuthwitSigner(authWitnessProvider, chainInfo);
+  // ── Build Schnorr signer ────────────────────────────────────────────────────
+  const schnorrSigner = new Schnorr();
+  const operatorPubKey = await schnorrSigner.computePublicKey(signingKey);
+
+  const quoteSigner: QuoteSchnorrSigner = {
+    async signQuoteHash(quoteHash: Fr): Promise<string> {
+      const sig = await schnorrSigner.constructSignature(
+        quoteHash.toBuffer(),
+        signingKey,
+      );
+      return `0x${Buffer.from(sig.toBuffer()).toString("hex")}`;
+    },
+  };
 
   console.log(`Operator address:  ${operatorAddress}`);
+  console.log(`Operator pubkey x: ${operatorPubKey.x.toString()}`);
+  console.log(`Operator pubkey y: ${operatorPubKey.y.toString()}`);
   console.log(`FPC address:       ${config.fpc_address}`);
   console.log(
     `Accepted asset:    ${config.accepted_asset_name} (${config.accepted_asset_address})`,

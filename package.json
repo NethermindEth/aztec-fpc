@@ -22,7 +22,7 @@
     "typecheck": "bun run --workspaces --if-present typecheck",
     "test:services": "bun run test:ts",
     "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test",
-    "test:contracts": "aztec compile --workspace --force && aztec test --package fpc",
+    "test:contracts": "aztec compile --workspace --force && aztec test --package fpc && aztec test --package credit_fpc",
     "ci": "bun run format && bun run biome:ci && bun run lint && bun run typecheck && bun run test:ts && bun run test:contracts",
     "attestation:build": "bun run --filter @aztec-fpc/attestation build",
     "attestation:dev": "bun run --filter @aztec-fpc/attestation dev",
@@ -35,6 +35,7 @@
     "docker:build:topup": "docker buildx bake topup",
     "deploy:fpc:local": "bash scripts/contract/deploy-fpc-local.sh",
     "smoke:fee-entrypoint:devnet": "bash scripts/contract/fee-entrypoint-devnet-smoke.sh",
+    "smoke:credit-fpc:devnet": "bash scripts/contract/credit-fpc-devnet-smoke.sh",
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-fpc-local-smoke.sh",
     "smoke:services": "bash scripts/services/fpc-services-smoke.sh",
     "test": "bun run test:contracts && bun run test:ts"

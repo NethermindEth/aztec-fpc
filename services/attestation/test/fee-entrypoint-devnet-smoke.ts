@@ -14,11 +14,13 @@ import {
   ProtocolContractAddress,
 } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import {
   loadContractArtifact,
   loadContractArtifactForPublic,
 } from "@aztec/stdlib/abi";
 import { computeSecretHash } from "@aztec/stdlib/hash";
+import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
@@ -369,6 +371,11 @@ async function main() {
   console.log(`[smoke] operator=${operator.toString()}`);
   console.log(`[smoke] user=${user.toString()}`);
 
+  // Derive operator signing key and public key for inline Schnorr verification.
+  const schnorr = new Schnorr();
+  const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
+  const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
+
   const token = await Contract.deploy(
     wallet,
     tokenArtifact,
@@ -379,6 +386,8 @@ async function main() {
 
   const fpc = await Contract.deploy(wallet, fpcArtifact, [
     operator,
+    operatorPubKey.x,
+    operatorPubKey.y,
     token.address,
   ]).send({ from: operator });
   console.log(`[smoke] fpc=${fpc.address.toString()}`);
@@ -424,7 +433,7 @@ async function main() {
     );
   }
   const validUntil = latestBlock.timestamp + config.quoteTtlSeconds;
-  const quoteInnerHash = await computeInnerAuthWitHash([
+  const quoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
     token.address.toField(),
@@ -433,11 +442,11 @@ async function main() {
     new Fr(validUntil),
     user.toField(),
   ]);
-
-  const quoteAuthwit = await wallet.createAuthWit(operator, {
-    consumer: fpc.address,
-    innerHash: quoteInnerHash,
-  });
+  const quoteSig = await schnorr.constructSignature(
+    quoteHash.toBuffer(),
+    operatorSigningKey,
+  );
+  const quoteSigBytes = Array.from(quoteSig.toBuffer());
 
   const transferAuthwitNonce = Fr.random();
   const transferCall = token.methods.transfer_private_to_private(
@@ -470,6 +479,7 @@ async function main() {
       config.rateNum,
       config.rateDen,
       validUntil,
+      quoteSigBytes,
     )
     .getFunctionCall();
   const fpcPaymentMethod = {
@@ -477,7 +487,7 @@ async function main() {
     getExecutionPayload: async () =>
       new ExecutionPayload(
         [feeEntrypointCall],
-        [quoteAuthwit, transferAuthwit],
+        [transferAuthwit],
         [],
         [],
         fpc.address,

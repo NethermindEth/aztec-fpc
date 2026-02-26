@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Compile contracts, deploy, and profile FPC.fee_entrypoint gate count.
 #
+# This is the default profiler for the standard FPC contract.
+# For CreditFPC profiling (pay_and_mint + pay_with_credit), use run_credit_fpc.sh.
+#
 # Run ./profiling/setup.sh once first, then re-run this after every contract change.
 #
 # Usage:
@@ -37,9 +40,9 @@ fi
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# ── Step 2: Deploy + profile ──────────────────────────────────────────────────
+# ── Step 2: Deploy + profile FPC.fee_entrypoint ───────────────────────────────
 echo ""
-echo "[profile] Running gate count profiler..."
+echo "[profile] Running FPC gate count profiler (fee_entrypoint)..."
 AZTEC_NODE_URL="$NODE_URL" node "$SCRIPT_DIR/profile-gates.mjs"
 
 echo ""

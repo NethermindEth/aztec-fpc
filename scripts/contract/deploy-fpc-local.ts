@@ -32,6 +32,7 @@ type DeployOutput = {
   operator: string;
   accepted_asset: string;
   fpc_address: string;
+  credit_fpc_address: string;
   reuse: boolean;
   node_contracts: {
     fee_juice_portal_address: string;
@@ -40,6 +41,7 @@ type DeployOutput = {
   artifacts: {
     token_contract_artifact: string;
     fpc_artifact: string;
+    credit_fpc_artifact: string;
   };
   deployer: {
     source: "aztec_wallet_test_account";
@@ -59,6 +61,10 @@ type DeployOutput = {
       source: "deployed" | "provided" | "reused";
     };
     fpc: {
+      address: string;
+      source: "deployed" | "reused";
+    };
+    credit_fpc: {
       address: string;
       source: "deployed" | "reused";
     };
@@ -130,6 +136,7 @@ type DeployDeps = {
 type ReuseDeploymentState = {
   acceptedAsset: string | null;
   fpcAddress: string | null;
+  creditFpcAddress: string | null;
   operator: string | null;
 };
 
@@ -142,6 +149,7 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
 const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   fpc: path.join(REPO_ROOT, "target", "fpc-FPC.json"),
+  creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
 } as const;
 
 function usage(): string {
@@ -162,7 +170,7 @@ function usage(): string {
     "  --out            required (or set FPC_LOCAL_OUT)",
     "",
     "Notes:",
-    "  - Deploys token (when --accepted-asset is not provided) and FPC.",
+    "  - Deploys token (when --accepted-asset is not provided), FPC, and CreditFPC.",
     "  - --reuse reuses addresses from --out when available.",
     "  - Deployer bootstrap uses `aztec-wallet import-test-accounts`.",
     "  - Optional env overrides: FPC_DEPLOYER_ACCOUNT_INDEX, FPC_DEPLOYER_MIN_FEE_JUICE_WEI, FPC_DEPLOYER_ESTIMATED_DA_GAS, FPC_DEPLOYER_ESTIMATED_L2_GAS, FPC_DEPLOYER_FEE_SAFETY_MULTIPLIER, FPC_DEPLOYER_FEE_BUFFER_WEI, FPC_DEPLOYER_FALLBACK_FEE_PER_DA_GAS, FPC_DEPLOYER_FALLBACK_FEE_PER_L2_GAS, FPC_RPC_RETRIES, FPC_RPC_RETRY_BACKOFF_MS.",
@@ -373,6 +381,7 @@ function sleep(ms: number): Promise<void> {
 function assertRequiredArtifactsExist(): {
   tokenArtifactPath: string;
   fpcArtifactPath: string;
+  creditFpcArtifactPath: string;
 } {
   const missing: string[] = [];
   if (!existsSync(REQUIRED_ARTIFACTS.token)) {
@@ -380,6 +389,9 @@ function assertRequiredArtifactsExist(): {
   }
   if (!existsSync(REQUIRED_ARTIFACTS.fpc)) {
     missing.push(REQUIRED_ARTIFACTS.fpc);
+  }
+  if (!existsSync(REQUIRED_ARTIFACTS.creditFpc)) {
+    missing.push(REQUIRED_ARTIFACTS.creditFpc);
   }
   if (missing.length > 0) {
     const formatted = missing.map((entry) => `  - ${entry}`).join("\n");
@@ -390,6 +402,7 @@ function assertRequiredArtifactsExist(): {
   return {
     tokenArtifactPath: REQUIRED_ARTIFACTS.token,
     fpcArtifactPath: REQUIRED_ARTIFACTS.fpc,
+    creditFpcArtifactPath: REQUIRED_ARTIFACTS.creditFpc,
   };
 }
 
@@ -707,11 +720,15 @@ function parseReuseDeploymentState(
     operator?: unknown;
     accepted_asset?: unknown;
     fpc_address?: unknown;
+    credit_fpc_address?: unknown;
     deploy?: {
       token?: {
         address?: unknown;
       };
       fpc?: {
+        address?: unknown;
+      };
+      credit_fpc?: {
         address?: unknown;
       };
     };
@@ -751,9 +768,31 @@ function parseReuseDeploymentState(
       `Reuse mode failed: output file ${absolute} has invalid fpc_address=${String(data.fpc_address)}.`,
     );
   }
+  const topLevelCreditFpcAddress = parseReusableAddress(
+    data.credit_fpc_address,
+  );
+  const nestedCreditFpcAddress = parseReusableAddress(
+    data.deploy?.credit_fpc?.address,
+  );
+  if (
+    topLevelCreditFpcAddress &&
+    nestedCreditFpcAddress &&
+    topLevelCreditFpcAddress.toLowerCase() !==
+      nestedCreditFpcAddress.toLowerCase()
+  ) {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} has conflicting CreditFPC addresses (credit_fpc_address=${topLevelCreditFpcAddress}, deploy.credit_fpc.address=${nestedCreditFpcAddress}).`,
+    );
+  }
+  if (data.credit_fpc_address !== undefined && !topLevelCreditFpcAddress) {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} has invalid credit_fpc_address=${String(data.credit_fpc_address)}.`,
+    );
+  }
 
   const acceptedAsset = topLevelAcceptedAsset ?? nestedAcceptedAsset;
   const fpcAddress = topLevelFpcAddress ?? nestedFpcAddress;
+  const creditFpcAddress = topLevelCreditFpcAddress ?? nestedCreditFpcAddress;
   const operator = parseReusableAddress(data.operator);
   if (data.operator !== undefined && !operator) {
     throw new CliError(
@@ -764,6 +803,7 @@ function parseReuseDeploymentState(
   return {
     acceptedAsset,
     fpcAddress,
+    creditFpcAddress,
     operator,
   };
 }
@@ -1150,10 +1190,11 @@ async function main(): Promise<void> {
     args.reuse &&
     reuseState &&
     !reuseState.acceptedAsset &&
-    !reuseState.fpcAddress
+    !reuseState.fpcAddress &&
+    !reuseState.creditFpcAddress
   ) {
     throw new CliError(
-      `Reuse mode failed: output file ${path.resolve(args.out)} does not contain reusable accepted_asset or fpc_address entries.`,
+      `Reuse mode failed: output file ${path.resolve(args.out)} does not contain reusable accepted_asset, fpc_address, or credit_fpc_address entries.`,
     );
   } else if (
     args.reuse &&
@@ -1176,7 +1217,7 @@ async function main(): Promise<void> {
 
   const artifacts = assertRequiredArtifactsExist();
   console.log(
-    `[deploy-fpc-local] artifact preflight passed. token=${artifacts.tokenArtifactPath} fpc=${artifacts.fpcArtifactPath}`,
+    `[deploy-fpc-local] artifact preflight passed. token=${artifacts.tokenArtifactPath} fpc=${artifacts.fpcArtifactPath} credit_fpc=${artifacts.creditFpcArtifactPath}`,
   );
 
   const deployer = bootstrapDeployerFromWallet(args.aztecNodeUrl);
@@ -1227,11 +1268,63 @@ async function main(): Promise<void> {
     throw new CliError("Failed to resolve deployer sender address");
   }
 
+  // Derive operator's Schnorr public key from test accounts
+  let operatorSigningKey: unknown = null;
+  if (deployer.address.toLowerCase() === args.operator.toLowerCase()) {
+    operatorSigningKey = deployerData.signingKey;
+  } else {
+    for (let i = 0; i < testAccounts.length; i += 1) {
+      if (i === deployer.index) continue;
+      const accountData = testAccounts[i];
+      const account = await wallet.createSchnorrAccount(
+        accountData.secret,
+        accountData.salt,
+        accountData.signingKey,
+      );
+      const addr = parseDeployedAddress(
+        (account as { address?: unknown }).address,
+        `test account ${i}`,
+      );
+      if (addr.toLowerCase() === args.operator.toLowerCase()) {
+        operatorSigningKey = accountData.signingKey;
+        break;
+      }
+    }
+  }
+  if (!operatorSigningKey) {
+    throw new CliError(
+      `Could not find operator ${args.operator} among local test accounts. The deploy-fpc-local script requires the operator to be a local test account.`,
+    );
+  }
+  const schnorrModule = await importWithWorkspaceFallback(
+    "@aztec/foundation/crypto/schnorr",
+  );
+  const SchnorrCtor = schnorrModule.Schnorr;
+  if (!SchnorrCtor || typeof SchnorrCtor !== "function") {
+    throw new CliError(
+      "Loaded @aztec/foundation/crypto/schnorr, but Schnorr class is not available",
+    );
+  }
+  const schnorr = new (
+    SchnorrCtor as new () => {
+      computePublicKey: (sk: unknown) => Promise<{ x: unknown; y: unknown }>;
+    }
+  )();
+  const operatorPubkey = await schnorr.computePublicKey(operatorSigningKey);
+  console.log(
+    `[deploy-fpc-local] operator pubkey derived. x=${String(operatorPubkey.x)} y=${String(operatorPubkey.y)}`,
+  );
+
   let tokenArtifact: unknown;
   let fpcArtifact: unknown;
+  let creditFpcArtifact: unknown;
   try {
     tokenArtifact = loadDeployArtifact(artifacts.tokenArtifactPath, deployDeps);
     fpcArtifact = loadDeployArtifact(artifacts.fpcArtifactPath, deployDeps);
+    creditFpcArtifact = loadDeployArtifact(
+      artifacts.creditFpcArtifactPath,
+      deployDeps,
+    );
   } catch (error) {
     throw new CliError(
       `Failed to load contract artifacts for deployment. ${String(error)}`,
@@ -1316,6 +1409,8 @@ async function main(): Promise<void> {
     try {
       fpcInstance = await deployDeps.Contract.deploy(wallet, fpcArtifact, [
         operatorAddress,
+        operatorPubkey.x,
+        operatorPubkey.y,
         acceptedAsset,
       ]).send({ from: deploySender });
     } catch (error) {
@@ -1331,6 +1426,63 @@ async function main(): Promise<void> {
     console.log(`[deploy-fpc-local] fpc deployed: ${fpcAddress}`);
   }
 
+  let creditFpcAddress: string;
+  let creditFpcSource: "deployed" | "reused";
+  if (args.reuse && reuseState?.creditFpcAddress) {
+    if (!args.acceptedAsset && !reuseState.acceptedAsset) {
+      throw new CliError(
+        `Reuse mode refused to reuse CreditFPC address: output file ${path.resolve(args.out)} does not contain accepted_asset. Provide --accepted-asset explicitly or run a fresh deploy to regenerate output.`,
+      );
+    }
+    if (
+      reuseState.operator &&
+      reuseState.operator.toLowerCase() !== args.operator.toLowerCase()
+    ) {
+      throw new CliError(
+        `Reuse mode refused to reuse CreditFPC address: output file operator=${reuseState.operator} differs from current --operator=${args.operator}`,
+      );
+    }
+    if (
+      reuseState.acceptedAsset &&
+      reuseState.acceptedAsset.toLowerCase() !==
+        acceptedAssetAddress.toLowerCase()
+    ) {
+      throw new CliError(
+        `Reuse mode refused to reuse CreditFPC address: output file accepted_asset=${reuseState.acceptedAsset} differs from resolved accepted_asset=${acceptedAssetAddress}`,
+      );
+    }
+    creditFpcAddress = reuseState.creditFpcAddress;
+    creditFpcSource = "reused";
+    console.log(
+      `[deploy-fpc-local] reusing credit_fpc from output file: ${creditFpcAddress}`,
+    );
+  } else {
+    const operatorAddress = deployDeps.AztecAddress.fromString(args.operator);
+    const acceptedAsset =
+      deployDeps.AztecAddress.fromString(acceptedAssetAddress);
+    console.log(
+      `[deploy-fpc-local] deploying CreditFPC with operator=${args.operator} accepted_asset=${acceptedAssetAddress}`,
+    );
+    let creditFpcInstance: unknown;
+    try {
+      creditFpcInstance = await deployDeps.Contract.deploy(
+        wallet,
+        creditFpcArtifact,
+        [operatorAddress, operatorPubkey.x, operatorPubkey.y, acceptedAsset],
+      ).send({ from: deploySender });
+    } catch (error) {
+      throw new CliError(
+        `CreditFPC deployment failed for operator=${args.operator} accepted_asset=${acceptedAssetAddress}. Ensure deployer ${deployer.address} has enough fee balance and constructor arguments are valid. Underlying error: ${String(error)}`,
+      );
+    }
+    creditFpcAddress = parseDeployedAddress(
+      (creditFpcInstance as { address?: unknown }).address,
+      "credit_fpc deploy",
+    );
+    creditFpcSource = "deployed";
+    console.log(`[deploy-fpc-local] credit_fpc deployed: ${creditFpcAddress}`);
+  }
+
   const output: DeployOutput = {
     status: "deploy_ok",
     generated_at: new Date().toISOString(),
@@ -1341,6 +1493,7 @@ async function main(): Promise<void> {
     operator: args.operator,
     accepted_asset: acceptedAssetAddress,
     fpc_address: fpcAddress,
+    credit_fpc_address: creditFpcAddress,
     reuse: args.reuse,
     node_contracts: {
       fee_juice_portal_address: nodeState.feeJuicePortalAddress,
@@ -1349,6 +1502,7 @@ async function main(): Promise<void> {
     artifacts: {
       token_contract_artifact: artifacts.tokenArtifactPath,
       fpc_artifact: artifacts.fpcArtifactPath,
+      credit_fpc_artifact: artifacts.creditFpcArtifactPath,
     },
     deployer: {
       source: "aztec_wallet_test_account",
@@ -1367,6 +1521,10 @@ async function main(): Promise<void> {
       fpc: {
         address: fpcAddress,
         source: fpcSource,
+      },
+      credit_fpc: {
+        address: creditFpcAddress,
+        source: creditFpcSource,
       },
     },
   };

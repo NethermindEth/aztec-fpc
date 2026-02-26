@@ -7,10 +7,7 @@ import { fileURLToPath } from "node:url";
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import {
-  computeInnerAuthWitHash,
-  lookupValidity,
-} from "@aztec/aztec.js/authorization";
+import { lookupValidity } from "@aztec/aztec.js/authorization";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
@@ -20,12 +17,13 @@ import {
   ProtocolContractAddress,
 } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import {
   loadContractArtifact,
   loadContractArtifactForPublic,
 } from "@aztec/stdlib/abi";
-import { AuthWitness } from "@aztec/stdlib/auth-witness";
 import { computeSecretHash } from "@aztec/stdlib/hash";
+import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
@@ -42,7 +40,6 @@ import { privateKeyToAccount } from "viem/accounts";
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
-const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
@@ -57,7 +54,11 @@ type ManagedProcess = {
   getLogs: () => string;
 };
 
+type SmokeMode = "fpc" | "credit" | "both";
+type ScenarioKind = "fpc" | "credit";
+
 type SmokeConfig = {
+  mode: SmokeMode;
   nodeUrl: string;
   l1RpcUrl: string;
   attestationPort: number;
@@ -76,6 +77,8 @@ type SmokeConfig = {
   topupConfirmPollInitialMs: number;
   topupConfirmPollMaxMs: number;
   relayAdvanceBlocks: number;
+  creditMintMultiplier: bigint;
+  creditMintBuffer: bigint;
 };
 
 type QuoteResponse = {
@@ -83,13 +86,34 @@ type QuoteResponse = {
   rate_num: string;
   rate_den: string;
   valid_until: string;
-  authwit: string;
+  signature: string;
 };
 
 type AssetResponse = {
   name: string;
   address: string;
 };
+
+type ServiceFlowResult = {
+  rateNum: bigint;
+  rateDen: bigint;
+  validUntil: bigint;
+  quoteSigBytes: number[];
+};
+
+function parseSmokeMode(value: string | undefined): SmokeMode {
+  const normalized = (value ?? "both").trim().toLowerCase();
+  if (
+    normalized === "fpc" ||
+    normalized === "credit" ||
+    normalized === "both"
+  ) {
+    return normalized;
+  }
+  throw new Error(
+    `Invalid FPC_SERVICES_SMOKE_MODE=${value}. Expected one of: fpc, credit, both`,
+  );
+}
 
 function readEnvNumber(name: string, fallback: number): number {
   const value = process.env[name];
@@ -157,7 +181,9 @@ function normalizeHexAddress(value: unknown, fieldName: string): Hex {
 }
 
 function getConfig(): SmokeConfig {
-  return {
+  const mode = parseSmokeMode(process.env.FPC_SERVICES_SMOKE_MODE);
+  const config: SmokeConfig = {
+    mode,
     nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
     l1RpcUrl:
       process.env.FPC_SERVICES_SMOKE_L1_RPC_URL ?? "http://127.0.0.1:8545",
@@ -198,7 +224,28 @@ function getConfig(): SmokeConfig {
       "FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS",
       2,
     ),
+    creditMintMultiplier: readEnvBigInt(
+      "FPC_SERVICES_SMOKE_CREDIT_MINT_MULTIPLIER",
+      5n,
+    ),
+    creditMintBuffer: readEnvBigInt(
+      "FPC_SERVICES_SMOKE_CREDIT_MINT_BUFFER",
+      1_000_000n,
+    ),
   };
+
+  if (config.relayAdvanceBlocks < 2) {
+    throw new Error(
+      `FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS must be >= 2, got ${config.relayAdvanceBlocks}`,
+    );
+  }
+  if (config.mode !== "fpc" && config.creditMintMultiplier <= 1n) {
+    throw new Error(
+      `FPC_SERVICES_SMOKE_CREDIT_MINT_MULTIPLIER must be > 1, got ${config.creditMintMultiplier}`,
+    );
+  }
+
+  return config;
 }
 
 function startManagedProcess(
@@ -357,7 +404,7 @@ async function topUpFpcFeeJuiceManually(
   operator: AztecAddress,
   token: Contract,
   user: AztecAddress,
-  fpcAddress: string,
+  feePayerAddress: string,
   topupWei: bigint,
   relayAdvanceBlocks: number,
   l1RpcUrl: string,
@@ -383,7 +430,7 @@ async function topUpFpcFeeJuiceManually(
     "feeJuicePortalAddress",
   );
   const recipientBytes32 =
-    `0x${fpcAddress.replace("0x", "").padStart(64, "0")}` as Hex;
+    `0x${feePayerAddress.replace("0x", "").padStart(64, "0")}` as Hex;
 
   const account = privateKeyToAccount(l1PrivateKey);
   const walletClient = createWalletClient({
@@ -457,7 +504,7 @@ async function topUpFpcFeeJuiceManually(
   const feeJuice = FeeJuiceContract.at(wallet);
   await feeJuice.methods
     .claim(
-      AztecAddress.fromString(fpcAddress),
+      AztecAddress.fromString(feePayerAddress),
       topupWei,
       claimSecret,
       new Fr(messageLeafIndex),
@@ -466,7 +513,7 @@ async function topUpFpcFeeJuiceManually(
 
   return waitForPositiveFeeJuiceBalance(
     node,
-    AztecAddress.fromString(fpcAddress),
+    AztecAddress.fromString(feePayerAddress),
     timeoutMs,
     pollMs,
   );
@@ -492,7 +539,7 @@ async function fetchQuote(
           typeof parsed.rate_num === "string" &&
           typeof parsed.rate_den === "string" &&
           typeof parsed.valid_until === "string" &&
-          typeof parsed.authwit === "string"
+          typeof parsed.signature === "string"
         ) {
           return parsed;
         }
@@ -549,6 +596,606 @@ function assertPrivateKeyHex(value: string, fieldName: string): void {
   }
 }
 
+function getScenarioKinds(mode: SmokeMode): ScenarioKind[] {
+  switch (mode) {
+    case "fpc":
+      return ["fpc"];
+    case "credit":
+      return ["credit"];
+    default:
+      return ["fpc", "credit"];
+  }
+}
+
+async function runServiceScenario(
+  scenario: ScenarioKind,
+  config: SmokeConfig,
+  repoRoot: string,
+  tmpDir: string,
+  node: ReturnType<typeof createAztecNodeClient>,
+  wallet: EmbeddedWallet,
+  token: Contract,
+  operator: AztecAddress,
+  user: AztecAddress,
+  feePayerAddress: AztecAddress,
+  operatorSecretHex: string,
+  l1PrivateKey: Hex,
+  topupThreshold: bigint,
+  topupAmount: bigint,
+): Promise<ServiceFlowResult> {
+  const scenarioPrefix = `[services-smoke:${scenario}]`;
+  const managed: ManagedProcess[] = [];
+
+  try {
+    const attestationConfigPath = path.join(
+      tmpDir,
+      `attestation.${scenario}.config.yaml`,
+    );
+    const topupConfigPath = path.join(tmpDir, `topup.${scenario}.config.yaml`);
+
+    writeFileSync(
+      attestationConfigPath,
+      `${[
+        `fpc_address: "${feePayerAddress.toString()}"`,
+        `aztec_node_url: "${config.nodeUrl}"`,
+        `quote_validity_seconds: ${config.quoteValiditySeconds}`,
+        `port: ${config.attestationPort}`,
+        `accepted_asset_name: "SmokeToken"`,
+        `accepted_asset_address: "${token.address.toString()}"`,
+        `market_rate_num: ${config.marketRateNum}`,
+        `market_rate_den: ${config.marketRateDen}`,
+        `fee_bips: ${config.feeBips}`,
+      ].join("\n")}\n`,
+      "utf8",
+    );
+
+    writeFileSync(
+      topupConfigPath,
+      `${[
+        `fpc_address: "${feePayerAddress.toString()}"`,
+        `aztec_node_url: "${config.nodeUrl}"`,
+        `l1_rpc_url: "${config.l1RpcUrl}"`,
+        `threshold: "${topupThreshold}"`,
+        `top_up_amount: "${topupAmount}"`,
+        "check_interval_ms: 60000",
+        `confirmation_timeout_ms: ${config.topupConfirmTimeoutMs}`,
+        `confirmation_poll_initial_ms: ${config.topupConfirmPollInitialMs}`,
+        `confirmation_poll_max_ms: ${config.topupConfirmPollMaxMs}`,
+      ].join("\n")}\n`,
+      "utf8",
+    );
+
+    const attestation = startManagedProcess(
+      `attestation-${scenario}`,
+      "bun",
+      [
+        "run",
+        path.join(repoRoot, "services", "attestation", "dist", "index.js"),
+        "--config",
+        attestationConfigPath,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          OPERATOR_SECRET_KEY: operatorSecretHex,
+        },
+      },
+    );
+    managed.push(attestation);
+
+    const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
+    await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
+    console.log(`${scenarioPrefix} PASS: attestation service health endpoint`);
+    const asset = await fetchAsset(
+      `${attestationBaseUrl}/asset`,
+      config.httpTimeoutMs,
+    );
+    if (asset.name !== "SmokeToken") {
+      throw new Error(
+        `${scenarioPrefix} asset name mismatch. expected=SmokeToken got=${asset.name}`,
+      );
+    }
+    if (
+      asset.address.toLowerCase() !== token.address.toString().toLowerCase()
+    ) {
+      throw new Error(
+        `${scenarioPrefix} asset address mismatch. expected=${token.address.toString()} got=${asset.address}`,
+      );
+    }
+    console.log(
+      `${scenarioPrefix} PASS: asset endpoint matches deployed token`,
+    );
+
+    const topup = startManagedProcess(
+      `topup-${scenario}`,
+      "bun",
+      [
+        "run",
+        path.join(repoRoot, "services", "topup", "dist", "index.js"),
+        "--config",
+        topupConfigPath,
+      ],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          L1_OPERATOR_PRIVATE_KEY: l1PrivateKey,
+        },
+      },
+    );
+    managed.push(topup);
+
+    await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
+    await waitForLog(
+      topup,
+      "FPC Fee Juice balance:",
+      config.topupWaitTimeoutMs,
+    );
+    await waitForLog(topup, "Bridge submitted.", config.topupWaitTimeoutMs);
+
+    // Local devnet requires additional L2 blocks before the L1->L2 bridge
+    // message becomes consumable. Force block production with lightweight txs.
+    await advanceL2Blocks(token, operator, user, config.relayAdvanceBlocks);
+
+    const initialFeeJuiceBalance = await getFeeJuiceBalance(
+      feePayerAddress,
+      node,
+    );
+    console.log(
+      `${scenarioPrefix} fee_payer_fee_juice_before_wait=${initialFeeJuiceBalance}`,
+    );
+
+    let bridgedFeeJuiceBalance = initialFeeJuiceBalance;
+    if (bridgedFeeJuiceBalance === 0n) {
+      console.log(
+        `${scenarioPrefix} topup balance delta not visible; running deterministic manual claim fallback`,
+      );
+      bridgedFeeJuiceBalance = await topUpFpcFeeJuiceManually(
+        node,
+        wallet,
+        operator,
+        token,
+        user,
+        feePayerAddress.toString(),
+        topupAmount,
+        config.relayAdvanceBlocks,
+        config.l1RpcUrl,
+        l1PrivateKey,
+        config.topupWaitTimeoutMs,
+        config.topupPollMs,
+      );
+    }
+    console.log(
+      `${scenarioPrefix} fee_payer_fee_juice_after_topup=${bridgedFeeJuiceBalance}`,
+    );
+
+    await waitForLog(
+      topup,
+      "Bridge confirmation outcome=confirmed",
+      config.topupWaitTimeoutMs,
+    );
+
+    const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
+    const quote = await fetchQuote(
+      `${attestationBaseUrl}/quote?user=${user.toString()}`,
+      config.httpTimeoutMs,
+    );
+    const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
+    const quoteSigBytes = Array.from(
+      Buffer.from(quote.signature.replace("0x", ""), "hex"),
+    );
+    const rateNum = BigInt(quote.rate_num);
+    const rateDen = BigInt(quote.rate_den);
+    const validUntil = BigInt(quote.valid_until);
+
+    if (quoteSigBytes.length !== 64) {
+      throw new Error(
+        `${scenarioPrefix} quote signature length must be 64 bytes, got ${quoteSigBytes.length}`,
+      );
+    }
+    if (rateDen === 0n) {
+      throw new Error(
+        `${scenarioPrefix} attestation quote returned zero denominator`,
+      );
+    }
+    if (
+      quote.accepted_asset.toLowerCase() !==
+      token.address.toString().toLowerCase()
+    ) {
+      throw new Error(
+        `${scenarioPrefix} quote accepted_asset mismatch. expected=${token.address.toString()} got=${quote.accepted_asset}`,
+      );
+    }
+
+    const expectedRateNum =
+      BigInt(config.marketRateNum) * BigInt(10_000 + config.feeBips);
+    const expectedRateDen = BigInt(config.marketRateDen) * 10_000n;
+    if (rateNum !== expectedRateNum || rateDen !== expectedRateDen) {
+      throw new Error(
+        `${scenarioPrefix} quote rate mismatch. expected_num=${expectedRateNum} expected_den=${expectedRateDen} got_num=${rateNum} got_den=${rateDen}`,
+      );
+    }
+
+    const chainNowMin =
+      chainNowBeforeQuote < chainNowAfterQuote
+        ? chainNowBeforeQuote
+        : chainNowAfterQuote;
+    const chainNowMax =
+      chainNowBeforeQuote > chainNowAfterQuote
+        ? chainNowBeforeQuote
+        : chainNowAfterQuote;
+    const minExpectedValidUntil =
+      chainNowMin + BigInt(config.quoteValiditySeconds);
+    const maxExpectedValidUntil =
+      chainNowMax + BigInt(config.quoteValiditySeconds) + 5n;
+    if (
+      validUntil < minExpectedValidUntil ||
+      validUntil > maxExpectedValidUntil
+    ) {
+      throw new Error(
+        `${scenarioPrefix} quote validity window mismatch. chain_now_before=${chainNowBeforeQuote} chain_now_after=${chainNowAfterQuote} valid_until=${validUntil} expected_range=[${minExpectedValidUntil}, ${maxExpectedValidUntil}]`,
+      );
+    }
+
+    const attestationLogs = attestation.getLogs();
+    if (!attestationLogs.includes("quote_issued")) {
+      throw new Error(
+        `${scenarioPrefix} attestation service logs did not include quote_issued marker`,
+      );
+    }
+    const topupLogs = topup.getLogs();
+    if (!topupLogs.includes("FPC Fee Juice balance:")) {
+      throw new Error(
+        `${scenarioPrefix} top-up service logs did not include Fee Juice balance read`,
+      );
+    }
+
+    return { rateNum, rateDen, validUntil, quoteSigBytes };
+  } finally {
+    for (const proc of managed.reverse()) {
+      await stopManagedProcess(proc);
+    }
+  }
+}
+
+async function runFpcFeeEntrypointScenario(
+  config: SmokeConfig,
+  wallet: EmbeddedWallet,
+  token: Contract,
+  fpc: Contract,
+  operator: AztecAddress,
+  user: AztecAddress,
+  maxGasCostNoTeardown: bigint,
+  feePerDaGas: bigint,
+  feePerL2Gas: bigint,
+  quote: ServiceFlowResult,
+): Promise<void> {
+  const expectedCharge = ceilDiv(
+    maxGasCostNoTeardown * quote.rateNum,
+    quote.rateDen,
+  );
+  const mintAmount = expectedCharge + 1_000_000n;
+  console.log(`[services-smoke:fpc] expected_charge=${expectedCharge}`);
+
+  await token.methods
+    .mint_to_private(user, mintAmount)
+    .send({ from: operator });
+  await token.methods.mint_to_public(user, 2n).send({ from: operator });
+
+  const transferAuthwitNonce = Fr.random();
+  const transferCall = token.methods.transfer_private_to_private(
+    user,
+    operator,
+    expectedCharge,
+    transferAuthwitNonce,
+  );
+  const transferAuthwit = await wallet.createAuthWit(user, {
+    caller: fpc.address,
+    action: transferCall,
+  });
+  const transferValidity = await lookupValidity(
+    wallet,
+    user,
+    { caller: fpc.address, action: transferCall },
+    transferAuthwit,
+  );
+  console.log(
+    `[services-smoke:fpc] transfer_authwit_valid_private=${transferValidity.isValidInPrivate} transfer_authwit_valid_public=${transferValidity.isValidInPublic}`,
+  );
+
+  const userBefore = BigInt(
+    (
+      await token.methods.balance_of_private(user).simulate({ from: user })
+    ).toString(),
+  );
+  const operatorBefore = BigInt(
+    (
+      await token.methods
+        .balance_of_private(operator)
+        .simulate({ from: operator })
+    ).toString(),
+  );
+
+  const feeEntrypointCall = await fpc.methods
+    .fee_entrypoint(
+      transferAuthwitNonce,
+      quote.rateNum,
+      quote.rateDen,
+      quote.validUntil,
+      quote.quoteSigBytes,
+    )
+    .getFunctionCall();
+  const paymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload(
+        [feeEntrypointCall],
+        [transferAuthwit],
+        [],
+        [],
+        fpc.address,
+      ),
+    getFeePayer: async () => fpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  const receipt = await token.methods
+    .transfer_public_to_public(user, user, 1n, Fr.random())
+    .send({
+      from: user,
+      fee: {
+        paymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+        },
+      },
+      wait: { timeout: 180 },
+    });
+
+  const userAfter = BigInt(
+    (
+      await token.methods.balance_of_private(user).simulate({ from: user })
+    ).toString(),
+  );
+  const operatorAfter = BigInt(
+    (
+      await token.methods
+        .balance_of_private(operator)
+        .simulate({ from: operator })
+    ).toString(),
+  );
+
+  const userDebited = userBefore - userAfter;
+  const operatorCredited = operatorAfter - operatorBefore;
+  if (userDebited !== expectedCharge) {
+    throw new Error(
+      `[services-smoke:fpc] user debit mismatch. expected=${expectedCharge} got=${userDebited}`,
+    );
+  }
+  if (operatorCredited !== expectedCharge) {
+    throw new Error(
+      `[services-smoke:fpc] operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
+    );
+  }
+
+  console.log(
+    `[services-smoke:fpc] tx_fee_juice=${receipt.transactionFee} user_debited=${userDebited} operator_credited=${operatorCredited}`,
+  );
+  console.log(
+    "[services-smoke:fpc] PASS: tx accepted with attestation quote + fee_entrypoint",
+  );
+}
+
+async function runCreditFeeScenario(
+  config: SmokeConfig,
+  wallet: EmbeddedWallet,
+  token: Contract,
+  creditFpc: Contract,
+  operator: AztecAddress,
+  user: AztecAddress,
+  maxGasCostNoTeardown: bigint,
+  feePerDaGas: bigint,
+  feePerL2Gas: bigint,
+  quote: ServiceFlowResult,
+): Promise<void> {
+  const mintAmount =
+    maxGasCostNoTeardown * config.creditMintMultiplier +
+    config.creditMintBuffer;
+  const expectedCharge = ceilDiv(mintAmount * quote.rateNum, quote.rateDen);
+  console.log(`[services-smoke:credit] mint_amount=${mintAmount}`);
+  console.log(`[services-smoke:credit] expected_charge=${expectedCharge}`);
+
+  await token.methods
+    .mint_to_private(user, expectedCharge + 1_000_000n)
+    .send({ from: operator });
+  await token.methods.mint_to_public(user, 2n).send({ from: operator });
+
+  const transferAuthwitNonce = Fr.random();
+  const transferCall = token.methods.transfer_private_to_private(
+    user,
+    operator,
+    expectedCharge,
+    transferAuthwitNonce,
+  );
+  const transferAuthwit = await wallet.createAuthWit(user, {
+    caller: creditFpc.address,
+    action: transferCall,
+  });
+
+  const userTokenBefore = BigInt(
+    (
+      await token.methods.balance_of_private(user).simulate({ from: user })
+    ).toString(),
+  );
+  const operatorTokenBefore = BigInt(
+    (
+      await token.methods
+        .balance_of_private(operator)
+        .simulate({ from: operator })
+    ).toString(),
+  );
+
+  const payAndMintCall = await creditFpc.methods
+    .pay_and_mint(
+      transferAuthwitNonce,
+      quote.rateNum,
+      quote.rateDen,
+      quote.validUntil,
+      quote.quoteSigBytes,
+      mintAmount,
+    )
+    .getFunctionCall();
+  const payAndMintPaymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload(
+        [payAndMintCall],
+        [transferAuthwit],
+        [],
+        [],
+        creditFpc.address,
+      ),
+    getFeePayer: async () => creditFpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  const payAndMintReceipt = await token.methods
+    .transfer_public_to_public(user, user, 1n, Fr.random())
+    .send({
+      from: user,
+      fee: {
+        paymentMethod: payAndMintPaymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+        },
+      },
+      wait: { timeout: 180 },
+    });
+
+  const userTokenAfterPayAndMint = BigInt(
+    (
+      await token.methods.balance_of_private(user).simulate({ from: user })
+    ).toString(),
+  );
+  const operatorTokenAfterPayAndMint = BigInt(
+    (
+      await token.methods
+        .balance_of_private(operator)
+        .simulate({ from: operator })
+    ).toString(),
+  );
+  const userDebited = userTokenBefore - userTokenAfterPayAndMint;
+  const operatorCredited = operatorTokenAfterPayAndMint - operatorTokenBefore;
+  const creditAfterPayAndMint = BigInt(
+    (
+      await creditFpc.methods.balance_of(user).simulate({ from: user })
+    ).toString(),
+  );
+  const expectedCreditAfterPayAndMint = mintAmount - maxGasCostNoTeardown;
+
+  console.log(
+    `[services-smoke:credit] pay_and_mint_tx_fee_juice=${payAndMintReceipt.transactionFee}`,
+  );
+  console.log(`[services-smoke:credit] user_debited=${userDebited}`);
+  console.log(`[services-smoke:credit] operator_credited=${operatorCredited}`);
+  console.log(
+    `[services-smoke:credit] credit_after_pay_and_mint=${creditAfterPayAndMint}`,
+  );
+
+  if (userDebited !== expectedCharge) {
+    throw new Error(
+      `[services-smoke:credit] user debit mismatch after pay_and_mint. expected=${expectedCharge} got=${userDebited}`,
+    );
+  }
+  if (operatorCredited !== expectedCharge) {
+    throw new Error(
+      `[services-smoke:credit] operator credit mismatch after pay_and_mint. expected=${expectedCharge} got=${operatorCredited}`,
+    );
+  }
+  if (creditAfterPayAndMint !== expectedCreditAfterPayAndMint) {
+    throw new Error(
+      `[services-smoke:credit] credit balance mismatch after pay_and_mint. expected=${expectedCreditAfterPayAndMint} got=${creditAfterPayAndMint}`,
+    );
+  }
+
+  const quoteUsed = await creditFpc.methods
+    .quote_used(quote.rateNum, quote.rateDen, quote.validUntil, user)
+    .simulate({ from: user });
+  if (!quoteUsed) {
+    throw new Error(
+      "[services-smoke:credit] quote_used returned false after successful pay_and_mint",
+    );
+  }
+
+  const creditBeforePayWithCredit = creditAfterPayAndMint;
+  const operatorTokenBeforePayWithCredit = operatorTokenAfterPayAndMint;
+  const payWithCreditCall = await creditFpc.methods
+    .pay_with_credit()
+    .getFunctionCall();
+  const payWithCreditPaymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload([payWithCreditCall], [], [], [], creditFpc.address),
+    getFeePayer: async () => creditFpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  const payWithCreditReceipt = await token.methods
+    .transfer_public_to_public(user, user, 1n, Fr.random())
+    .send({
+      from: user,
+      fee: {
+        paymentMethod: payWithCreditPaymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+        },
+      },
+      wait: { timeout: 180 },
+    });
+
+  const creditAfterPayWithCredit = BigInt(
+    (
+      await creditFpc.methods.balance_of(user).simulate({ from: user })
+    ).toString(),
+  );
+  const operatorTokenAfterPayWithCredit = BigInt(
+    (
+      await token.methods
+        .balance_of_private(operator)
+        .simulate({ from: operator })
+    ).toString(),
+  );
+
+  console.log(
+    `[services-smoke:credit] pay_with_credit_tx_fee_juice=${payWithCreditReceipt.transactionFee}`,
+  );
+  console.log(
+    `[services-smoke:credit] credit_before_pay_with_credit=${creditBeforePayWithCredit}`,
+  );
+  console.log(
+    `[services-smoke:credit] credit_after_pay_with_credit=${creditAfterPayWithCredit}`,
+  );
+
+  if (creditAfterPayWithCredit >= creditBeforePayWithCredit) {
+    throw new Error(
+      `[services-smoke:credit] credit should decrease after pay_with_credit. before=${creditBeforePayWithCredit} after=${creditAfterPayWithCredit}`,
+    );
+  }
+  if (operatorTokenAfterPayWithCredit !== operatorTokenBeforePayWithCredit) {
+    throw new Error(
+      `[services-smoke:credit] operator token balance changed during pay_with_credit. before=${operatorTokenBeforePayWithCredit} after=${operatorTokenAfterPayWithCredit}`,
+    );
+  }
+
+  console.log(
+    "[services-smoke:credit] PASS: pay_and_mint + quote_used + pay_with_credit flow succeeded",
+  );
+}
+
 async function main() {
   const config = getConfig();
   const scriptDir =
@@ -557,17 +1204,27 @@ async function main() {
       : path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(scriptDir, "..", "..");
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "fpc-services-smoke-"));
-  const managed: ManagedProcess[] = [];
 
   try {
+    const needsFpc = config.mode !== "credit";
+    const needsCredit = config.mode !== "fpc";
+
     const tokenArtifactPath = path.join(
       repoRoot,
       "target",
       "token_contract-Token.json",
     );
     const fpcArtifactPath = path.join(repoRoot, "target", "fpc-FPC.json");
+    const creditFpcArtifactPath = path.join(
+      repoRoot,
+      "target",
+      "credit_fpc-CreditFPC.json",
+    );
     const tokenArtifact = loadArtifact(tokenArtifactPath);
-    const fpcArtifact = loadArtifact(fpcArtifactPath);
+    const fpcArtifact = needsFpc ? loadArtifact(fpcArtifactPath) : null;
+    const creditFpcArtifact = needsCredit
+      ? loadArtifact(creditFpcArtifactPath)
+      : null;
 
     const node = createAztecNodeClient(config.nodeUrl);
     await waitForNodeReady(node, config.nodeTimeoutMs);
@@ -579,8 +1236,12 @@ async function main() {
     const maxGasCostNoTeardown =
       BigInt(config.daGasLimit) * feePerDaGas +
       BigInt(config.l2GasLimit) * feePerL2Gas;
+    const requiredTxCountPerScenario = config.mode === "fpc" ? 1n : 2n;
     const minimumTopupWei =
-      maxGasCostNoTeardown * config.feeJuiceTopupSafetyMultiplier + 1_000_000n;
+      maxGasCostNoTeardown *
+        config.feeJuiceTopupSafetyMultiplier *
+        requiredTxCountPerScenario +
+      1_000_000n;
     const configuredTopupWei = readOptionalEnvBigInt(
       "FPC_SERVICES_SMOKE_TOPUP_WEI",
     );
@@ -624,6 +1285,7 @@ async function main() {
 
     console.log(`[services-smoke] operator=${operator.toString()}`);
     console.log(`[services-smoke] user=${user.toString()}`);
+    console.log(`[services-smoke] mode=${config.mode}`);
 
     const token = await Contract.deploy(
       wallet,
@@ -633,48 +1295,37 @@ async function main() {
     ).send({ from: operator });
     console.log(`[services-smoke] token=${token.address.toString()}`);
 
-    const fpc = await Contract.deploy(wallet, fpcArtifact, [
-      operator,
-      token.address,
-    ]).send({ from: operator });
-    console.log(`[services-smoke] fpc=${fpc.address.toString()}`);
+    // Derive operator signing pubkey for inline Schnorr verification.
+    const schnorr = new Schnorr();
+    const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
+    const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
+
+    let fpc: Contract | null = null;
+    if (fpcArtifact) {
+      fpc = await Contract.deploy(wallet, fpcArtifact, [
+        operator,
+        operatorPubKey.x,
+        operatorPubKey.y,
+        token.address,
+      ]).send({ from: operator });
+      console.log(`[services-smoke] fpc=${fpc.address.toString()}`);
+    }
+
+    let creditFpc: Contract | null = null;
+    if (creditFpcArtifact) {
+      creditFpc = await Contract.deploy(wallet, creditFpcArtifact, [
+        operator,
+        operatorPubKey.x,
+        operatorPubKey.y,
+        token.address,
+      ]).send({ from: operator });
+      console.log(
+        `[services-smoke] credit_fpc=${creditFpc.address.toString()}`,
+      );
+    }
+
     console.log(
       `[services-smoke] topup_threshold_wei=${topupThreshold} topup_amount_wei=${topupAmount}`,
-    );
-
-    const attestationConfigPath = path.join(tmpDir, "attestation.config.yaml");
-    const topupConfigPath = path.join(tmpDir, "topup.config.yaml");
-
-    writeFileSync(
-      attestationConfigPath,
-      `${[
-        `fpc_address: "${fpc.address.toString()}"`,
-        `aztec_node_url: "${config.nodeUrl}"`,
-        `quote_validity_seconds: ${config.quoteValiditySeconds}`,
-        `port: ${config.attestationPort}`,
-        `accepted_asset_name: "SmokeToken"`,
-        `accepted_asset_address: "${token.address.toString()}"`,
-        `market_rate_num: ${config.marketRateNum}`,
-        `market_rate_den: ${config.marketRateDen}`,
-        `fee_bips: ${config.feeBips}`,
-      ].join("\n")}\n`,
-      "utf8",
-    );
-
-    writeFileSync(
-      topupConfigPath,
-      `${[
-        `fpc_address: "${fpc.address.toString()}"`,
-        `aztec_node_url: "${config.nodeUrl}"`,
-        `l1_rpc_url: "${config.l1RpcUrl}"`,
-        `threshold: "${topupThreshold}"`,
-        `top_up_amount: "${topupAmount}"`,
-        `check_interval_ms: 60000`,
-        `confirmation_timeout_ms: ${config.topupConfirmTimeoutMs}`,
-        `confirmation_poll_initial_ms: ${config.topupConfirmPollInitialMs}`,
-        `confirmation_poll_max_ms: ${config.topupConfirmPollMaxMs}`,
-      ].join("\n")}\n`,
-      "utf8",
     );
 
     const operatorSecretHex = operatorData.secret.toString();
@@ -684,311 +1335,79 @@ async function main() {
       process.env.FPC_SERVICES_SMOKE_L1_PRIVATE_KEY ??
       DEFAULT_LOCAL_L1_PRIVATE_KEY;
     assertPrivateKeyHex(l1PrivateKey, "FPC_SERVICES_SMOKE_L1_PRIVATE_KEY");
+    for (const scenario of getScenarioKinds(config.mode)) {
+      if (scenario === "fpc") {
+        if (!fpc) {
+          throw new Error(
+            "FPC scenario selected but FPC contract was not deployed",
+          );
+        }
+        const quote = await runServiceScenario(
+          "fpc",
+          config,
+          repoRoot,
+          tmpDir,
+          node,
+          wallet,
+          token,
+          operator,
+          user,
+          fpc.address,
+          operatorSecretHex,
+          l1PrivateKey as Hex,
+          topupThreshold,
+          topupAmount,
+        );
+        await runFpcFeeEntrypointScenario(
+          config,
+          wallet,
+          token,
+          fpc,
+          operator,
+          user,
+          maxGasCostNoTeardown,
+          feePerDaGas,
+          feePerL2Gas,
+          quote,
+        );
+        continue;
+      }
 
-    const attestation = startManagedProcess(
-      "attestation",
-      "bun",
-      [
-        "run",
-        path.join(repoRoot, "services", "attestation", "dist", "index.js"),
-        "--config",
-        attestationConfigPath,
-      ],
-      {
-        cwd: repoRoot,
-        env: {
-          ...process.env,
-          OPERATOR_SECRET_KEY: operatorSecretHex,
-        },
-      },
-    );
-    managed.push(attestation);
-
-    const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
-    await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
-    console.log("[services-smoke] PASS: attestation service health endpoint");
-    const asset = await fetchAsset(
-      `${attestationBaseUrl}/asset`,
-      config.httpTimeoutMs,
-    );
-    if (asset.name !== "SmokeToken") {
-      throw new Error(
-        `Asset name mismatch. expected=SmokeToken got=${asset.name}`,
-      );
-    }
-    if (
-      asset.address.toLowerCase() !== token.address.toString().toLowerCase()
-    ) {
-      throw new Error(
-        `Asset address mismatch. expected=${token.address.toString()} got=${asset.address}`,
-      );
-    }
-    console.log("[services-smoke] PASS: asset endpoint matches deployed token");
-
-    const topup = startManagedProcess(
-      "topup",
-      "bun",
-      [
-        "run",
-        path.join(repoRoot, "services", "topup", "dist", "index.js"),
-        "--config",
-        topupConfigPath,
-      ],
-      {
-        cwd: repoRoot,
-        env: {
-          ...process.env,
-          L1_OPERATOR_PRIVATE_KEY: l1PrivateKey,
-        },
-      },
-    );
-    managed.push(topup);
-
-    await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
-    await waitForLog(
-      topup,
-      "FPC Fee Juice balance:",
-      config.topupWaitTimeoutMs,
-    );
-    await waitForLog(topup, "Bridge submitted.", config.topupWaitTimeoutMs);
-
-    // Local devnet requires additional L2 blocks before the L1->L2 bridge message
-    // becomes consumable. Force block production with lightweight mock txs.
-    await advanceL2Blocks(token, operator, user, config.relayAdvanceBlocks);
-
-    const initialFeeJuiceBalance = await getFeeJuiceBalance(fpc.address, node);
-    console.log(
-      `[services-smoke] fpc_fee_juice_before_wait=${initialFeeJuiceBalance}`,
-    );
-
-    let bridgedFeeJuiceBalance = initialFeeJuiceBalance;
-    if (bridgedFeeJuiceBalance === 0n) {
-      console.log(
-        "[services-smoke] topup balance delta not yet visible; running deterministic manual claim fallback",
-      );
-      bridgedFeeJuiceBalance = await topUpFpcFeeJuiceManually(
+      if (!creditFpc) {
+        throw new Error(
+          "CreditFPC scenario selected but CreditFPC contract was not deployed",
+        );
+      }
+      const quote = await runServiceScenario(
+        "credit",
+        config,
+        repoRoot,
+        tmpDir,
         node,
         wallet,
-        operator,
         token,
+        operator,
         user,
-        fpc.address.toString(),
-        topupAmount,
-        config.relayAdvanceBlocks,
-        config.l1RpcUrl,
+        creditFpc.address,
+        operatorSecretHex,
         l1PrivateKey as Hex,
-        config.topupWaitTimeoutMs,
-        config.topupPollMs,
+        topupThreshold,
+        topupAmount,
+      );
+      await runCreditFeeScenario(
+        config,
+        wallet,
+        token,
+        creditFpc,
+        operator,
+        user,
+        maxGasCostNoTeardown,
+        feePerDaGas,
+        feePerL2Gas,
+        quote,
       );
     }
-    console.log(
-      `[services-smoke] fpc_fee_juice_after_topup=${bridgedFeeJuiceBalance}`,
-    );
-    await waitForLog(
-      topup,
-      "Bridge confirmation outcome=confirmed",
-      config.topupWaitTimeoutMs,
-    );
-
-    const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
-    const quote = await fetchQuote(
-      `${attestationBaseUrl}/quote?user=${user.toString()}`,
-      config.httpTimeoutMs,
-    );
-    const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
-    const quoteAuthwit = AuthWitness.fromString(quote.authwit);
-    const rateNum = BigInt(quote.rate_num);
-    const rateDen = BigInt(quote.rate_den);
-    const validUntil = BigInt(quote.valid_until);
-
-    if (rateDen === 0n) {
-      throw new Error("Attestation quote returned zero denominator");
-    }
-    if (
-      quote.accepted_asset.toLowerCase() !==
-      token.address.toString().toLowerCase()
-    ) {
-      throw new Error(
-        `Quote accepted_asset mismatch. expected=${token.address.toString()} got=${quote.accepted_asset}`,
-      );
-    }
-    const expectedRateNum =
-      BigInt(config.marketRateNum) * BigInt(10_000 + config.feeBips);
-    const expectedRateDen = BigInt(config.marketRateDen) * 10_000n;
-    if (rateNum !== expectedRateNum || rateDen !== expectedRateDen) {
-      throw new Error(
-        `Quote rate mismatch. expected_num=${expectedRateNum} expected_den=${expectedRateDen} got_num=${rateNum} got_den=${rateDen}`,
-      );
-    }
-    const chainNowMin =
-      chainNowBeforeQuote < chainNowAfterQuote
-        ? chainNowBeforeQuote
-        : chainNowAfterQuote;
-    const chainNowMax =
-      chainNowBeforeQuote > chainNowAfterQuote
-        ? chainNowBeforeQuote
-        : chainNowAfterQuote;
-    const minExpectedValidUntil =
-      chainNowMin + BigInt(config.quoteValiditySeconds);
-    const maxExpectedValidUntil =
-      chainNowMax + BigInt(config.quoteValiditySeconds) + 5n;
-    if (
-      validUntil < minExpectedValidUntil ||
-      validUntil > maxExpectedValidUntil
-    ) {
-      throw new Error(
-        `Quote validity window mismatch. chain_now_before=${chainNowBeforeQuote} chain_now_after=${chainNowAfterQuote} valid_until=${validUntil} expected_range=[${minExpectedValidUntil}, ${maxExpectedValidUntil}]`,
-      );
-    }
-
-    const expectedCharge = ceilDiv(maxGasCostNoTeardown * rateNum, rateDen);
-    const mintAmount = expectedCharge + 1_000_000n;
-    console.log(`[services-smoke] expected_charge=${expectedCharge}`);
-
-    await token.methods
-      .mint_to_private(user, mintAmount)
-      .send({ from: operator });
-    await token.methods.mint_to_public(user, 2n).send({ from: operator });
-
-    const transferAuthwitNonce = Fr.random();
-    const transferCall = token.methods.transfer_private_to_private(
-      user,
-      operator,
-      expectedCharge,
-      transferAuthwitNonce,
-    );
-    const transferAuthwit = await wallet.createAuthWit(user, {
-      caller: fpc.address,
-      action: transferCall,
-    });
-
-    const quoteInnerHash = await computeInnerAuthWitHash([
-      QUOTE_DOMAIN_SEPARATOR,
-      fpc.address.toField(),
-      token.address.toField(),
-      new Fr(rateNum),
-      new Fr(rateDen),
-      new Fr(validUntil),
-      user.toField(),
-    ]);
-    const quoteValidity = await lookupValidity(
-      wallet,
-      operator,
-      { consumer: fpc.address, innerHash: quoteInnerHash },
-      quoteAuthwit,
-    );
-    const transferValidity = await lookupValidity(
-      wallet,
-      user,
-      { caller: fpc.address, action: transferCall },
-      transferAuthwit,
-    );
-    console.log(
-      `[services-smoke] quote_authwit_valid_private=${quoteValidity.isValidInPrivate} quote_authwit_valid_public=${quoteValidity.isValidInPublic}`,
-    );
-    console.log(
-      `[services-smoke] transfer_authwit_valid_private=${transferValidity.isValidInPrivate} transfer_authwit_valid_public=${transferValidity.isValidInPublic}`,
-    );
-
-    const userBefore = BigInt(
-      (
-        await token.methods.balance_of_private(user).simulate({ from: user })
-      ).toString(),
-    );
-    const operatorBefore = BigInt(
-      (
-        await token.methods
-          .balance_of_private(operator)
-          .simulate({ from: operator })
-      ).toString(),
-    );
-
-    const feeEntrypointCall = await fpc.methods
-      .fee_entrypoint(transferAuthwitNonce, rateNum, rateDen, validUntil)
-      .getFunctionCall();
-    const fpcPaymentMethod = {
-      getAsset: async () => ProtocolContractAddress.FeeJuice,
-      getExecutionPayload: async () =>
-        new ExecutionPayload(
-          [feeEntrypointCall],
-          [quoteAuthwit, transferAuthwit],
-          [],
-          [],
-          fpc.address,
-        ),
-      getFeePayer: async () => fpc.address,
-      getGasSettings: () => undefined,
-    };
-
-    const receipt = await token.methods
-      .transfer_public_to_public(user, user, 1n, Fr.random())
-      .send({
-        from: user,
-        fee: {
-          paymentMethod: fpcPaymentMethod,
-          gasSettings: {
-            gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-            maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-          },
-        },
-        wait: { timeout: 180 },
-      });
-
-    const userAfter = BigInt(
-      (
-        await token.methods.balance_of_private(user).simulate({ from: user })
-      ).toString(),
-    );
-    const operatorAfter = BigInt(
-      (
-        await token.methods
-          .balance_of_private(operator)
-          .simulate({ from: operator })
-      ).toString(),
-    );
-
-    const userDebited = userBefore - userAfter;
-    const operatorCredited = operatorAfter - operatorBefore;
-
-    if (userDebited !== expectedCharge) {
-      throw new Error(
-        `User debit mismatch. expected=${expectedCharge} got=${userDebited}`,
-      );
-    }
-    if (operatorCredited !== expectedCharge) {
-      throw new Error(
-        `Operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
-      );
-    }
-
-    const attestationLogs = attestation.getLogs();
-    if (!attestationLogs.includes("quote_issued")) {
-      throw new Error(
-        "Attestation service logs did not include quote_issued marker",
-      );
-    }
-
-    const topupLogs = topup.getLogs();
-    if (!topupLogs.includes("FPC Fee Juice balance:")) {
-      throw new Error(
-        "Top-up service logs did not include Fee Juice balance read",
-      );
-    }
-
-    console.log(
-      `[services-smoke] tx_fee_juice=${receipt.transactionFee} user_debited=${userDebited} operator_credited=${operatorCredited}`,
-    );
-    console.log("[services-smoke] PASS: quote endpoint issued usable authwit");
-    console.log(
-      "[services-smoke] PASS: topup service read balance and bridged",
-    );
-    console.log(
-      "[services-smoke] PASS: tx accepted with attestation quote + fee_entrypoint",
-    );
   } finally {
-    for (const proc of managed.reverse()) {
-      await stopManagedProcess(proc);
-    }
     rmSync(tmpDir, { recursive: true, force: true });
   }
 }
