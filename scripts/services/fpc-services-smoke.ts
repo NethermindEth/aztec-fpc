@@ -687,8 +687,9 @@ async function main() {
 
     const attestation = startManagedProcess(
       "attestation",
-      "node",
+      "bun",
       [
+        "run",
         path.join(repoRoot, "services", "attestation", "dist", "index.js"),
         "--config",
         attestationConfigPath,
@@ -726,8 +727,9 @@ async function main() {
 
     const topup = startManagedProcess(
       "topup",
-      "node",
+      "bun",
       [
+        "run",
         path.join(repoRoot, "services", "topup", "dist", "index.js"),
         "--config",
         topupConfigPath,
