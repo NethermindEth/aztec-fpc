@@ -3,8 +3,8 @@ import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Config } from "../src/config.js";
 import { buildServer } from "../src/server.js";
-import type { QuoteAuthwitSigner } from "../src/signer.js";
-import { computeQuoteInnerHash } from "../src/signer.js";
+import type { QuoteSchnorrSigner } from "../src/signer.js";
+import { computeQuoteHash } from "../src/signer.js";
 
 const VALID_USER =
   "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
@@ -28,11 +28,21 @@ const TEST_CONFIG: Config = {
   pxe_data_directory: undefined,
 };
 
+function mockSigner(returnValue: string = "0xabc123"): QuoteSchnorrSigner {
+  return { signQuoteHash: async () => returnValue };
+}
+
+function failingSigner(): QuoteSchnorrSigner {
+  return {
+    signQuoteHash: async () => {
+      throw new Error("signing backend unavailable");
+    },
+  };
+}
+
 describe("server", () => {
   it("returns health status", async () => {
-    const app = buildServer(TEST_CONFIG, {
-      createForQuote: async () => "0xignored",
-    });
+    const app = buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({ method: "GET", url: "/health" });
@@ -44,9 +54,7 @@ describe("server", () => {
   });
 
   it("returns accepted asset metadata", async () => {
-    const app = buildServer(TEST_CONFIG, {
-      createForQuote: async () => "0xignored",
-    });
+    const app = buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({ method: "GET", url: "/asset" });
@@ -61,16 +69,14 @@ describe("server", () => {
   });
 
   it("returns quote payload with required fields on happy path", async () => {
-    let calledConsumer: string | undefined;
-    let calledInnerHashHex: string | undefined;
-    const quoteSigner: QuoteAuthwitSigner = {
-      createForQuote: async (consumer, innerHash) => {
-        calledConsumer = consumer.toString();
-        calledInnerHashHex = innerHash.toString();
+    let calledQuoteHashHex: string | undefined;
+    const signer: QuoteSchnorrSigner = {
+      signQuoteHash: async (quoteHash) => {
+        calledQuoteHashHex = quoteHash.toString();
         return "0xabc123";
       },
     };
-    const app = buildServer(TEST_CONFIG, quoteSigner);
+    const app = buildServer(TEST_CONFIG, signer);
 
     try {
       const nowBefore = Math.floor(Date.now() / 1000);
@@ -86,12 +92,12 @@ describe("server", () => {
         rate_num: string;
         rate_den: string;
         valid_until: string;
-        authwit: string;
+        signature: string;
       };
       assert.equal(body.accepted_asset, TEST_CONFIG.accepted_asset_address);
       assert.equal(body.rate_num, "10200");
       assert.equal(body.rate_den, "10000000");
-      assert.equal(body.authwit, "0xabc123");
+      assert.equal(body.signature, "0xabc123");
 
       const validUntil = BigInt(body.valid_until);
       assert.equal(
@@ -103,8 +109,7 @@ describe("server", () => {
         true,
       );
 
-      assert.equal(calledConsumer, TEST_CONFIG.fpc_address);
-      const expectedInnerHash = await computeQuoteInnerHash({
+      const expectedHash = await computeQuoteHash({
         fpcAddress: AztecAddress.fromString(TEST_CONFIG.fpc_address),
         acceptedAsset: AztecAddress.fromString(
           TEST_CONFIG.accepted_asset_address,
@@ -114,16 +119,14 @@ describe("server", () => {
         validUntil,
         userAddress: AztecAddress.fromString(VALID_USER),
       });
-      assert.equal(calledInnerHashHex, expectedInnerHash.toString());
+      assert.equal(calledQuoteHashHex, expectedHash.toString());
     } finally {
       await app.close();
     }
   });
 
   it("returns 400 for missing user", async () => {
-    const app = buildServer(TEST_CONFIG, {
-      createForQuote: async () => "0xignored",
-    });
+    const app = buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({ method: "GET", url: "/quote" });
@@ -140,9 +143,7 @@ describe("server", () => {
   });
 
   it("returns 400 for invalid user address", async () => {
-    const app = buildServer(TEST_CONFIG, {
-      createForQuote: async () => "0xignored",
-    });
+    const app = buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({
@@ -162,11 +163,7 @@ describe("server", () => {
   });
 
   it("returns 500 when quote signer fails", async () => {
-    const app = buildServer(TEST_CONFIG, {
-      createForQuote: async () => {
-        throw new Error("signing backend unavailable");
-      },
-    });
+    const app = buildServer(TEST_CONFIG, failingSigner());
 
     try {
       const response = await app.inject({

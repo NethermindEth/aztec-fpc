@@ -8,7 +8,6 @@ import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import {
-  computeInnerAuthWitHash,
   lookupValidity,
 } from "@aztec/aztec.js/authorization";
 import { Contract } from "@aztec/aztec.js/contracts";
@@ -20,12 +19,13 @@ import {
   ProtocolContractAddress,
 } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import {
   loadContractArtifact,
   loadContractArtifactForPublic,
 } from "@aztec/stdlib/abi";
-import { AuthWitness } from "@aztec/stdlib/auth-witness";
 import { computeSecretHash } from "@aztec/stdlib/hash";
+import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
@@ -42,7 +42,6 @@ import { privateKeyToAccount } from "viem/accounts";
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
-const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
@@ -83,7 +82,7 @@ type QuoteResponse = {
   rate_num: string;
   rate_den: string;
   valid_until: string;
-  authwit: string;
+  signature: string;
 };
 
 type AssetResponse = {
@@ -633,8 +632,15 @@ async function main() {
     ).send({ from: operator });
     console.log(`[services-smoke] token=${token.address.toString()}`);
 
+    // Derive operator signing pubkey for inline Schnorr verification.
+    const schnorr = new Schnorr();
+    const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
+    const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
+
     const fpc = await Contract.deploy(wallet, fpcArtifact, [
       operator,
+      operatorPubKey.x,
+      operatorPubKey.y,
       token.address,
     ]).send({ from: operator });
     console.log(`[services-smoke] fpc=${fpc.address.toString()}`);
@@ -794,7 +800,10 @@ async function main() {
       config.httpTimeoutMs,
     );
     const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
-    const quoteAuthwit = AuthWitness.fromString(quote.authwit);
+    const quoteSigHex = quote.signature;
+    const quoteSigBytes = Array.from(
+      Buffer.from(quoteSigHex.replace("0x", ""), "hex"),
+    );
     const rateNum = BigInt(quote.rate_num);
     const rateDen = BigInt(quote.rate_den);
     const validUntil = BigInt(quote.valid_until);
@@ -860,29 +869,11 @@ async function main() {
       action: transferCall,
     });
 
-    const quoteInnerHash = await computeInnerAuthWitHash([
-      QUOTE_DOMAIN_SEPARATOR,
-      fpc.address.toField(),
-      token.address.toField(),
-      new Fr(rateNum),
-      new Fr(rateDen),
-      new Fr(validUntil),
-      user.toField(),
-    ]);
-    const quoteValidity = await lookupValidity(
-      wallet,
-      operator,
-      { consumer: fpc.address, innerHash: quoteInnerHash },
-      quoteAuthwit,
-    );
     const transferValidity = await lookupValidity(
       wallet,
       user,
       { caller: fpc.address, action: transferCall },
       transferAuthwit,
-    );
-    console.log(
-      `[services-smoke] quote_authwit_valid_private=${quoteValidity.isValidInPrivate} quote_authwit_valid_public=${quoteValidity.isValidInPublic}`,
     );
     console.log(
       `[services-smoke] transfer_authwit_valid_private=${transferValidity.isValidInPrivate} transfer_authwit_valid_public=${transferValidity.isValidInPublic}`,
@@ -902,14 +893,14 @@ async function main() {
     );
 
     const feeEntrypointCall = await fpc.methods
-      .fee_entrypoint(transferAuthwitNonce, rateNum, rateDen, validUntil)
+      .fee_entrypoint(transferAuthwitNonce, rateNum, rateDen, validUntil, quoteSigBytes)
       .getFunctionCall();
     const fpcPaymentMethod = {
       getAsset: async () => ProtocolContractAddress.FeeJuice,
       getExecutionPayload: async () =>
         new ExecutionPayload(
           [feeEntrypointCall],
-          [quoteAuthwit, transferAuthwit],
+          [transferAuthwit],
           [],
           [],
           fpc.address,

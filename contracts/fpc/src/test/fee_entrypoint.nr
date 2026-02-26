@@ -18,9 +18,7 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
     env.call_private(operator, token.mint_to_private(user, mint_amount));
 
     let valid_until = env.last_block_timestamp() + 3600;
-    utils::add_quote_authwit(
-        env,
-        operator,
+    let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
         rate_num,
@@ -38,7 +36,7 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
 
     env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until),
+        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until, quote_sig),
     );
 
     let user_balance_after = utils::private_balance(env, token_address, user);
@@ -61,9 +59,7 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
     env.call_private(operator, token.mint_to_private(user, mint_amount));
 
     let valid_until = env.last_block_timestamp() + 3600;
-    utils::add_quote_authwit(
-        env,
-        operator,
+    let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
         rate_num,
@@ -78,13 +74,13 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
 
     env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until),
+        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until, quote_sig),
     );
 
+    // Second call with a different valid_until to get a fresh quote signature,
+    // but intentionally do not add a second transfer authwit.
     let valid_until_2 = valid_until + 1;
-    utils::add_quote_authwit(
-        env,
-        operator,
+    let quote_sig_2 = utils::sign_quote(
         fpc_address,
         token_address,
         rate_num,
@@ -93,16 +89,15 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
         user,
     );
 
-    // Intentionally do not add a second transfer authwit. The second payment attempt must fail.
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE_2, rate_num, rate_den, valid_until_2),
+        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE_2, rate_num, rate_den, valid_until_2, quote_sig_2),
     );
 }
 
 #[test(should_fail_with = "quote expired")]
 unconstrained fn fee_entrypoint_rejects_expired_quote() {
-    let (mut env, fpc_address, token_address, operator, user) = utils::setup();
+    let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
     let fpc = FPC::at(fpc_address);
 
     let rate_num = 1 as u128;
@@ -110,9 +105,7 @@ unconstrained fn fee_entrypoint_rejects_expired_quote() {
     let authwit_nonce = 99;
 
     let valid_until = env.last_block_timestamp();
-    utils::add_quote_authwit(
-        env,
-        operator,
+    let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
         rate_num,
@@ -125,11 +118,13 @@ unconstrained fn fee_entrypoint_rejects_expired_quote() {
     // so anchor_ts > valid_until deterministically.
     env.mine_block_at(valid_until + 1);
 
-    let _ =
-        env.call_private(user, fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until));
+    let _ = env.call_private(
+        user,
+        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+    );
 }
 
-#[test(should_fail_with = "Unknown auth witness for message hash")]
+#[test(should_fail_with = "invalid quote signature")]
 unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     let (mut env, fpc_address, token_address, operator, user) = utils::setup();
     let fpc = FPC::at(fpc_address);
@@ -142,16 +137,15 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     let valid_until = env.last_block_timestamp() + 3600;
     let charge = utils::expected_charge(env, rate_num, rate_den);
 
-    // Ensure transfer authwit and balance are valid for `other_user` so this test
-    // fails specifically on quote binding (user mismatch), not transfer authwit.
     env.call_private(operator, token.mint_to_private(other_user, charge + (100 as u128)));
     let transfer_call =
         token.transfer_private_to_private(other_user, operator, charge, authwit_nonce);
     add_private_authwit_from_call(env, other_user, fpc_address, transfer_call);
 
-    utils::add_quote_authwit(
-        env,
-        operator,
+    // Sign the quote for `user`, but call from `other_user`. The quote hash
+    // includes user_address = msg_sender, so the hash won't match and the
+    // Schnorr signature will fail to verify.
+    let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
         rate_num,
@@ -162,6 +156,6 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
 
     let _ = env.call_private(
         other_user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until),
+        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
     );
 }

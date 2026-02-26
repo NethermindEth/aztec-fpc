@@ -34,6 +34,7 @@ import {
 import { ExecutionPayload }            from '@aztec/stdlib/tx';
 import { Gas, GasFees, GasSettings }  from '@aztec/stdlib/gas';
 import { deriveSigningKey }            from '@aztec/stdlib/keys';
+import { Schnorr }                     from '@aztec/foundation/crypto/schnorr';
 import { createPXE, getPXEConfig }     from '@aztec/pxe/server';
 import { BaseWallet }                  from '@aztec/wallet-sdk/base-wallet';
 import { readFileSync, readdirSync, mkdirSync, rmSync } from 'fs';
@@ -96,13 +97,14 @@ class SimpleWallet extends BaseWallet {
 
 // ── Custom FeePaymentMethod for our FPC ───────────────────────────────────────
 class CustomFPCPaymentMethod {
-  constructor(fpcAddress, transferAuthWit, transferNonce, rateNum, rateDen, validUntil, gasSettings) {
+  constructor(fpcAddress, transferAuthWit, transferNonce, rateNum, rateDen, validUntil, quoteSigFields, gasSettings) {
     this.fpcAddress      = fpcAddress;
     this.transferAuthWit = transferAuthWit;
     this.transferNonce   = transferNonce;
     this.rateNum         = rateNum;
     this.rateDen         = rateDen;
     this.validUntil      = validUntil;
+    this.quoteSigFields  = quoteSigFields;
     this.gasSettings     = gasSettings;
   }
 
@@ -110,7 +112,7 @@ class CustomFPCPaymentMethod {
   getGasSettings() { return this.gasSettings; }
 
   async getExecutionPayload() {
-    const selector = await FunctionSelector.fromSignature('fee_entrypoint(Field,u128,u128,u64)');
+    const selector = await FunctionSelector.fromSignature('fee_entrypoint(Field,u128,u128,u64,[u8;64])');
 
     const feeCall = FunctionCall.from({
       name: 'fee_entrypoint',
@@ -124,6 +126,7 @@ class CustomFPCPaymentMethod {
         new Fr(this.rateNum),
         new Fr(this.rateDen),
         new Fr(this.validUntil),
+        ...this.quoteSigFields,
       ],
       returnTypes: [],
     });
@@ -167,6 +170,13 @@ async function main() {
   console.log('user:    ', userAddress.toString());
   console.log('operator:', operatorAddress.toString());
 
+  // ── Derive operator signing key + public key ──────────────────────────────
+  const schnorr       = new Schnorr();
+  const operatorSigningKey = deriveSigningKey(operatorData.secret);
+  const operatorPubKey     = await schnorr.computePublicKey(operatorSigningKey);
+  console.log('operator pubkey x:', operatorPubKey.x.toString());
+  console.log('operator pubkey y:', operatorPubKey.y.toString());
+
   // ── Load & normalize artifacts ─────────────────────────────────────────────
   const tokenArtifactPath = findArtifact('Token');
   const fpcArtifactPath   = findArtifact('FPC');
@@ -181,8 +191,6 @@ async function main() {
   );
 
   // ── Deploy Token ───────────────────────────────────────────────────────────
-  // constructor_with_minter(name, symbol, decimals, minter, upgrade_authority)
-  // userAddress doubles as minter for this profiling run.
   console.log('\nDeploying Token...');
   const tokenDeploy = await Contract.deploy(
     wallet, tokenArtifact,
@@ -193,11 +201,11 @@ async function main() {
   console.log('Token:', tokenAddress.toString());
 
   // ── Deploy FPC ─────────────────────────────────────────────────────────────
-  // Constructor: (operator, accepted_asset)
+  // Constructor: (operator, operator_pubkey_x, operator_pubkey_y, accepted_asset)
   console.log('Deploying FPC...');
   const fpcDeploy = await Contract.deploy(
     wallet, fpcArtifact,
-    [operatorAddress, tokenAddress],
+    [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress],
   ).send({ from: userAddress });
   const fpcAddress = fpcDeploy.address;
   console.log('FPC:  ', fpcAddress.toString());
@@ -226,9 +234,8 @@ async function main() {
     .send({ from: userAddress });
   console.log('Minted.');
 
-  // ── Quote authwit: operator authorises FPC to consume the fee quote ────────
-  // inner_hash = poseidon2([DOMAIN_SEP, fpc, token, rate_num, rate_den, valid_until, user])
-  const quoteInnerHash = await computeInnerAuthWitHash([
+  // ── Quote signature: sign the quote hash with operator's Schnorr key ──────
+  const quoteHash = await computeInnerAuthWitHash([
     new Fr(QUOTE_DOMAIN_SEP),
     fpcAddress.toField(),
     tokenAddress.toField(),
@@ -237,14 +244,11 @@ async function main() {
     new Fr(VALID_UNTIL),
     userAddress.toField(),
   ]);
-  const quoteAuthWit = await wallet.createAuthWit(operatorAddress, {
-    consumer: fpcAddress,
-    innerHash: quoteInnerHash,
-  });
-  console.log('Quote authwit created.');
+  const quoteSig = await schnorr.constructSignature(quoteHash.toBuffer(), operatorSigningKey);
+  const quoteSigFields = Array.from(quoteSig.toBuffer()).map(b => new Fr(b));
+  console.log('Quote signature created (inline Schnorr).');
 
   // ── Transfer authwit: user authorises FPC to pull `charge` tokens ──────────
-  // FPC calls: Token.transfer_private_to_private(user, operator, charge, TX_NONCE)
   const transferAuthWit = await wallet.createAuthWit(userAddress, {
     caller: fpcAddress,
     action: tokenAsUser.methods.transfer_private_to_private(
@@ -260,7 +264,7 @@ async function main() {
   });
 
   const feePayment = new CustomFPCPaymentMethod(
-    fpcAddress, transferAuthWit, TX_NONCE, RATE_NUM, RATE_DEN, VALID_UNTIL, gasSettings,
+    fpcAddress, transferAuthWit, TX_NONCE, RATE_NUM, RATE_DEN, VALID_UNTIL, quoteSigFields, gasSettings,
   );
 
   // ── Profile ────────────────────────────────────────────────────────────────
@@ -273,7 +277,6 @@ async function main() {
       fee: { paymentMethod: feePayment, gasSettings },
       from: userAddress,
       additionalScopes: [operatorAddress],
-      authWitnesses: [quoteAuthWit],
       profileMode: 'full',
       skipProofGeneration: false,
     });

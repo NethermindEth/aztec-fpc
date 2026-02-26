@@ -4,10 +4,10 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 import {
+  computeQuoteHash,
   computeQuoteInnerHash,
-  createQuoteAuthwitSigner,
-  type MessageHashAuthwitSigner,
   type QuoteParams,
+  type QuoteSchnorrSigner,
   signQuote,
 } from "../src/signer.js";
 
@@ -36,7 +36,7 @@ function makeQuoteParams(): QuoteParams {
 }
 
 describe("signer", () => {
-  it("computes inner hash with the exact preimage order", async () => {
+  it("computes quote hash with the exact preimage order", async () => {
     const params = makeQuoteParams();
 
     const expected = await computeInnerAuthWitHash([
@@ -49,7 +49,7 @@ describe("signer", () => {
       params.userAddress.toField(),
     ]);
 
-    const actual = await computeQuoteInnerHash(params);
+    const actual = await computeQuoteHash(params);
     assert.equal(actual.equals(expected), true);
 
     const wrongOrder = await computeInnerAuthWitHash([
@@ -64,22 +64,21 @@ describe("signer", () => {
     assert.equal(actual.equals(wrongOrder), false);
   });
 
-  it("serializes authwit output to string", async () => {
+  it("backward-compatible alias computeQuoteInnerHash works", async () => {
     const params = makeQuoteParams();
-    const messageHashSigner: MessageHashAuthwitSigner = {
-      createAuthWit: async () =>
-        ({
-          toString: () => "0xdeadbeef",
-        }) as never,
+    const a = await computeQuoteHash(params);
+    const b = await computeQuoteInnerHash(params);
+    assert.equal(a.equals(b), true);
+  });
+
+  it("returns signature hex from signer", async () => {
+    const params = makeQuoteParams();
+    const signer: QuoteSchnorrSigner = {
+      signQuoteHash: async () => "0xdeadbeef",
     };
 
-    const quoteSigner = createQuoteAuthwitSigner(messageHashSigner, {
-      chainId: new Fr(31337),
-      version: new Fr(1),
-    });
-
-    const authwit = await signQuote(quoteSigner, params);
-    assert.equal(authwit, "0xdeadbeef");
+    const sig = await signQuote(signer, params);
+    assert.equal(sig, "0xdeadbeef");
   });
 
   it("binds quote hash to user address", async () => {
@@ -89,8 +88,8 @@ describe("signer", () => {
       userAddress: OTHER_USER,
     };
 
-    const userHash = await computeQuoteInnerHash(params);
-    const otherUserHash = await computeQuoteInnerHash(otherUserParams);
+    const userHash = await computeQuoteHash(params);
+    const otherUserHash = await computeQuoteHash(otherUserParams);
     assert.equal(userHash.equals(otherUserHash), false);
   });
 });
