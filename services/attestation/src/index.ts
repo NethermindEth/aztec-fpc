@@ -10,9 +10,7 @@
  *   node dist/index.js [--config path/to/config.yaml]
  */
 
-import {
-  getSchnorrAccountContractAddress,
-} from "@aztec/accounts/schnorr";
+import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";

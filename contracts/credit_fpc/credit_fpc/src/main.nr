@@ -118,7 +118,6 @@ pub contract CreditFPC {
         self.context.end_setup();
     }
 
-
     #[external("public")]
     #[only_self]
     fn _refund(max_gas_cost: u128, partial_note: PartialUintNote) {
@@ -169,11 +168,7 @@ pub contract CreditFPC {
         ]);
 
         assert(
-            schnorr::verify_signature(
-                operator_pubkey,
-                quote_sig,
-                quote_hash.to_be_bytes::<32>(),
-            ),
+            schnorr::verify_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>()),
             "invalid quote signature",
         );
 

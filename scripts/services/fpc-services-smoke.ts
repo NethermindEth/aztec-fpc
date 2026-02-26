@@ -7,9 +7,7 @@ import { fileURLToPath } from "node:url";
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import {
-  lookupValidity,
-} from "@aztec/aztec.js/authorization";
+import { lookupValidity } from "@aztec/aztec.js/authorization";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
@@ -895,7 +893,13 @@ async function main() {
     );
 
     const feeEntrypointCall = await fpc.methods
-      .fee_entrypoint(transferAuthwitNonce, rateNum, rateDen, validUntil, quoteSigBytes)
+      .fee_entrypoint(
+        transferAuthwitNonce,
+        rateNum,
+        rateDen,
+        validUntil,
+        quoteSigBytes,
+      )
       .getFunctionCall();
     const fpcPaymentMethod = {
       getAsset: async () => ProtocolContractAddress.FeeJuice,

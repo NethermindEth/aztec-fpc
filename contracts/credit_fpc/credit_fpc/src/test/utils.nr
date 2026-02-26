@@ -123,17 +123,16 @@ unconstrained fn u128_pair_to_be_bytes(hi: u128, lo: u128) -> [u8; 32] {
 }
 
 unconstrained fn gte_u256(a_hi: u128, a_lo: u128, b_hi: u128, b_lo: u128) -> bool {
-    if a_hi != b_hi { a_hi > b_hi } else { a_lo >= b_lo }
+    if a_hi != b_hi {
+        a_hi > b_hi
+    } else {
+        a_lo >= b_lo
+    }
 }
 
 /// a - b for 256-bit numbers (caller must ensure a >= b).
 /// Avoids u128 underflow by branching on the lo comparison.
-unconstrained fn sub_u256(
-    a_hi: u128,
-    a_lo: u128,
-    b_hi: u128,
-    b_lo: u128,
-) -> (u128, u128) {
+unconstrained fn sub_u256(a_hi: u128, a_lo: u128, b_hi: u128, b_lo: u128) -> (u128, u128) {
     if a_lo >= b_lo {
         (a_hi - b_hi, a_lo - b_lo)
     } else {
@@ -144,12 +143,7 @@ unconstrained fn sub_u256(
 
 /// a + b for 256-bit numbers (caller must ensure no 256-bit overflow).
 /// Avoids u128 overflow by branching on the carry check.
-unconstrained fn add_u256(
-    a_hi: u128,
-    a_lo: u128,
-    b_hi: u128,
-    b_lo: u128,
-) -> (u128, u128) {
+unconstrained fn add_u256(a_hi: u128, a_lo: u128, b_hi: u128, b_lo: u128) -> (u128, u128) {
     if a_lo > 0xffffffffffffffffffffffffffffffff - b_lo {
         let complement = 0xffffffffffffffffffffffffffffffff - (b_lo - 1);
         (a_hi + b_hi + 1, a_lo - complement)
@@ -175,7 +169,8 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let pk = test_operator_pubkey();
-    let credit_fpc_initializer = CreditFPC::interface().constructor(operator, pk.x, pk.y, token_address);
+    let credit_fpc_initializer =
+        CreditFPC::interface().constructor(operator, pk.x, pk.y, token_address);
     let credit_fpc_address =
         env.deploy("CreditFPC").with_public_initializer(operator, credit_fpc_initializer);
 
