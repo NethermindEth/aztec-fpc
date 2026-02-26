@@ -1,7 +1,7 @@
 # FPC Protocol — Specification
 
 > **Status:** Alpha / MVP
-> **Last updated:** 2026-02-24
+> **Last updated:** 2026-02-26
 
 ---
 
@@ -25,15 +25,15 @@ The protocol has three components:
 User
   │  1. GET /quote?user=<address>
   │◄──────────────────────────────────────  Attestation Service
-  │  signed quote (rate_num, rate_den, valid_until, authwit)
+  │  signed quote (rate_num, rate_den, valid_until, signature)
   │
   │  2. Submit tx with fee_entrypoint(...)
   │     + token transfer authwit
-  │     + quote authwit (from step 1)
+  │     + quote signature (from step 1)
   ▼
 Aztec L2
   ├─ Setup phase:   FPC.fee_entrypoint
-  │                   verifies quote authwit (bound to this user)
+  │                   verifies quote signature (bound to this user)
   │                   transfers tokens: user private → operator private
   │                   declares itself fee_payer
   ├─ Execution:     user's actual tx logic runs
@@ -54,10 +54,9 @@ Aztec L2
 
 | Field | Type | Description |
 |---|---|---|
-| `operator` | `PublicImmutable<AztecAddress>` | Single key. Receives all fee payments as private notes. Signs all quotes. Fixed at deploy. |
-| `accepted_asset` | `PublicImmutable<AztecAddress>` | The one token contract this FPC accepts. Enforced on every call. Fixed at deploy. |
+| `config` | `PublicImmutable<Config>` | Packed immutable config: `operator`, `operator_pubkey_x`, `operator_pubkey_y`, `accepted_asset`. |
 
-Both fields are `PublicImmutable` — the contract has no mutable state and no admin functions after deployment.
+The contract keeps one packed immutable config slot and no mutable admin state after deployment.
 
 ### 3.2 Quote Format
 
@@ -75,9 +74,9 @@ inner_hash = poseidon2([
 ])
 ```
 
-The `operator` signs this inner hash using Aztec's authwit mechanism. The user includes the resulting `AuthWitness` in their transaction; the FPC verifies it in the setup phase using `assert_inner_hash_valid_authwit`.
+The operator signs this hash off-chain with Schnorr (64-byte signature). The user passes signature bytes as `quote_sig` to `fee_entrypoint`, and the FPC verifies it inline with `schnorr::verify_signature` against the stored operator pubkey.
 
-Because `user_address` is always `msg_sender`, a quote is single-use per user — it cannot be replayed by a different address.
+The contract pushes `quote_hash` as a nullifier, so consumed quotes cannot be replayed.
 
 ### 3.3 Exchange Rate
 
@@ -101,20 +100,21 @@ Policy: the standard `fee_entrypoint` requires `rate_num > 0`. Zero-rate quotes 
 
 ### 3.4 Payment Flow
 
-#### `fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until)`
+#### `fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig)`
 
 ```
 User private balance →[transfer_private_to_private]→ Operator private balance
 ```
 
-1. Reads `operator` and `accepted_asset` from storage
+1. Reads packed `config` from storage (`operator`, signing pubkey, `accepted_asset`)
 2. Asserts `rate_num > 0`
-3. Verifies the quote authwit is signed by `operator` and binds `user_address = msg_sender`
-4. Asserts `anchor_block_timestamp ≤ valid_until`
-5. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
-6. Computes `charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)`
-7. Calls `Token::at(accepted_asset).transfer_private_to_private(sender → operator, charge, nonce)`
-8. Calls `set_as_fee_payer()` + `end_setup()`
+3. Verifies Schnorr quote signature and binds `user_address = msg_sender`
+4. Asserts quote nullifier does not exist, then pushes it (replay protection)
+5. Asserts `anchor_block_timestamp ≤ valid_until`
+6. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
+7. Computes `charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)` (`rate_den != 0` enforced in fee math)
+8. Calls `Token::at(accepted_asset).transfer_private_to_private(sender → operator, charge, nonce)`
+9. Calls `set_as_fee_payer()` + `end_setup()`
 
 The token transfer is a private function call that executes in the setup phase, before `end_setup()`. It is irrevocably committed. If the user's app logic subsequently reverts, the fee has still been paid — this is unavoidable in the Aztec FPC model.
 
@@ -124,8 +124,8 @@ No teardown is scheduled. No tokens accumulate in this contract's balance.
 
 | Function | Aztec context | Callable by |
 |---|---|---|
-| `constructor(operator, accepted_asset)` | public | anyone (one-time initializer) |
-| `fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until)` | private | any user (quote binds to caller) |
+| `constructor(operator, operator_pubkey_x, operator_pubkey_y, accepted_asset)` | public | anyone (one-time initializer) |
+| `fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig)` | private | any user (quote binds to caller) |
 
 > There are no admin functions. The contract has no mutable state after construction.
 
@@ -166,15 +166,15 @@ Returns a user-specific quote for the caller. The `user` address is bound into t
   "rate_num": "10200",
   "rate_den": "10000000",
   "valid_until": "1740000300",
-  "authwit": "0x..."
+  "signature": "0x..."
 }
 ```
 
-The user passes `(rate_num, rate_den, valid_until)` to `fee_entrypoint` and includes `authwit` in their transaction's `authWitnesses` array.
+The user passes `(rate_num, rate_den, valid_until, signature)` to `fee_entrypoint`. Only the token transfer authwit is carried in `authWitnesses`.
 
 ### 4.3 Quote Signing Internals
 
-The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) to produce the same inner hash as the contract's `assert_valid_quote`. It then calls `wallet.createAuthWit(operatorAddress, { consumer: fpcAddress, innerHash })` to produce an `AuthWitness`.
+The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) to compute the same quote hash as `assert_valid_quote`, then signs the 32-byte hash payload with the operator Schnorr key and returns a 64-byte hex signature.
 
 ---
 
@@ -193,7 +193,9 @@ The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) t
 | `fpc_address` | FPC contract on L2 |
 | `aztec_node_url` | PXE/node RPC |
 | `l1_rpc_url` | L1 Ethereum RPC |
-| `l1_operator_private_key` | L1 wallet key (TODO: replace with KMS) |
+| `l1_operator_private_key` | L1 wallet key (can be supplied via env/config/secret provider) |
+| `l1_operator_secret_provider` | Secret source strategy (`auto`, `env`, `config`, `kms`, `hsm`) |
+| `runtime_profile` | `development` / `test` / `production` (production rejects plaintext config secrets) |
 | `threshold` | Bridge when balance below this (wei) |
 | `top_up_amount` | Amount to bridge per event (wei) |
 | `check_interval_ms` | Polling interval |
@@ -214,7 +216,7 @@ The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) t
 ### 6.1 Prerequisites
 
 - Aztec node running and accessible
-- aztec-packages checked out at `../aztec-packages/kind-moore` relative to this repo
+- This repository checked out with `vendor/aztec-standards` submodule initialized
 - L1 Ethereum RPC (Infura, Alchemy, or local node)
 - L1 wallet with ETH for bridging
 - An Aztec account for the operator
@@ -222,13 +224,14 @@ The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) t
 ### 6.2 Compile and Deploy the Contract
 
 ```bash
-# From contracts/multi_asset_fpc/
-nargo compile
+# From repo root
+aztec compile --workspace --force
 
-# Deploy — replace with your actual operator address and token address
+# Deploy FPC (manual)
+# operator_pubkey_x/y are the operator Schnorr signing pubkey coordinates.
 aztec deploy \
   --artifact target/fpc-FPC.json \
-  --args <operator_address> <accepted_asset_address>
+  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y> <accepted_asset_address>
 ```
 
 Record the deployed contract address — you'll need it in both service configs.
@@ -238,7 +241,8 @@ Record the deployed contract address — you'll need it in both service configs.
 ```bash
 cd services/attestation
 cp config.example.yaml config.yaml
-# Edit config.yaml: set fpc_address, operator_secret_key, accepted_asset_*, rates
+# Edit config.yaml: set fpc_address, accepted_asset_*, rates
+# Provide operator key via OPERATOR_SECRET_KEY (recommended) or config.operator_secret_key
 bun install
 bun run build
 bun run start
@@ -249,7 +253,8 @@ bun run start
 ```bash
 cd services/topup
 cp config.example.yaml config.yaml
-# Edit config.yaml: set fpc_address, aztec_node_url, l1_rpc_url, l1_operator_private_key
+# Edit config.yaml: set fpc_address, aztec_node_url, l1_rpc_url
+# Provide bridge key via L1_OPERATOR_PRIVATE_KEY (recommended) or config.l1_operator_private_key
 # l1_chain_id and fee juice L1 addresses come from nodeInfo
 bun install
 bun run build
@@ -277,6 +282,9 @@ curl "http://localhost:3000/quote?user=<your_aztec_address>"
 // 1. Fetch a user-specific quote
 const quote = await fetch(`${ATTESTATION_URL}/quote?user=${wallet.getAddress()}`)
   .then(r => r.json());
+const quoteSigBytes = Array.from(
+  Buffer.from(quote.signature.replace("0x", ""), "hex")
+);
 
 // 2. Compute the charge client-side (must match what the contract will compute on-chain)
 //    charge = ceil(max_gas_cost_no_teardown * rate_num / rate_den)
@@ -286,22 +294,35 @@ const NONCE = Fr.random();
 // 3. Create a token transfer authwit (user authorises FPC to pull the charge)
 const tokenAuthwit = await wallet.createAuthWit(wallet.getAddress(), {
   caller: FPC_ADDRESS,
-  action: Token.at(ACCEPTED_ASSET).transfer_in_private(
+  action: Token.at(ACCEPTED_ASSET).transfer_private_to_private(
     wallet.getAddress(), OPERATOR_ADDRESS, CHARGE, NONCE
   ),
 });
 
-// 4. Call the FPC fee entrypoint as the fee payment method
+// 4. Build fee_entrypoint call and use it as payment method payload
+const feeEntrypointCall = await FPC.at(FPC_ADDRESS).methods
+  .fee_entrypoint(
+    NONCE,
+    BigInt(quote.rate_num),
+    BigInt(quote.rate_den),
+    BigInt(quote.valid_until),
+    quoteSigBytes
+  )
+  .getFunctionCall();
+
+const paymentMethod = {
+  getAsset: async () => ProtocolContractAddress.FeeJuice,
+  getExecutionPayload: async () =>
+    new ExecutionPayload([feeEntrypointCall], [tokenAuthwit], [], [], FPC_ADDRESS),
+  getFeePayer: async () => FPC_ADDRESS,
+  getGasSettings: () => undefined,
+};
+
+// 5. Send user tx with custom fee payment method
 const tx = await SomeContract.at(TARGET).someMethod(args).send({
   fee: {
-    type: 'fpc',
-    fpcAddress: FPC_ADDRESS,
-    fpcEntrypoint: 'fee_entrypoint',
-    fpcArgs: [NONCE, quote.rate_num, quote.rate_den, quote.valid_until],
-    authWitnesses: [
-      AuthWitness.fromString(quote.authwit),
-      tokenAuthwit,
-    ],
+    paymentMethod,
+    gasSettings: YOUR_GAS_SETTINGS,
   },
 });
 ```
@@ -314,12 +335,13 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 
 ### Operator key
 - The `operator` key receives all fee revenue and signs all quotes. It is a single key with no separation of duties. Compromise allows fake quotes (user overcharge) and, critically, receipt of funds.
-- Use a hardware wallet or KMS in production. The key is loaded in plaintext in the MVP — all such locations are marked with TODO comments.
+- Use a hardware wallet or KMS in production. Services support secret-provider modes (`env`, `kms`, `hsm`); `runtime_profile=production` rejects plaintext config-file secrets.
 - There is no on-chain key rotation. If the operator key is compromised, the contract must be redeployed.
 
 ### Quote replay
 - Quotes are user-specific (`user_address = msg_sender`). A quote signed for user A cannot be used by user B.
-- A valid quote can be replayed by the same user within the `valid_until` window. Keep `quote_validity_seconds` short (≤5 min).
+- Consumed quotes are nullified on-chain (`push_nullifier(quote_hash)`), so the exact same quote cannot be reused (even by the same user).
+- Keep `quote_validity_seconds` short (default service cap is 3600s; practical deployments should use much shorter windows).
 
 ### Setup-phase irreversibility
 - The token transfer executes directly inside the setup phase, before `end_setup()`. It is irrevocably committed.
@@ -336,7 +358,7 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 
 ## 9. Known Limitations (Alpha)
 
-- **No key rotation.** Both fields are `PublicImmutable`. Operator key compromise requires redeployment.
+- **No key rotation.** The packed config is `PublicImmutable`. Operator key compromise requires redeployment.
 - **Operator tracks revenue off-chain.** All payments arrive as private notes in the operator's balance. The operator must use their PXE to discover incoming notes and maintain off-chain accounting.
 - **Charge pre-computation required.** Wallets must replicate the `ceil(max_gas_cost_no_teardown × rate_num / rate_den)` calculation client-side to create the correct token transfer authwit. If gas settings differ at submission time, the authwit may not match.
 - **No oracle integration.** Rates are set manually in config. A service restart reloads from config.yaml.
