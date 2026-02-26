@@ -292,6 +292,11 @@ cp config.example.yaml config.yaml
 # In production, set runtime_profile=production and provide OPERATOR_SECRET_KEY
 # and remove config.operator_secret_key from config.yaml
 # (any plaintext config secret material is rejected at startup).
+# /quote auth:
+# - development/test: quote_auth_mode can stay "disabled"
+# - production: quote_auth_mode must be one of
+#   api_key, trusted_header, api_key_or_trusted_header, api_key_and_trusted_header
+#   and required auth fields must be configured.
 bun install && bun run build && bun run start
 ```
 
@@ -373,12 +378,21 @@ Environment variables take precedence over values in the config file:
 | `AZTEC_NODE_URL` | attestation, topup | `http://aztec-node:8080` |
 | `L1_RPC_URL` | topup | `http://anvil:8545` |
 | `OPERATOR_SECRET_KEY` | attestation | — |
+| `QUOTE_AUTH_MODE` | attestation | `disabled` |
+| `QUOTE_AUTH_API_KEY` | attestation | — |
+| `QUOTE_AUTH_API_KEY_HEADER` | attestation | `x-api-key` |
+| `QUOTE_AUTH_TRUSTED_HEADER_NAME` | attestation | — |
+| `QUOTE_AUTH_TRUSTED_HEADER_VALUE` | attestation | — |
 | `L1_OPERATOR_PRIVATE_KEY` | topup | — |
 
 Pass them via a `.env` file or inline:
 
 ```bash
-OPERATOR_SECRET_KEY=0x... L1_OPERATOR_PRIVATE_KEY=0x... docker compose up
+OPERATOR_SECRET_KEY=0x... \
+QUOTE_AUTH_MODE=api_key \
+QUOTE_AUTH_API_KEY=replace-with-random-secret \
+L1_OPERATOR_PRIVATE_KEY=0x... \
+docker compose up
 ```
 
 ### 14. Verify
@@ -386,7 +400,12 @@ OPERATOR_SECRET_KEY=0x... L1_OPERATOR_PRIVATE_KEY=0x... docker compose up
 ```bash
 curl http://localhost:3000/health
 curl http://localhost:3000/asset
+# quote_auth_mode=disabled
 curl "http://localhost:3000/quote?user=<your_aztec_address>"
+# quote_auth_mode=api_key
+curl -H "x-api-key: <your_api_key>" "http://localhost:3000/quote?user=<your_aztec_address>"
+# quote_auth_mode=trusted_header
+curl -H "x-internal-attestation: allow" "http://localhost:3000/quote?user=<your_aztec_address>"
 ```
 
 ### Troubleshooting
