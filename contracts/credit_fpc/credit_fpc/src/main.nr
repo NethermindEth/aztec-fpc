@@ -14,6 +14,7 @@ pub contract CreditFPC {
             storage::storage,
         },
         messages::message_delivery::MessageDelivery,
+        oracle::nullifiers::check_nullifier_exists,
         protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
         state_vars::{Owned, PublicImmutable},
     };
@@ -138,6 +139,26 @@ pub contract CreditFPC {
         self.storage.balances.at(account).balance_of()
     }
 
+    #[external("utility")]
+    unconstrained fn quote_used(
+        rate_num: u128,
+        rate_den: u128,
+        valid_until: u64,
+        user_address: AztecAddress,
+    ) -> bool {
+        let config = self.storage.config.read();
+        let quote_hash = compute_inner_authwit_hash([
+            QUOTE_DOMAIN_SEPARATOR,
+            self.address.to_field(),
+            config.accepted_asset.to_field(),
+            rate_num as Field,
+            rate_den as Field,
+            valid_until as Field,
+            user_address.to_field(),
+        ]);
+        check_nullifier_exists(quote_hash)
+    }
+
     /// Test-only: mint credit via ONCHAIN_UNCONSTRAINED so the PXE can discover
     /// the note through standard encrypted-log scanning. ONCHAIN_CONSTRAINED notes
     /// may not be discoverable by the embedded PXE used in profiling.
@@ -178,6 +199,11 @@ pub contract CreditFPC {
             schnorr::verify_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>()),
             "invalid quote signature",
         );
+
+        // Safety: this is only used as a best-effort pre-check for a clearer
+        // replay error before the canonical duplicate-nullifier protection.
+        let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
+        assert(!quote_already_used, "quote already used");
 
         // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
         context.push_nullifier(quote_hash);

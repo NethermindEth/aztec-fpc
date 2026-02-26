@@ -72,8 +72,10 @@ pub unconstrained fn test_schnorr_sign(message: [u8; 32]) -> [u8; 64] {
 unconstrained fn sub_mod_fq(k: u128, e_bytes: [u8; 32]) -> [u8; 32] {
     let (mut e_hi, mut e_lo) = be_bytes_to_u128_pair(e_bytes);
 
-    // Reduce e mod Fq (e < 2^256 < 4*Fq, so at most 3 subtractions)
-    for _ in 0..4 {
+    // Reduce e mod Fq.
+    // For 256-bit e, floor((2^256 - 1) / Fq) = 5, so up to 5 subtractions
+    // may be required in the worst case.
+    for _ in 0..6 {
         if gte_u256(e_hi, e_lo, FQ_HI, FQ_LO) {
             let (h, l) = sub_u256(e_hi, e_lo, FQ_HI, FQ_LO);
             e_hi = h;
@@ -195,7 +197,27 @@ pub unconstrained fn sign_quote(
     valid_until: u64,
     user_address: AztecAddress,
 ) -> [u8; 64] {
-    let quote_hash = compute_inner_authwit_hash([
+    let quote_hash = quote_hash(
+        credit_fpc_address,
+        accepted_asset,
+        rate_num,
+        rate_den,
+        valid_until,
+        user_address,
+    );
+    let message: [u8; 32] = quote_hash.to_be_bytes();
+    test_schnorr_sign(message)
+}
+
+pub unconstrained fn quote_hash(
+    credit_fpc_address: AztecAddress,
+    accepted_asset: AztecAddress,
+    rate_num: u128,
+    rate_den: u128,
+    valid_until: u64,
+    user_address: AztecAddress,
+) -> Field {
+    compute_inner_authwit_hash([
         QUOTE_DOMAIN_SEPARATOR,
         credit_fpc_address.to_field(),
         accepted_asset.to_field(),
@@ -203,9 +225,7 @@ pub unconstrained fn sign_quote(
         rate_den as Field,
         valid_until as Field,
         user_address.to_field(),
-    ]);
-    let message: [u8; 32] = quote_hash.to_be_bytes();
-    test_schnorr_sign(message)
+    ])
 }
 
 pub unconstrained fn private_balance(
