@@ -68,6 +68,7 @@ async function main() {
 
   const threshold = BigInt(config.threshold);
   const topUpAmount = BigInt(config.top_up_amount);
+  const logClaimSecret = process.env.TOPUP_LOG_CLAIM_SECRET === "1";
   const balanceReader = await createFeeJuiceBalanceReader(pxe);
 
   console.log(`Top-up service started`);
@@ -85,9 +86,14 @@ async function main() {
   console.log(
     `  Fee Juice contract: ${balanceReader.feeJuiceAddress.toString()} (${balanceReader.addressSource})`,
   );
+  if (logClaimSecret) {
+    console.warn(
+      "TOPUP_LOG_CLAIM_SECRET=1 enabled: bridge claim secrets will be printed to logs (for local smoke/debug only)",
+    );
+  }
 
   const checker = createTopupChecker(
-    { threshold, topUpAmount },
+    { threshold, topUpAmount, logClaimSecret },
     {
       getBalance: () => balanceReader.getBalance(fpcAddress),
       bridge: (amount) =>

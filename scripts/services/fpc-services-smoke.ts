@@ -53,6 +53,13 @@ type ManagedProcess = {
   process: ChildProcessWithoutNullStreams;
   getLogs: () => string;
 };
+type TopupBridgeOutcome = "confirmed" | "timeout" | "failed";
+type TopupBridgeSubmission = {
+  messageHash: Hex;
+  messageLeafIndex: bigint;
+  claimSecretHash: Hex;
+  claimSecret?: string;
+};
 
 type SmokeMode = "fpc" | "credit" | "both";
 type ScenarioKind = "fpc" | "credit";
@@ -356,6 +363,71 @@ async function waitForLog(
   );
 }
 
+async function waitForTopupBridgeOutcome(
+  proc: ManagedProcess,
+  timeoutMs: number,
+): Promise<TopupBridgeOutcome> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const logs = proc.getLogs();
+    if (logs.includes("Bridge confirmation outcome=confirmed")) {
+      return "confirmed";
+    }
+    if (logs.includes("Bridge confirmation outcome=timeout")) {
+      return "timeout";
+    }
+    if (logs.includes("Bridge confirmation outcome=failed")) {
+      return "failed";
+    }
+    if (proc.process.exitCode !== null) {
+      throw new Error(
+        `Process ${proc.name} exited before bridge confirmation outcome was logged (exit=${proc.process.exitCode})`,
+      );
+    }
+    await sleep(250);
+  }
+  throw new Error(
+    `Timed out waiting for ${proc.name} bridge confirmation outcome log. Recent logs:\n${proc
+      .getLogs()
+      .slice(-4000)}`,
+  );
+}
+
+async function waitForTopupBridgeSubmission(
+  proc: ManagedProcess,
+  timeoutMs: number,
+): Promise<TopupBridgeSubmission> {
+  const deadline = Date.now() + timeoutMs;
+  const submissionPattern =
+    /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+) claim_secret_hash=(0x[0-9a-fA-F]+)(?: claim_secret=([^\s]+))?/;
+
+  while (Date.now() <= deadline) {
+    const logs = proc.getLogs();
+    const match = submissionPattern.exec(logs);
+    if (match) {
+      const [, messageHash, leafIndex, claimSecretHash, claimSecret] = match;
+      return {
+        messageHash: messageHash as Hex,
+        messageLeafIndex: BigInt(leafIndex),
+        claimSecretHash: claimSecretHash as Hex,
+        claimSecret,
+      };
+    }
+    if (proc.process.exitCode !== null) {
+      throw new Error(
+        `Process ${proc.name} exited before bridge submission was logged (exit=${proc.process.exitCode})`,
+      );
+    }
+    await sleep(250);
+  }
+
+  throw new Error(
+    `Timed out waiting for ${proc.name} bridge submission log. Recent logs:\n${proc
+      .getLogs()
+      .slice(-4000)}`,
+  );
+}
+
 async function waitForPositiveFeeJuiceBalance(
   node: ReturnType<typeof createAztecNodeClient>,
   fpcAddress: AztecAddress,
@@ -396,6 +468,54 @@ async function advanceL2Blocks(
     });
     console.log(`[services-smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`);
   }
+}
+
+async function claimTopupBridgeSubmission(
+  node: ReturnType<typeof createAztecNodeClient>,
+  wallet: EmbeddedWallet,
+  operator: AztecAddress,
+  token: Contract,
+  user: AztecAddress,
+  feePayerAddress: AztecAddress,
+  amount: bigint,
+  bridgeSubmission: TopupBridgeSubmission,
+  relayAdvanceBlocks: number,
+  timeoutMs: number,
+  pollMs: number,
+): Promise<bigint> {
+  if (!bridgeSubmission.claimSecret) {
+    throw new Error(
+      "Cannot claim topup bridge submission: claim secret is missing from topup logs",
+    );
+  }
+
+  await advanceL2Blocks(token, operator, user, relayAdvanceBlocks);
+
+  await waitForL1ToL2MessageReady(
+    node,
+    Fr.fromHexString(bridgeSubmission.messageHash),
+    {
+      timeoutSeconds: Math.max(1, Math.floor(timeoutMs / 1000)),
+      forPublicConsumption: false,
+    },
+  );
+
+  const feeJuice = FeeJuiceContract.at(wallet);
+  await feeJuice.methods
+    .claim(
+      feePayerAddress,
+      amount,
+      Fr.fromString(bridgeSubmission.claimSecret),
+      new Fr(bridgeSubmission.messageLeafIndex),
+    )
+    .send({ from: operator });
+
+  return waitForPositiveFeeJuiceBalance(
+    node,
+    feePayerAddress,
+    timeoutMs,
+    pollMs,
+  );
 }
 
 async function topUpFpcFeeJuiceManually(
@@ -721,6 +841,7 @@ async function runServiceScenario(
         env: {
           ...process.env,
           L1_OPERATOR_PRIVATE_KEY: l1PrivateKey,
+          TOPUP_LOG_CLAIM_SECRET: "1",
         },
       },
     );
@@ -732,48 +853,96 @@ async function runServiceScenario(
       "FPC Fee Juice balance:",
       config.topupWaitTimeoutMs,
     );
-    await waitForLog(topup, "Bridge submitted.", config.topupWaitTimeoutMs);
+    const bridgeSubmission = await waitForTopupBridgeSubmission(
+      topup,
+      config.topupWaitTimeoutMs,
+    );
 
     // Local devnet requires additional L2 blocks before the L1->L2 bridge
     // message becomes consumable. Force block production with lightweight txs.
     await advanceL2Blocks(token, operator, user, config.relayAdvanceBlocks);
+    const topupOutcome = await waitForTopupBridgeOutcome(
+      topup,
+      config.topupWaitTimeoutMs,
+    );
+    console.log(`${scenarioPrefix} topup_confirmation_outcome=${topupOutcome}`);
 
     const initialFeeJuiceBalance = await getFeeJuiceBalance(
       feePayerAddress,
       node,
     );
     console.log(
-      `${scenarioPrefix} fee_payer_fee_juice_before_wait=${initialFeeJuiceBalance}`,
+      `${scenarioPrefix} fee_payer_fee_juice_after_topup_service=${initialFeeJuiceBalance}`,
     );
 
     let bridgedFeeJuiceBalance = initialFeeJuiceBalance;
     if (bridgedFeeJuiceBalance === 0n) {
+      const settleTimeoutMs = Math.max(
+        1_000,
+        Math.floor(config.topupWaitTimeoutMs / 2),
+      );
       console.log(
-        `${scenarioPrefix} topup balance delta not visible; running deterministic manual claim fallback`,
+        `${scenarioPrefix} topup balance still zero after outcome=${topupOutcome}; waiting ${settleTimeoutMs}ms for relay settlement`,
       );
-      bridgedFeeJuiceBalance = await topUpFpcFeeJuiceManually(
-        node,
-        wallet,
-        operator,
-        token,
-        user,
-        feePayerAddress.toString(),
-        topupAmount,
-        config.relayAdvanceBlocks,
-        config.l1RpcUrl,
-        l1PrivateKey,
-        config.topupWaitTimeoutMs,
-        config.topupPollMs,
-      );
+      try {
+        bridgedFeeJuiceBalance = await waitForPositiveFeeJuiceBalance(
+          node,
+          feePayerAddress,
+          settleTimeoutMs,
+          config.topupPollMs,
+        );
+      } catch (settleError) {
+        if (topupOutcome === "confirmed") {
+          console.log(
+            `${scenarioPrefix} topup reported confirmed but balance stayed zero; claiming submitted bridge message`,
+          );
+        } else {
+          console.log(
+            `${scenarioPrefix} topup did not confirm balance delta; claiming submitted bridge message`,
+          );
+        }
+        try {
+          bridgedFeeJuiceBalance = await claimTopupBridgeSubmission(
+            node,
+            wallet,
+            operator,
+            token,
+            user,
+            feePayerAddress,
+            topupAmount,
+            bridgeSubmission,
+            config.relayAdvanceBlocks,
+            config.topupWaitTimeoutMs,
+            config.topupPollMs,
+          );
+        } catch (claimError) {
+          console.log(
+            `${scenarioPrefix} claim of submitted bridge message failed; running deterministic manual bridge+claim fallback`,
+          );
+          bridgedFeeJuiceBalance = await topUpFpcFeeJuiceManually(
+            node,
+            wallet,
+            operator,
+            token,
+            user,
+            feePayerAddress.toString(),
+            topupAmount,
+            config.relayAdvanceBlocks,
+            config.l1RpcUrl,
+            l1PrivateKey,
+            config.topupWaitTimeoutMs,
+            config.topupPollMs,
+          );
+          if (bridgedFeeJuiceBalance === 0n) {
+            throw new Error(
+              `${scenarioPrefix} fallback bridge+claim completed without positive Fee Juice balance: ${(claimError as Error).message}; ${(settleError as Error).message}`,
+            );
+          }
+        }
+      }
     }
     console.log(
       `${scenarioPrefix} fee_payer_fee_juice_after_topup=${bridgedFeeJuiceBalance}`,
-    );
-
-    await waitForLog(
-      topup,
-      "Bridge confirmation outcome=confirmed",
-      config.topupWaitTimeoutMs,
     );
 
     const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);

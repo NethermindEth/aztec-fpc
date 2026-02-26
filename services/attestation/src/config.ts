@@ -12,11 +12,19 @@ import {
 
 export const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const PRIVATE_KEY_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+const HTTP_HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const OperatorSecretKeySchema = z
   .string()
   .regex(PRIVATE_KEY_PATTERN, "must be a 32-byte 0x-prefixed hex private key");
 const RuntimeProfileSchema = z.enum(["development", "test", "production"]);
 const SecretProviderSchema = z.enum(["auto", "env", "config", "kms", "hsm"]);
+const QuoteAuthModeSchema = z.enum([
+  "disabled",
+  "api_key",
+  "trusted_header",
+  "api_key_or_trusted_header",
+  "api_key_and_trusted_header",
+]);
 const AztecNodeUrlSchema = z.string().url();
 const AztecAddressSchema = z
   .string()
@@ -68,6 +76,16 @@ const ConfigSchema = z.object({
   operator_address: AztecAddressSchema.optional(),
   /** Optional when OPERATOR_SECRET_KEY is provided via env. */
   operator_secret_key: z.string().optional(),
+  /** Quote endpoint access control mode. */
+  quote_auth_mode: QuoteAuthModeSchema.default("disabled"),
+  /** Shared API key value for /quote when mode includes api_key. */
+  quote_auth_api_key: z.string().optional(),
+  /** Header name containing the API key. */
+  quote_auth_api_key_header: z.string().default("x-api-key"),
+  /** Trusted upstream marker header name when mode includes trusted_header. */
+  quote_auth_trusted_header_name: z.string().optional(),
+  /** Expected trusted upstream marker header value. */
+  quote_auth_trusted_header_value: z.string().optional(),
   /** Optional directory for local PXE persistent state (LMDB).
    *  When set, the service spins up a local PXE so it can call
    *  registerSender() and discover private fee-payment notes. */
@@ -75,13 +93,31 @@ const ConfigSchema = z.object({
 });
 
 type ParsedConfig = z.infer<typeof ConfigSchema>;
+export type QuoteAuthMode = z.infer<typeof QuoteAuthModeSchema>;
 
-export type Config = Omit<ParsedConfig, "operator_secret_key"> & {
+export interface QuoteAuthConfig {
+  mode: QuoteAuthMode;
+  apiKey?: string;
+  apiKeyHeader: string;
+  trustedHeaderName?: string;
+  trustedHeaderValue?: string;
+}
+
+export type Config = Omit<
+  ParsedConfig,
+  | "operator_secret_key"
+  | "quote_auth_mode"
+  | "quote_auth_api_key"
+  | "quote_auth_api_key_header"
+  | "quote_auth_trusted_header_name"
+  | "quote_auth_trusted_header_value"
+> & {
   runtime_profile: RuntimeProfile;
   operator_secret_key: string;
   operator_secret_key_source: SecretSource;
   operator_secret_key_provider: SecretProvider;
   operator_secret_key_dual_source: boolean;
+  quote_auth: QuoteAuthConfig;
 };
 
 export interface LoadConfigOptions {
@@ -106,6 +142,124 @@ function parseSecretProvider(
     return configValue;
   }
   return SecretProviderSchema.parse(envOverride.trim());
+}
+
+function parseQuoteAuthMode(
+  configValue: QuoteAuthMode,
+  envOverride: string | undefined,
+): QuoteAuthMode {
+  if (!envOverride) {
+    return configValue;
+  }
+  return QuoteAuthModeSchema.parse(envOverride.trim());
+}
+
+function normalizeOptional(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeHeaderName(value: string, label: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    throw new Error(`${label} header name must be non-empty`);
+  }
+  if (!HTTP_HEADER_NAME_PATTERN.test(normalized)) {
+    throw new Error(`${label} header name contains invalid characters`);
+  }
+  return normalized;
+}
+
+function modeNeedsApiKey(mode: QuoteAuthMode): boolean {
+  return (
+    mode === "api_key" ||
+    mode === "api_key_or_trusted_header" ||
+    mode === "api_key_and_trusted_header"
+  );
+}
+
+function modeNeedsTrustedHeader(mode: QuoteAuthMode): boolean {
+  return (
+    mode === "trusted_header" ||
+    mode === "api_key_or_trusted_header" ||
+    mode === "api_key_and_trusted_header"
+  );
+}
+
+function resolveQuoteAuthConfig(
+  config: ParsedConfig,
+  runtimeProfile: RuntimeProfile,
+): QuoteAuthConfig {
+  const mode = parseQuoteAuthMode(
+    config.quote_auth_mode,
+    process.env.QUOTE_AUTH_MODE,
+  );
+  const apiKey = normalizeOptional(
+    process.env.QUOTE_AUTH_API_KEY ?? config.quote_auth_api_key,
+  );
+  const apiKeyHeader = normalizeHeaderName(
+    process.env.QUOTE_AUTH_API_KEY_HEADER ?? config.quote_auth_api_key_header,
+    "quote auth api key",
+  );
+  const trustedHeaderNameRaw = normalizeOptional(
+    process.env.QUOTE_AUTH_TRUSTED_HEADER_NAME ??
+      config.quote_auth_trusted_header_name,
+  );
+  const trustedHeaderValue = normalizeOptional(
+    process.env.QUOTE_AUTH_TRUSTED_HEADER_VALUE ??
+      config.quote_auth_trusted_header_value,
+  );
+  const trustedHeaderName = trustedHeaderNameRaw
+    ? normalizeHeaderName(trustedHeaderNameRaw, "quote auth trusted upstream")
+    : undefined;
+
+  if (runtimeProfile === "production" && mode === "disabled") {
+    throw new Error(
+      "Insecure quote auth configuration: quote_auth_mode must not be disabled when runtime_profile=production",
+    );
+  }
+
+  const requiresApiKey = modeNeedsApiKey(mode);
+  const requiresTrustedHeader = modeNeedsTrustedHeader(mode);
+
+  if (requiresApiKey && !apiKey) {
+    throw new Error(
+      `Missing quote auth API key: set quote_auth_api_key (or QUOTE_AUTH_API_KEY) when quote_auth_mode=${mode}`,
+    );
+  }
+  if (!requiresApiKey && apiKey) {
+    throw new Error(
+      `Unexpected quote auth API key: quote_auth_mode=${mode} does not use API key auth`,
+    );
+  }
+
+  if (requiresTrustedHeader) {
+    if (!trustedHeaderName || !trustedHeaderValue) {
+      throw new Error(
+        `Missing trusted upstream auth header config: set quote_auth_trusted_header_name and quote_auth_trusted_header_value (or env overrides) when quote_auth_mode=${mode}`,
+      );
+    }
+    if (
+      mode === "api_key_and_trusted_header" &&
+      trustedHeaderName === apiKeyHeader
+    ) {
+      throw new Error(
+        "Invalid quote auth header config: quote_auth_api_key_header and quote_auth_trusted_header_name must differ when quote_auth_mode=api_key_and_trusted_header",
+      );
+    }
+  } else if (trustedHeaderName || trustedHeaderValue) {
+    throw new Error(
+      `Unexpected trusted upstream auth config: quote_auth_mode=${mode} does not use trusted header auth`,
+    );
+  }
+
+  return {
+    mode,
+    apiKey,
+    apiKeyHeader,
+    trustedHeaderName,
+    trustedHeaderValue,
+  };
 }
 
 export function loadConfig(
@@ -139,15 +293,26 @@ export function loadConfig(
   const aztecNodeUrl = AztecNodeUrlSchema.parse(
     process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
   );
+  const quoteAuth = resolveQuoteAuthConfig(config, runtimeProfile);
+  const {
+    operator_secret_key: _configuredOperatorSecretKey,
+    quote_auth_mode: _quoteAuthMode,
+    quote_auth_api_key: _quoteAuthApiKey,
+    quote_auth_api_key_header: _quoteAuthApiKeyHeader,
+    quote_auth_trusted_header_name: _quoteAuthTrustedHeaderName,
+    quote_auth_trusted_header_value: _quoteAuthTrustedHeaderValue,
+    ...restConfig
+  } = config;
 
   return {
-    ...config,
+    ...restConfig,
     runtime_profile: runtimeProfile,
     aztec_node_url: aztecNodeUrl,
     operator_secret_key: resolvedSecret.value,
     operator_secret_key_source: resolvedSecret.source,
     operator_secret_key_provider: resolvedSecret.provider,
     operator_secret_key_dual_source: resolvedSecret.dualSource,
+    quote_auth: quoteAuth,
   };
 }
 

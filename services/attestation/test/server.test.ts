@@ -28,6 +28,13 @@ const TEST_CONFIG: Config = {
   operator_secret_key_source: "config",
   operator_secret_key_provider: "auto",
   operator_secret_key_dual_source: false,
+  quote_auth: {
+    mode: "disabled",
+    apiKey: undefined,
+    apiKeyHeader: "x-api-key",
+    trustedHeaderName: undefined,
+    trustedHeaderValue: undefined,
+  },
   pxe_data_directory: undefined,
 };
 
@@ -39,6 +46,16 @@ function failingSigner(): QuoteSchnorrSigner {
   return {
     signQuoteHash: async () => {
       throw new Error("signing backend unavailable");
+    },
+  };
+}
+
+function withQuoteAuth(quoteAuth: Partial<Config["quote_auth"]>): Config {
+  return {
+    ...TEST_CONFIG,
+    quote_auth: {
+      ...TEST_CONFIG.quote_auth,
+      ...quoteAuth,
     },
   };
 }
@@ -180,6 +197,190 @@ describe("server", () => {
           message: "Internal server error",
         },
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 401 for protected mode when auth header is missing", async () => {
+    const app = buildServer(
+      withQuoteAuth({
+        mode: "api_key",
+        apiKey: "super-secret",
+      }),
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      assert.equal(response.statusCode, 401);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Unauthorized",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 200 for protected mode when api key header is valid", async () => {
+    const app = buildServer(
+      withQuoteAuth({
+        mode: "api_key",
+        apiKey: "super-secret",
+      }),
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "super-secret",
+        },
+      });
+      assert.equal(response.statusCode, 200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 401 for protected mode when api key header is wrong", async () => {
+    const app = buildServer(
+      withQuoteAuth({
+        mode: "api_key",
+        apiKey: "super-secret",
+      }),
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "wrong-secret",
+        },
+      });
+      assert.equal(response.statusCode, 401);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Unauthorized",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 200 in trusted_header mode when trusted upstream header is valid", async () => {
+    const app = buildServer(
+      withQuoteAuth({
+        mode: "trusted_header",
+        trustedHeaderName: "x-internal-attestation",
+        trustedHeaderValue: "allow",
+      }),
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-internal-attestation": "allow",
+        },
+      });
+      assert.equal(response.statusCode, 200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 200 in api_key_or_trusted_header mode when either header is valid", async () => {
+    const app = buildServer(
+      withQuoteAuth({
+        mode: "api_key_or_trusted_header",
+        apiKey: "super-secret",
+        trustedHeaderName: "x-internal-attestation",
+        trustedHeaderValue: "allow",
+      }),
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-internal-attestation": "allow",
+        },
+      });
+      assert.equal(response.statusCode, 200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 401 in api_key_and_trusted_header mode when one header is missing", async () => {
+    const app = buildServer(
+      withQuoteAuth({
+        mode: "api_key_and_trusted_header",
+        apiKey: "super-secret",
+        trustedHeaderName: "x-internal-attestation",
+        trustedHeaderValue: "allow",
+      }),
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "super-secret",
+        },
+      });
+      assert.equal(response.statusCode, 401);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Unauthorized",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 200 in api_key_and_trusted_header mode when both headers are valid", async () => {
+    const app = buildServer(
+      withQuoteAuth({
+        mode: "api_key_and_trusted_header",
+        apiKey: "super-secret",
+        trustedHeaderName: "x-internal-attestation",
+        trustedHeaderValue: "allow",
+      }),
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "super-secret",
+          "x-internal-attestation": "allow",
+        },
+      });
+      assert.equal(response.statusCode, 200);
     } finally {
       await app.close();
     }
