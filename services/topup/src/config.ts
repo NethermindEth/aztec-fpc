@@ -138,6 +138,7 @@ export function loadConfig(
     ...config,
     runtime_profile: runtimeProfile,
     aztec_node_url: process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
+    l1_rpc_url: process.env.L1_RPC_URL ?? config.l1_rpc_url,
     l1_operator_private_key: resolvedSecret.value,
     l1_operator_private_key_source: resolvedSecret.source,
     l1_operator_private_key_provider: resolvedSecret.provider,
