@@ -3,6 +3,10 @@
 Profiles the gate count of `FPC.fee_entrypoint` by deploying Token + FPC on a
 local Aztec network and running the full execution trace.
 
+Also includes an AltFPC profiler for:
+- `AltFPC.pay_and_mint`
+- `AltFPC.pay_fee`
+
 ## Prerequisites
 
 - **Aztec CLI** — version must match `.aztecrc` (currently `4.0.0-devnet.2-patch.1`)
@@ -23,7 +27,12 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 # 2. Profile (re-run after every contract change)
 ./profiling/run.sh
 
-# 3. Tear down when done
+# 3. Profile AltFPC pay_and_mint/pay_fee
+./profiling/run-alt-fpc.sh                # both scenarios
+./profiling/run-alt-fpc.sh pay_and_mint   # only pay_and_mint
+./profiling/run-alt-fpc.sh pay_fee        # only pay_fee
+
+# 4. Tear down when done
 ./profiling/teardown.sh
 ```
 
@@ -33,6 +42,7 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 |---|---|---|
 | `setup.sh` | Once | Installs `@aztec/*` npm packages (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
 | `run.sh` | Every iteration | Compiles contracts (`aztec compile`), deploys Token + FPC, profiles `fee_entrypoint`, prints gate counts |
+| `run-alt-fpc.sh` | Every iteration | Compiles `contracts/alt_fpc/alt_fpc`, deploys Token + AltFPC, profiles `pay_and_mint` and/or `pay_fee`, prints gate counts |
 | `teardown.sh` | When done | Stops the network (if started by `setup.sh`), removes temp files |
 
 ### Environment variables
@@ -48,12 +58,25 @@ setup.sh          ← run once
   │
   ├─► edit contracts
   ├─► run.sh       ← compile + deploy + profile
+  ├─► run-alt-fpc.sh
   ├─► edit contracts
   ├─► run.sh
+  ├─► run-alt-fpc.sh pay_fee
   ├─► ...
   │
 teardown.sh        ← run when done
 ```
+
+## AltFPC Profiler Notes
+
+- Script: `profiling/profile-alt-fpc-gates.mjs`
+- Runner: `profiling/run-alt-fpc.sh [pay_and_mint|pay_fee|both]`
+- Artifact directory default: `contracts/alt_fpc/alt_fpc/target`
+- `pay_fee` profiling automatically runs one seed transaction through
+  `pay_and_mint` first so the internal `balances` set has spendable credit.
+- Output includes:
+  - full execution-step gate table
+  - compact summary row for the targeted function (`pay_and_mint` or `pay_fee`)
 
 ## Output
 

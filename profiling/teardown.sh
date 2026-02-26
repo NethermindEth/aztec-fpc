@@ -9,7 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.aztec-network.pid"
 
-# ── Stop network ─────────────────────────────────────────────────────────────
+# â”€â”€ Stop network â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if [[ -f "$PID_FILE" ]]; then
   NETWORK_PID=$(cat "$PID_FILE")
   if kill -0 "$NETWORK_PID" 2>/dev/null; then
@@ -22,10 +22,10 @@ if [[ -f "$PID_FILE" ]]; then
   fi
   rm -f "$PID_FILE"
 else
-  echo "[teardown] No PID file found — network was not started by setup.sh."
+  echo "[teardown] No PID file found â€” network was not started by setup.sh."
 fi
 
-# ── Clean up temp files ──────────────────────────────────────────────────────
+# â”€â”€ Clean up temp files â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 rm -rf /tmp/profile-fpc-pxe
 rm -f /tmp/aztec-profile-network.log
 
