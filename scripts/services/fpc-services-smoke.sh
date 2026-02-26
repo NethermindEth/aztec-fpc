@@ -93,16 +93,25 @@ fi
 
 RESET_LOCAL_STATE="${FPC_SERVICES_SMOKE_RESET_LOCAL_STATE:-}"
 if [[ -z "$RESET_LOCAL_STATE" ]]; then
-  if [[ "$STARTED_LOCAL_NETWORK" -eq 1 ]]; then
-    RESET_LOCAL_STATE="1"
-  else
-    RESET_LOCAL_STATE="0"
-  fi
+  RESET_LOCAL_STATE="1"
+fi
+if [[ "$RESET_LOCAL_STATE" != "0" && "$RESET_LOCAL_STATE" != "1" ]]; then
+  echo "[services-smoke] ERROR: FPC_SERVICES_SMOKE_RESET_LOCAL_STATE must be 0 or 1, got '$RESET_LOCAL_STATE'" >&2
+  exit 1
 fi
 if [[ "$RESET_LOCAL_STATE" == "1" ]]; then
   echo "[services-smoke] Resetting wallet/PXE local state"
   rm -rf "$REPO_ROOT"/wallet_data_* "$REPO_ROOT"/pxe_data_*
+  rm -rf "$REPO_ROOT"/services/attestation/wallet_data_* "$REPO_ROOT"/services/attestation/pxe_data_*
 fi
+
+SMOKE_MODE="${FPC_SERVICES_SMOKE_MODE:-both}"
+if [[ "$SMOKE_MODE" != "fpc" && "$SMOKE_MODE" != "credit" && "$SMOKE_MODE" != "both" ]]; then
+  echo "[services-smoke] ERROR: FPC_SERVICES_SMOKE_MODE must be one of fpc|credit|both, got '$SMOKE_MODE'" >&2
+  exit 1
+fi
+export FPC_SERVICES_SMOKE_MODE="$SMOKE_MODE"
+echo "[services-smoke] Mode: $SMOKE_MODE"
 
 if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   echo "[services-smoke] Installing workspace dependencies"
