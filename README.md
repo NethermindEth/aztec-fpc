@@ -258,25 +258,75 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 12. Docker builds
+### 12. Docker
 
-Build both service images:
+#### Building images
+
+Both service images are built with [Docker Buildx Bake](https://docs.docker.com/build/bake/) via `docker-bake.hcl`. The bake file uses a two-stage build: `Dockerfile.common` produces a shared runtime base, then each service's Dockerfile adds its entrypoint and healthcheck.
+
+```bash
+# Build both images (attestation + topup)
+docker buildx bake
+
+# Build a single target
+docker buildx bake attestation
+docker buildx bake topup
+
+# Custom tag / registry
+TAG=v0.1.0 docker buildx bake
+REGISTRY=ghcr.io/ TAG=v0.1.0 docker buildx bake
+
+# Tag with current git SHA
+GIT_SHA=$(git rev-parse HEAD) docker buildx bake
+```
+
+Or via the workspace scripts:
 
 ```bash
 bun run docker:build
-```
-
-Or build individually:
-
-```bash
 bun run docker:build:attestation
 bun run docker:build:topup
 ```
 
-Images are tagged as `nethermind/aztec-fpc-{attestation,topup}:latest` by default. Override via environment variables:
+#### Running with Docker Compose
+
+The compose stack (`docker-compose.yaml`) includes:
+
+| Service | Description | Port |
+|---------|-------------|------|
+| `anvil` | Local L1 chain (Foundry) | 8545 |
+| `aztec-node` | Aztec sandbox node | 8080 |
+| `attestation` | FPC attestation service | 3000 |
+| `topup` | FPC Fee Juice top-up daemon | — |
+
+Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
+
+```
+services/attestation/config.yaml -> config.example.yaml
+services/topup/config.yaml       -> config.example.yaml
+```
+
+Start the stack:
 
 ```bash
-TAG=v1.0.0 bun run docker:build
+docker compose up
+```
+
+#### Environment variable overrides
+
+Environment variables take precedence over values in the config file:
+
+| Variable | Used by | Compose default |
+|----------|---------|-----------------|
+| `AZTEC_NODE_URL` | attestation, topup | `http://aztec-node:8080` |
+| `L1_RPC_URL` | topup | `http://anvil:8545` |
+| `OPERATOR_SECRET_KEY` | attestation | — |
+| `L1_OPERATOR_PRIVATE_KEY` | topup | — |
+
+Pass them via a `.env` file or inline:
+
+```bash
+OPERATOR_SECRET_KEY=0x... L1_OPERATOR_PRIVATE_KEY=0x... docker compose up
 ```
 
 ### 13. Verify
