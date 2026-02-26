@@ -32,7 +32,11 @@ check_cmd node  "Node.js >=20 is required (usually bundled with the Aztec toolch
 
 echo "[setup] Aztec version: $AZTEC_VERSION"
 
-# ── Step 1: Install profiling npm dependencies ───────────────────────────────
+# ── Step 1: Initialize git submodules (vendor/aztec-standards) ────────────────
+echo "[setup] Initializing git submodules..."
+(cd "$REPO_ROOT" && git submodule update --init)
+
+# ── Step 2: Install profiling npm dependencies ────────────────────────────────
 AZTEC_PKGS=(
   "@aztec/aztec.js"
   "@aztec/accounts"
@@ -71,7 +75,7 @@ else
   echo "[setup] Aztec SDK packages up to date ($AZTEC_VERSION)"
 fi
 
-# ── Step 2: Start Aztec local network ────────────────────────────────────────
+# ── Step 3: Start Aztec local network ────────────────────────────────────────
 node_is_up() {
   local code
   code=$(curl -s --max-time 3 --connect-timeout 2 -o /dev/null -w "%{http_code}" "$NODE_URL" 2>/dev/null)
