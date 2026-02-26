@@ -1,0 +1,72 @@
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.4.1
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--silent"]
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: ["CMD", "cast", "bn", "--rpc-url", "http://localhost:8545"]
+      interval: 1s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
+
+  aztec-node:
+    image: aztecprotocol/aztec:4.0.0-devnet.2-patch.1
+    command: ["start", "--local-network"]
+    ports:
+      - "8080:8080"
+    environment:
+      ARCHIVER_POLLING_INTERVAL_MS: 500
+      P2P_BLOCK_CHECK_INTERVAL_MS: 500
+      SEQ_TX_POLLING_INTERVAL_MS: 500
+      WS_BLOCK_CHECK_INTERVAL_MS: 500
+      ARCHIVER_VIEM_POLLING_INTERVAL_MS: 500
+      TEST_ACCOUNTS: "true"
+      LOG_LEVEL: "info;silent:sequencer;verbose:debug_log"
+      DEPLOY_AZTEC_CONTRACTS_SALT: 1
+      L1_CHAIN_ID: 31337
+      ETHEREUM_HOSTS: "http://anvil:8545"
+    depends_on:
+      anvil:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "--no-warnings", "/usr/src/yarn-project/aztec/dest/bin/index.js", "get-node-info"]
+      interval: 1s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  attestation:
+    image: nethermind/aztec-fpc-attestation
+    ports:
+      - "3000:3000"
+    configs:
+      - source: attestation-config
+        target: /app/config.yaml
+    environment:
+      AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
+      OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-}"
+    depends_on:
+      aztec-node:
+        condition: service_healthy
+
+  topup:
+    image: nethermind/aztec-fpc-topup
+    configs:
+      - source: topup-config
+        target: /app/config.yaml
+    environment:
+      AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
+      L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
+      L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-}"
+    depends_on:
+      aztec-node:
+        condition: service_healthy
+
+configs:
+  attestation-config:
+    file: ./services/attestation/config.yaml
+  topup-config:
+    file: ./services/topup/config.yaml

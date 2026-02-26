@@ -114,6 +114,7 @@ export function loadConfig(
   return {
     ...config,
     runtime_profile: runtimeProfile,
+    aztec_node_url: process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
     operator_secret_key: resolvedSecret.value,
     operator_secret_key_source: resolvedSecret.source,
     operator_secret_key_provider: resolvedSecret.provider,
