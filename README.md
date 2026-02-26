@@ -77,8 +77,9 @@ bun install
 
 ### 3. Compile contracts (workspace)
 
-Compile the full workspace so both artifacts exist:
+Compile the full workspace so all required artifacts exist:
 - `target/fpc-FPC.json`
+- `target/generic_proxy-GenericProxy.json`
 - `target/token_contract-Token.json`
 
 ```bash
@@ -89,8 +90,11 @@ aztec compile --workspace --force
 
 ```bash
 nargo fmt
-aztec test --package fpc
+bun run test:contracts
 ```
+
+If you run `aztec test --package fpc` directly on a clean checkout, run
+`aztec compile --workspace --force` first so external resolver artifacts are present.
 
 ### TypeScript quality checks
 
@@ -126,6 +130,8 @@ Default local-network endpoints:
 - Anvil L1 RPC (spawned by `aztec start --local-network`): `http://127.0.0.1:8545`
 
 ```bash
+bun run smoke:fee-entrypoint:devnet
+# or:
 bash scripts/contract/fee-entrypoint-devnet-smoke.sh
 ```
 
@@ -230,7 +236,10 @@ Record the deployed address.
 cd services/attestation
 cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, accepted_asset_*, rates
-# Provide operator key via OPERATOR_SECRET_KEY (preferred) or config.operator_secret_key
+# Default runtime_profile is development (config secrets allowed).
+# In production, set runtime_profile=production and provide OPERATOR_SECRET_KEY
+# and remove config.operator_secret_key from config.yaml
+# (any plaintext config secret material is rejected at startup).
 bun install && bun run build && bun run start
 ```
 
@@ -242,29 +251,82 @@ cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, aztec_node_url, l1_rpc_url
 # l1_chain_id and fee juice L1 addresses are auto-discovered from nodeInfo
 # Bridge confirmation uses L1->L2 message readiness plus Fee Juice balance-delta fallback
-# Provide L1 key via L1_OPERATOR_PRIVATE_KEY (preferred) or config.l1_operator_private_key
+# Default runtime_profile is development (config secrets allowed).
+# In production, set runtime_profile=production and provide L1_OPERATOR_PRIVATE_KEY
+# and remove config.l1_operator_private_key from config.yaml
+# (any plaintext config secret material is rejected at startup).
 bun install && bun run build && bun run start
 ```
 
-### 12. Docker builds
+### 12. Docker
 
-Build both service images:
+#### Building images
+
+Both service images are built with [Docker Buildx Bake](https://docs.docker.com/build/bake/) via `docker-bake.hcl`. The bake file uses a two-stage build: `Dockerfile.common` produces a shared runtime base, then each service's Dockerfile adds its entrypoint and healthcheck.
+
+```bash
+# Build both images (attestation + topup)
+docker buildx bake
+
+# Build a single target
+docker buildx bake attestation
+docker buildx bake topup
+
+# Custom tag / registry
+TAG=v0.1.0 docker buildx bake
+REGISTRY=ghcr.io/ TAG=v0.1.0 docker buildx bake
+
+# Tag with current git SHA
+GIT_SHA=$(git rev-parse HEAD) docker buildx bake
+```
+
+Or via the workspace scripts:
 
 ```bash
 bun run docker:build
-```
-
-Or build individually:
-
-```bash
 bun run docker:build:attestation
 bun run docker:build:topup
 ```
 
-Images are tagged as `nethermind/aztec-fpc-{attestation,topup}:latest` by default. Override via environment variables:
+#### Running with Docker Compose
+
+The compose stack (`docker-compose.yaml`) includes:
+
+| Service | Description | Port |
+|---------|-------------|------|
+| `anvil` | Local L1 chain (Foundry) | 8545 |
+| `aztec-node` | Aztec sandbox node | 8080 |
+| `attestation` | FPC attestation service | 3000 |
+| `topup` | FPC Fee Juice top-up daemon | — |
+
+Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
+
+```
+services/attestation/config.yaml -> config.example.yaml
+services/topup/config.yaml       -> config.example.yaml
+```
+
+Start the stack:
 
 ```bash
-TAG=v1.0.0 bun run docker:build
+docker compose up
+```
+
+#### Environment variable overrides
+
+Environment variables take precedence over values in the config file:
+
+| Variable | Used by | Compose default |
+|----------|---------|-----------------|
+| `AZTEC_NODE_URL` | attestation, topup | `http://aztec-node:8080` |
+| `L1_RPC_URL` | topup | `http://anvil:8545` |
+| `OPERATOR_SECRET_KEY` | attestation | — |
+| `L1_OPERATOR_PRIVATE_KEY` | topup | — |
+
+Pass them via a `.env` file or inline:
+
+```bash
+OPERATOR_SECRET_KEY=0x... L1_OPERATOR_PRIVATE_KEY=0x... docker compose up
 ```
 
 ### 13. Verify
@@ -316,4 +378,4 @@ See [docs/spec.md](docs/spec.md) for detailed flow description, security conside
 
 - **Operator key**: single key — receives all revenue and signs all quotes. Use a hardware wallet or KMS in production. Compromise requires redeployment (no on-chain rotation).
 - **L1 operator key**: used only by the top-up service. Keep minimal ETH balance.
-- All private keys in config files are for development only. **Use a KMS or HSM in production** — comments in the code mark every location where this substitution is needed.
+- Services support secret provider abstraction (env first; pluggable KMS/HSM adapters). Set `runtime_profile=production` to fail fast on plaintext config secrets.

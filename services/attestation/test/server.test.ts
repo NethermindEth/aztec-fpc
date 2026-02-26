@@ -10,6 +10,7 @@ const VALID_USER =
   "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
 
 const TEST_CONFIG: Config = {
+  runtime_profile: "development",
   fpc_address:
     "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
   aztec_node_url: "http://localhost:8080",
@@ -21,9 +22,11 @@ const TEST_CONFIG: Config = {
   market_rate_num: 1,
   market_rate_den: 1000,
   fee_bips: 200,
+  operator_secret_provider: "auto",
   operator_secret_key:
     "0x0000000000000000000000000000000000000000000000000000000000000001",
   operator_secret_key_source: "config",
+  operator_secret_key_provider: "auto",
   operator_secret_key_dual_source: false,
   pxe_data_directory: undefined,
 };

@@ -1,6 +1,11 @@
 # Attestation Service Configuration
 # Copy to config.yaml and fill in your values.
 
+# Runtime profile controls secret-source enforcement:
+# - development/test: plaintext config secrets are allowed
+# - production: plaintext config secrets are rejected at startup
+runtime_profile: "development"
+
 # The deployed FPC contract address on Aztec L2
 fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac"
 
@@ -20,6 +25,13 @@ port: 3000
 #
 # TODO: In production, replace direct key access with a KMS or HSM.
 #       Prefer env var OPERATOR_SECRET_KEY; avoid plaintext keys on disk.
+# Secret provider modes:
+# - auto: env first, then config fallback (config fallback forbidden in production)
+# - env: require OPERATOR_SECRET_KEY
+# - config: require operator_secret_key (for local development only)
+# - kms/hsm: require adapter wiring in code and operator_secret_ref
+operator_secret_provider: "auto"
+# operator_secret_ref: "kms://attestation/operator-key"
 # Optional when OPERATOR_SECRET_KEY is set.
 operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001"
 

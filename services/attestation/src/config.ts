@@ -1,14 +1,24 @@
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { z } from "zod";
+import {
+  type RuntimeProfile,
+  resolveSecret,
+  type SecretAdapterRegistry,
+  type SecretProvider,
+  type SecretSource,
+} from "./secret-provider.js";
 
 export const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const PRIVATE_KEY_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const OperatorSecretKeySchema = z
   .string()
   .regex(PRIVATE_KEY_PATTERN, "must be a 32-byte 0x-prefixed hex private key");
+const RuntimeProfileSchema = z.enum(["development", "test", "production"]);
+const SecretProviderSchema = z.enum(["auto", "env", "config", "kms", "hsm"]);
 
 const ConfigSchema = z.object({
+  runtime_profile: RuntimeProfileSchema.default("development"),
   fpc_address: z.string(),
   aztec_node_url: z.string().url(),
   quote_validity_seconds: z
@@ -26,6 +36,10 @@ const ConfigSchema = z.object({
   market_rate_den: z.number().int().positive(),
   /** Operator margin in basis points (100 = 1%). Applied on top of market rate. */
   fee_bips: z.number().int().min(0).max(10000),
+  /** Secret provider strategy for operator key. */
+  operator_secret_provider: SecretProviderSchema.default("auto"),
+  /** Reference used by external secret providers (kms/hsm). */
+  operator_secret_ref: z.string().optional(),
   /** Optional when OPERATOR_SECRET_KEY is provided via env. */
   operator_secret_key: z.string().optional(),
   /** Optional directory for local PXE persistent state (LMDB).
@@ -35,36 +49,76 @@ const ConfigSchema = z.object({
 });
 
 type ParsedConfig = z.infer<typeof ConfigSchema>;
-type SecretSource = "env" | "config";
 
 export type Config = Omit<ParsedConfig, "operator_secret_key"> & {
+  runtime_profile: RuntimeProfile;
   operator_secret_key: string;
   operator_secret_key_source: SecretSource;
+  operator_secret_key_provider: SecretProvider;
   operator_secret_key_dual_source: boolean;
 };
 
-export function loadConfig(path: string): Config {
+export interface LoadConfigOptions {
+  secretAdapters?: SecretAdapterRegistry;
+}
+
+function parseRuntimeProfile(
+  configValue: RuntimeProfile,
+  envOverride: string | undefined,
+): RuntimeProfile {
+  if (!envOverride) {
+    return configValue;
+  }
+  return RuntimeProfileSchema.parse(envOverride.trim());
+}
+
+function parseSecretProvider(
+  configValue: SecretProvider,
+  envOverride: string | undefined,
+): SecretProvider {
+  if (!envOverride) {
+    return configValue;
+  }
+  return SecretProviderSchema.parse(envOverride.trim());
+}
+
+export function loadConfig(
+  path: string,
+  options: LoadConfigOptions = {},
+): Config {
   const raw = readFileSync(path, "utf8");
   const parsed = parse(raw);
   const config = ConfigSchema.parse(parsed);
 
-  const envSecret = process.env.OPERATOR_SECRET_KEY?.trim();
-  const fileSecret = config.operator_secret_key?.trim();
-  const selectedSecret = envSecret ?? fileSecret;
+  const runtimeProfile = parseRuntimeProfile(
+    config.runtime_profile,
+    process.env.FPC_RUNTIME_PROFILE,
+  );
+  const secretProvider = parseSecretProvider(
+    config.operator_secret_provider,
+    process.env.OPERATOR_SECRET_PROVIDER,
+  );
+  const resolvedSecret = resolveSecret({
+    secretLabel: "operator secret key",
+    provider: secretProvider,
+    runtimeProfile,
+    envVarName: "OPERATOR_SECRET_KEY",
+    envValue: process.env.OPERATOR_SECRET_KEY,
+    configValue: config.operator_secret_key,
+    secretRef: process.env.OPERATOR_SECRET_REF ?? config.operator_secret_ref,
+    adapters: options.secretAdapters,
+  });
 
-  if (!selectedSecret) {
-    throw new Error(
-      "Missing operator secret key: set OPERATOR_SECRET_KEY env var or operator_secret_key in config file",
-    );
-  }
-
-  OperatorSecretKeySchema.parse(selectedSecret);
+  OperatorSecretKeySchema.parse(resolvedSecret.value);
 
   return {
     ...config,
-    operator_secret_key: selectedSecret,
-    operator_secret_key_source: envSecret ? "env" : "config",
-    operator_secret_key_dual_source: Boolean(envSecret && fileSecret),
+    runtime_profile: runtimeProfile,
+    aztec_node_url: process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
+    operator_secret_key: resolvedSecret.value,
+    operator_secret_key_source: resolvedSecret.source,
+    operator_secret_key_provider: resolvedSecret.provider,
+    operator_secret_key_dual_source: resolvedSecret.dualSource,
   };
 }
 

@@ -132,8 +132,11 @@ function getConfig(): SmokeConfig {
     "FPC_SMOKE_FEE_JUICE_WAIT_TIMEOUT_MS",
     120_000,
   );
-  const rateNum = readEnvBigInt("FPC_SMOKE_RATE_NUM", 0n);
-  const rateDen = readEnvBigInt("FPC_SMOKE_RATE_DEN", 1n);
+  // Match default attestation config effective rate:
+  // market_rate_num=1, market_rate_den=1000, fee_bips=200
+  // => rate_num=10200, rate_den=10000000
+  const rateNum = readEnvBigInt("FPC_SMOKE_RATE_NUM", 10_200n);
+  const rateDen = readEnvBigInt("FPC_SMOKE_RATE_DEN", 10_000_000n);
   const quoteTtlSeconds = readEnvBigInt("FPC_SMOKE_QUOTE_TTL_SECONDS", 3600n);
   const daGasLimit = readEnvNumber("FPC_SMOKE_DA_GAS_LIMIT", 1_000_000);
   const l2GasLimit = readEnvNumber("FPC_SMOKE_L2_GAS_LIMIT", 1_000_000);
@@ -143,6 +146,11 @@ function getConfig(): SmokeConfig {
 
   if (rateDen === 0n) {
     throw new Error("FPC_SMOKE_RATE_DEN must be non-zero");
+  }
+  if (rateNum <= 0n) {
+    throw new Error(
+      "FPC_SMOKE_RATE_NUM must be > 0 for meaningful fee smoke coverage",
+    );
   }
 
   return {

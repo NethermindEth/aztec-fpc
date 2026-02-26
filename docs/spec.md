@@ -97,20 +97,24 @@ Users see only `(final_rate_num, final_rate_den)` in their quote. The contract a
 charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)
 ```
 
+Policy: the standard `fee_entrypoint` requires `rate_num > 0`. Zero-rate quotes are rejected on-chain to avoid free-transaction quotes.
+
 ### 3.4 Payment Flow
 
 #### `fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until)`
 
 ```
-User private balance →[transfer_in_private]→ Operator private balance
+User private balance →[transfer_private_to_private]→ Operator private balance
 ```
 
 1. Reads `operator` and `accepted_asset` from storage
-2. Verifies the quote authwit is signed by `operator` and binds `user_address = msg_sender`
-3. Asserts `anchor_block_timestamp ≤ valid_until`
-4. Computes `charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)`
-5. Calls `Token::at(accepted_asset).transfer_in_private(sender → operator, charge, nonce)`
-6. Calls `set_as_fee_payer()` + `end_setup()`
+2. Asserts `rate_num > 0`
+3. Verifies the quote authwit is signed by `operator` and binds `user_address = msg_sender`
+4. Asserts `anchor_block_timestamp ≤ valid_until`
+5. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
+6. Computes `charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)`
+7. Calls `Token::at(accepted_asset).transfer_private_to_private(sender → operator, charge, nonce)`
+8. Calls `set_as_fee_payer()` + `end_setup()`
 
 The token transfer is a private function call that executes in the setup phase, before `end_setup()`. It is irrevocably committed. If the user's app logic subsequently reverts, the fee has still been paid — this is unavoidable in the Aztec FPC model.
 

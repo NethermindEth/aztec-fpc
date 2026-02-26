@@ -26,16 +26,20 @@ const configPath =
 
 async function main() {
   const config = loadConfig(configPath);
+  console.log(`Runtime profile: ${config.runtime_profile}`);
+
   if (config.operator_secret_key_dual_source) {
     console.warn(
       "Both OPERATOR_SECRET_KEY and config.operator_secret_key are set; using OPERATOR_SECRET_KEY",
     );
   }
-  if (config.operator_secret_key_source === "env") {
-    console.log("Operator secret key source: env (OPERATOR_SECRET_KEY)");
-  } else {
+
+  console.log(
+    `Operator secret key provider: ${config.operator_secret_key_provider} (resolved source: ${config.operator_secret_key_source})`,
+  );
+  if (config.operator_secret_key_source === "config") {
     console.warn(
-      "Operator secret key source: config file (operator_secret_key); prefer OPERATOR_SECRET_KEY in non-dev environments",
+      "Operator secret key source: config file (operator_secret_key); this should only be used in non-production profiles",
     );
   }
 
@@ -43,9 +47,8 @@ async function main() {
   const node = createAztecNodeClient(config.aztec_node_url);
 
   // ── Derive operator address and signing key ───────────────────────────────────
-  // TODO: In production, load the secret key from a KMS or HSM rather than
-  //       reading it from a config file. The key should never be stored in
-  //       plaintext — use environment injection or a secrets manager.
+  // Secret resolution happens in config loading. Production mode rejects
+  // plaintext config secrets and supports env/external providers.
   const secretKey = Fr.fromHexString(config.operator_secret_key);
   const signingKey = deriveSigningKey(secretKey);
   const operatorAddress = await getSchnorrAccountContractAddress(

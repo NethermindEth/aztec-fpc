@@ -5,7 +5,7 @@
   "description": "Quote-signing attestation service for the MultiAssetFPC",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "bun build src/index.ts --outdir=dist --target=bun",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "start": "bun run dist/index.js",

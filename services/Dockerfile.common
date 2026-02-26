@@ -3,6 +3,13 @@ ARG SERVICE
 # ---------- deps: install all dependencies (dev + prod) ----------
 FROM oven/bun:1.3.9-slim AS deps
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      python3 \
+      make \
+      g++ && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Bun workspace resolution requires every member's package.json present
@@ -27,6 +34,13 @@ RUN cd services/${SERVICE} && bun run build
 # ---------- prod-deps: production-only node_modules ----------
 FROM oven/bun:1.3.9-slim AS prod-deps
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      python3 \
+      make \
+      g++ && \
+    rm -rf /var/lib/apt/lists/*
+    
 WORKDIR /app
 
 COPY package.json bun.lock ./
