@@ -1,6 +1,11 @@
 # Top-up Service Configuration
 # Copy to config.yaml and fill in your values.
 
+# Runtime profile controls secret-source enforcement:
+# - development/test: plaintext config secrets are allowed
+# - production: plaintext config secrets are rejected at startup
+runtime_profile: "development"
+
 # The deployed MultiAssetFPC contract address on Aztec L2
 fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac"
 
@@ -15,6 +20,13 @@ l1_rpc_url: "http://localhost:8545"
 
 # TODO: In production, inject the private key from a secrets manager or HSM.
 #       Prefer env var L1_OPERATOR_PRIVATE_KEY; avoid plaintext keys on disk.
+# Secret provider modes:
+# - auto: env first, then config fallback (config fallback forbidden in production)
+# - env: require L1_OPERATOR_PRIVATE_KEY
+# - config: require l1_operator_private_key (for local development only)
+# - kms/hsm: require adapter wiring in code and l1_operator_secret_ref
+l1_operator_secret_provider: "auto"
+# l1_operator_secret_ref: "hsm://wallets/topup/l1-operator-key"
 # Optional when L1_OPERATOR_PRIVATE_KEY is set.
 l1_operator_private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 

@@ -236,7 +236,10 @@ Record the deployed address.
 cd services/attestation
 cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, accepted_asset_*, rates
-# Provide operator key via OPERATOR_SECRET_KEY (preferred) or config.operator_secret_key
+# Default runtime_profile is development (config secrets allowed).
+# In production, set runtime_profile=production and provide OPERATOR_SECRET_KEY
+# and remove config.operator_secret_key from config.yaml
+# (any plaintext config secret material is rejected at startup).
 bun install && bun run build && bun run start
 ```
 
@@ -248,7 +251,10 @@ cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, aztec_node_url, l1_rpc_url
 # l1_chain_id and fee juice L1 addresses are auto-discovered from nodeInfo
 # Bridge confirmation uses L1->L2 message readiness plus Fee Juice balance-delta fallback
-# Provide L1 key via L1_OPERATOR_PRIVATE_KEY (preferred) or config.l1_operator_private_key
+# Default runtime_profile is development (config secrets allowed).
+# In production, set runtime_profile=production and provide L1_OPERATOR_PRIVATE_KEY
+# and remove config.l1_operator_private_key from config.yaml
+# (any plaintext config secret material is rejected at startup).
 bun install && bun run build && bun run start
 ```
 
@@ -322,4 +328,4 @@ See [docs/spec.md](docs/spec.md) for detailed flow description, security conside
 
 - **Operator key**: single key — receives all revenue and signs all quotes. Use a hardware wallet or KMS in production. Compromise requires redeployment (no on-chain rotation).
 - **L1 operator key**: used only by the top-up service. Keep minimal ETH balance.
-- All private keys in config files are for development only. **Use a KMS or HSM in production** — comments in the code mark every location where this substitution is needed.
+- Services support secret provider abstraction (env first; pluggable KMS/HSM adapters). Set `runtime_profile=production` to fail fast on plaintext config secrets.

@@ -24,18 +24,19 @@ const configPath =
 
 async function main() {
   const config = loadConfig(configPath);
+  console.log(`Runtime profile: ${config.runtime_profile}`);
+
   if (config.l1_operator_private_key_dual_source) {
     console.warn(
       "Both L1_OPERATOR_PRIVATE_KEY and config.l1_operator_private_key are set; using L1_OPERATOR_PRIVATE_KEY",
     );
   }
-  if (config.l1_operator_private_key_source === "env") {
-    console.log(
-      "L1 operator private key source: env (L1_OPERATOR_PRIVATE_KEY)",
-    );
-  } else {
+  console.log(
+    `L1 operator private key provider: ${config.l1_operator_private_key_provider} (resolved source: ${config.l1_operator_private_key_source})`,
+  );
+  if (config.l1_operator_private_key_source === "config") {
     console.warn(
-      "L1 operator private key source: config file (l1_operator_private_key); prefer L1_OPERATOR_PRIVATE_KEY in non-dev environments",
+      "L1 operator private key source: config file (l1_operator_private_key); this should only be used in non-production profiles",
     );
   }
   const pxe = createAztecNodeClient(config.aztec_node_url);
