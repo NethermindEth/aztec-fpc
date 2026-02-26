@@ -58,7 +58,9 @@ pub contract CreditFPC {
                 == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
             "operator pubkey not on curve",
         );
-        self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y, accepted_asset });
+        self.storage.config.initialize(
+            Config { operator, operator_pubkey_x, operator_pubkey_y, accepted_asset },
+        );
     }
 
     #[external("private")]
@@ -76,7 +78,11 @@ pub contract CreditFPC {
 
         assert_valid_quote(
             self.context,
-            EmbeddedCurvePoint { x: config.operator_pubkey_x, y: config.operator_pubkey_y, is_infinite: false },
+            EmbeddedCurvePoint {
+                x: config.operator_pubkey_x,
+                y: config.operator_pubkey_y,
+                is_infinite: false,
+            },
             config.accepted_asset,
             rate_num,
             rate_den,
