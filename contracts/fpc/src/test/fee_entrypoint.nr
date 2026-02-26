@@ -1,9 +1,26 @@
 use crate::{FPC, test::utils};
+use aztec::protocol::address::AztecAddress;
 use aztec::test::helpers::authwit::add_private_authwit_from_call;
 use token::Token;
 
 global TRANSFER_AUTHWIT_NONCE: Field = 42;
 global TRANSFER_AUTHWIT_NONCE_2: Field = 43;
+
+#[test(should_fail_with = "invalid operator")]
+unconstrained fn constructor_rejects_zero_operator() {
+    let (mut env, _, token_address, operator, _) = utils::setup();
+
+    let fpc_initializer = FPC::interface().constructor(AztecAddress::zero(), token_address);
+    let _ = env.deploy("FPC").with_public_initializer(operator, fpc_initializer);
+}
+
+#[test(should_fail_with = "invalid accepted asset")]
+unconstrained fn constructor_rejects_zero_accepted_asset() {
+    let (mut env, _, _, operator, _) = utils::setup();
+
+    let fpc_initializer = FPC::interface().constructor(operator, AztecAddress::zero());
+    let _ = env.deploy("FPC").with_public_initializer(operator, fpc_initializer);
+}
 
 #[test]
 unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
