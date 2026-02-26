@@ -38,6 +38,21 @@ operator_secret_provider: "auto"
 # Optional when OPERATOR_SECRET_KEY is set.
 operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001"
 
+# ─── Quote endpoint auth (optional, recommended in production) ───────────────
+# quote_auth_mode options:
+# - disabled (default, recommended only for development/test)
+# - api_key
+# - trusted_header
+# - api_key_or_trusted_header
+# - api_key_and_trusted_header
+#
+# runtime_profile=production requires quote_auth_mode != disabled.
+quote_auth_mode: "disabled"
+# quote_auth_api_key: "replace-with-random-secret"
+# quote_auth_api_key_header: "x-api-key"
+# quote_auth_trusted_header_name: "x-internal-attestation"
+# quote_auth_trusted_header_value: "allow"
+
 # ─── Accepted asset ───────────────────────────────────────────────────────────
 # The single token this FPC accepts. Must match `accepted_asset` in the
 # deployed contract — the contract enforces this on every call.
