@@ -5,7 +5,7 @@
   "description": "Quote-signing attestation service for the MultiAssetFPC",
   "main": "dist/index.js",
   "scripts": {
-    "build": "bun build src/index.ts --outdir=dist --target=bun",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --external @aztec/bb.js --external pino",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "start": "bun run dist/index.js",
@@ -14,11 +14,14 @@
   "dependencies": {
     "@aztec/accounts": "4.0.0-devnet.2-patch.1",
     "@aztec/aztec.js": "4.0.0-devnet.2-patch.1",
+    "@aztec/bb.js": "4.0.0-devnet.2-patch.1",
     "@aztec/foundation": "4.0.0-devnet.2-patch.1",
     "@aztec/pxe": "4.0.0-devnet.2-patch.1",
     "@aztec/stdlib": "4.0.0-devnet.2-patch.1",
     "@aztec/wallets": "4.0.0-devnet.2-patch.1",
     "fastify": "^4.28.0",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3",
     "viem": "^2.18.0",
     "yaml": "^2.4.5",
     "zod": "^3.23.8"
