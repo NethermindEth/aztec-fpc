@@ -122,8 +122,8 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
     );
 
     // Use a fresh quote window for the second attempt so this test fails on
-    // missing transfer authwit (the intended assertion), not quote TTL bounds.
-    let valid_until_2 = env.last_block_timestamp() + 3600;
+    // missing transfer authwit (the intended assertion), not quote replay/TTL.
+    let valid_until_2 = env.last_block_timestamp() + 3000;
     let quote_sig_2 = utils::sign_quote(
         fpc_address,
         token_address,

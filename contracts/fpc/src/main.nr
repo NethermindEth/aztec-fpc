@@ -40,6 +40,7 @@ pub contract FPC {
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
         macros::{functions::{allow_phase_change, external, initializer}, storage::storage},
+        oracle::nullifiers::check_nullifier_exists,
         protocol::{address::AztecAddress, traits::ToField},
         state_vars::PublicImmutable,
     };
@@ -178,6 +179,11 @@ pub contract FPC {
             schnorr::verify_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>()),
             "invalid quote signature",
         );
+
+        // Safety: this is only used as a best-effort pre-check for a clearer
+        // replay error before the canonical duplicate-nullifier protection.
+        let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
+        assert(!quote_already_used, "quote already used");
 
         // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
         context.push_nullifier(quote_hash);
