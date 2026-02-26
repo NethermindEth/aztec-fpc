@@ -14,6 +14,7 @@
   "dependencies": {
     "@aztec/accounts": "4.0.0-devnet.2-patch.1",
     "@aztec/aztec.js": "4.0.0-devnet.2-patch.1",
+    "@aztec/foundation": "4.0.0-devnet.2-patch.1",
     "@aztec/pxe": "4.0.0-devnet.2-patch.1",
     "@aztec/stdlib": "4.0.0-devnet.2-patch.1",
     "@aztec/wallets": "4.0.0-devnet.2-patch.1",
