@@ -24,6 +24,7 @@
     "topup:dev": "bun run --filter @aztec-fpc/topup dev",
     "topup:start": "bun run --filter @aztec-fpc/topup start",
     "deploy:fpc:local": "bash scripts/contract/deploy-fpc-local.sh",
+    "smoke:deploy:fpc:local": "bash scripts/contract/deploy-fpc-local-smoke.sh",
     "smoke:services": "bash scripts/services/fpc-services-smoke.sh",
     "test": "bun run test:contracts && bun run test:ts"
   },
