@@ -171,7 +171,28 @@ Useful overrides:
 - `FPC_SERVICES_SMOKE_ATTESTATION_PORT` (default `3300`)
 - `FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS` (default: `2`; sends mock L2 txs after bridge submit so local relay can finalize)
 
-### 7. Deploy the contract
+### 7. Deploy the contract (recommended)
+
+Use the local deploy wrapper:
+
+```bash
+bun run deploy:fpc:local
+```
+
+Useful overrides:
+
+- `AZTEC_NODE_URL` (default `http://127.0.0.1:8080`)
+- `L1_RPC_URL` (default `http://127.0.0.1:8545`)
+- `FPC_LOCAL_OPERATOR` (default local `test0` Aztec address)
+- `FPC_LOCAL_OUT` (default `./tmp/deploy-fpc-local.json`)
+
+Pass through extra deploy args when needed (for example reuse mode):
+
+```bash
+bun run deploy:fpc:local -- --reuse
+```
+
+### 8. Deploy the contract manually (alternative)
 
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
@@ -183,7 +204,7 @@ aztec deploy \
 
 Record the deployed address.
 
-### 8. Configure and start the attestation service
+### 9. Configure and start the attestation service
 
 ```bash
 cd services/attestation
@@ -193,7 +214,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 9. Configure and start the top-up service
+### 10. Configure and start the top-up service
 
 ```bash
 cd services/topup
@@ -205,7 +226,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 10. Verify
+### 11. Verify
 
 ```bash
 curl http://localhost:3000/health
