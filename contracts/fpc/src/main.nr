@@ -90,6 +90,7 @@ pub contract FPC {
         let operator = self.storage.operator.read();
         let accepted_asset = self.storage.accepted_asset.read();
         let sender = self.msg_sender();
+        assert(rate_num > (0 as u128), "rate_num must be > 0");
 
         // User-specific quote: binds to msg_sender so only this user can use it.
         // The operator signed acknowledging it will track private receipts

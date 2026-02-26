@@ -65,6 +65,34 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
     assert_eq(operator_balance_after, operator_balance_before + charge);
 }
 
+#[test(should_fail_with = "rate_num must be > 0")]
+unconstrained fn fee_entrypoint_rejects_zero_rate_numerator() {
+    let (mut env, fpc_address, token_address, operator, user) = utils::setup();
+    let fpc = FPC::at(fpc_address);
+    let token = Token::at(token_address);
+
+    let rate_num = 0 as u128;
+    let rate_den = 1 as u128;
+    let authwit_nonce = 44;
+    let valid_until = env.last_block_timestamp() + 3600;
+    let charge = utils::expected_charge(env, rate_num, rate_den);
+    utils::add_quote_authwit(
+        env,
+        operator,
+        fpc_address,
+        token_address,
+        rate_num,
+        rate_den,
+        valid_until,
+        user,
+    );
+    let transfer_call = token.transfer_private_to_private(user, operator, charge, authwit_nonce);
+    add_private_authwit_from_call(env, user, fpc_address, transfer_call);
+
+    let _ =
+        env.call_private(user, fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until));
+}
+
 #[test(should_fail_with = "Unknown auth witness for message hash")]
 unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
     let (mut env, fpc_address, token_address, operator, user) = utils::setup();
