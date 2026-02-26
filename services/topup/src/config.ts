@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { z } from "zod";
 import {
-  resolveSecret,
   type RuntimeProfile,
+  resolveSecret,
   type SecretAdapterRegistry,
   type SecretProvider,
   type SecretSource,
