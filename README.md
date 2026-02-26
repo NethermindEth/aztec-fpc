@@ -77,8 +77,9 @@ bun install
 
 ### 3. Compile contracts (workspace)
 
-Compile the full workspace so both artifacts exist:
+Compile the full workspace so all required artifacts exist:
 - `target/fpc-FPC.json`
+- `target/generic_proxy-GenericProxy.json`
 - `target/token_contract-Token.json`
 
 ```bash
@@ -89,8 +90,11 @@ aztec compile --workspace --force
 
 ```bash
 nargo fmt
-aztec test --package fpc
+bun run test:contracts
 ```
+
+If you run `aztec test --package fpc` directly on a clean checkout, run
+`aztec compile --workspace --force` first so external resolver artifacts are present.
 
 ### TypeScript quality checks
 

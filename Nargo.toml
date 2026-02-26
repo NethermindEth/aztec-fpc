@@ -1,2 +1,6 @@
 [workspace]
-members = ["contracts/fpc","vendor/aztec-standards/src/token_contract"]
+members = [
+    "contracts/fpc",
+    "vendor/aztec-standards/src/generic_proxy",
+    "vendor/aztec-standards/src/token_contract",
+]
