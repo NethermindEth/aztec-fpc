@@ -15,12 +15,12 @@ pub contract CreditFPC {
         },
         messages::message_delivery::MessageDelivery,
         protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
-        state_vars::{Owned, PublicImmutable},
+        state_vars::{Owned, PublicImmutable, PublicMutable, StateVariable},
     };
     use balance_set::BalanceSet;
     use std::embedded_curve_ops::EmbeddedCurvePoint;
     use token::Token;
-    use uint_note::PartialUintNote;
+    use uint_note::{PartialUintNote, UintNote};
 
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
 
@@ -39,6 +39,8 @@ pub contract CreditFPC {
     #[storage]
     struct Storage<Context> {
         config: PublicImmutable<Config, Context>,
+        total_backing: PublicMutable<u128, Context>,
+        total_outstanding: PublicMutable<u128, Context>,
         balances: Owned<BalanceSet<Context>, Context>,
     }
 
@@ -61,6 +63,8 @@ pub contract CreditFPC {
         self.storage.config.initialize(
             Config { operator, operator_pubkey_x, operator_pubkey_y, accepted_asset },
         );
+        self.storage.total_backing.write(0);
+        self.storage.total_outstanding.write(0);
     }
 
     #[external("private")]
@@ -92,22 +96,42 @@ pub contract CreditFPC {
         );
 
         let charge = fee_juice_to_asset(mint_amount, rate_num, rate_den);
+        assert(mint_amount >= get_max_gas_cost_no_teardown(self.context), "minted credit too low for max fee");
+
         Token::at(config.accepted_asset)
-            .transfer_private_to_private(sender, config.operator, charge, authwit_nonce)
+            .transfer_private_to_public(sender, self.address, charge, authwit_nonce)
             .call(self.context);
 
-        let balance_set = self.storage.balances.at(sender);
-        balance_set.add(mint_amount).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
+        let net_credit = mint_amount - get_max_gas_cost_no_teardown(self.context);
+        let partial_note = UintNote::partial(
+            sender,
+            self.storage.balances.get_storage_slot(),
+            self.context,
+            sender,
+            self.address,
+        );
 
-        let max_gas_cost = get_max_gas_cost_no_teardown(self.context);
-        let subtracted = balance_set.try_sub(max_gas_cost, 1);
-        assert(subtracted >= max_gas_cost, "minted credit too low for max fee");
-        balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
+        self.enqueue_self._finalize_mint(charge, net_credit, partial_note);
 
         self.context.set_as_fee_payer();
         if !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
+    }
+
+    #[external("public")]
+    #[only_self]
+    fn _finalize_mint(backing_in: u128, minted_credit: u128, partial_note: PartialUintNote) {
+        let total_backing = self.storage.total_backing.read();
+        let total_outstanding = self.storage.total_outstanding.read();
+
+        let new_total_backing = total_backing + backing_in;
+        let new_total_outstanding = total_outstanding + minted_credit;
+        assert(new_total_outstanding <= new_total_backing, "insufficient backing");
+
+        self.storage.total_backing.write(new_total_backing);
+        self.storage.total_outstanding.write(new_total_outstanding);
+        partial_note.complete(self.context, self.address, minted_credit);
     }
 
     #[external("private")]
@@ -122,7 +146,9 @@ pub contract CreditFPC {
         balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
         self.context.set_as_fee_payer();
-        self.context.end_setup();
+        if !self.context.in_revertible_phase() {
+            self.context.end_setup();
+        }
     }
 
     #[external("public")]
@@ -136,6 +162,11 @@ pub contract CreditFPC {
     #[external("utility")]
     unconstrained fn balance_of(account: AztecAddress) -> u128 {
         self.storage.balances.at(account).balance_of()
+    }
+
+    #[external("utility")]
+    unconstrained fn totals() -> (u128, u128) {
+        (self.storage.total_backing.read(), self.storage.total_outstanding.read())
     }
 
     /// Test-only: mint credit via ONCHAIN_UNCONSTRAINED so the PXE can discover

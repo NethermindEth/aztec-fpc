@@ -411,119 +411,54 @@ async function main() {
   const feeDa = BigInt(Math.ceil(Number(minFees.feePerDaGas) * PADDING));
   const feeL2 = BigInt(Math.ceil(Number(minFees.feePerL2Gas) * PADDING));
 
-  // Profile limits can be high — .profile() simulates without AVM limits.
-  // Send limits must stay within the AVM's processing capacity.
   const PROFILE_DA_GAS = 786432n;
   const PROFILE_L2_GAS = 6540000n;
-  const SEND_DA_GAS    = 786432n;
-  const SEND_L2_GAS    = 2000000n;
 
-  const profileMaxGasCost = feeDa * PROFILE_DA_GAS + feeL2 * PROFILE_L2_GAS;
-  const sendMaxGasCost    = feeDa * SEND_DA_GAS    + feeL2 * SEND_L2_GAS;
-
-  // Profile credit: 3x profile max gas cost (generous, for profiling assertion).
+  const profileMaxGasCost  = feeDa * PROFILE_DA_GAS + feeL2 * PROFILE_L2_GAS;
   const profileCreditMint  = profileMaxGasCost * 3n;
   const profileTokenCharge = feeJuiceToAsset(profileCreditMint, RATE_NUM, RATE_DEN);
 
-  // Send credit: must cover the send tx fee *and* leave enough balance for
-  // the subsequent pay_with_credit profile (which uses profileMaxGasCost).
-  const sendCreditMint  = sendMaxGasCost + profileMaxGasCost * 2n;
-  const sendTokenCharge = feeJuiceToAsset(sendCreditMint, RATE_NUM, RATE_DEN);
-
   console.log(`\nfeePerDaGas=${feeDa} feePerL2Gas=${feeL2}`);
-  console.log(`profile max gas cost: ${profileMaxGasCost} | send max gas cost: ${sendMaxGasCost}`);
+  console.log(`profile max gas cost: ${profileMaxGasCost}`);
   console.log(`profile credit mint: ${profileCreditMint} | token charge: ${profileTokenCharge}`);
-  console.log(`send credit mint:    ${sendCreditMint} | token charge: ${sendTokenCharge}`);
-
-  // ── Mint tokens to user (enough for real send — profiling tokens minted later) ──
-  const tokenMintAmount = sendTokenCharge + 10000n;
-  console.log(`\nMinting ${tokenMintAmount} tokens to user...`);
-  await tokenAsUser.methods
-    .mint_to_private(userAddress, tokenMintAmount)
-    .send({ from: userAddress });
-  console.log('Minted.');
 
   // ── Gas settings ───────────────────────────────────────────────────────────
   const profileGasSettings = GasSettings.default({
     gasLimits:     new Gas(Number(PROFILE_DA_GAS), Number(PROFILE_L2_GAS)),
     maxFeesPerGas: new GasFees(feeDa, feeL2),
   });
-  const sendGasSettings = GasSettings.default({
-    gasLimits:     new Gas(Number(SEND_DA_GAS), Number(SEND_L2_GAS)),
-    maxFeesPerGas: new GasFees(feeDa, feeL2),
-  });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  Establish credit balance via a real pay_and_mint transaction FIRST.
-  //  This MUST happen before any .profile() calls because profiling
-  //  advances the PXE's sender tag indices (via get_next_app_tag_as_sender
-  //  oracle). If profiling runs first, the real tx uses advanced tag indices
-  //  that may prevent the PXE from discovering the notes.
+  //  Establish credit balance via dev_mint BEFORE any .profile() calls.
+  //  Profiling advances the PXE's sender tag indices (via
+  //  get_next_app_tag_as_sender oracle), so real sends must happen first.
+  //
+  //  We use dev_mint (a regular private function, not a fee-payment
+  //  entrypoint) because pay_and_mint is not on the node's setup function
+  //  allowlist and cannot be used as a fee payment method on a fresh node.
+  //  dev_mint creates credit via ONCHAIN_UNCONSTRAINED delivery which the
+  //  PXE can always discover.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const SEND_NONCE = BigInt(Date.now());
-
-  const sendQuoteSigFields = await signQuote(
-    schnorr, operatorSigningKey, fpcAddress, tokenAddress,
-    RATE_NUM, RATE_DEN, VALID_UNTIL, userAddress,
-  );
-
-  const sendTransferAuthWit = await wallet.createAuthWit(userAddress, {
-    caller: fpcAddress,
-    action: tokenAsUser.methods.transfer_private_to_private(
-      userAddress, operatorAddress, sendTokenCharge, SEND_NONCE,
-    ),
-  });
-
-  const sendPayAndMint = new PayAndMintPaymentMethod(
-    fpcAddress, sendTransferAuthWit, sendQuoteSigFields, SEND_NONCE,
-    RATE_NUM, RATE_DEN, VALID_UNTIL, sendCreditMint, sendGasSettings,
-  );
-
-  // Diagnostic: log node state BEFORE pay_and_mint
-  const preBlockNum = await node.getBlockNumber();
-  const preTips = await node.getL2Tips();
-  console.log(`\n[diag] Before pay_and_mint: getBlockNumber=${preBlockNum}, getL2Tips.proposed=${preTips.proposed.number}`);
-
-  console.log('Establishing user credit balance (sending real pay_and_mint tx)...');
-  await tokenAsUser.methods
-    .transfer_private_to_private(userAddress, userAddress, 1n, 0n)
-    .send({
-      fee: { paymentMethod: sendPayAndMint, gasSettings: sendGasSettings },
-      from: userAddress,
-      additionalScopes: [operatorAddress],
-    });
-  console.log('Credit balance established (tx mined).');
-
-  // Diagnostic: log node state AFTER pay_and_mint
-  const postBlockNum = await node.getBlockNumber();
-  const postTips = await node.getL2Tips();
-  const syncedHdr = await pxe.getSyncedBlockHeader();
-  console.log(`[diag] After pay_and_mint:  getBlockNumber=${postBlockNum}, getL2Tips.proposed=${postTips.proposed.number}, PXE synced=${Number(syncedHdr.globalVariables.blockNumber)}`);
-
-  // The archiver's getL2Tips() uses a cached promise that may lag behind
-  // getBlockNumber(). The PXE's L2BlockStream.work() relies on getL2Tips()
-  // to decide which blocks to fetch. Sending a follow-up tx forces the
-  // archiver to process the pay_and_mint block before the follow-up receipt
-  // can be returned. This is the same pattern the official bench tests use.
-  console.log('Sending follow-up tx to advance archiver past pay_and_mint block...');
-  await tokenAsUser.methods
-    .mint_to_private(userAddress, 1n)
-    .send({ from: userAddress });
-  console.log('Follow-up tx mined.');
-
-  // Diagnostic: log node state AFTER follow-up tx
-  const followBlockNum = await node.getBlockNumber();
-  const followTips = await node.getL2Tips();
-  const followSynced = await pxe.getSyncedBlockHeader();
-  console.log(`[diag] After follow-up tx:  getBlockNumber=${followBlockNum}, getL2Tips.proposed=${followTips.proposed.number}, PXE synced=${Number(followSynced.globalVariables.blockNumber)}`);
-
-  // Verify the credit balance is visible to the PXE before profiling pay_with_credit.
   const creditFpcContract = Contract.at(fpcAddress, creditFpcArtifact, wallet);
   const payWithCreditTeardownCost =
     feeL2 * (PROFILE_L2_GAS + BigInt(DEFAULT_TEARDOWN_L2_GAS_LIMIT))
     + feeDa * (PROFILE_DA_GAS + BigInt(DEFAULT_TEARDOWN_DA_GAS_LIMIT));
-  console.log(`pay_with_credit max_gas_cost (with teardown): ${payWithCreditTeardownCost}`);
+  console.log(`\npay_with_credit max_gas_cost (with teardown): ${payWithCreditTeardownCost}`);
+
+  const devMintAmount = payWithCreditTeardownCost * 3n;
+  console.log(`Establishing credit balance via dev_mint (${devMintAmount})...`);
+  await creditFpcContract.methods
+    .dev_mint(devMintAmount)
+    .send({ from: userAddress });
+  console.log('dev_mint tx mined.');
+
+  // Send a follow-up tx to advance the archiver past the dev_mint block
+  console.log('Sending follow-up tx to advance archiver...');
+  await tokenAsUser.methods
+    .mint_to_private(userAddress, 1n)
+    .send({ from: userAddress });
+  console.log('Follow-up tx mined.');
 
   let creditBalance = 0n;
   for (let i = 0; i < 10; i++) {
@@ -534,7 +469,6 @@ async function main() {
     console.log(`  [${i + 1}/10] PXE block: ${syncedNum} | L2Tips.proposed: ${curTips.proposed.number} | Credit balance: ${creditBalance}`);
     if (creditBalance >= payWithCreditTeardownCost) break;
     if (i < 9) {
-      // Send another dummy tx per retry to keep nudging the archiver
       try {
         await tokenAsUser.methods.mint_to_private(userAddress, 1n).send({ from: userAddress });
       } catch (e) {
@@ -543,71 +477,8 @@ async function main() {
     }
   }
 
-  // ── Fallback: use dev_mint with ONCHAIN_UNCONSTRAINED delivery ───────────
-  // ONCHAIN_CONSTRAINED notes (used by pay_and_mint/_refund) may not be
-  // discoverable by the embedded PXE. dev_mint creates credit via
-  // ONCHAIN_UNCONSTRAINED which the PXE can always scan.
   if (creditBalance < payWithCreditTeardownCost) {
-    console.log('\nCredit notes not yet visible. Trying dev_mint fallback (ONCHAIN_UNCONSTRAINED delivery)...');
-
-    const DEV_NONCE = SEND_NONCE + 1n;
-    const devMintAmount = payWithCreditTeardownCost * 3n;
-    const devTokenCharge = feeJuiceToAsset(devMintAmount, RATE_NUM, RATE_DEN);
-
-    await tokenAsUser.methods
-      .mint_to_private(userAddress, devTokenCharge + 10000n)
-      .send({ from: userAddress });
-
-    const devTransferAuthWit = await wallet.createAuthWit(userAddress, {
-      caller: fpcAddress,
-      action: tokenAsUser.methods.transfer_private_to_private(
-        userAddress, operatorAddress, devTokenCharge, DEV_NONCE,
-      ),
-    });
-
-    // Use a different valid_until to produce a distinct quote nullifier
-    const DEV_VALID_UNTIL = VALID_UNTIL + 5n;
-    const devQuoteSigFields = await signQuote(
-      schnorr, operatorSigningKey, fpcAddress, tokenAddress,
-      RATE_NUM, RATE_DEN, DEV_VALID_UNTIL, userAddress,
-    );
-
-    const devPayAndMint = new PayAndMintPaymentMethod(
-      fpcAddress, devTransferAuthWit, devQuoteSigFields, DEV_NONCE,
-      RATE_NUM, RATE_DEN, DEV_VALID_UNTIL, devMintAmount, sendGasSettings,
-    );
-
-    await creditFpcContract.methods
-      .dev_mint(payWithCreditTeardownCost * 2n)
-      .send({
-        fee: { paymentMethod: devPayAndMint, gasSettings: sendGasSettings },
-        from: userAddress,
-        additionalScopes: [operatorAddress],
-      });
-    console.log('dev_mint tx mined.');
-
-    // Send a follow-up tx to advance the archiver past the dev_mint block
-    await tokenAsUser.methods.mint_to_private(userAddress, 1n).send({ from: userAddress });
-
-    for (let i = 0; i < 10; i++) {
-      creditBalance = await creditFpcContract.methods.balance_of(userAddress).simulate({ from: userAddress });
-      const synced = await pxe.getSyncedBlockHeader();
-      const syncedNum = Number(synced.globalVariables.blockNumber);
-      const curTips = await node.getL2Tips();
-      console.log(`  [${i + 1}/10] PXE block: ${syncedNum} | L2Tips.proposed: ${curTips.proposed.number} | Credit balance: ${creditBalance}`);
-      if (creditBalance >= payWithCreditTeardownCost) break;
-      if (i < 9) {
-        try {
-          await tokenAsUser.methods.mint_to_private(userAddress, 1n).send({ from: userAddress });
-        } catch (e) {
-          console.log(`  dummy tx failed (non-fatal): ${(e.message || '').substring(0, 80)}`);
-        }
-      }
-    }
-
-    if (creditBalance < payWithCreditTeardownCost) {
-      throw new Error(`Credit balance ${creditBalance} still below required ${payWithCreditTeardownCost} after dev_mint fallback.`);
-    }
+    throw new Error(`Credit balance ${creditBalance} still below required ${payWithCreditTeardownCost} after dev_mint.`);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -615,7 +486,7 @@ async function main() {
   //  used by the real tx aren't polluted by profiling oracle calls)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const PROFILE_NONCE = SEND_NONCE + 10n;
+  const PROFILE_NONCE = BigInt(Date.now());
 
   // Fresh quote sig for profiling (different valid_until avoids nullifier collision
   // with the real send: quote_hash includes valid_until, so VALID_UNTIL + 10
@@ -628,8 +499,8 @@ async function main() {
 
   const profileTransferAuthWit = await wallet.createAuthWit(userAddress, {
     caller: fpcAddress,
-    action: tokenAsUser.methods.transfer_private_to_private(
-      userAddress, operatorAddress, profileTokenCharge, PROFILE_NONCE,
+    action: tokenAsUser.methods.transfer_private_to_public(
+      userAddress, fpcAddress, profileTokenCharge, PROFILE_NONCE,
     ),
   });
 
