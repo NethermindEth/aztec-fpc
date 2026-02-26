@@ -489,7 +489,7 @@ async function fetchQuote(
           typeof parsed.rate_num === "string" &&
           typeof parsed.rate_den === "string" &&
           typeof parsed.valid_until === "string" &&
-          typeof parsed.authwit === "string"
+          typeof parsed.signature === "string"
         ) {
           return parsed;
         }
