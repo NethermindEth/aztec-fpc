@@ -4,6 +4,7 @@ import type { BridgeConfirmationResult } from "./confirm.js";
 export interface TopupCheckerConfig {
   threshold: bigint;
   topUpAmount: bigint;
+  logClaimSecret?: boolean;
 }
 
 export interface TopupCheckerDependencies {
@@ -29,6 +30,7 @@ export function createTopupChecker(
   deps: TopupCheckerDependencies,
 ): TopupChecker {
   const logger = deps.logger ?? console;
+  const includeClaimSecretInLogs = config.logClaimSecret ?? false;
   let bridgeInFlight = false;
 
   async function checkAndTopUp() {
@@ -61,7 +63,11 @@ export function createTopupChecker(
     try {
       const result = await deps.bridge(config.topUpAmount);
       logger.log(
-        `Bridge submitted. l1_to_l2_message_hash=${result.messageHash} leaf_index=${result.messageLeafIndex} claim_secret_hash=${result.claimSecretHash}`,
+        `Bridge submitted. l1_to_l2_message_hash=${result.messageHash} leaf_index=${result.messageLeafIndex} claim_secret_hash=${result.claimSecretHash}${
+          includeClaimSecretInLogs
+            ? ` claim_secret=${result.claimSecret}`
+            : ""
+        }`,
       );
       logger.log(
         `Bridged ${result.amount} wei. Waiting for L2 confirmation...`,
