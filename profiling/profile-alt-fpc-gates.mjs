@@ -38,6 +38,7 @@ import {
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { Gas, GasFees, GasSettings } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
+import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { createPXE, getPXEConfig } from "@aztec/pxe/server";
 import { BaseWallet } from "@aztec/wallet-sdk/base-wallet";
 import {
@@ -109,6 +110,13 @@ function chooseTokenArtifactPath() {
   return findArtifact("Token");
 }
 
+// ── Network timestamp (seconds) from latest block, fallback to wall clock ─────
+async function getNetworkTimestamp(node) {
+  const header = await node.getBlockHeader('latest').catch(() => null);
+  const ts = header?.globalVariables?.timestamp;
+  return ts != null ? BigInt(ts) : BigInt(Math.floor(Date.now() / 1000));
+}
+
 function feeJuiceToAsset(feeJuice, rateNum, rateDen) {
   if (feeJuice === 0n) return 0n;
   return (feeJuice * rateNum + rateDen - 1n) / rateDen;
@@ -143,7 +151,7 @@ class PayAndMintPaymentMethod {
   constructor(params) {
     this.fpcAddress = params.fpcAddress;
     this.transferAuthWit = params.transferAuthWit;
-    this.quoteAuthWit = params.quoteAuthWit;
+    this.quoteSigFields = params.quoteSigFields;
     this.transferNonce = params.transferNonce;
     this.rateNum = params.rateNum;
     this.rateDen = params.rateDen;
@@ -162,7 +170,7 @@ class PayAndMintPaymentMethod {
 
   async getExecutionPayload() {
     const selector = await FunctionSelector.fromSignature(
-      "pay_and_mint(Field,u128,u128,u64,u128)",
+      "pay_and_mint(Field,u128,u128,u64,[u8;64],u128)",
     );
     const feeCall = FunctionCall.from({
       name: "pay_and_mint",
@@ -176,6 +184,7 @@ class PayAndMintPaymentMethod {
         new Fr(this.rateNum),
         new Fr(this.rateDen),
         new Fr(this.validUntil),
+        ...this.quoteSigFields,
         new Fr(this.mintAmount),
       ],
       returnTypes: [],
@@ -183,7 +192,7 @@ class PayAndMintPaymentMethod {
 
     return new ExecutionPayload(
       [feeCall],
-      [this.quoteAuthWit, this.transferAuthWit],
+      [this.transferAuthWit],
       [],
       [],
       this.fpcAddress,
@@ -276,6 +285,10 @@ async function buildScenarioContext(scenarioName) {
     operatorData.salt,
   );
 
+  const schnorr = new Schnorr();
+  const operatorSigningKey = deriveSigningKey(operatorData.secret);
+  const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
+
   const tokenArtifact = loadArtifactFromPath(chooseTokenArtifactPath());
   const altArtifact = loadArtifactFromPath(findArtifact("AltFPC"));
 
@@ -298,6 +311,8 @@ async function buildScenarioContext(scenarioName) {
 
   const altFpc = await Contract.deploy(wallet, altArtifact, [
     operatorAddress,
+    operatorPubKey.x,
+    operatorPubKey.y,
     token.address,
   ]).send({ from: userAddress });
 
@@ -323,10 +338,13 @@ async function buildScenarioContext(scenarioName) {
     userAddress,
     operatorAddress,
     gasSettings,
+    schnorr,
+    operatorSigningKey,
   };
 }
 
 async function buildPayAndMintPayment({
+  node,
   wallet,
   tokenAsUser,
   altFpc,
@@ -334,8 +352,11 @@ async function buildPayAndMintPayment({
   operatorAddress,
   gasSettings,
   mintAmount,
+  schnorr,
+  operatorSigningKey,
 }) {
-  const validUntil = BigInt(Math.floor(Date.now() / 1000) + 3600);
+  const networkTs = await getNetworkTimestamp(node);
+  const validUntil = networkTs + 3600n;
   const transferNonce = BigInt(Date.now());
 
   const quoteHash = await computeInnerAuthWitHash([
@@ -348,7 +369,9 @@ async function buildPayAndMintPayment({
     userAddress.toField(),
   ]);
 
-  const quoteAuthWit = await wallet.createAuthWit(operatorAddress, quoteHash);
+  const quoteSig = await schnorr.constructSignature(quoteHash.toBuffer(), operatorSigningKey);
+  const quoteSigFields = Array.from(quoteSig.toBuffer()).map((b) => new Fr(b));
+
   const charge = feeJuiceToAsset(mintAmount, RATE_NUM, RATE_DEN);
   const transferAuthWit = await wallet.createAuthWit(userAddress, {
     caller: altFpc.address,
@@ -363,7 +386,7 @@ async function buildPayAndMintPayment({
   const paymentMethod = new PayAndMintPaymentMethod({
     fpcAddress: altFpc.address,
     transferAuthWit,
-    quoteAuthWit,
+    quoteSigFields,
     transferNonce,
     rateNum: RATE_NUM,
     rateDen: RATE_DEN,
@@ -381,6 +404,7 @@ async function runPayAndMintScenario() {
     const maxNoTeardown = maxGasCostNoTeardown(ctx.gasSettings);
     const mintAmount = maxNoTeardown + 1000n;
     const { paymentMethod, charge } = await buildPayAndMintPayment({
+      node: ctx.node,
       wallet: ctx.wallet,
       tokenAsUser: ctx.tokenAsUser,
       altFpc: ctx.altFpc,
@@ -388,6 +412,8 @@ async function runPayAndMintScenario() {
       operatorAddress: ctx.operatorAddress,
       gasSettings: ctx.gasSettings,
       mintAmount,
+      schnorr: ctx.schnorr,
+      operatorSigningKey: ctx.operatorSigningKey,
     });
 
     await ctx.tokenAsUser.methods
@@ -420,6 +446,7 @@ async function runPayFeeScenario() {
     const seedMintAmount = maxNoTeardown * 3n;
     const { paymentMethod: seedPayment, charge: seedCharge } =
       await buildPayAndMintPayment({
+        node: ctx.node,
         wallet: ctx.wallet,
         tokenAsUser: ctx.tokenAsUser,
         altFpc: ctx.altFpc,
@@ -427,6 +454,8 @@ async function runPayFeeScenario() {
         operatorAddress: ctx.operatorAddress,
         gasSettings: ctx.gasSettings,
         mintAmount: seedMintAmount,
+        schnorr: ctx.schnorr,
+        operatorSigningKey: ctx.operatorSigningKey,
       });
 
     await ctx.tokenAsUser.methods

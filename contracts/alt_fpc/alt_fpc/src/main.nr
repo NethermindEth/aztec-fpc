@@ -1,4 +1,5 @@
 mod fee_math;
+mod test;
 
 use ::aztec::macros::aztec;
 
@@ -6,7 +7,7 @@ use ::aztec::macros::aztec;
 pub contract AltFPC {
     use crate::fee_math::fee_juice_to_asset;
     use aztec::{
-        authwit::auth::{assert_inner_hash_valid_authwit, compute_inner_authwit_hash},
+        authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
         macros::{
             functions::{allow_phase_change, external, initializer, only_self},
@@ -14,27 +15,45 @@ pub contract AltFPC {
         },
         messages::message_delivery::MessageDelivery,
         protocol::{address::AztecAddress, traits::ToField},
-        state_vars::{Owned, PublicImmutable, StateVariable},
+        state_vars::{Owned, PublicImmutable},
     };
     use balance_set::BalanceSet;
+    use std::embedded_curve_ops::EmbeddedCurvePoint;
     use token::Token;
-    use uint_note::{PartialUintNote, UintNote};
+    use uint_note::PartialUintNote;
 
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
 
     #[storage]
     struct Storage<Context> {
         operator: PublicImmutable<AztecAddress, Context>,
+        /// Operator signing public key x coordinate.
+        operator_pubkey_x: PublicImmutable<Field, Context>,
+        /// Operator signing public key y coordinate.
+        operator_pubkey_y: PublicImmutable<Field, Context>,
         accepted_asset: PublicImmutable<AztecAddress, Context>,
         balances: Owned<BalanceSet<Context>, Context>,
     }
 
     #[external("public")]
     #[initializer]
-    fn constructor(operator: AztecAddress, accepted_asset: AztecAddress) {
+    fn constructor(
+        operator: AztecAddress,
+        operator_pubkey_x: Field,
+        operator_pubkey_y: Field,
+        accepted_asset: AztecAddress,
+    ) {
         assert(!operator.is_zero(), "invalid operator");
         assert(!accepted_asset.is_zero(), "invalid accepted asset");
+        // Basic on-curve check: y^2 = x^3 - 17 (Grumpkin)
+        assert(
+            operator_pubkey_y * operator_pubkey_y
+                == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
+            "operator pubkey not on curve",
+        );
         self.storage.operator.initialize(operator);
+        self.storage.operator_pubkey_x.initialize(operator_pubkey_x);
+        self.storage.operator_pubkey_y.initialize(operator_pubkey_y);
         self.storage.accepted_asset.initialize(accepted_asset);
     }
 
@@ -45,20 +64,24 @@ pub contract AltFPC {
         rate_num: u128,
         rate_den: u128,
         valid_until: u64,
+        quote_sig: [u8; 64],
         mint_amount: u128,
     ) {
         let operator = self.storage.operator.read();
+        let operator_pubkey_x = self.storage.operator_pubkey_x.read();
+        let operator_pubkey_y = self.storage.operator_pubkey_y.read();
         let accepted_asset = self.storage.accepted_asset.read();
         let sender = self.msg_sender();
 
         assert_valid_quote(
             self.context,
-            operator,
+            EmbeddedCurvePoint { x: operator_pubkey_x, y: operator_pubkey_y, is_infinite: false },
             accepted_asset,
             rate_num,
             rate_den,
             valid_until,
             sender,
+            quote_sig,
         );
 
         let charge = fee_juice_to_asset(mint_amount, rate_num, rate_den);
@@ -109,17 +132,24 @@ pub contract AltFPC {
         self.storage.balances.at(account).balance_of()
     }
 
+    /// Compute the quote hash and verify the operator's Schnorr signature
+    /// inline. Pushes a nullifier to prevent replay.
+    ///
+    /// Quote preimage (hashed with compute_inner_authwit_hash for compatibility):
+    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, rate_num, rate_den,
+    ///              valid_until, user_address])
     #[contract_library_method]
     fn assert_valid_quote(
         context: &mut PrivateContext,
-        signer: AztecAddress,
+        operator_pubkey: EmbeddedCurvePoint,
         accepted_asset: AztecAddress,
         rate_num: u128,
         rate_den: u128,
         valid_until: u64,
         user_address: AztecAddress,
+        quote_sig: [u8; 64],
     ) {
-        let inner_hash = compute_inner_authwit_hash([
+        let quote_hash = compute_inner_authwit_hash([
             QUOTE_DOMAIN_SEPARATOR,
             context.this_address().to_field(),
             accepted_asset.to_field(),
@@ -128,7 +158,18 @@ pub contract AltFPC {
             valid_until as Field,
             user_address.to_field(),
         ]);
-        assert_inner_hash_valid_authwit(context, signer, inner_hash);
+
+        assert(
+            schnorr::verify_signature(
+                operator_pubkey,
+                quote_sig,
+                quote_hash.to_be_bytes::<32>(),
+            ),
+            "invalid quote signature",
+        );
+
+        // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
+        context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");

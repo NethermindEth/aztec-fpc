@@ -15,11 +15,9 @@
 const NODE_URL     = process.env.AZTEC_NODE_URL || 'http://127.0.0.1:8080';
 const PXE_DATA_DIR = '/tmp/profile-alt-fpc-pxe';
 
-// 1:1 rate, valid 1 hour
-const RATE_NUM    = 1n;
-const RATE_DEN    = 1n;
-const VALID_UNTIL = BigInt(Math.floor(Date.now() / 1000) + 3600);
-const TX_NONCE    = BigInt(Date.now());
+// 1:1 rate
+const RATE_NUM = 1n;
+const RATE_DEN = 1n;
 
 const QUOTE_DOMAIN_SEP = 0x465043n; // "FPC" as field
 
@@ -38,6 +36,7 @@ import {
 import { ExecutionPayload }            from '@aztec/stdlib/tx';
 import { Gas, GasFees, GasSettings }  from '@aztec/stdlib/gas';
 import { deriveSigningKey }            from '@aztec/stdlib/keys';
+import { Schnorr }                     from '@aztec/foundation/crypto/schnorr';
 import { createPXE, getPXEConfig }     from '@aztec/pxe/server';
 import { BaseWallet }                  from '@aztec/wallet-sdk/base-wallet';
 import { readFileSync, readdirSync, mkdirSync, rmSync } from 'fs';
@@ -57,6 +56,13 @@ function findArtifact(contractName) {
     throw new Error(`Multiple artifacts matching *${suffix} in ${TARGET}: ${matches.join(', ')}`);
   }
   return join(TARGET, matches[0]);
+}
+
+// ── Network timestamp (seconds) from latest block, fallback to wall clock ─────
+async function getNetworkTimestamp(node) {
+  const header = await node.getBlockHeader('latest').catch(() => null);
+  const ts = header?.globalVariables?.timestamp;
+  return ts != null ? BigInt(ts) : BigInt(Math.floor(Date.now() / 1000));
 }
 
 // ── fee_juice_to_asset: ceiling division (mirrors fee_math.nr) ────────────────
@@ -100,10 +106,10 @@ class SimpleWallet extends BaseWallet {
 
 // ── Payment method for pay_and_mint ───────────────────────────────────────────
 class PayAndMintMethod {
-  constructor(fpcAddress, transferAuthWit, quoteAuthWit, authwitNonce, rateNum, rateDen, validUntil, mintAmount, gasSettings) {
+  constructor(fpcAddress, transferAuthWit, quoteSigFields, authwitNonce, rateNum, rateDen, validUntil, mintAmount, gasSettings) {
     this.fpcAddress      = fpcAddress;
     this.transferAuthWit = transferAuthWit;
-    this.quoteAuthWit    = quoteAuthWit;
+    this.quoteSigFields  = quoteSigFields;
     this.authwitNonce    = authwitNonce;
     this.rateNum         = rateNum;
     this.rateDen         = rateDen;
@@ -116,7 +122,7 @@ class PayAndMintMethod {
   getGasSettings() { return this.gasSettings; }
 
   async getExecutionPayload() {
-    const selector = await FunctionSelector.fromSignature('pay_and_mint(Field,u128,u128,u64,u128)');
+    const selector = await FunctionSelector.fromSignature('pay_and_mint(Field,u128,u128,u64,[u8;64],u128)');
 
     const feeCall = FunctionCall.from({
       name: 'pay_and_mint',
@@ -130,6 +136,7 @@ class PayAndMintMethod {
         new Fr(this.rateNum),
         new Fr(this.rateDen),
         new Fr(this.validUntil),
+        ...this.quoteSigFields,
         new Fr(this.mintAmount),
       ],
       returnTypes: [],
@@ -137,7 +144,7 @@ class PayAndMintMethod {
 
     return new ExecutionPayload(
       [feeCall],
-      [this.transferAuthWit, this.quoteAuthWit],
+      [this.transferAuthWit],
       [],
       [],
       this.fpcAddress,
@@ -170,6 +177,13 @@ async function main() {
   const node = createAztecNodeClient(NODE_URL);
   console.log('Connected to node at', NODE_URL);
 
+  // Anchor VALID_UNTIL to the network's clock, not the local wall clock.
+  // This prevents "quote expired" errors when the Aztec node's block
+  // timestamps differ from the host clock.
+  const networkTs = await getNetworkTimestamp(node);
+  const VALID_UNTIL = networkTs + 3600n;
+  const TX_NONCE    = BigInt(Date.now());
+
   // ── Start embedded PXE (clean slate each run) ──────────────────────────────
   rmSync(PXE_DATA_DIR, { recursive: true, force: true });
   mkdirSync(PXE_DATA_DIR, { recursive: true });
@@ -190,6 +204,13 @@ async function main() {
   const operatorAddress = await wallet.addSchnorrAccount(operatorData.secret, operatorData.salt);
   console.log('user:    ', userAddress.toString());
   console.log('operator:', operatorAddress.toString());
+
+  // ── Derive operator signing key + public key ──────────────────────────────
+  const schnorr            = new Schnorr();
+  const operatorSigningKey = deriveSigningKey(operatorData.secret);
+  const operatorPubKey     = await schnorr.computePublicKey(operatorSigningKey);
+  console.log('operator pubkey x:', operatorPubKey.x.toString());
+  console.log('operator pubkey y:', operatorPubKey.y.toString());
 
   // ── Load & normalize artifacts ─────────────────────────────────────────────
   const tokenArtifactPath  = findArtifact('Token');
@@ -215,10 +236,11 @@ async function main() {
   console.log('Token:', tokenAddress.toString());
 
   // ── Deploy AltFPC ─────────────────────────────────────────────────────────
+  // Constructor: (operator, operator_pubkey_x, operator_pubkey_y, accepted_asset)
   console.log('Deploying AltFPC...');
   const altFpcDeploy = await Contract.deploy(
     wallet, altFpcArtifact,
-    [operatorAddress, tokenAddress],
+    [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress],
   ).send({ from: userAddress });
   const altFpcAddress = altFpcDeploy.address;
   console.log('AltFPC:', altFpcAddress.toString());
@@ -251,7 +273,7 @@ async function main() {
     .send({ from: userAddress });
   console.log('Minted.');
 
-  // ── Quote authwit: operator authorises the quote ───────────────────────────
+  // ── Quote signature: sign the quote hash with operator's Schnorr key ──────
   const quoteHash = await computeInnerAuthWitHash([
     new Fr(QUOTE_DOMAIN_SEP),
     altFpcAddress.toField(),
@@ -261,11 +283,9 @@ async function main() {
     new Fr(VALID_UNTIL),
     userAddress.toField(),
   ]);
-  const quoteAuthWit = await wallet.createAuthWit(operatorAddress, {
-    consumer: altFpcAddress,
-    innerHash: quoteHash,
-  });
-  console.log('Quote authwit created.');
+  const quoteSig = await schnorr.constructSignature(quoteHash.toBuffer(), operatorSigningKey);
+  const quoteSigFields = Array.from(quoteSig.toBuffer()).map(b => new Fr(b));
+  console.log('Quote signature created (inline Schnorr).');
 
   // ── Transfer authwit: user authorises AltFPC to pull tokens ────────────────
   const transferAuthWit = await wallet.createAuthWit(userAddress, {
@@ -283,7 +303,7 @@ async function main() {
   });
 
   const feePayment = new PayAndMintMethod(
-    altFpcAddress, transferAuthWit, quoteAuthWit,
+    altFpcAddress, transferAuthWit, quoteSigFields,
     TX_NONCE, RATE_NUM, RATE_DEN, VALID_UNTIL, mintAmount, gasSettings,
   );
 

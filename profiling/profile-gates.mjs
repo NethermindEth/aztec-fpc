@@ -11,11 +11,9 @@
 const NODE_URL     = process.env.AZTEC_NODE_URL || 'http://127.0.0.1:8080';
 const PXE_DATA_DIR = '/tmp/profile-fpc-pxe';
 
-// 1:1 rate, valid 1 hour
-const RATE_NUM    = 1n;
-const RATE_DEN    = 1n;
-const VALID_UNTIL = BigInt(Math.floor(Date.now() / 1000) + 3600);
-const TX_NONCE    = BigInt(Date.now());
+// 1:1 rate
+const RATE_NUM = 1n;
+const RATE_DEN = 1n;
 
 const QUOTE_DOMAIN_SEP = 0x465043n; // "FPC" as field
 
@@ -54,6 +52,13 @@ function findArtifact(contractName) {
     throw new Error(`Multiple artifacts matching *${suffix} in ${TARGET}: ${matches.join(', ')}`);
   }
   return join(TARGET, matches[0]);
+}
+
+// ── Network timestamp (seconds) from latest block, fallback to wall clock ─────
+async function getNetworkTimestamp(node) {
+  const header = await node.getBlockHeader('latest').catch(() => null);
+  const ts = header?.globalVariables?.timestamp;
+  return ts != null ? BigInt(ts) : BigInt(Math.floor(Date.now() / 1000));
 }
 
 // ── fee_juice_to_asset: ceiling division (mirrors fee_math.nr) ────────────────
@@ -148,6 +153,13 @@ async function main() {
   // ── Connect to node ─────────────────────────────────────────────────────────
   const node = createAztecNodeClient(NODE_URL);
   console.log('Connected to node at', NODE_URL);
+
+  // Anchor VALID_UNTIL to the network's clock, not the local wall clock.
+  // This prevents "quote expired" errors when the Aztec node's block
+  // timestamps differ from the host clock.
+  const networkTs = await getNetworkTimestamp(node);
+  const VALID_UNTIL = networkTs + 3600n;
+  const TX_NONCE    = BigInt(Date.now());
 
   // ── Start embedded PXE (clean slate each run) ──────────────────────────────
   rmSync(PXE_DATA_DIR, { recursive: true, force: true });

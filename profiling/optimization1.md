@@ -192,6 +192,8 @@ signature in the function args adds a few k gates for args hashing.)
 
 ## Files modified
 
+### Original application (FPC.fee_entrypoint)
+
 | File | Change |
 |------|--------|
 | `contracts/fpc/Nargo.toml` | Added `schnorr` dependency |
@@ -206,6 +208,23 @@ signature in the function args adds a few k gates for args hashing.)
 | `services/attestation/test/fee-entrypoint-devnet-smoke.ts` | Inline Schnorr signing |
 | `scripts/services/fpc-services-smoke.ts` | Updated FPC deploy, quote handling |
 | `profiling/profile-gates.mjs` | New deploy args, inline signing, new selector |
+
+### Extended application (AltFPC.pay_and_mint)
+
+The same optimization was subsequently applied to `AltFPC.pay_and_mint`, which
+used the same `assert_inner_hash_valid_authwit` pattern. The extension also
+fixed a latent path issue (`Nargo.toml` token path and workspace member).
+
+| File | Change |
+|------|--------|
+| `Nargo.toml` | Fixed workspace member path `contracts/alt_fpc` -> `contracts/alt_fpc/alt_fpc` |
+| `contracts/alt_fpc/alt_fpc/Nargo.toml` | Added `schnorr` dependency; fixed token path `../../` -> `../../../` |
+| `contracts/alt_fpc/alt_fpc/src/main.nr` | Inline Schnorr verification, `operator_pubkey_x/y` storage fields, constructor on-curve check, `quote_sig: [u8;64]` param before `mint_amount` |
+| `contracts/alt_fpc/alt_fpc/src/test.nr` | New: test module root |
+| `contracts/alt_fpc/alt_fpc/src/test/utils.nr` | New: Schnorr signing helpers, `setup()`, `credit_balance()` |
+| `contracts/alt_fpc/alt_fpc/src/test/pay_and_mint.nr` | New: 6 tests (happy path, expired quote, wrong user, authwit replay, quote replay, credit boundary) |
+| `profiling/profile-alt-fpc-gates.mjs` | New deploy args, inline Schnorr signing, updated selector and sig args, removed `quoteAuthWit` |
+| `profiling/profile-alt-fpc.mjs` | Same updates as above (used by `run-alt-fpc.sh`) |
 
 ## Test signing: Fq vs Fr subtlety
 
@@ -229,9 +248,31 @@ Noir's u128 overflow panics by branching rather than relying on wrapping.
 This only affects test code; the contract and attestation service (which uses
 the Aztec.js `Schnorr` class) are unaffected.
 
+## Test coverage
+
+Both contracts are covered by Noir unit tests run via `nargo test` + TXE server:
+
+```
+nargo test --package fpc --oracle-resolver http://localhost:8083      # 10/10 pass
+nargo test --package alt_fpc --oracle-resolver http://localhost:8083  # 6/6 pass
+```
+
+Tests require `aztec compile` (not `nargo compile`) to produce transpiled
+artifacts, and a running TXE server (`TXE_PORT=8083 txe`).
+
+### TXE gas price limitation
+
+The TXE test environment uses zero gas prices, making `max_gas_cost_no_teardown = 0`.
+This means the assertion `assert(subtracted >= max_gas_cost, "minted credit too low for max fee")`
+in `pay_and_mint` is always trivially satisfied in TXE tests (0 >= 0). The test
+`pay_and_mint_credit_equals_mint_amount_minus_max_gas_cost` instead verifies the
+positive case: that the change note is exactly `mint_amount - max_gas_cost`. The
+assertion itself is verified on a running devnet where gas prices are non-zero.
+
 ## Next steps
 
-- **Profile** the modified contract to confirm actual gate savings.
+- **Profile** `AltFPC.pay_and_mint` to confirm actual gate savings (expected ~101k
+  reduction: removing one `verify_private_authwit` call + one `private_kernel_inner`).
 - **Consider `SharedMutable` for pubkey** if key rotation is a requirement.
 - **Optimization 2** targets eliminating the transfer authwit (step D) for
   a further ~101k savings. See `optimizations.md` for the full roadmap.

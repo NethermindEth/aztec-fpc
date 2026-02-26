@@ -8,7 +8,7 @@
 #   ./profiling/setup.sh
 #
 # Environment:
-#   AZTEC_NODE_URL  â€” override node endpoint (default http://127.0.0.1:8080)
+#   AZTEC_NODE_URL  — override node endpoint (default http://127.0.0.1:8080)
 
 set -euo pipefail
 
@@ -17,7 +17,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
 PID_FILE="$SCRIPT_DIR/.aztec-network.pid"
 
-# â”€â”€ Prerequisite checks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Prerequisite checks ──────────────────────────────────────────────────────
 AZTEC_VERSION=$(tr -d '\n' < "$REPO_ROOT/.aztecrc")
 
 check_cmd() {
@@ -32,11 +32,11 @@ check_cmd node  "Node.js >=20 is required (usually bundled with the Aztec toolch
 
 echo "[setup] Aztec version: $AZTEC_VERSION"
 
-# â”€â”€ Step 1: Initialize git submodules (vendor/aztec-standards) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Step 1: Initialize git submodules (vendor/aztec-standards) ────────────────
 echo "[setup] Initializing git submodules..."
 (cd "$REPO_ROOT" && git submodule update --init)
 
-# â”€â”€ Step 2: Install profiling npm dependencies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Step 2: Install profiling npm dependencies ────────────────────────────────
 AZTEC_PKGS=(
   "@aztec/aztec.js"
   "@aztec/accounts"
@@ -75,7 +75,7 @@ else
   echo "[setup] Aztec SDK packages up to date ($AZTEC_VERSION)"
 fi
 
-# â”€â”€ Step 3: Start Aztec local network â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Step 3: Start Aztec local network ────────────────────────────────────────
 node_is_up() {
   local code
   code=$(curl -s --max-time 3 --connect-timeout 2 -o /dev/null -w "%{http_code}" "$NODE_URL" 2>/dev/null)
@@ -97,9 +97,9 @@ else
 
   dump_logs() {
     echo "" >&2
-    echo "[setup] â”€â”€ Last 30 lines of network log â”€â”€" >&2
+    echo "[setup] ── Last 30 lines of network log ──" >&2
     tail -n 30 "$NETWORK_LOG" >&2 2>/dev/null || echo "(no log output)" >&2
-    echo "[setup] â”€â”€ Full log: $NETWORK_LOG â”€â”€" >&2
+    echo "[setup] ── Full log: $NETWORK_LOG ──" >&2
   }
 
   echo "[setup] Starting Aztec local network..."

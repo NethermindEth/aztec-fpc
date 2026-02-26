@@ -7,7 +7,7 @@
 #   ./profiling/run.sh
 #
 # Environment:
-#   AZTEC_NODE_URL  â€” override node endpoint (default http://127.0.0.1:8080)
+#   AZTEC_NODE_URL  — override node endpoint (default http://127.0.0.1:8080)
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
 
-# â”€â”€ Preflight checks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Preflight checks ─────────────────────────────────────────────────────────
 if [[ ! -d "$SCRIPT_DIR/node_modules/@aztec" ]]; then
   echo "[profile] ERROR: Aztec SDK packages not installed. Run ./profiling/setup.sh first." >&2
   exit 1
@@ -33,11 +33,11 @@ if ! node_is_up; then
   exit 1
 fi
 
-# â”€â”€ Step 1: Compile contracts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Step 1: Compile contracts ─────────────────────────────────────────────────
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# â”€â”€ Step 2: Deploy + profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Step 2: Deploy + profile ──────────────────────────────────────────────────
 echo ""
 echo "[profile] Running gate count profiler..."
 AZTEC_NODE_URL="$NODE_URL" node "$SCRIPT_DIR/profile-gates.mjs"
