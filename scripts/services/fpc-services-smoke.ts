@@ -867,7 +867,10 @@ async function runServiceScenario(
     );
     console.log(`${scenarioPrefix} topup_confirmation_outcome=${topupOutcome}`);
 
-    const initialFeeJuiceBalance = await getFeeJuiceBalance(feePayerAddress, node);
+    const initialFeeJuiceBalance = await getFeeJuiceBalance(
+      feePayerAddress,
+      node,
+    );
     console.log(
       `${scenarioPrefix} fee_payer_fee_juice_after_topup_service=${initialFeeJuiceBalance}`,
     );

@@ -64,9 +64,7 @@ export function createTopupChecker(
       const result = await deps.bridge(config.topUpAmount);
       logger.log(
         `Bridge submitted. l1_to_l2_message_hash=${result.messageHash} leaf_index=${result.messageLeafIndex} claim_secret_hash=${result.claimSecretHash}${
-          includeClaimSecretInLogs
-            ? ` claim_secret=${result.claimSecret}`
-            : ""
+          includeClaimSecretInLogs ? ` claim_secret=${result.claimSecret}` : ""
         }`,
       );
       logger.log(
