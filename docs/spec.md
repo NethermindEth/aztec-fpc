@@ -108,9 +108,10 @@ User private balance →[transfer_in_private]→ Operator private balance
 1. Reads `operator` and `accepted_asset` from storage
 2. Verifies the quote authwit is signed by `operator` and binds `user_address = msg_sender`
 3. Asserts `anchor_block_timestamp ≤ valid_until`
-4. Computes `charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)`
-5. Calls `Token::at(accepted_asset).transfer_in_private(sender → operator, charge, nonce)`
-6. Calls `set_as_fee_payer()` + `end_setup()`
+4. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
+5. Computes `charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)`
+6. Calls `Token::at(accepted_asset).transfer_in_private(sender → operator, charge, nonce)`
+7. Calls `set_as_fee_payer()` + `end_setup()`
 
 The token transfer is a private function call that executes in the setup phase, before `end_setup()`. It is irrevocably committed. If the user's app logic subsequently reverts, the fee has still been paid — this is unavoidable in the Aztec FPC model.
 

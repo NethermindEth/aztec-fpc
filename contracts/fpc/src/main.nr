@@ -47,6 +47,8 @@ pub contract FPC {
 
     // Domain separator for quote hashes -- "FPC" as a field.
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
+    // Quotes must expire within this many seconds from the tx anchor timestamp.
+    global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
 
     // =========================================================================
     // Storage
@@ -154,6 +156,8 @@ pub contract FPC {
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");
+        let quote_ttl = valid_until - anchor_ts;
+        assert(quote_ttl <= MAX_QUOTE_TTL_SECONDS, "quote ttl too large");
         context.set_expiration_timestamp(valid_until);
     }
 
