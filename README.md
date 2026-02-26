@@ -130,6 +130,8 @@ Default local-network endpoints:
 - Anvil L1 RPC (spawned by `aztec start --local-network`): `http://127.0.0.1:8545`
 
 ```bash
+bun run smoke:fee-entrypoint:devnet
+# or:
 bash scripts/contract/fee-entrypoint-devnet-smoke.sh
 ```
 
