@@ -36,12 +36,24 @@ import { Gas, GasFees, GasSettings }  from '@aztec/stdlib/gas';
 import { deriveSigningKey }            from '@aztec/stdlib/keys';
 import { createPXE, getPXEConfig }     from '@aztec/pxe/server';
 import { BaseWallet }                  from '@aztec/wallet-sdk/base-wallet';
-import { readFileSync, mkdirSync, rmSync } from 'fs';
+import { readFileSync, readdirSync, mkdirSync, rmSync } from 'fs';
 import { fileURLToPath }               from 'url';
 import { dirname, join }               from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TARGET    = join(__dirname, '../target');
+
+function findArtifact(contractName) {
+  const suffix = `-${contractName}.json`;
+  const matches = readdirSync(TARGET).filter(f => f.endsWith(suffix));
+  if (matches.length === 0) {
+    throw new Error(`No artifact matching *${suffix} in ${TARGET}. Did you run 'aztec compile'?`);
+  }
+  if (matches.length > 1) {
+    throw new Error(`Multiple artifacts matching *${suffix} in ${TARGET}: ${matches.join(', ')}`);
+  }
+  return join(TARGET, matches[0]);
+}
 
 // ── fee_juice_to_asset: ceiling division (mirrors fee_math.nr) ────────────────
 function feeJuiceToAsset(feeJuice, rateNum, rateDen) {
@@ -156,11 +168,16 @@ async function main() {
   console.log('operator:', operatorAddress.toString());
 
   // ── Load & normalize artifacts ─────────────────────────────────────────────
+  const tokenArtifactPath = findArtifact('Token');
+  const fpcArtifactPath   = findArtifact('FPC');
+  console.log('Token artifact:', tokenArtifactPath);
+  console.log('FPC artifact:  ', fpcArtifactPath);
+
   const tokenArtifact = loadContractArtifact(
-    JSON.parse(readFileSync(join(TARGET, 'token_contract-Token.json'), 'utf8')),
+    JSON.parse(readFileSync(tokenArtifactPath, 'utf8')),
   );
   const fpcArtifact = loadContractArtifact(
-    JSON.parse(readFileSync(join(TARGET, 'fpc-FPC.json'), 'utf8')),
+    JSON.parse(readFileSync(fpcArtifactPath, 'utf8')),
   );
 
   // ── Deploy Token ───────────────────────────────────────────────────────────
