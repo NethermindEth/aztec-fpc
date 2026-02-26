@@ -246,7 +246,28 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 12. Verify
+### 12. Docker builds
+
+Build both service images:
+
+```bash
+bun run docker:build
+```
+
+Or build individually:
+
+```bash
+bun run docker:build:attestation
+bun run docker:build:topup
+```
+
+Images are tagged as `nethermind/aztec-fpc-{attestation,topup}:latest` by default. Override via environment variables:
+
+```bash
+TAG=v1.0.0 bun run docker:build
+```
+
+### 13. Verify
 
 ```bash
 curl http://localhost:3000/health
