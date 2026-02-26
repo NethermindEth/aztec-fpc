@@ -142,3 +142,4 @@ vite.config.ts.timestamp-*
 target/
 wallet_data*
 pxe_data*
+tmp/
