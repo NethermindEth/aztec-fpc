@@ -217,12 +217,12 @@ fixed a latent path issue (`Nargo.toml` token path and workspace member).
 
 | File | Change |
 |------|--------|
-| `Nargo.toml` | Fixed workspace member path `contracts/credit_fpc` -> `contracts/credit_fpc/credit_fpc` |
-| `contracts/credit_fpc/credit_fpc/Nargo.toml` | Added `schnorr` dependency; fixed token path `../../` -> `../../../` |
-| `contracts/credit_fpc/credit_fpc/src/main.nr` | Inline Schnorr verification, `operator_pubkey_x/y` storage fields, constructor on-curve check, `quote_sig: [u8;64]` param before `mint_amount` |
-| `contracts/credit_fpc/credit_fpc/src/test.nr` | New: test module root |
-| `contracts/credit_fpc/credit_fpc/src/test/utils.nr` | New: Schnorr signing helpers, `setup()`, `credit_balance()` |
-| `contracts/credit_fpc/credit_fpc/src/test/pay_and_mint.nr` | New: 6 tests (happy path, expired quote, wrong user, authwit replay, quote replay, credit boundary) |
+| `Nargo.toml` | Workspace member path is `contracts/credit_fpc` |
+| `contracts/credit_fpc/Nargo.toml` | Added `schnorr` dependency; token path is `../../vendor/aztec-standards/src/token_contract` |
+| `contracts/credit_fpc/src/main.nr` | Inline Schnorr verification, `operator_pubkey_x/y` storage fields, constructor on-curve check, `quote_sig: [u8;64]` param before `mint_amount` |
+| `contracts/credit_fpc/src/test.nr` | New: test module root |
+| `contracts/credit_fpc/src/test/utils.nr` | New: Schnorr signing helpers, `setup()`, `credit_balance()` |
+| `contracts/credit_fpc/src/test/pay_and_mint.nr` | New: 6 tests (happy path, expired quote, wrong user, authwit replay, quote replay, credit boundary) |
 | `profiling/profile-credit-fpc-gates.mjs` | New deploy args, inline Schnorr signing, updated selector and sig args, removed `quoteAuthWit` |
 | `profiling/profile-credit-fpc.mjs` | Same updates as above (used by `run-credit-fpc.sh`) |
 
