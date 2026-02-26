@@ -204,4 +204,123 @@ describe("attestation config secret providers", () => {
 
     cleanupConfig(configPath);
   });
+
+  it("fails fast when fpc or accepted asset address is invalid", () => {
+    const configPath = writeConfig(
+      [
+        "runtime_profile: development",
+        'fpc_address: "not_an_aztec_address"',
+        'aztec_node_url: "http://127.0.0.1:8080"',
+        "quote_validity_seconds: 300",
+        "port: 3000",
+        'accepted_asset_address: "still_not_an_aztec_address"',
+        'accepted_asset_name: "humanUSDC"',
+        "market_rate_num: 1",
+        "market_rate_den: 1000",
+        "fee_bips: 200",
+        "operator_secret_provider: auto",
+        `operator_secret_key: "${VALID_SECRET}"`,
+      ].join("\n"),
+    );
+
+    withEnv(
+      {
+        FPC_RUNTIME_PROFILE: undefined,
+        OPERATOR_SECRET_PROVIDER: undefined,
+        OPERATOR_SECRET_KEY: undefined,
+      },
+      () => {
+        assert.throws(() => loadConfig(configPath), /valid Aztec address/);
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
+
+  it("fails fast when fpc or accepted asset address is zero", () => {
+    const configPath = writeConfig(
+      [
+        "runtime_profile: development",
+        'fpc_address: "0x0000000000000000000000000000000000000000000000000000000000000000"',
+        'aztec_node_url: "http://127.0.0.1:8080"',
+        "quote_validity_seconds: 300",
+        "port: 3000",
+        'accepted_asset_address: "0x0000000000000000000000000000000000000000000000000000000000000000"',
+        'accepted_asset_name: "humanUSDC"',
+        "market_rate_num: 1",
+        "market_rate_den: 1000",
+        "fee_bips: 200",
+        "operator_secret_provider: auto",
+        `operator_secret_key: "${VALID_SECRET}"`,
+      ].join("\n"),
+    );
+
+    withEnv(
+      {
+        FPC_RUNTIME_PROFILE: undefined,
+        OPERATOR_SECRET_PROVIDER: undefined,
+        OPERATOR_SECRET_KEY: undefined,
+      },
+      () => {
+        assert.throws(() => loadConfig(configPath), /non-zero Aztec address/);
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
+
+  it("accepts explicit operator_address in config", () => {
+    const operatorAddress =
+      "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+          `operator_address: "${operatorAddress}"`,
+        ].join("\n"),
+      ),
+    );
+
+    withEnv(
+      {
+        FPC_RUNTIME_PROFILE: undefined,
+        OPERATOR_SECRET_PROVIDER: undefined,
+        OPERATOR_SECRET_KEY: undefined,
+      },
+      () => {
+        const config = loadConfig(configPath);
+        assert.equal(config.operator_address, operatorAddress);
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
+
+  it("validates AZTEC_NODE_URL env override as URL", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+        ].join("\n"),
+      ),
+    );
+
+    withEnv(
+      {
+        AZTEC_NODE_URL: "not-a-url",
+        FPC_RUNTIME_PROFILE: undefined,
+        OPERATOR_SECRET_PROVIDER: undefined,
+        OPERATOR_SECRET_KEY: undefined,
+      },
+      () => {
+        assert.throws(() => loadConfig(configPath), /Invalid url/);
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
 });
