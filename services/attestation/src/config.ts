@@ -62,6 +62,7 @@ export function loadConfig(path: string): Config {
 
   return {
     ...config,
+    aztec_node_url: process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
     operator_secret_key: selectedSecret,
     operator_secret_key_source: envSecret ? "env" : "config",
     operator_secret_key_dual_source: Boolean(envSecret && fileSecret),

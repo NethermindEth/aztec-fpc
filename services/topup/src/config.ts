@@ -84,6 +84,8 @@ export function loadConfig(path: string): Config {
 
   return {
     ...config,
+    aztec_node_url: process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
+    l1_rpc_url: process.env.L1_RPC_URL ?? config.l1_rpc_url,
     l1_operator_private_key: selectedSecret,
     l1_operator_private_key_source: envSecret ? "env" : "config",
     l1_operator_private_key_dual_source: Boolean(envSecret && fileSecret),
