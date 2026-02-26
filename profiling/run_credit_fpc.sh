@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Compile contracts, deploy, and profile FPC.fee_entrypoint gate count.
-#
-# This is the default profiler for the standard FPC contract.
-# For CreditFPC profiling (pay_and_mint + pay_with_credit), use run_credit_fpc.sh.
+# Compile contracts, deploy, and profile CreditFPC gate counts.
+# Profiles both pay_and_mint and pay_with_credit flows.
 #
 # Run ./profiling/setup.sh once first, then re-run this after every contract change.
+# For standard FPC profiling (fee_entrypoint), use run.sh.
 #
 # Usage:
-#   ./profiling/run.sh
+#   ./profiling/run_credit_fpc.sh
 #
 # Environment:
 #   AZTEC_NODE_URL  — override node endpoint (default http://127.0.0.1:8080)
+#   L1_RPC_URL      — override L1 endpoint used for Fee Juice bridging (default http://127.0.0.1:8545)
 
 set -euo pipefail
 
@@ -40,10 +40,10 @@ fi
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# ── Step 2: Deploy + profile FPC.fee_entrypoint ───────────────────────────────
+# ── Step 2: Deploy + profile CreditFPC (pay_and_mint + pay_with_credit) ───────
 echo ""
-echo "[profile] Running FPC gate count profiler (fee_entrypoint)..."
-AZTEC_NODE_URL="$NODE_URL" node "$SCRIPT_DIR/profile-gates.mjs"
+echo "[profile] Running CreditFPC gate count profiler (pay_and_mint + pay_with_credit)..."
+AZTEC_NODE_URL="$NODE_URL" node "$SCRIPT_DIR/profile-gates-credit-fpc.mjs"
 
 echo ""
 echo "[profile] Done!"

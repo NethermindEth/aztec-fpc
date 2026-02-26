@@ -1227,6 +1227,53 @@ async function main(): Promise<void> {
     throw new CliError("Failed to resolve deployer sender address");
   }
 
+  // Derive operator's Schnorr public key from test accounts
+  let operatorSigningKey: unknown = null;
+  if (deployer.address.toLowerCase() === args.operator.toLowerCase()) {
+    operatorSigningKey = deployerData.signingKey;
+  } else {
+    for (let i = 0; i < testAccounts.length; i += 1) {
+      if (i === deployer.index) continue;
+      const accountData = testAccounts[i];
+      const account = await wallet.createSchnorrAccount(
+        accountData.secret,
+        accountData.salt,
+        accountData.signingKey,
+      );
+      const addr = parseDeployedAddress(
+        (account as { address?: unknown }).address,
+        `test account ${i}`,
+      );
+      if (addr.toLowerCase() === args.operator.toLowerCase()) {
+        operatorSigningKey = accountData.signingKey;
+        break;
+      }
+    }
+  }
+  if (!operatorSigningKey) {
+    throw new CliError(
+      `Could not find operator ${args.operator} among local test accounts. The deploy-fpc-local script requires the operator to be a local test account.`,
+    );
+  }
+  const schnorrModule = await importWithWorkspaceFallback(
+    "@aztec/foundation/crypto/schnorr",
+  );
+  const SchnorrCtor = schnorrModule.Schnorr;
+  if (!SchnorrCtor || typeof SchnorrCtor !== "function") {
+    throw new CliError(
+      "Loaded @aztec/foundation/crypto/schnorr, but Schnorr class is not available",
+    );
+  }
+  const schnorr = new (
+    SchnorrCtor as new () => {
+      computePublicKey: (sk: unknown) => Promise<{ x: unknown; y: unknown }>;
+    }
+  )();
+  const operatorPubkey = await schnorr.computePublicKey(operatorSigningKey);
+  console.log(
+    `[deploy-fpc-local] operator pubkey derived. x=${String(operatorPubkey.x)} y=${String(operatorPubkey.y)}`,
+  );
+
   let tokenArtifact: unknown;
   let fpcArtifact: unknown;
   try {
@@ -1316,6 +1363,8 @@ async function main(): Promise<void> {
     try {
       fpcInstance = await deployDeps.Contract.deploy(wallet, fpcArtifact, [
         operatorAddress,
+        operatorPubkey.x,
+        operatorPubkey.y,
         acceptedAsset,
       ]).send({ from: deploySender });
     } catch (error) {
