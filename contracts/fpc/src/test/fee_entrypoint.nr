@@ -81,7 +81,9 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
         fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until),
     );
 
-    let valid_until_2 = valid_until + 1;
+    // Use a fresh quote window for the second attempt so this test fails on
+    // missing transfer authwit (the intended assertion), not quote TTL bounds.
+    let valid_until_2 = env.last_block_timestamp() + 3600;
     utils::add_quote_authwit(
         env,
         operator,
@@ -124,6 +126,32 @@ unconstrained fn fee_entrypoint_rejects_expired_quote() {
     // Private call anchor timestamps use the last mined block; mine one block in the future
     // so anchor_ts > valid_until deterministically.
     env.mine_block_at(valid_until + 1);
+
+    let _ =
+        env.call_private(user, fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until));
+}
+
+#[test(should_fail_with = "quote ttl too large")]
+unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
+    let (mut env, fpc_address, token_address, operator, user) = utils::setup();
+    let fpc = FPC::at(fpc_address);
+
+    let rate_num = 1 as u128;
+    let rate_den = 1 as u128;
+    let authwit_nonce = 100;
+
+    // Contract bound is 3600 seconds from anchor timestamp.
+    let valid_until = env.last_block_timestamp() + 3601;
+    utils::add_quote_authwit(
+        env,
+        operator,
+        fpc_address,
+        token_address,
+        rate_num,
+        rate_den,
+        valid_until,
+        user,
+    );
 
     let _ =
         env.call_private(user, fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until));
