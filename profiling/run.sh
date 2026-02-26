@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Compile contracts, deploy, and profile FPC.fee_entrypoint gate count.
+# Compile contracts, deploy, and profile AltFPC gate counts.
+# Profiles both pay_and_mint and pay_fee flows.
 #
 # Run ./profiling/setup.sh once first, then re-run this after every contract change.
 #
@@ -8,6 +9,7 @@
 #
 # Environment:
 #   AZTEC_NODE_URL  — override node endpoint (default http://127.0.0.1:8080)
+#   L1_RPC_URL      — override L1 endpoint used for Fee Juice bridging (default http://127.0.0.1:8545)
 
 set -euo pipefail
 
@@ -37,9 +39,9 @@ fi
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# ── Step 2: Deploy + profile ──────────────────────────────────────────────────
+# ── Step 2: Deploy + profile (pay_and_mint + pay_fee) ─────────────────────────
 echo ""
-echo "[profile] Running gate count profiler..."
+echo "[profile] Running gate count profiler (pay_and_mint + pay_fee)..."
 AZTEC_NODE_URL="$NODE_URL" node "$SCRIPT_DIR/profile-gates.mjs"
 
 echo ""

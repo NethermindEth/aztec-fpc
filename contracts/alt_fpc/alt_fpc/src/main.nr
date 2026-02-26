@@ -132,6 +132,15 @@ pub contract AltFPC {
         self.storage.balances.at(account).balance_of()
     }
 
+    /// Test-only: mint credit via ONCHAIN_UNCONSTRAINED so the PXE can discover
+    /// the note through standard encrypted-log scanning. ONCHAIN_CONSTRAINED notes
+    /// may not be discoverable by the embedded PXE used in profiling.
+    #[external("private")]
+    fn dev_mint(amount: u128) {
+        let sender = self.msg_sender();
+        self.storage.balances.at(sender).add(amount).deliver(MessageDelivery.ONCHAIN_UNCONSTRAINED);
+    }
+
     /// Compute the quote hash and verify the operator's Schnorr signature
     /// inline. Pushes a nullifier to prevent replay.
     ///
