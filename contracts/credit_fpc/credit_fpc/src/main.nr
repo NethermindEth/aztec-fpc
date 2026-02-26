@@ -14,7 +14,7 @@ pub contract CreditFPC {
             storage::storage,
         },
         messages::message_delivery::MessageDelivery,
-        protocol::{address::AztecAddress, traits::ToField},
+        protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
         state_vars::{Owned, PublicImmutable},
     };
     use balance_set::BalanceSet;
@@ -24,14 +24,21 @@ pub contract CreditFPC {
 
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
 
+    /// Packed configuration stored as a single PublicImmutable slot.
+    /// Reduces the 4 separate Merkle membership proofs to one.
+    #[derive(Deserialize, Eq, Packable, Serialize)]
+    pub struct Config {
+        operator: AztecAddress,
+        /// Operator signing public key x coordinate.
+        operator_pubkey_x: Field,
+        /// Operator signing public key y coordinate.
+        operator_pubkey_y: Field,
+        accepted_asset: AztecAddress,
+    }
+
     #[storage]
     struct Storage<Context> {
-        operator: PublicImmutable<AztecAddress, Context>,
-        /// Operator signing public key x coordinate.
-        operator_pubkey_x: PublicImmutable<Field, Context>,
-        /// Operator signing public key y coordinate.
-        operator_pubkey_y: PublicImmutable<Field, Context>,
-        accepted_asset: PublicImmutable<AztecAddress, Context>,
+        config: PublicImmutable<Config, Context>,
         balances: Owned<BalanceSet<Context>, Context>,
     }
 
@@ -51,10 +58,7 @@ pub contract CreditFPC {
                 == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
             "operator pubkey not on curve",
         );
-        self.storage.operator.initialize(operator);
-        self.storage.operator_pubkey_x.initialize(operator_pubkey_x);
-        self.storage.operator_pubkey_y.initialize(operator_pubkey_y);
-        self.storage.accepted_asset.initialize(accepted_asset);
+        self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y, accepted_asset });
     }
 
     #[external("private")]
@@ -67,16 +71,13 @@ pub contract CreditFPC {
         quote_sig: [u8; 64],
         mint_amount: u128,
     ) {
-        let operator = self.storage.operator.read();
-        let operator_pubkey_x = self.storage.operator_pubkey_x.read();
-        let operator_pubkey_y = self.storage.operator_pubkey_y.read();
-        let accepted_asset = self.storage.accepted_asset.read();
+        let config = self.storage.config.read();
         let sender = self.msg_sender();
 
         assert_valid_quote(
             self.context,
-            EmbeddedCurvePoint { x: operator_pubkey_x, y: operator_pubkey_y, is_infinite: false },
-            accepted_asset,
+            EmbeddedCurvePoint { x: config.operator_pubkey_x, y: config.operator_pubkey_y, is_infinite: false },
+            config.accepted_asset,
             rate_num,
             rate_den,
             valid_until,
@@ -85,8 +86,8 @@ pub contract CreditFPC {
         );
 
         let charge = fee_juice_to_asset(mint_amount, rate_num, rate_den);
-        Token::at(accepted_asset)
-            .transfer_private_to_private(sender, operator, charge, authwit_nonce)
+        Token::at(config.accepted_asset)
+            .transfer_private_to_private(sender, config.operator, charge, authwit_nonce)
             .call(self.context);
 
         let balance_set = self.storage.balances.at(sender);
