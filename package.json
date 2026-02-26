@@ -23,6 +23,7 @@
     "topup:build": "bun run --filter @aztec-fpc/topup build",
     "topup:dev": "bun run --filter @aztec-fpc/topup dev",
     "topup:start": "bun run --filter @aztec-fpc/topup start",
+    "deploy:fpc:local": "bunx tsx scripts/contract/deploy-fpc-local.ts --operator 0x00000000000000000000000000000000000000000000000000000000000000aa --out ./tmp/deploy-fpc-local.preflight.json",
     "smoke:services": "bash scripts/services/fpc-services-smoke.sh",
     "test": "bun run test:contracts && bun run test:ts"
   },
