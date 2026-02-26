@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -22,14 +22,16 @@ type CliParseResult =
       args: CliArgs;
     };
 
-type PreflightOutput = {
-  status: "preflight_ok";
+type DeployOutput = {
+  status: "deploy_ok";
   generated_at: string;
   aztec_node_url: string;
   l1_rpc_url: string;
   l1_chain_id: number;
+  l2_chain_id: number;
   operator: string;
-  accepted_asset: string | null;
+  accepted_asset: string;
+  fpc_address: string;
   reuse: boolean;
   node_contracts: {
     fee_juice_portal_address: string;
@@ -43,6 +45,7 @@ type PreflightOutput = {
     source: "aztec_wallet_test_account";
     wallet_alias: string;
     address: string;
+    account_index: number;
     fee_juice_balance_wei: string;
     min_required_fee_juice_wei: string;
     min_required_source:
@@ -51,8 +54,14 @@ type PreflightOutput = {
       | "env_override";
   };
   deploy: {
-    implemented: false;
-    note: string;
+    token: {
+      address: string;
+      source: "deployed" | "provided" | "reused";
+    };
+    fpc: {
+      address: string;
+      source: "deployed" | "reused";
+    };
   };
 };
 
@@ -89,6 +98,41 @@ type BalanceDeps = {
   };
 };
 
+type DeployDeps = {
+  createAztecNodeClient: (url: string) => unknown;
+  EmbeddedWallet: {
+    create: (node: unknown) => Promise<{
+      createSchnorrAccount: (
+        secret: unknown,
+        salt: unknown,
+        signingKey: unknown,
+      ) => Promise<{ address: { toString: () => string } }>;
+    }>;
+  };
+  Contract: {
+    deploy: (
+      wallet: unknown,
+      artifact: unknown,
+      args: unknown[],
+      constructorName?: string,
+    ) => { send: (options: { from: unknown }) => Promise<unknown> };
+  };
+  getInitialTestAccountsData: () => Promise<
+    { secret: unknown; salt: unknown; signingKey: unknown }[]
+  >;
+  loadContractArtifact: (compiled: unknown) => unknown;
+  loadContractArtifactForPublic: (compiled: unknown) => unknown;
+  AztecAddress: {
+    fromString: (value: string) => unknown;
+  };
+};
+
+type ReuseDeploymentState = {
+  acceptedAsset: string | null;
+  fpcAddress: string | null;
+  operator: string | null;
+};
+
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_AZTEC_ADDRESS_PATTERN = /^0x0{64}$/i;
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
@@ -118,7 +162,8 @@ function usage(): string {
     "  --out            required (or set FPC_LOCAL_OUT)",
     "",
     "Notes:",
-    "  - Current script performs preflight checks only (no deploy yet).",
+    "  - Deploys token (when --accepted-asset is not provided) and FPC.",
+    "  - --reuse reuses addresses from --out when available.",
     "  - Deployer bootstrap uses `aztec-wallet import-test-accounts`.",
     "  - Optional env overrides: FPC_DEPLOYER_ACCOUNT_INDEX, FPC_DEPLOYER_MIN_FEE_JUICE_WEI, FPC_DEPLOYER_ESTIMATED_DA_GAS, FPC_DEPLOYER_ESTIMATED_L2_GAS, FPC_DEPLOYER_FEE_SAFETY_MULTIPLIER, FPC_DEPLOYER_FEE_BUFFER_WEI, FPC_DEPLOYER_FALLBACK_FEE_PER_DA_GAS, FPC_DEPLOYER_FALLBACK_FEE_PER_L2_GAS, FPC_RPC_RETRIES, FPC_RPC_RETRY_BACKOFF_MS.",
   ].join("\n");
@@ -416,6 +461,7 @@ function stripAnsi(value: string): string {
 function bootstrapDeployerFromWallet(aztecNodeUrl: string): {
   alias: string;
   address: string;
+  index: number;
 } {
   runAztecWalletCommand(
     aztecNodeUrl,
@@ -448,7 +494,7 @@ function bootstrapDeployerFromWallet(aztecNodeUrl: string): {
     );
   }
 
-  return { alias, address };
+  return { alias, address, index: deployerIndex };
 }
 
 async function importWithWorkspaceFallback(
@@ -537,6 +583,223 @@ async function getDeployerFeeJuiceBalance(
     );
   }
   return balance;
+}
+
+async function loadDeployDeps(): Promise<DeployDeps> {
+  const [nodeApi, contractApi, walletsApi, testingApi, abiApi, addressesApi] =
+    await Promise.all([
+      importWithWorkspaceFallback("@aztec/aztec.js/node"),
+      importWithWorkspaceFallback("@aztec/aztec.js/contracts"),
+      importWithWorkspaceFallback("@aztec/wallets/embedded"),
+      importWithWorkspaceFallback("@aztec/accounts/testing"),
+      importWithWorkspaceFallback("@aztec/stdlib/abi"),
+      importWithWorkspaceFallback("@aztec/aztec.js/addresses"),
+    ]);
+
+  const createAztecNodeClient = nodeApi.createAztecNodeClient;
+  const Contract = contractApi.Contract;
+  const EmbeddedWallet = walletsApi.EmbeddedWallet;
+  const getInitialTestAccountsData = testingApi.getInitialTestAccountsData;
+  const loadContractArtifact = abiApi.loadContractArtifact;
+  const loadContractArtifactForPublic = abiApi.loadContractArtifactForPublic;
+  const AztecAddress = addressesApi.AztecAddress;
+
+  if (typeof createAztecNodeClient !== "function") {
+    throw new CliError(
+      "Loaded @aztec/aztec.js/node, but createAztecNodeClient is not available",
+    );
+  }
+  if (!Contract || typeof Contract !== "function") {
+    throw new CliError(
+      "Loaded @aztec/aztec.js/contracts, but Contract is not available",
+    );
+  }
+  if (
+    !EmbeddedWallet ||
+    typeof EmbeddedWallet !== "function" ||
+    typeof (EmbeddedWallet as { create?: unknown }).create !== "function"
+  ) {
+    throw new CliError(
+      "Loaded @aztec/wallets/embedded, but EmbeddedWallet.create is not available",
+    );
+  }
+  if (typeof getInitialTestAccountsData !== "function") {
+    throw new CliError(
+      "Loaded @aztec/accounts/testing, but getInitialTestAccountsData is not available",
+    );
+  }
+  if (typeof loadContractArtifact !== "function") {
+    throw new CliError(
+      "Loaded @aztec/stdlib/abi, but loadContractArtifact is not available",
+    );
+  }
+  if (typeof loadContractArtifactForPublic !== "function") {
+    throw new CliError(
+      "Loaded @aztec/stdlib/abi, but loadContractArtifactForPublic is not available",
+    );
+  }
+  if (!AztecAddress || typeof AztecAddress !== "function") {
+    throw new CliError(
+      "Loaded @aztec/aztec.js/addresses, but AztecAddress is not available",
+    );
+  }
+
+  return {
+    createAztecNodeClient: createAztecNodeClient as (url: string) => unknown,
+    EmbeddedWallet: EmbeddedWallet as DeployDeps["EmbeddedWallet"],
+    Contract: Contract as DeployDeps["Contract"],
+    getInitialTestAccountsData:
+      getInitialTestAccountsData as DeployDeps["getInitialTestAccountsData"],
+    loadContractArtifact: loadContractArtifact as (
+      compiled: unknown,
+    ) => unknown,
+    loadContractArtifactForPublic: loadContractArtifactForPublic as (
+      compiled: unknown,
+    ) => unknown,
+    AztecAddress: AztecAddress as { fromString: (value: string) => unknown },
+  };
+}
+
+function isAztecAddress(value: unknown): value is string {
+  return typeof value === "string" && AZTEC_ADDRESS_PATTERN.test(value);
+}
+
+function parseReusableAddress(value: unknown): string | null {
+  if (isAztecAddress(value) && !ZERO_AZTEC_ADDRESS_PATTERN.test(value)) {
+    return value;
+  }
+  return null;
+}
+
+function parseReuseDeploymentState(
+  outPath: string,
+): ReuseDeploymentState | null {
+  const absolute = path.resolve(outPath);
+  if (!existsSync(absolute)) {
+    return null;
+  }
+
+  let rawFile: string;
+  try {
+    rawFile = readFileSync(absolute, "utf8");
+  } catch (error) {
+    throw new CliError(
+      `Reuse mode failed: unable to read existing output file at ${absolute}. ${String(error)}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawFile);
+  } catch (error) {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} is not valid JSON. ${String(error)}`,
+    );
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} must contain a JSON object.`,
+    );
+  }
+
+  const data = parsed as {
+    operator?: unknown;
+    accepted_asset?: unknown;
+    fpc_address?: unknown;
+    deploy?: {
+      token?: {
+        address?: unknown;
+      };
+      fpc?: {
+        address?: unknown;
+      };
+    };
+  };
+
+  const topLevelAcceptedAsset = parseReusableAddress(data.accepted_asset);
+  const nestedAcceptedAsset = parseReusableAddress(data.deploy?.token?.address);
+  if (
+    topLevelAcceptedAsset &&
+    nestedAcceptedAsset &&
+    topLevelAcceptedAsset.toLowerCase() !== nestedAcceptedAsset.toLowerCase()
+  ) {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} has conflicting accepted asset addresses (accepted_asset=${topLevelAcceptedAsset}, deploy.token.address=${nestedAcceptedAsset}).`,
+    );
+  }
+
+  const topLevelFpcAddress = parseReusableAddress(data.fpc_address);
+  const nestedFpcAddress = parseReusableAddress(data.deploy?.fpc?.address);
+  if (
+    topLevelFpcAddress &&
+    nestedFpcAddress &&
+    topLevelFpcAddress.toLowerCase() !== nestedFpcAddress.toLowerCase()
+  ) {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} has conflicting FPC addresses (fpc_address=${topLevelFpcAddress}, deploy.fpc.address=${nestedFpcAddress}).`,
+    );
+  }
+
+  if (data.accepted_asset !== undefined && !topLevelAcceptedAsset) {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} has invalid accepted_asset=${String(data.accepted_asset)}.`,
+    );
+  }
+  if (data.fpc_address !== undefined && !topLevelFpcAddress) {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} has invalid fpc_address=${String(data.fpc_address)}.`,
+    );
+  }
+
+  const acceptedAsset = topLevelAcceptedAsset ?? nestedAcceptedAsset;
+  const fpcAddress = topLevelFpcAddress ?? nestedFpcAddress;
+  const operator = parseReusableAddress(data.operator);
+  if (data.operator !== undefined && !operator) {
+    throw new CliError(
+      `Reuse mode failed: output file ${absolute} has invalid operator=${String(data.operator)}.`,
+    );
+  }
+
+  return {
+    acceptedAsset,
+    fpcAddress,
+    operator,
+  };
+}
+
+function parseDeployedAddress(value: unknown, context: string): string {
+  const candidate =
+    value &&
+    typeof value === "object" &&
+    "toString" in value &&
+    typeof value.toString === "function"
+      ? value.toString()
+      : null;
+  if (!candidate || !isAztecAddress(candidate)) {
+    throw new CliError(
+      `${context} returned an invalid address: ${String(candidate ?? value)}`,
+    );
+  }
+  return candidate;
+}
+
+function loadDeployArtifact(artifactPath: string, deps: DeployDeps): unknown {
+  const raw = readFileSync(artifactPath, "utf8");
+  const parsed = JSON.parse(raw) as unknown;
+  try {
+    return deps.loadContractArtifact(parsed);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes(
+        "Contract's public bytecode has not been transpiled",
+      )
+    ) {
+      return deps.loadContractArtifactForPublic(parsed);
+    }
+    throw error;
+  }
 }
 
 function parseGasFeeComponent(value: unknown, fieldName: string): bigint {
@@ -639,6 +902,7 @@ async function resolveMinimumDeployerFeeJuice(aztecNodeUrl: string): Promise<{
 
 async function assertAztecNodeReachable(args: CliArgs): Promise<{
   l1ChainId: number;
+  l2ChainId: number;
   feeJuicePortalAddress: string;
   feeJuiceAddress: string;
 }> {
@@ -682,6 +946,16 @@ async function assertAztecNodeReachable(args: CliArgs): Promise<{
     "Aztec node preflight failed: node_getNodeInfo.l1ChainId",
     "number_or_decimal",
   );
+  const l2ChainIdRaw = await rpcCall<unknown>(
+    args.aztecNodeUrl,
+    "node_getChainId",
+    [],
+  );
+  const l2ChainId = parsePositiveChainId(
+    l2ChainIdRaw,
+    "Aztec node preflight failed: node_getChainId",
+    "number_or_decimal",
+  );
 
   const contractAddresses = raw.l1ContractAddresses;
   if (!contractAddresses || typeof contractAddresses !== "object") {
@@ -708,6 +982,7 @@ async function assertAztecNodeReachable(args: CliArgs): Promise<{
 
   return {
     l1ChainId,
+    l2ChainId,
     feeJuicePortalAddress: feeJuicePortalAddress.toString(),
     feeJuiceAddress: feeJuiceAddress.toString(),
   };
@@ -827,7 +1102,7 @@ async function rpcCall<T>(
   );
 }
 
-function writePreflightOutput(outPath: string, data: PreflightOutput): void {
+function writeDeployOutput(outPath: string, data: DeployOutput): void {
   const absolute = path.resolve(outPath);
   mkdirSync(path.dirname(absolute), { recursive: true });
   writeFileSync(absolute, `${JSON.stringify(data, null, 2)}\n`, "utf8");
@@ -845,13 +1120,13 @@ async function main(): Promise<void> {
   console.log(`[deploy-fpc-local] l1_rpc_url=${args.l1RpcUrl}`);
   console.log(`[deploy-fpc-local] operator=${args.operator}`);
   console.log(
-    `[deploy-fpc-local] accepted_asset=${args.acceptedAsset ?? "<auto-deploy in follow-up issue>"}`,
+    `[deploy-fpc-local] accepted_asset=${args.acceptedAsset ?? "<auto-deploy token>"}`,
   );
   console.log(`[deploy-fpc-local] reuse=${String(args.reuse)}`);
 
   const nodeState = await assertAztecNodeReachable(args);
   console.log(
-    `[deploy-fpc-local] aztec node reachable, expected l1_chain_id=${nodeState.l1ChainId}`,
+    `[deploy-fpc-local] aztec node reachable, l1_chain_id=${nodeState.l1ChainId}, l2_chain_id=${nodeState.l2ChainId}`,
   );
 
   const rpcChainId = await assertL1RpcReachable(args);
@@ -865,6 +1140,39 @@ async function main(): Promise<void> {
     );
   }
   console.log("[deploy-fpc-local] chain-id sanity check passed");
+
+  const reuseState = args.reuse ? parseReuseDeploymentState(args.out) : null;
+  if (args.reuse && !reuseState) {
+    console.log(
+      `[deploy-fpc-local] reuse requested, but no prior output exists at ${path.resolve(args.out)}. Proceeding with fresh deployment.`,
+    );
+  } else if (
+    args.reuse &&
+    reuseState &&
+    !reuseState.acceptedAsset &&
+    !reuseState.fpcAddress
+  ) {
+    throw new CliError(
+      `Reuse mode failed: output file ${path.resolve(args.out)} does not contain reusable accepted_asset or fpc_address entries.`,
+    );
+  } else if (
+    args.reuse &&
+    reuseState?.fpcAddress &&
+    !args.acceptedAsset &&
+    !reuseState.acceptedAsset
+  ) {
+    throw new CliError(
+      `Reuse mode refused to reuse FPC address: output file ${path.resolve(args.out)} does not contain accepted_asset. Provide --accepted-asset explicitly or run a fresh deploy to regenerate output.`,
+    );
+  } else if (
+    args.reuse &&
+    reuseState?.operator &&
+    reuseState.operator.toLowerCase() !== args.operator.toLowerCase()
+  ) {
+    throw new CliError(
+      `Reuse mode refused to reuse FPC address: output file operator=${reuseState.operator} differs from current --operator=${args.operator}`,
+    );
+  }
 
   const artifacts = assertRequiredArtifactsExist();
   console.log(
@@ -890,14 +1198,149 @@ async function main(): Promise<void> {
     `[deploy-fpc-local] deployer fee balance preflight passed. balance=${deployerFeeJuiceBalance.toString()} required_min=${minimumFeeJuice.minRequired.toString()} source=${minimumFeeJuice.source}`,
   );
 
-  const output: PreflightOutput = {
-    status: "preflight_ok",
+  const deployDeps = await loadDeployDeps();
+  const nodeClient = deployDeps.createAztecNodeClient(args.aztecNodeUrl);
+  const wallet = await deployDeps.EmbeddedWallet.create(nodeClient);
+  const testAccounts = await deployDeps.getInitialTestAccountsData();
+  const deployerData = testAccounts.at(deployer.index);
+  if (!deployerData) {
+    throw new CliError(
+      `Missing test account metadata for deployer index ${deployer.index}. Available test account count=${testAccounts.length}`,
+    );
+  }
+  const deployerAccount = await wallet.createSchnorrAccount(
+    deployerData.secret,
+    deployerData.salt,
+    deployerData.signingKey,
+  );
+  const deployerWalletAddress = parseDeployedAddress(
+    (deployerAccount as { address?: unknown }).address,
+    "wallet.createSchnorrAccount",
+  );
+  if (deployerWalletAddress.toLowerCase() !== deployer.address.toLowerCase()) {
+    throw new CliError(
+      `Deployer bootstrap mismatch: aztec-wallet returned ${deployer.address}, but embedded wallet account test${deployer.index} resolved to ${deployerWalletAddress}`,
+    );
+  }
+  const deploySender = (deployerAccount as { address?: unknown }).address;
+  if (!deploySender) {
+    throw new CliError("Failed to resolve deployer sender address");
+  }
+
+  let tokenArtifact: unknown;
+  let fpcArtifact: unknown;
+  try {
+    tokenArtifact = loadDeployArtifact(artifacts.tokenArtifactPath, deployDeps);
+    fpcArtifact = loadDeployArtifact(artifacts.fpcArtifactPath, deployDeps);
+  } catch (error) {
+    throw new CliError(
+      `Failed to load contract artifacts for deployment. ${String(error)}`,
+    );
+  }
+
+  let acceptedAssetAddress: string;
+  let tokenSource: "deployed" | "provided" | "reused";
+  if (args.acceptedAsset) {
+    acceptedAssetAddress = args.acceptedAsset;
+    tokenSource = "provided";
+  } else if (args.reuse && reuseState?.acceptedAsset) {
+    acceptedAssetAddress = reuseState.acceptedAsset;
+    tokenSource = "reused";
+    console.log(
+      `[deploy-fpc-local] reusing accepted asset from output file: ${acceptedAssetAddress}`,
+    );
+  } else {
+    const operatorAddress = deployDeps.AztecAddress.fromString(args.operator);
+    console.log(
+      `[deploy-fpc-local] deploying token contract with constructor_with_minter`,
+    );
+    let tokenInstance: unknown;
+    try {
+      tokenInstance = await deployDeps.Contract.deploy(
+        wallet,
+        tokenArtifact,
+        ["FpcAcceptedAsset", "FPCA", 18, operatorAddress, operatorAddress],
+        "constructor_with_minter",
+      ).send({ from: deploySender });
+    } catch (error) {
+      throw new CliError(
+        `Token deployment failed. Ensure artifacts are up to date and deployer ${deployer.address} has enough fee balance. Underlying error: ${String(error)}`,
+      );
+    }
+    acceptedAssetAddress = parseDeployedAddress(
+      (tokenInstance as { address?: unknown }).address,
+      "token deploy",
+    );
+    tokenSource = "deployed";
+    console.log(`[deploy-fpc-local] token deployed: ${acceptedAssetAddress}`);
+  }
+
+  let fpcAddress: string;
+  let fpcSource: "deployed" | "reused";
+  if (args.reuse && reuseState?.fpcAddress) {
+    if (!args.acceptedAsset && !reuseState.acceptedAsset) {
+      throw new CliError(
+        `Reuse mode refused to reuse FPC address: output file ${path.resolve(args.out)} does not contain accepted_asset. Provide --accepted-asset explicitly or run a fresh deploy to regenerate output.`,
+      );
+    }
+    if (
+      reuseState.operator &&
+      reuseState.operator.toLowerCase() !== args.operator.toLowerCase()
+    ) {
+      throw new CliError(
+        `Reuse mode refused to reuse FPC address: output file operator=${reuseState.operator} differs from current --operator=${args.operator}`,
+      );
+    }
+    if (
+      reuseState.acceptedAsset &&
+      reuseState.acceptedAsset.toLowerCase() !==
+        acceptedAssetAddress.toLowerCase()
+    ) {
+      throw new CliError(
+        `Reuse mode refused to reuse FPC address: output file accepted_asset=${reuseState.acceptedAsset} differs from resolved accepted_asset=${acceptedAssetAddress}`,
+      );
+    }
+    fpcAddress = reuseState.fpcAddress;
+    fpcSource = "reused";
+    console.log(
+      `[deploy-fpc-local] reusing fpc from output file: ${fpcAddress}`,
+    );
+  } else {
+    const operatorAddress = deployDeps.AztecAddress.fromString(args.operator);
+    const acceptedAsset =
+      deployDeps.AztecAddress.fromString(acceptedAssetAddress);
+    console.log(
+      `[deploy-fpc-local] deploying FPC with operator=${args.operator} accepted_asset=${acceptedAssetAddress}`,
+    );
+    let fpcInstance: unknown;
+    try {
+      fpcInstance = await deployDeps.Contract.deploy(wallet, fpcArtifact, [
+        operatorAddress,
+        acceptedAsset,
+      ]).send({ from: deploySender });
+    } catch (error) {
+      throw new CliError(
+        `FPC deployment failed for operator=${args.operator} accepted_asset=${acceptedAssetAddress}. Ensure deployer ${deployer.address} has enough fee balance and constructor arguments are valid. Underlying error: ${String(error)}`,
+      );
+    }
+    fpcAddress = parseDeployedAddress(
+      (fpcInstance as { address?: unknown }).address,
+      "fpc deploy",
+    );
+    fpcSource = "deployed";
+    console.log(`[deploy-fpc-local] fpc deployed: ${fpcAddress}`);
+  }
+
+  const output: DeployOutput = {
+    status: "deploy_ok",
     generated_at: new Date().toISOString(),
     aztec_node_url: args.aztecNodeUrl,
     l1_rpc_url: args.l1RpcUrl,
-    l1_chain_id: nodeState.l1ChainId,
+    l1_chain_id: rpcChainId,
+    l2_chain_id: nodeState.l2ChainId,
     operator: args.operator,
-    accepted_asset: args.acceptedAsset ?? null,
+    accepted_asset: acceptedAssetAddress,
+    fpc_address: fpcAddress,
     reuse: args.reuse,
     node_contracts: {
       fee_juice_portal_address: nodeState.feeJuicePortalAddress,
@@ -911,18 +1354,25 @@ async function main(): Promise<void> {
       source: "aztec_wallet_test_account",
       wallet_alias: deployer.alias,
       address: deployer.address,
+      account_index: deployer.index,
       fee_juice_balance_wei: deployerFeeJuiceBalance.toString(),
       min_required_fee_juice_wei: minimumFeeJuice.minRequired.toString(),
       min_required_source: minimumFeeJuice.source,
     },
     deploy: {
-      implemented: false,
-      note: "Deployment flow intentionally deferred; this script currently performs preflight checks only.",
+      token: {
+        address: acceptedAssetAddress,
+        source: tokenSource,
+      },
+      fpc: {
+        address: fpcAddress,
+        source: fpcSource,
+      },
     },
   };
-  writePreflightOutput(args.out, output);
+  writeDeployOutput(args.out, output);
   console.log(
-    `[deploy-fpc-local] preflight checks passed. Wrote output to ${path.resolve(args.out)}`,
+    `[deploy-fpc-local] deployment completed. Wrote output to ${path.resolve(args.out)}`,
   );
 }
 
