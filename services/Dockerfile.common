@@ -1,0 +1,59 @@
+ARG SERVICE
+
+# ---------- deps: install all dependencies (dev + prod) ----------
+FROM oven/bun:1.3.9-slim AS deps
+
+WORKDIR /app
+
+# Bun workspace resolution requires every member's package.json present
+# before `bun install` will accept the lockfile.
+COPY package.json bun.lock ./
+COPY services/attestation/package.json services/attestation/
+COPY services/topup/package.json services/topup/
+
+RUN bun install --frozen-lockfile
+
+# ---------- build: compile TypeScript ----------
+FROM deps AS build
+
+ARG SERVICE
+
+COPY tsconfig.base.json ./
+COPY services/${SERVICE}/tsconfig.json services/${SERVICE}/
+COPY services/${SERVICE}/src/ services/${SERVICE}/src/
+
+RUN cd services/${SERVICE} && bun run build
+
+# ---------- prod-deps: production-only node_modules ----------
+FROM oven/bun:1.3.9-slim AS prod-deps
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+COPY services/attestation/package.json services/attestation/
+COPY services/topup/package.json services/topup/
+
+RUN bun install --frozen-lockfile --production
+
+# ---------- runtime: final slim image ----------
+FROM oven/bun:1.3.9-slim AS runtime
+
+ARG SERVICE
+
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --no-create-home app
+
+WORKDIR /app
+
+COPY --from=prod-deps --chown=app:app /app/node_modules node_modules
+COPY --from=prod-deps --chown=app:app /app/services/${SERVICE}/node_modules services/${SERVICE}/node_modules
+COPY --from=build     --chown=app:app /app/services/${SERVICE}/dist services/${SERVICE}/dist
+
+# Workspace package manifests (needed for Bun module resolution at runtime)
+COPY --chown=app:app package.json ./
+COPY --chown=app:app services/${SERVICE}/package.json services/${SERVICE}/
+
+# Reference config — real config must be bind-mounted at runtime
+COPY --chown=app:app services/${SERVICE}/config.example.yaml services/${SERVICE}/
+
+USER app
