@@ -1,7 +1,8 @@
-# FPC Gate Count Profiling
+# AltFPC Gate Count Profiling
 
-Profiles the gate count of `FPC.fee_entrypoint` by deploying Token + FPC on a
-local Aztec network and running the full execution trace.
+Profiles the gate count of `AltFPC.pay_and_mint` and `AltFPC.pay_fee` by
+deploying Token + AltFPC on a local Aztec network and running the full
+execution trace for each flow.
 
 ## Prerequisites
 
@@ -32,7 +33,7 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 | Script | When | What |
 |---|---|---|
 | `setup.sh` | Once | Installs `@aztec/*` npm packages (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
-| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), deploys Token + FPC, profiles `fee_entrypoint`, prints gate counts |
+| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), deploys Token + AltFPC, profiles `pay_and_mint` and `pay_fee`, prints gate counts for both |
 | `teardown.sh` | When done | Stops the network (if started by `setup.sh`), removes temp files |
 
 ### Environment variables
@@ -40,38 +41,84 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 | Variable | Default | Description |
 |---|---|---|
 | `AZTEC_NODE_URL` | `http://127.0.0.1:8080` | Aztec node endpoint (respected by all three scripts) |
+| `L1_RPC_URL` | `http://127.0.0.1:8545` | L1 (anvil) endpoint, used to bridge Fee Juice to AltFPC |
 
 ## Iteration Workflow
 
 ```
 setup.sh          ← run once
   │
-  ├─► edit contracts
-  ├─► run.sh       ← compile + deploy + profile
-  ├─► edit contracts
+  ├─► edit contracts/alt_fpc
+  ├─► run.sh       ← compile + deploy + profile both flows
+  ├─► edit contracts/alt_fpc
   ├─► run.sh
   ├─► ...
   │
 teardown.sh        ← run when done
 ```
 
+## Profiled Flows
+
+### Flow 1: `pay_and_mint` (top-up + fee)
+
+The user tops up their credit balance in the AltFPC and pays the current
+transaction's fee in a single call. This involves:
+
+1. Quote authwit verification (operator signed the exchange rate)
+2. Token transfer: user private → operator private
+3. Balance mint: credit added to user's balance set
+4. Max gas cost deduction from the minted balance
+5. FPC declares itself fee payer, ends setup
+
+Internal calls traced: `AltFPC:pay_and_mint`, `Token:transfer_private_to_private`,
+`SchnorrAccount:verify_private_authwit`, plus all kernel circuits.
+
+### Flow 2: `pay_fee` (balance-only)
+
+The user pays the transaction fee from an existing credit balance — no token
+transfer or quote verification needed. This involves:
+
+1. Read sender from context
+2. Max gas cost deduction from existing balance
+3. FPC declares itself fee payer, ends setup
+
+Internal calls traced: `AltFPC:pay_fee`, plus all kernel circuits.
+
 ## Output
 
+The profiler prints two separate gate tables — one per flow — followed by a
+summary. Each table includes every execution step (app functions + kernel
+circuits) with its own gate count and a running subtotal.
+
 ```
-=== Gate Count Profile ===
+=== Flow 1: pay_and_mint (top-up + fee) ===
 
 Function                                                     Own gates    Subtotal
 ────────────────────────────────────────────────────────────────────────────────────────
 SchnorrAccount:entrypoint                                    54,352       54,352
 private_kernel_init                                          46,811       101,163
-FPC:fee_entrypoint                                           14,498       115,661
-private_kernel_inner                                         101,237      216,898
-SchnorrAccount:verify_private_authwit                        14,328       231,226
-private_kernel_inner                                         101,237      332,463
-Token:transfer_in_private                                    150,928      483,391
+AltFPC:pay_and_mint                                          ...          ...
+private_kernel_inner                                         ...          ...
+SchnorrAccount:verify_private_authwit                        ...          ...
 ...
 ────────────────────────────────────────────────────────────────────────────────────────
-TOTAL                                                                     1,280,851
+TOTAL                                                         xxx,xxx
+
+=== Flow 2: pay_fee (balance-only) ===
+
+Function                                                     Own gates    Subtotal
+────────────────────────────────────────────────────────────────────────────────────────
+SchnorrAccount:entrypoint                                    54,352       54,352
+private_kernel_init                                          46,811       101,163
+AltFPC:pay_fee                                               ...          ...
+...
+────────────────────────────────────────────────────────────────────────────────────────
+TOTAL                                                         xxx,xxx
+
+=== Summary ===
+
+pay_and_mint total: xxx,xxx gates
+pay_fee total:      xxx,xxx gates
 ```
 
 ## How It Works
@@ -83,19 +130,23 @@ TOTAL                                                                     1,280,
    Schnorr accounts via `AccountManager`
 3. Loads raw nargo artifacts from `target/` and normalises them via
    `loadContractArtifact()` so the SDK computes correct contract class IDs
-4. Deploys `Token(user, "TestToken", "TST", 18)` and `FPC(operator, tokenAddress)`
-5. Computes the token charge from current node min fees
-   (`charge = ceil(maxGasCost × rateNum / rateDen)`, 1:1 rate, 1.5× fee padding)
-6. Mints `charge + 1000` tokens to the user's private balance
-7. Creates a **quote authwit** — operator signs authorisation for the FPC to
+4. Deploys `Token(user, "TestToken", "TST", 18)` and `AltFPC(operator, tokenAddress)`
+5. Bridges Fee Juice from L1 (anvil) to the AltFPC so it can pay protocol fees
+   when acting as fee payer on real transactions (uses anvil default account 0)
+6. Computes the token charge from current node min fees
+   (`charge = ceil(creditMintAmount × rateNum / rateDen)`, 1:1 rate, 1.5× fee padding)
+7. Mints tokens to the user's private balance
+8. Creates a **quote authwit** — operator signs authorisation for the AltFPC to
    consume a fee quote bound to the user
-8. Creates a **transfer authwit** — user authorises the FPC to call
-   `Token.transfer_in_private(user, operator, charge, nonce)` on their behalf
-9. Builds a `CustomFPCPaymentMethod` wrapping the transfer authwit, rate params,
-   and gas settings, then profiles a dummy `Token.transfer_in_private(user→user,
-   1, nonce=0)` with the FPC as fee payer — this triggers the full
-   `fee_entrypoint` execution path including kernel circuits
-10. Prints a per-function gate-count table (app functions + kernel circuits)
+9. **Profiles `pay_and_mint`**: creates a transfer authwit, builds a
+   `PayAndMintPaymentMethod`, and profiles a dummy `Token.transfer_private_to_private
+   (user→user, 1, nonce=0)` with the AltFPC as fee payer
+10. **Establishes balance**: sends a real `pay_and_mint` transaction (with a
+    separate transfer authwit nonce) so the user has a credit balance on-chain
+11. **Profiles `pay_fee`**: builds a `PayFeePaymentMethod` and profiles another
+    dummy token transfer with the AltFPC as fee payer — this time the fee payment
+    only reads the user's existing credit balance
+12. Prints per-function gate-count tables for both flows plus a summary
 
 ## Version Pinning
 
@@ -109,5 +160,5 @@ and re-installs the correct versions. Just re-run `setup.sh` after updating `.az
 |---|---|
 | `Artifact does not match expected class id` | Both deploy and profile use the same `loadContractArtifact()` from the npm packages, so this should not happen. If it does, delete `profiling/node_modules/` and re-run `setup.sh`. |
 | `Failed to get a note 'self.is_some()'` in `SchnorrAccount.verify_private_authwit` | The script passes `additionalScopes: [operatorAddress]` so the PXE can decrypt the operator's signing key note. |
-| `Invalid authwit nonce` in `Token.transfer_in_private` | When `from == msg_sender`, the token contract requires `nonce=0` (no authwit path). The profiled call uses `nonce=0`. |
+| `Balance too low or note insufficient` in `AltFPC.pay_fee` | The intermediate `pay_and_mint` send step may have failed. Check that the credit mint amount is large enough to cover both flows (default: 3× max gas cost). |
 | `run.sh` says "no Aztec node" | Run `./profiling/setup.sh` first, or if the network died, re-run setup. |

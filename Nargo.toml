@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "contracts/fpc",
+    "contracts/alt_fpc",
     "vendor/aztec-standards/src/generic_proxy",
     "vendor/aztec-standards/src/token_contract",
 ]
