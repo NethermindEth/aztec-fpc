@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { parse } from "yaml";
 import { z } from "zod";
 import {
@@ -16,11 +17,34 @@ const OperatorSecretKeySchema = z
   .regex(PRIVATE_KEY_PATTERN, "must be a 32-byte 0x-prefixed hex private key");
 const RuntimeProfileSchema = z.enum(["development", "test", "production"]);
 const SecretProviderSchema = z.enum(["auto", "env", "config", "kms", "hsm"]);
+const AztecNodeUrlSchema = z.string().url();
+const AztecAddressSchema = z
+  .string()
+  .trim()
+  .superRefine((value, context) => {
+    let parsed: AztecAddress;
+    try {
+      parsed = AztecAddress.fromString(value);
+    } catch {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "must be a valid Aztec address",
+      });
+      return;
+    }
+
+    if (parsed.isZero()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "must be a non-zero Aztec address",
+      });
+    }
+  });
 
 const ConfigSchema = z.object({
   runtime_profile: RuntimeProfileSchema.default("development"),
-  fpc_address: z.string(),
-  aztec_node_url: z.string().url(),
+  fpc_address: AztecAddressSchema,
+  aztec_node_url: AztecNodeUrlSchema,
   quote_validity_seconds: z
     .number()
     .int()
@@ -29,7 +53,7 @@ const ConfigSchema = z.object({
     .default(300),
   port: z.number().int().positive().default(3000),
   /** The single token contract address this FPC accepts. Must match accepted_asset in the deployed contract. */
-  accepted_asset_address: z.string(),
+  accepted_asset_address: AztecAddressSchema,
   accepted_asset_name: z.string(),
   /** Baseline exchange rate: accepted_asset units per 1 FeeJuice. */
   market_rate_num: z.number().int().positive(),
@@ -40,6 +64,8 @@ const ConfigSchema = z.object({
   operator_secret_provider: SecretProviderSchema.default("auto"),
   /** Reference used by external secret providers (kms/hsm). */
   operator_secret_ref: z.string().optional(),
+  /** Optional explicit operator account address (needed if account salt is non-zero). */
+  operator_address: AztecAddressSchema.optional(),
   /** Optional when OPERATOR_SECRET_KEY is provided via env. */
   operator_secret_key: z.string().optional(),
   /** Optional directory for local PXE persistent state (LMDB).
@@ -110,11 +136,14 @@ export function loadConfig(
   });
 
   OperatorSecretKeySchema.parse(resolvedSecret.value);
+  const aztecNodeUrl = AztecNodeUrlSchema.parse(
+    process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
+  );
 
   return {
     ...config,
     runtime_profile: runtimeProfile,
-    aztec_node_url: process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
+    aztec_node_url: aztecNodeUrl,
     operator_secret_key: resolvedSecret.value,
     operator_secret_key_source: resolvedSecret.source,
     operator_secret_key_provider: resolvedSecret.provider,

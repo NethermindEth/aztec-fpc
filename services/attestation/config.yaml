@@ -20,6 +20,9 @@ port: 3000
 #
 # TODO: In production, replace direct key access with a KMS or HSM.
 #       Prefer env var OPERATOR_SECRET_KEY; avoid plaintext keys on disk.
+# Optional explicit operator address override.
+# Set this when the operator account was deployed with non-zero salt.
+# operator_address: "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72"
 # Optional when OPERATOR_SECRET_KEY is set.
 operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001"
 

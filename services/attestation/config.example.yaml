@@ -32,6 +32,9 @@ port: 3000
 # - kms/hsm: require adapter wiring in code and operator_secret_ref
 operator_secret_provider: "auto"
 # operator_secret_ref: "kms://attestation/operator-key"
+# Optional explicit operator address override.
+# Set this when the operator account was deployed with non-zero salt.
+# operator_address: "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72"
 # Optional when OPERATOR_SECRET_KEY is set.
 operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001"
 
