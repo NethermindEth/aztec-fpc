@@ -10,6 +10,8 @@
 - Version coupling in this repo:
   - TypeScript deps in services: `4.0.0-devnet.2-patch.1`
   - Noir deps in `contracts/fpc/Nargo.toml`: `v4.0.0-devnet.2-patch.1`
+- Canonical migration constraints for this pinned version:
+  - `docs/aztec-v4.0.0-devnet.2-patch.1-rules-constraints.md`
 
 This document is a compact map of exactly which Aztec libraries are used, where they come from upstream, and which invariants must stay aligned.
 
@@ -18,31 +20,31 @@ This document is a compact map of exactly which Aztec libraries are used, where 
 ### 1.1 Runtime service imports
 | Import path | Symbols used in this repo | Local callsites | Example usage (this repo) | Upstream source anchor |
 |---|---|---|---|---|
-| `@aztec/aztec.js/addresses` | `AztecAddress` | `services/attestation/src/server.ts`, `services/topup/src/*` | `const fpcAddress = AztecAddress.fromString(config.fpc_address)` (`services/attestation/src/server.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/addresses.ts` |
-| `@aztec/aztec.js/fields` | `Fr` | `services/attestation/src/index.ts`, `services/attestation/src/signer.ts`, tests | `const secretKey = Fr.fromHexString(config.operator_secret_key)` (`services/attestation/src/index.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/fields.ts` |
-| `@aztec/aztec.js/node` | `createAztecNodeClient`, `waitForNode`, `AztecNode`, `NodeInfo` | `services/attestation/src/index.ts`, `services/topup/src/index.ts`, smoke tests | `const node = createAztecNodeClient(config.aztec_node_url)` (`services/attestation/src/index.ts`)<br/>`await waitForNode(node)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/node.ts`, `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/utils/node.ts` |
-| `@aztec/aztec.js/authorization` | `computeAuthWitMessageHash`, `computeInnerAuthWitHash` (re-export), authwit types | `services/attestation/src/signer.ts`, smoke tests | `const messageHash = await computeAuthWitMessageHash({ consumer, innerHash }, chainInfo)` (`services/attestation/src/signer.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/authorization.ts`, `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/utils/authwit.ts` |
-| `@aztec/aztec.js/utils` | `getFeeJuiceBalance` | `services/topup/src/monitor.ts`, smoke tests | `return await getSdkFeeJuiceBalance(owner, node)` (`services/topup/src/monitor.ts`)<br/>`const balance = await getFeeJuiceBalance(AztecAddress.fromString(fpcAddress), node)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/utils.ts`, `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/utils/fee_juice.ts` |
-| `@aztec/aztec.js/protocol` | `ProtocolContractAddress`, `FeeJuiceContract` | smoke test | `const feeJuice = FeeJuiceContract.at(wallet)` and `getAsset: async () => ProtocolContractAddress.FeeJuice` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/protocol.ts` |
-| `@aztec/aztec.js/contracts` | `Contract` | smoke test | `const token = await Contract.deploy(wallet, tokenArtifact, [...]).send({ from: operator })` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/contract.ts` |
-| `@aztec/aztec.js/abi` | `ContractArtifact` type | smoke test | `function loadArtifact(artifactPath: string): ContractArtifact { ... }` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/abi.ts` |
-| `@aztec/aztec.js/messaging` | `waitForL1ToL2MessageReady` | smoke test | `await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, { timeoutSeconds, forPublicConsumption: false })` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/api/messaging.ts`, `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/utils/cross_chain.ts` |
-| `@aztec/accounts/schnorr` | `getSchnorrAccountContractAddress`, `SchnorrAccountContract` | `services/attestation/src/index.ts` | `const operatorAddress = await getSchnorrAccountContractAddress(secretKey, Fr.ZERO)` and `const accountContract = new SchnorrAccountContract(signingKey)` (`services/attestation/src/index.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/accounts/src/schnorr/index.ts` |
-| `@aztec/accounts/testing` | `getInitialTestAccountsData` | smoke test | `const testAccounts = await getInitialTestAccountsData()` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/accounts/src/testing/index.ts` |
-| `@aztec/stdlib/auth-witness` | `computeInnerAuthWitHash`, `AuthWitness` type | `services/attestation/src/signer.ts`, tests | `return computeInnerAuthWitHash([QUOTE_DOMAIN_SEPARATOR, ...])` (`services/attestation/src/signer.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/stdlib/src/auth_witness/auth_witness.ts` |
-| `@aztec/stdlib/hash` | `deriveStorageSlotInMap`, `computeSecretHash` | `services/topup/src/monitor.ts`, smoke test | `const slot = await deriveStorageSlotInMap(FEE_JUICE_BALANCES_STORAGE_SLOT, owner)` (`services/topup/src/monitor.ts`)<br/>`const claimSecretHash = await computeSecretHash(claimSecret)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/stdlib/src/hash/map_slot.ts` |
-| `@aztec/stdlib/keys` | `deriveSigningKey` | `services/attestation/src/index.ts` | `const signingKey = deriveSigningKey(secretKey)` (`services/attestation/src/index.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/stdlib/src/keys/derivation.ts` |
-| `@aztec/stdlib/contract` | `CompleteAddress` | `services/attestation/src/index.ts` | `const operatorCompleteAddress = await CompleteAddress.random()` (`services/attestation/src/index.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/stdlib/src/contract/complete_address.ts` |
-| `@aztec/stdlib/abi` | `loadContractArtifact`, `loadContractArtifactForPublic` | smoke test | `return loadContractArtifact(parsed)` and fallback `return loadContractArtifactForPublic(parsed)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/stdlib/src/abi/index.ts` |
-| `@aztec/stdlib/noir` | `NoirCompiledContract` type | smoke test | `const parsed = JSON.parse(raw) as NoirCompiledContract` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/stdlib/src/noir/index.ts` |
-| `@aztec/stdlib/tx` | `ExecutionPayload` | smoke test | `new ExecutionPayload([feeEntrypointCall], [quoteAuthwit, transferAuthwit], [], [], fpc.address)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/stdlib/src/tx/index.ts` |
-| `@aztec/wallets/embedded` | `EmbeddedWallet` | smoke test | `const wallet = await EmbeddedWallet.create(node)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/wallets/src/embedded/entrypoints/node.ts` |
+| `@aztec/aztec.js/addresses` | `AztecAddress` | `services/attestation/src/server.ts`, `services/topup/src/*` | `const fpcAddress = AztecAddress.fromString(config.fpc_address)` (`services/attestation/src/server.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/addresses.ts` |
+| `@aztec/aztec.js/fields` | `Fr` | `services/attestation/src/index.ts`, `services/attestation/src/signer.ts`, tests | `const secretKey = Fr.fromHexString(config.operator_secret_key)` (`services/attestation/src/index.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/fields.ts` |
+| `@aztec/aztec.js/node` | `createAztecNodeClient`, `waitForNode`, `AztecNode`, `NodeInfo` | `services/attestation/src/index.ts`, `services/topup/src/index.ts`, smoke tests | `const node = createAztecNodeClient(config.aztec_node_url)` (`services/attestation/src/index.ts`)<br/>`await waitForNode(node)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/node.ts`, `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/utils/node.ts` |
+| `@aztec/aztec.js/authorization` | `computeAuthWitMessageHash`, `computeInnerAuthWitHash` (re-export), authwit types | `services/attestation/src/signer.ts`, smoke tests | `const messageHash = await computeAuthWitMessageHash({ consumer, innerHash }, chainInfo)` (`services/attestation/src/signer.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/authorization.ts`, `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/utils/authwit.ts` |
+| `@aztec/aztec.js/utils` | `getFeeJuiceBalance` | `services/topup/src/monitor.ts`, smoke tests | `return await getSdkFeeJuiceBalance(owner, node)` (`services/topup/src/monitor.ts`)<br/>`const balance = await getFeeJuiceBalance(AztecAddress.fromString(fpcAddress), node)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/utils.ts`, `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/utils/fee_juice.ts` |
+| `@aztec/aztec.js/protocol` | `ProtocolContractAddress`, `FeeJuiceContract` | smoke test | `const feeJuice = FeeJuiceContract.at(wallet)` and `getAsset: async () => ProtocolContractAddress.FeeJuice` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/protocol.ts` |
+| `@aztec/aztec.js/contracts` | `Contract` | smoke test | `const token = await Contract.deploy(wallet, tokenArtifact, [...]).send({ from: operator })` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/contract.ts` |
+| `@aztec/aztec.js/abi` | `ContractArtifact` type | smoke test | `function loadArtifact(artifactPath: string): ContractArtifact { ... }` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/abi.ts` |
+| `@aztec/aztec.js/messaging` | `waitForL1ToL2MessageReady` | smoke test | `await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, { timeoutSeconds, forPublicConsumption: false })` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/api/messaging.ts`, `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/utils/cross_chain.ts` |
+| `@aztec/accounts/schnorr` | `getSchnorrAccountContractAddress`, `SchnorrAccountContract` | `services/attestation/src/index.ts` | `const operatorAddress = await getSchnorrAccountContractAddress(secretKey, Fr.ZERO)` and `const accountContract = new SchnorrAccountContract(signingKey)` (`services/attestation/src/index.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/accounts/src/schnorr/index.ts` |
+| `@aztec/accounts/testing` | `getInitialTestAccountsData` | smoke test | `const testAccounts = await getInitialTestAccountsData()` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/accounts/src/testing/index.ts` |
+| `@aztec/stdlib/auth-witness` | `computeInnerAuthWitHash`, `AuthWitness` type | `services/attestation/src/signer.ts`, tests | `return computeInnerAuthWitHash([QUOTE_DOMAIN_SEPARATOR, ...])` (`services/attestation/src/signer.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/stdlib/src/auth_witness/auth_witness.ts` |
+| `@aztec/stdlib/hash` | `deriveStorageSlotInMap`, `computeSecretHash` | `services/topup/src/monitor.ts`, smoke test | `const slot = await deriveStorageSlotInMap(FEE_JUICE_BALANCES_STORAGE_SLOT, owner)` (`services/topup/src/monitor.ts`)<br/>`const claimSecretHash = await computeSecretHash(claimSecret)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/stdlib/src/hash/map_slot.ts` |
+| `@aztec/stdlib/keys` | `deriveSigningKey` | `services/attestation/src/index.ts` | `const signingKey = deriveSigningKey(secretKey)` (`services/attestation/src/index.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/stdlib/src/keys/derivation.ts` |
+| `@aztec/stdlib/contract` | `CompleteAddress` | `services/attestation/src/index.ts` | `const operatorCompleteAddress = await CompleteAddress.random()` (`services/attestation/src/index.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/stdlib/src/contract/complete_address.ts` |
+| `@aztec/stdlib/abi` | `loadContractArtifact`, `loadContractArtifactForPublic` | smoke test | `return loadContractArtifact(parsed)` and fallback `return loadContractArtifactForPublic(parsed)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/stdlib/src/abi/index.ts` |
+| `@aztec/stdlib/noir` | `NoirCompiledContract` type | smoke test | `const parsed = JSON.parse(raw) as NoirCompiledContract` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/stdlib/src/noir/index.ts` |
+| `@aztec/stdlib/tx` | `ExecutionPayload` | smoke test | `new ExecutionPayload([feeEntrypointCall], [quoteAuthwit, transferAuthwit], [], [], fpc.address)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/stdlib/src/tx/index.ts` |
+| `@aztec/wallets/embedded` | `EmbeddedWallet` | smoke test | `const wallet = await EmbeddedWallet.create(node)` (`services/attestation/test/fee-entrypoint-devnet-smoke.ts`) | `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/wallets/src/embedded/entrypoints/node.ts` |
 
 ### 1.2 Noir imports from aztec-packages
 | Dependency in `Nargo.toml` | Upstream directory | Used by local code | Example usage (this repo) |
 |---|---|---|---|
-| `aztec` | `https://github.com/AztecProtocol/aztec-packages/tree/master/noir-projects/aztec-nr/aztec` | `contracts/fpc/src/main.nr`, tests in `contracts/fpc/src/test/*` | `assert_inner_hash_valid_authwit(context, signer, inner_hash)` (`contracts/fpc/src/main.nr`)<br/>`let mut env = TestEnvironment::new()` (`contracts/fpc/src/test/utils.nr`) |
-| `token` | `https://github.com/AztecProtocol/aztec-packages/tree/master/noir-projects/noir-contracts/contracts/app/token_contract` | `contracts/fpc/src/main.nr`, `contracts/fpc/src/test/*` | `Token::at(accepted_asset).transfer_private_to_private(sender, operator, charge, authwit_nonce).call(self.context)` (`contracts/fpc/src/main.nr`) |
+| `aztec` | `https://github.com/AztecProtocol/aztec-packages/tree/v4.0.0-devnet.2-patch.1/noir-projects/aztec-nr/aztec` | `contracts/fpc/src/main.nr`, tests in `contracts/fpc/src/test/*` | `assert_inner_hash_valid_authwit(context, signer, inner_hash)` (`contracts/fpc/src/main.nr`)<br/>`let mut env = TestEnvironment::new()` (`contracts/fpc/src/test/utils.nr`) |
+| `token` | `https://github.com/AztecProtocol/aztec-packages/tree/v4.0.0-devnet.2-patch.1/noir-projects/noir-contracts/contracts/app/token_contract` | `contracts/fpc/src/main.nr`, `contracts/fpc/src/test/*` | `Token::at(accepted_asset).transfer_private_to_private(sender, operator, charge, authwit_nonce).call(self.context)` (`contracts/fpc/src/main.nr`) |
 
 ## 2) Critical compatibility invariants
 
@@ -89,13 +91,13 @@ Important upstream note:
 - `context.set_expiration_timestamp(valid_until)`
 
 These behaviors are defined in:
-- `https://github.com/AztecProtocol/aztec-packages/blob/master/noir-projects/aztec-nr/aztec/src/context/private_context.nr`
+- `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/noir-projects/aztec-nr/aztec/src/context/private_context.nr`
 
 Do not alter call ordering lightly; this is fee-payment protocol coupling, not app-level style.
 
 ## 3) Token contract assumptions used by FPC
 FPC assumes upstream Token behavior from:
-- `https://github.com/AztecProtocol/aztec-packages/blob/master/noir-projects/noir-contracts/contracts/app/token_contract/src/main.nr`
+- `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/noir-projects/noir-contracts/contracts/app/token_contract/src/main.nr`
 
 Used token methods and assumptions:
 - `transfer_in_private(from, to, amount, authwit_nonce)`
@@ -134,14 +136,16 @@ These may still be intentional for future work or transitive behavior; this sect
 
 ## 6) Upgrade and drift checklist
 When changing Aztec versions or refactoring these integrations, verify all of the following:
-1. `contracts/fpc/Nargo.toml` keeps `aztec` and `token` on the exact same release tag.
-2. Quote hash preimage order and domain separator remain identical between:
+1. Runtime is Node.js `>= 24.12.0` (required by Aztec `v4.0.0-devnet.2-patch.1`).
+2. `contracts/fpc/Nargo.toml` keeps `aztec` and `token` on the exact same release tag.
+3. Reconcile changes against `docs/aztec-v4.0.0-devnet.2-patch.1-rules-constraints.md` before merging.
+4. Quote hash preimage order and domain separator remain identical between:
    - `contracts/fpc/src/main.nr`
    - `services/attestation/src/signer.ts`
-3. Authwit outer hash still binds `consumer=fpc_address`, `chainId`, and `version`.
-4. Fee Juice read path still works when `getFeeJuiceBalance` fails (fallback path test must pass).
-5. Smoke test artifact loading still handles the transpilation requirement (`loadContractArtifactForPublic` fallback).
-6. Contract tests still prove:
+5. Authwit outer hash still binds `consumer=fpc_address`, `chainId`, and `version`.
+6. Fee Juice read path still works when `getFeeJuiceBalance` fails (fallback path test must pass).
+7. Smoke test artifact loading still handles the transpilation requirement (`loadContractArtifactForPublic` fallback).
+8. Contract tests still prove:
    - quote expiry rejection,
    - quote-to-user binding,
    - one-time transfer authwit usage.
@@ -155,11 +159,11 @@ When changing Aztec versions or refactoring these integrations, verify all of th
 - FPC test wiring: `contracts/fpc/src/test/utils.nr`, `contracts/fpc/src/test/fee_entrypoint.nr`
 
 - Upstream authwit (Noir):
-  - `https://github.com/AztecProtocol/aztec-packages/blob/master/noir-projects/aztec-nr/aztec/src/authwit/auth.nr`
+  - `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/noir-projects/aztec-nr/aztec/src/authwit/auth.nr`
 - Upstream private context (Noir):
-  - `https://github.com/AztecProtocol/aztec-packages/blob/master/noir-projects/aztec-nr/aztec/src/context/private_context.nr`
+  - `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/noir-projects/aztec-nr/aztec/src/context/private_context.nr`
 - Upstream token contract (Noir):
-  - `https://github.com/AztecProtocol/aztec-packages/blob/master/noir-projects/noir-contracts/contracts/app/token_contract/src/main.nr`
+  - `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/noir-projects/noir-contracts/contracts/app/token_contract/src/main.nr`
 - Upstream authwit (TS):
-  - `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/aztec.js/src/utils/authwit.ts`
-  - `https://github.com/AztecProtocol/aztec-packages/blob/master/yarn-project/stdlib/src/auth_witness/auth_witness.ts`
+  - `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/aztec.js/src/utils/authwit.ts`
+  - `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/yarn-project/stdlib/src/auth_witness/auth_witness.ts`
