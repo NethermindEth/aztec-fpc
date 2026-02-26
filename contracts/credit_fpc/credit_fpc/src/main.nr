@@ -114,7 +114,7 @@ pub contract CreditFPC {
     #[external("private")]
     #[allow_phase_change]
     fn pay_with_credit() {
-        let sender = self.context.maybe_msg_sender().unwrap();
+        let sender = self.msg_sender();
         let max_gas_cost = get_max_gas_cost(self.context);
 
         let balance_set = self.storage.balances.at(sender);
