@@ -192,7 +192,27 @@ Pass through extra deploy args when needed (for example reuse mode):
 bun run deploy:fpc:local -- --reuse
 ```
 
-### 8. Deploy the contract manually (alternative)
+### 8. Run local deploy smoke (deploy + relay-aware first use)
+
+This smoke flow:
+1. runs `deploy:fpc:local`,
+2. bridges Fee Juice from L1 to the deployed FPC,
+3. advances mock L2 blocks (default: 2) so relay-dependent claim is consumable,
+4. confirms Fee Juice balance lands on the deployed FPC.
+
+```bash
+bun run smoke:deploy:fpc:local
+```
+
+Useful overrides:
+
+- `FPC_DEPLOY_SMOKE_START_LOCAL_NETWORK` (default `1`)
+- `FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE` (default: `1` only when smoke starts local-network, otherwise `0`)
+- `FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT` (default temp path under `/tmp`)
+- `FPC_DEPLOY_SMOKE_RELAY_ADVANCE_BLOCKS` (default `2`, must be `>=2`)
+- `FPC_DEPLOY_SMOKE_TOPUP_WEI` (default `1000000`)
+
+### 9. Deploy the contract manually (alternative)
 
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
@@ -204,7 +224,7 @@ aztec deploy \
 
 Record the deployed address.
 
-### 9. Configure and start the attestation service
+### 10. Configure and start the attestation service
 
 ```bash
 cd services/attestation
@@ -214,7 +234,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 10. Configure and start the top-up service
+### 11. Configure and start the top-up service
 
 ```bash
 cd services/topup
@@ -226,7 +246,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 11. Verify
+### 12. Verify
 
 ```bash
 curl http://localhost:3000/health
