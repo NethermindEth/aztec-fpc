@@ -209,22 +209,22 @@ signature in the function args adds a few k gates for args hashing.)
 | `scripts/services/fpc-services-smoke.ts` | Updated FPC deploy, quote handling |
 | `profiling/profile-gates.mjs` | New deploy args, inline signing, new selector |
 
-### Extended application (AltFPC.pay_and_mint)
+### Extended application (CreditFPC.pay_and_mint)
 
-The same optimization was subsequently applied to `AltFPC.pay_and_mint`, which
+The same optimization was subsequently applied to `CreditFPC.pay_and_mint`, which
 used the same `assert_inner_hash_valid_authwit` pattern. The extension also
 fixed a latent path issue (`Nargo.toml` token path and workspace member).
 
 | File | Change |
 |------|--------|
-| `Nargo.toml` | Fixed workspace member path `contracts/alt_fpc` -> `contracts/alt_fpc/alt_fpc` |
-| `contracts/alt_fpc/alt_fpc/Nargo.toml` | Added `schnorr` dependency; fixed token path `../../` -> `../../../` |
-| `contracts/alt_fpc/alt_fpc/src/main.nr` | Inline Schnorr verification, `operator_pubkey_x/y` storage fields, constructor on-curve check, `quote_sig: [u8;64]` param before `mint_amount` |
-| `contracts/alt_fpc/alt_fpc/src/test.nr` | New: test module root |
-| `contracts/alt_fpc/alt_fpc/src/test/utils.nr` | New: Schnorr signing helpers, `setup()`, `credit_balance()` |
-| `contracts/alt_fpc/alt_fpc/src/test/pay_and_mint.nr` | New: 6 tests (happy path, expired quote, wrong user, authwit replay, quote replay, credit boundary) |
-| `profiling/profile-alt-fpc-gates.mjs` | New deploy args, inline Schnorr signing, updated selector and sig args, removed `quoteAuthWit` |
-| `profiling/profile-alt-fpc.mjs` | Same updates as above (used by `run-alt-fpc.sh`) |
+| `Nargo.toml` | Fixed workspace member path `contracts/credit_fpc` -> `contracts/credit_fpc/credit_fpc` |
+| `contracts/credit_fpc/credit_fpc/Nargo.toml` | Added `schnorr` dependency; fixed token path `../../` -> `../../../` |
+| `contracts/credit_fpc/credit_fpc/src/main.nr` | Inline Schnorr verification, `operator_pubkey_x/y` storage fields, constructor on-curve check, `quote_sig: [u8;64]` param before `mint_amount` |
+| `contracts/credit_fpc/credit_fpc/src/test.nr` | New: test module root |
+| `contracts/credit_fpc/credit_fpc/src/test/utils.nr` | New: Schnorr signing helpers, `setup()`, `credit_balance()` |
+| `contracts/credit_fpc/credit_fpc/src/test/pay_and_mint.nr` | New: 6 tests (happy path, expired quote, wrong user, authwit replay, quote replay, credit boundary) |
+| `profiling/profile-credit-fpc-gates.mjs` | New deploy args, inline Schnorr signing, updated selector and sig args, removed `quoteAuthWit` |
+| `profiling/profile-credit-fpc.mjs` | Same updates as above (used by `run-credit-fpc.sh`) |
 
 ## Test signing: Fq vs Fr subtlety
 
@@ -254,7 +254,7 @@ Both contracts are covered by Noir unit tests run via `nargo test` + TXE server:
 
 ```
 nargo test --package fpc --oracle-resolver http://localhost:8083      # 10/10 pass
-nargo test --package alt_fpc --oracle-resolver http://localhost:8083  # 6/6 pass
+nargo test --package credit_fpc --oracle-resolver http://localhost:8083  # 6/6 pass
 ```
 
 Tests require `aztec compile` (not `nargo compile`) to produce transpiled
@@ -271,7 +271,7 @@ assertion itself is verified on a running devnet where gas prices are non-zero.
 
 ## Next steps
 
-- **Profile** `AltFPC.pay_and_mint` to confirm actual gate savings (expected ~101k
+- **Profile** `CreditFPC.pay_and_mint` to confirm actual gate savings (expected ~101k
   reduction: removing one `verify_private_authwit` call + one `private_kernel_inner`).
 - **Consider `SharedMutable` for pubkey** if key rotation is a requirement.
 - **Optimization 2** targets eliminating the transfer authwit (step D) for

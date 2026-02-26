@@ -1,11 +1,11 @@
 /**
- * AltFPC gate count profiler.
+ * CreditFPC gate count profiler.
  *
- * Deploys Token + AltFPC on a running local network, then profiles both
- * the pay_and_mint and pay_fee flows — all in a single run.
+ * Deploys Token + CreditFPC on a running local network, then profiles both
+ * the pay_and_mint and pay_with_credit flows — all in a single run.
  *
- * pay_and_mint:  user tops up credit balance (token transfer + balance mint)
- * pay_fee:       user pays tx fee from existing credit balance (no transfer)
+ * pay_and_mint:       user tops up credit balance (token transfer + balance mint)
+ * pay_with_credit:    user pays tx fee from existing credit balance (no transfer)
  *
  * Environment:
  *   AZTEC_NODE_URL  — node endpoint (default http://127.0.0.1:8080)
@@ -111,9 +111,9 @@ class SimpleWallet extends BaseWallet {
   }
 }
 
-// ── Fee payment method for AltFPC.pay_and_mint ────────────────────────────────
+// ── Fee payment method for CreditFPC.pay_and_mint ─────────────────────────────
 //
-// AltFPC uses inline Schnorr verification: the operator's signature over the
+// CreditFPC uses inline Schnorr verification: the operator's signature over the
 // quote hash is passed as 64 Field args (one per byte of the 64-byte sig).
 // There is no quote authwit — only the transfer authwit is in the payload.
 class PayAndMintPaymentMethod {
@@ -163,8 +163,8 @@ class PayAndMintPaymentMethod {
   }
 }
 
-// ── Fee payment method for AltFPC.pay_fee ─────────────────────────────────────
-class PayFeePaymentMethod {
+// ── Fee payment method for CreditFPC.pay_with_credit ──────────────────────────
+class PayWithCreditPaymentMethod {
   constructor(fpcAddress, gasSettings) {
     this.fpcAddress  = fpcAddress;
     this.gasSettings = gasSettings;
@@ -174,10 +174,10 @@ class PayFeePaymentMethod {
   getGasSettings() { return this.gasSettings; }
 
   async getExecutionPayload() {
-    const selector = await FunctionSelector.fromSignature('pay_fee()');
+    const selector = await FunctionSelector.fromSignature('pay_with_credit()');
 
     const feeCall = FunctionCall.from({
-      name: 'pay_fee',
+      name: 'pay_with_credit',
       to: this.fpcAddress,
       selector,
       type: FunctionType.PRIVATE,
@@ -232,7 +232,7 @@ async function mineL1Blocks(l1Client, count) {
   }
 }
 
-// ── Bridge Fee Juice from L1 and claim on L2 so AltFPC can act as fee payer ──
+// ── Bridge Fee Juice from L1 and claim on L2 so CreditFPC can act as fee payer ─
 async function fundFpcWithFeeJuice(node, wallet, fpcAddress, userAddress, tokenContract, l1Client) {
   const logger = createLogger('profiling:bridge');
   const portalManager = await L1FeeJuicePortalManager.new(
@@ -240,7 +240,7 @@ async function fundFpcWithFeeJuice(node, wallet, fpcAddress, userAddress, tokenC
   );
 
   const MINT_AMOUNT = 10n ** 21n;
-  console.log(`Bridging ${MINT_AMOUNT} Fee Juice to AltFPC (L1 deposit)...`);
+  console.log(`Bridging ${MINT_AMOUNT} Fee Juice to CreditFPC (L1 deposit)...`);
   const claim = await portalManager.bridgeTokensPublic(fpcAddress, MINT_AMOUNT, true);
   console.log(`L1 deposit confirmed (messageLeafIndex=${claim.messageLeafIndex})`);
 
@@ -315,7 +315,7 @@ function printGateTable(title, executionSteps) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log('=== AltFPC Gate Count Profiler ===\n');
+  console.log('=== CreditFPC Gate Count Profiler ===\n');
 
   // ── Connect to node ─────────────────────────────────────────────────────────
   const node = createAztecNodeClient(NODE_URL);
@@ -358,15 +358,15 @@ async function main() {
 
   // ── Load & normalise artifacts ────────────────────────────────────────────
   const tokenArtifactPath  = findArtifact('Token');
-  const altFpcArtifactPath = findArtifact('AltFPC');
-  console.log('Token artifact: ', tokenArtifactPath);
-  console.log('AltFPC artifact:', altFpcArtifactPath);
+  const creditFpcArtifactPath = findArtifact('CreditFPC');
+  console.log('Token artifact:    ', tokenArtifactPath);
+  console.log('CreditFPC artifact:', creditFpcArtifactPath);
 
   const tokenArtifact = loadContractArtifact(
     JSON.parse(readFileSync(tokenArtifactPath, 'utf8')),
   );
-  const altFpcArtifact = loadContractArtifact(
-    JSON.parse(readFileSync(altFpcArtifactPath, 'utf8')),
+  const creditFpcArtifact = loadContractArtifact(
+    JSON.parse(readFileSync(creditFpcArtifactPath, 'utf8')),
   );
 
   // ── Deploy Token ──────────────────────────────────────────────────────────
@@ -379,20 +379,20 @@ async function main() {
   const tokenAddress = tokenDeploy.address;
   console.log('Token:', tokenAddress.toString());
 
-  // ── Deploy AltFPC ─────────────────────────────────────────────────────────
+  // ── Deploy CreditFPC ──────────────────────────────────────────────────────
   // Constructor: (operator, operator_pubkey_x, operator_pubkey_y, accepted_asset)
-  console.log('Deploying AltFPC...');
-  const altFpcDeploy = await Contract.deploy(
-    wallet, altFpcArtifact,
+  console.log('Deploying CreditFPC...');
+  const creditFpcDeploy = await Contract.deploy(
+    wallet, creditFpcArtifact,
     [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress],
   ).send({ from: userAddress });
-  const fpcAddress = altFpcDeploy.address;
-  console.log('AltFPC:', fpcAddress.toString());
+  const fpcAddress = creditFpcDeploy.address;
+  console.log('CreditFPC:', fpcAddress.toString());
 
   // Register both contracts as senders so the PXE discovers notes they create.
   await pxe.registerSender(fpcAddress);
   await pxe.registerSender(tokenAddress);
-  console.log('Registered AltFPC + Token as senders for note discovery.');
+  console.log('Registered CreditFPC + Token as senders for note discovery.');
 
   // ── Contract wrapper for method calls ─────────────────────────────────────
   const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
@@ -400,7 +400,7 @@ async function main() {
   // ── L1 client (reused for Fee Juice bridging + archiver nudging) ─────────
   const l1Client = await createL1Client(node);
 
-  // ── Fund AltFPC with Fee Juice so it can pay protocol fees on real txs ────
+  // ── Fund CreditFPC with Fee Juice so it can pay protocol fees on real txs ─
   // The profiling simulation (.profile()) doesn't check Fee Juice, but the
   // real .send() used to establish credit balance does.
   await fundFpcWithFeeJuice(node, wallet, fpcAddress, userAddress, tokenAsUser, l1Client);
@@ -426,7 +426,7 @@ async function main() {
   const profileTokenCharge = feeJuiceToAsset(profileCreditMint, RATE_NUM, RATE_DEN);
 
   // Send credit: must cover the send tx fee *and* leave enough balance for
-  // the subsequent pay_fee profile (which uses profileMaxGasCost).
+  // the subsequent pay_with_credit profile (which uses profileMaxGasCost).
   const sendCreditMint  = sendMaxGasCost + profileMaxGasCost * 2n;
   const sendTokenCharge = feeJuiceToAsset(sendCreditMint, RATE_NUM, RATE_DEN);
 
@@ -518,21 +518,21 @@ async function main() {
   const followSynced = await pxe.getSyncedBlockHeader();
   console.log(`[diag] After follow-up tx:  getBlockNumber=${followBlockNum}, getL2Tips.proposed=${followTips.proposed.number}, PXE synced=${Number(followSynced.globalVariables.blockNumber)}`);
 
-  // Verify the credit balance is visible to the PXE before profiling pay_fee.
-  const altFpcContract = Contract.at(fpcAddress, altFpcArtifact, wallet);
-  const payFeeTeardownCost =
+  // Verify the credit balance is visible to the PXE before profiling pay_with_credit.
+  const creditFpcContract = Contract.at(fpcAddress, creditFpcArtifact, wallet);
+  const payWithCreditTeardownCost =
     feeL2 * (PROFILE_L2_GAS + BigInt(DEFAULT_TEARDOWN_L2_GAS_LIMIT))
     + feeDa * (PROFILE_DA_GAS + BigInt(DEFAULT_TEARDOWN_DA_GAS_LIMIT));
-  console.log(`pay_fee max_gas_cost (with teardown): ${payFeeTeardownCost}`);
+  console.log(`pay_with_credit max_gas_cost (with teardown): ${payWithCreditTeardownCost}`);
 
   let creditBalance = 0n;
   for (let i = 0; i < 10; i++) {
-    creditBalance = await altFpcContract.methods.balance_of(userAddress).simulate({ from: userAddress });
+    creditBalance = await creditFpcContract.methods.balance_of(userAddress).simulate({ from: userAddress });
     const synced = await pxe.getSyncedBlockHeader();
     const syncedNum = Number(synced.globalVariables.blockNumber);
     const curTips = await node.getL2Tips();
     console.log(`  [${i + 1}/10] PXE block: ${syncedNum} | L2Tips.proposed: ${curTips.proposed.number} | Credit balance: ${creditBalance}`);
-    if (creditBalance >= payFeeTeardownCost) break;
+    if (creditBalance >= payWithCreditTeardownCost) break;
     if (i < 9) {
       // Send another dummy tx per retry to keep nudging the archiver
       try {
@@ -547,11 +547,11 @@ async function main() {
   // ONCHAIN_CONSTRAINED notes (used by pay_and_mint/_refund) may not be
   // discoverable by the embedded PXE. dev_mint creates credit via
   // ONCHAIN_UNCONSTRAINED which the PXE can always scan.
-  if (creditBalance < payFeeTeardownCost) {
+  if (creditBalance < payWithCreditTeardownCost) {
     console.log('\nCredit notes not yet visible. Trying dev_mint fallback (ONCHAIN_UNCONSTRAINED delivery)...');
 
     const DEV_NONCE = SEND_NONCE + 1n;
-    const devMintAmount = payFeeTeardownCost * 3n;
+    const devMintAmount = payWithCreditTeardownCost * 3n;
     const devTokenCharge = feeJuiceToAsset(devMintAmount, RATE_NUM, RATE_DEN);
 
     await tokenAsUser.methods
@@ -577,8 +577,8 @@ async function main() {
       RATE_NUM, RATE_DEN, DEV_VALID_UNTIL, devMintAmount, sendGasSettings,
     );
 
-    await altFpcContract.methods
-      .dev_mint(payFeeTeardownCost * 2n)
+    await creditFpcContract.methods
+      .dev_mint(payWithCreditTeardownCost * 2n)
       .send({
         fee: { paymentMethod: devPayAndMint, gasSettings: sendGasSettings },
         from: userAddress,
@@ -590,12 +590,12 @@ async function main() {
     await tokenAsUser.methods.mint_to_private(userAddress, 1n).send({ from: userAddress });
 
     for (let i = 0; i < 10; i++) {
-      creditBalance = await altFpcContract.methods.balance_of(userAddress).simulate({ from: userAddress });
+      creditBalance = await creditFpcContract.methods.balance_of(userAddress).simulate({ from: userAddress });
       const synced = await pxe.getSyncedBlockHeader();
       const syncedNum = Number(synced.globalVariables.blockNumber);
       const curTips = await node.getL2Tips();
       console.log(`  [${i + 1}/10] PXE block: ${syncedNum} | L2Tips.proposed: ${curTips.proposed.number} | Credit balance: ${creditBalance}`);
-      if (creditBalance >= payFeeTeardownCost) break;
+      if (creditBalance >= payWithCreditTeardownCost) break;
       if (i < 9) {
         try {
           await tokenAsUser.methods.mint_to_private(userAddress, 1n).send({ from: userAddress });
@@ -605,8 +605,8 @@ async function main() {
       }
     }
 
-    if (creditBalance < payFeeTeardownCost) {
-      throw new Error(`Credit balance ${creditBalance} still below required ${payFeeTeardownCost} after dev_mint fallback.`);
+    if (creditBalance < payWithCreditTeardownCost) {
+      throw new Error(`Credit balance ${creditBalance} still below required ${payWithCreditTeardownCost} after dev_mint fallback.`);
     }
   }
 
@@ -660,31 +660,31 @@ async function main() {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  FLOW 2: pay_fee profiling
+  //  FLOW 2: pay_with_credit profiling
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const payFeePayment = new PayFeePaymentMethod(fpcAddress, profileGasSettings);
+  const payWithCreditPayment = new PayWithCreditPaymentMethod(fpcAddress, profileGasSettings);
 
-  console.log('\nProfiling pay_fee (this takes a few minutes)...');
-  const payFeeResult = await tokenAsUser.methods
+  console.log('\nProfiling pay_with_credit (this takes a few minutes)...');
+  const payWithCreditResult = await tokenAsUser.methods
     .transfer_private_to_private(userAddress, userAddress, 1n, 0n)
     .profile({
-      fee: { paymentMethod: payFeePayment, gasSettings: profileGasSettings },
+      fee: { paymentMethod: payWithCreditPayment, gasSettings: profileGasSettings },
       from: userAddress,
       profileMode: 'full',
       skipProofGeneration: false,
     });
 
-  const payFeeTotal = printGateTable(
-    'Flow 2: pay_fee (balance-only)',
-    payFeeResult.executionSteps,
+  const payWithCreditTotal = printGateTable(
+    'Flow 2: pay_with_credit (balance-only)',
+    payWithCreditResult.executionSteps,
   );
 
   // ── Summary ────────────────────────────────────────────────────────────────
   const numFmt = n => n.toLocaleString();
   console.log('\n=== Summary ===\n');
-  console.log(`pay_and_mint total: ${numFmt(payAndMintTotal)} gates`);
-  console.log(`pay_fee total:      ${numFmt(payFeeTotal)} gates`);
+  console.log(`pay_and_mint total:      ${numFmt(payAndMintTotal)} gates`);
+  console.log(`pay_with_credit total:   ${numFmt(payWithCreditTotal)} gates`);
 
   // ── Cleanup ────────────────────────────────────────────────────────────────
   await pxe.stop?.();

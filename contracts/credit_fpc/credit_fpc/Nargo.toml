@@ -1,5 +1,5 @@
 [package]
-name = "alt_fpc"
+name = "credit_fpc"
 type = "contract"
 authors = []
 compiler_version = ">=0.25.0"

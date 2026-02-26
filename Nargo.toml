@@ -1,2 +1,2 @@
 [workspace]
-members = ["contracts/fpc","contracts/alt_fpc/alt_fpc","contracts/alt_fpc_mock","vendor/aztec-standards/src/token_contract"]
+members = ["contracts/fpc","contracts/credit_fpc/credit_fpc","vendor/aztec-standards/src/token_contract"]

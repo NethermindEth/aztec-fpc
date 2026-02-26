@@ -4,7 +4,7 @@ mod test;
 use ::aztec::macros::aztec;
 
 #[aztec]
-pub contract AltFPC {
+pub contract CreditFPC {
     use crate::fee_math::fee_juice_to_asset;
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
@@ -105,7 +105,7 @@ pub contract AltFPC {
 
     #[external("private")]
     #[allow_phase_change]
-    fn pay_fee() {
+    fn pay_with_credit() {
         let sender = self.context.maybe_msg_sender().unwrap();
         let max_gas_cost = get_max_gas_cost(self.context);
 

@@ -1,7 +1,7 @@
-# AltFPC Gate Count Profiling
+# CreditFPC Gate Count Profiling
 
-Profiles the gate count of `AltFPC.pay_and_mint` and `AltFPC.pay_fee` by
-deploying Token + AltFPC on a local Aztec network and running the full
+Profiles the gate count of `CreditFPC.pay_and_mint` and `CreditFPC.pay_with_credit` by
+deploying Token + CreditFPC on a local Aztec network and running the full
 execution trace for each flow.
 
 ## Prerequisites
@@ -33,7 +33,7 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 | Script | When | What |
 |---|---|---|
 | `setup.sh` | Once | Installs `@aztec/*` npm packages (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
-| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), deploys Token + AltFPC, profiles `pay_and_mint` and `pay_fee`, prints gate counts for both |
+| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), deploys Token + CreditFPC, profiles `pay_and_mint` and `pay_with_credit`, prints gate counts for both |
 | `teardown.sh` | When done | Stops the network (if started by `setup.sh`), removes temp files |
 
 ### Environment variables
@@ -41,16 +41,16 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 | Variable | Default | Description |
 |---|---|---|
 | `AZTEC_NODE_URL` | `http://127.0.0.1:8080` | Aztec node endpoint (respected by all three scripts) |
-| `L1_RPC_URL` | `http://127.0.0.1:8545` | L1 (anvil) endpoint, used to bridge Fee Juice to AltFPC |
+| `L1_RPC_URL` | `http://127.0.0.1:8545` | L1 (anvil) endpoint, used to bridge Fee Juice to CreditFPC |
 
 ## Iteration Workflow
 
 ```
 setup.sh          ← run once
   │
-  ├─► edit contracts/alt_fpc
+  ├─► edit contracts/credit_fpc
   ├─► run.sh       ← compile + deploy + profile both flows
-  ├─► edit contracts/alt_fpc
+  ├─► edit contracts/credit_fpc
   ├─► run.sh
   ├─► ...
   │
@@ -61,7 +61,7 @@ teardown.sh        ← run when done
 
 ### Flow 1: `pay_and_mint` (top-up + fee)
 
-The user tops up their credit balance in the AltFPC and pays the current
+The user tops up their credit balance in the CreditFPC and pays the current
 transaction's fee in a single call. This involves:
 
 1. Inline Schnorr quote verification (operator signed the exchange rate)
@@ -70,10 +70,10 @@ transaction's fee in a single call. This involves:
 4. Max gas cost deduction from the minted balance
 5. FPC declares itself fee payer, ends setup
 
-Internal calls traced: `AltFPC:pay_and_mint`, `Token:transfer_private_to_private`,
+Internal calls traced: `CreditFPC:pay_and_mint`, `Token:transfer_private_to_private`,
 `SchnorrAccount:verify_private_authwit`, plus all kernel circuits.
 
-### Flow 2: `pay_fee` (balance-only)
+### Flow 2: `pay_with_credit` (balance-only)
 
 The user pays the transaction fee from an existing credit balance — no token
 transfer or quote verification needed. This involves:
@@ -82,7 +82,7 @@ transfer or quote verification needed. This involves:
 2. Max gas cost deduction from existing balance
 3. FPC declares itself fee payer, ends setup
 
-Internal calls traced: `AltFPC:pay_fee`, plus all kernel circuits.
+Internal calls traced: `CreditFPC:pay_with_credit`, plus all kernel circuits.
 
 The label "balance-only" indicates that this flow operates purely on a
 pre-existing credit balance with no external token interaction, making it the
@@ -101,20 +101,20 @@ Function                                                     Own gates    Subtot
 ────────────────────────────────────────────────────────────────────────────────────────
 SchnorrAccount:entrypoint                                    54,352       54,352
 private_kernel_init                                          46,811       101,163
-AltFPC:pay_and_mint                                          ...          ...
+CreditFPC:pay_and_mint                                          ...          ...
 private_kernel_inner                                         ...          ...
 SchnorrAccount:verify_private_authwit                        ...          ...
 ...
 ────────────────────────────────────────────────────────────────────────────────────────
 TOTAL                                                         xxx,xxx
 
-=== Flow 2: pay_fee (balance-only) ===
+=== Flow 2: pay_with_credit (balance-only) ===
 
 Function                                                     Own gates    Subtotal
 ────────────────────────────────────────────────────────────────────────────────────────
 SchnorrAccount:entrypoint                                    54,352       54,352
 private_kernel_init                                          46,811       101,163
-AltFPC:pay_fee                                               ...          ...
+CreditFPC:pay_with_credit                                               ...          ...
 ...
 ────────────────────────────────────────────────────────────────────────────────────────
 TOTAL                                                         xxx,xxx
@@ -122,7 +122,7 @@ TOTAL                                                         xxx,xxx
 === Summary ===
 
 pay_and_mint total: xxx,xxx gates
-pay_fee total:      xxx,xxx gates
+pay_with_credit total:      xxx,xxx gates
 ```
 
 ## How It Works
@@ -137,11 +137,11 @@ process. The execution order matters — see "Issues & Solutions" below for why.
 3. Loads raw nargo artifacts from `target/` and normalises them via
    `loadContractArtifact()` so the SDK computes correct contract class IDs
 4. Deploys `Token(user, "TestToken", "TST", 18)` and
-   `AltFPC(operator, operatorPubKey.x, operatorPubKey.y, tokenAddress)`
+   `CreditFPC(operator, operatorPubKey.x, operatorPubKey.y, tokenAddress)`
 5. Registers both contracts as **senders** on the PXE
    (`pxe.registerSender(fpcAddress)`) so the PXE knows to compute tags for
    notes originating from these contracts
-6. **Bridges Fee Juice** from L1 (anvil) to the AltFPC so it can pay protocol
+6. **Bridges Fee Juice** from L1 (anvil) to the CreditFPC so it can pay protocol
    fees when acting as fee payer on real transactions. Uses
    `L1FeeJuicePortalManager.bridgeTokensPublic()` followed by
    `FeeJuice.claim()` with a retry loop
@@ -160,14 +160,14 @@ process. The execution order matters — see "Issues & Solutions" below for why.
     past the `pay_and_mint` block (see "Archiver cache lag" below)
 12. Polls `balance_of().simulate()` until the PXE discovers the credit notes
 13. If the credit balance is not yet visible in the PXE (see "ONCHAIN_CONSTRAINED
-    note discovery" below): falls back to `AltFPC.dev_mint` which creates credit
+    note discovery" below): falls back to `CreditFPC.dev_mint` which creates credit
     via `ONCHAIN_UNCONSTRAINED` delivery — always discoverable by the PXE
 14. **Profiles `pay_and_mint`**: creates a fresh transfer authwit and Schnorr
     quote signature (with a higher `valid_until` to produce a distinct quote
     nullifier), mints additional tokens, and profiles a dummy
-    `Token.transfer_private_to_private` with the AltFPC as fee payer
-15. **Profiles `pay_fee`**: builds a `PayFeePaymentMethod` and profiles another
-    dummy token transfer with the AltFPC as fee payer — this time the fee
+    `Token.transfer_private_to_private` with the CreditFPC as fee payer
+15. **Profiles `pay_with_credit`**: builds a `PayWithCreditPaymentMethod` and profiles another
+    dummy token transfer with the CreditFPC as fee payer — this time the fee
     payment only reads the user's existing credit balance
 16. Prints per-function gate-count tables for both flows plus a summary
 
@@ -245,12 +245,12 @@ partial note may not surface in `balance_of` even after several blocks.
 credit via `MessageDelivery.ONCHAIN_UNCONSTRAINED` (a public log directly
 readable by the PXE). The script falls back to this if the primary polling
 loop finds `balance_of == 0` after 10 attempts. `dev_mint` is a test-only
-helper; it does not affect the gate counts of `pay_and_mint` or `pay_fee`
-since it is only called to seed the balance for `pay_fee` profiling.
+helper; it does not affect the gate counts of `pay_and_mint` or `pay_with_credit`
+since it is only called to seed the balance for `pay_with_credit` profiling.
 
 ### 5. Fee Juice bridging
 
-**Problem**: The AltFPC needs Fee Juice (the protocol's native fee token) to
+**Problem**: The CreditFPC needs Fee Juice (the protocol's native fee token) to
 act as a fee payer. Fee Juice must be bridged from L1 to L2 via
 `L1FeeJuicePortalManager.bridgeTokensPublic()` followed by `FeeJuice.claim()`
 on L2. The claim can fail transiently while the L1-to-L2 message is being
@@ -273,9 +273,9 @@ updating `.aztecrc`.
 |---|---|
 | `Artifact does not match expected class id` | Both deploy and profile use the same `loadContractArtifact()` from the npm packages, so this should not happen. If it does, delete `profiling/node_modules/` and re-run `setup.sh`. |
 | `Failed to get a note 'self.is_some()'` in `SchnorrAccount.verify_private_authwit` | The script passes `additionalScopes: [operatorAddress]` so the PXE can decrypt the operator's signing key note. |
-| `Balance too low or note insufficient` in `AltFPC.pay_fee` | The credit notes from `pay_and_mint` were not discovered by the PXE. Check the diagnostic `[diag]` lines in the output — `getL2Tips.proposed` should match `getBlockNumber` and `PXE block` should be at or past the block containing the `pay_and_mint` tx. If not, the archiver cache lag workaround (follow-up tx) may have failed. |
+| `Balance too low or note insufficient` in `CreditFPC.pay_with_credit` | The credit notes from `pay_and_mint` were not discovered by the PXE. Check the diagnostic `[diag]` lines in the output — `getL2Tips.proposed` should match `getBlockNumber` and `PXE block` should be at or past the block containing the `pay_and_mint` tx. If not, the archiver cache lag workaround (follow-up tx) may have failed. |
 | `Invalid tx: Existing nullifier` | A quote with the same `valid_until` was already consumed. Each `pay_and_mint` invocation (real send, profiling) uses a distinct `valid_until` value. |
-| `Insufficient fee payer balance` | Fee Juice bridging may have failed. Check that `fundFpcWithFeeJuice` completed successfully and that the AltFPC has enough Fee Juice (the script bridges 10^21). |
+| `Insufficient fee payer balance` | Fee Juice bridging may have failed. Check that `fundFpcWithFeeJuice` completed successfully and that the CreditFPC has enough Fee Juice (the script bridges 10^21). |
 | `run.sh` says "no Aztec node" | Run `./profiling/setup.sh` first, or if the network died, re-run setup. |
 | `quote expired 'anchor_ts <= valid_until'` | `VALID_UNTIL` is derived from the L2 block timestamp. If the sandbox has been running a long time, restart it so the block timestamp is fresh. |
 | Gas limit errors (`Gas limit is higher than the amount of gas that the AVM can process`) | The script uses separate gas settings for profiling (high limits, simulation only) and real sends (lower limits, AVM-compatible). If you change gas constants, ensure `SEND_L2_GAS` stays within the AVM's processing capacity. |

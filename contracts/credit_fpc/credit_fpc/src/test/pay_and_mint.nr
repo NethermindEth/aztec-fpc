@@ -1,4 +1,4 @@
-use crate::{AltFPC, test::utils};
+use crate::{CreditFPC, test::utils};
 use aztec::test::helpers::authwit::add_private_authwit_from_call;
 use token::Token;
 
@@ -14,8 +14,8 @@ global TRANSFER_AUTHWIT_NONCE_2: Field = 43;
 // Verifies token balances and the internal credit note.
 #[test]
 unconstrained fn pay_and_mint_happy_path_transfers_charge_and_mints_credit() {
-    let (mut env, alt_fpc_address, token_address, operator, user) = utils::setup();
-    let alt_fpc = AltFPC::at(alt_fpc_address);
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = CreditFPC::at(credit_fpc_address);
     let token = Token::at(token_address);
 
     let rate_num = 1 as u128;
@@ -30,7 +30,7 @@ unconstrained fn pay_and_mint_happy_path_transfers_charge_and_mints_credit() {
 
     let valid_until = env.last_block_timestamp() + 3600;
     let quote_sig = utils::sign_quote(
-        alt_fpc_address,
+        credit_fpc_address,
         token_address,
         rate_num,
         rate_den,
@@ -40,14 +40,14 @@ unconstrained fn pay_and_mint_happy_path_transfers_charge_and_mints_credit() {
 
     let transfer_call =
         token.transfer_private_to_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE);
-    add_private_authwit_from_call(env, user, alt_fpc_address, transfer_call);
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     let user_token_before = utils::private_balance(env, token_address, user);
     let operator_token_before = utils::private_balance(env, token_address, operator);
 
     env.call_private(
         user,
-        alt_fpc.pay_and_mint(
+        credit_fpc.pay_and_mint(
             TRANSFER_AUTHWIT_NONCE,
             rate_num,
             rate_den,
@@ -65,22 +65,22 @@ unconstrained fn pay_and_mint_happy_path_transfers_charge_and_mints_credit() {
 
     // After pay_and_mint the user holds a credit note of mint_amount - max_gas_cost.
     // This is the "change" after the gas reserve deduction.
-    let credit = utils::credit_balance(env, alt_fpc_address, user);
+    let credit = utils::credit_balance(env, credit_fpc_address, user);
     assert_eq(credit, mint_amount - max_gas_cost);
 }
 
 // Expired quote
 #[test(should_fail_with = "quote expired")]
 unconstrained fn pay_and_mint_rejects_expired_quote() {
-    let (mut env, alt_fpc_address, token_address, _operator, user) = utils::setup();
-    let alt_fpc = AltFPC::at(alt_fpc_address);
+    let (mut env, credit_fpc_address, token_address, _operator, user) = utils::setup();
+    let credit_fpc = CreditFPC::at(credit_fpc_address);
 
     let rate_num = 1 as u128;
     let rate_den = 1 as u128;
 
     let valid_until = env.last_block_timestamp();
     let quote_sig = utils::sign_quote(
-        alt_fpc_address,
+        credit_fpc_address,
         token_address,
         rate_num,
         rate_den,
@@ -96,7 +96,7 @@ unconstrained fn pay_and_mint_rejects_expired_quote() {
 
     let _ = env.call_private(
         user,
-        alt_fpc.pay_and_mint(
+        credit_fpc.pay_and_mint(
             TRANSFER_AUTHWIT_NONCE,
             rate_num,
             rate_den,
@@ -113,8 +113,8 @@ unconstrained fn pay_and_mint_rejects_expired_quote() {
 // address produces a different hash, so the operator's signature will not verify.
 #[test(should_fail_with = "invalid quote signature")]
 unconstrained fn pay_and_mint_rejects_quote_bound_to_another_user() {
-    let (mut env, alt_fpc_address, token_address, operator, user) = utils::setup();
-    let alt_fpc = AltFPC::at(alt_fpc_address);
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = CreditFPC::at(credit_fpc_address);
     let token = Token::at(token_address);
     let other_user = env.create_contract_account();
 
@@ -128,11 +128,11 @@ unconstrained fn pay_and_mint_rejects_quote_bound_to_another_user() {
     env.call_private(operator, token.mint_to_private(other_user, charge + (100 as u128)));
     let transfer_call =
         token.transfer_private_to_private(other_user, operator, charge, TRANSFER_AUTHWIT_NONCE);
-    add_private_authwit_from_call(env, other_user, alt_fpc_address, transfer_call);
+    add_private_authwit_from_call(env, other_user, credit_fpc_address, transfer_call);
 
     // Signature is over `user` but the call comes from `other_user`.
     let quote_sig = utils::sign_quote(
-        alt_fpc_address,
+        credit_fpc_address,
         token_address,
         rate_num,
         rate_den,
@@ -142,7 +142,7 @@ unconstrained fn pay_and_mint_rejects_quote_bound_to_another_user() {
 
     let _ = env.call_private(
         other_user,
-        alt_fpc.pay_and_mint(
+        credit_fpc.pay_and_mint(
             TRANSFER_AUTHWIT_NONCE,
             rate_num,
             rate_den,
@@ -160,8 +160,8 @@ unconstrained fn pay_and_mint_rejects_quote_bound_to_another_user() {
 // without adding a new authwit also fails.
 #[test(should_fail_with = "Unknown auth witness for message hash")]
 unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
-    let (mut env, alt_fpc_address, token_address, operator, user) = utils::setup();
-    let alt_fpc = AltFPC::at(alt_fpc_address);
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = CreditFPC::at(credit_fpc_address);
     let token = Token::at(token_address);
 
     let rate_num = 1 as u128;
@@ -174,7 +174,7 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
 
     let valid_until = env.last_block_timestamp() + 3600;
     let quote_sig = utils::sign_quote(
-        alt_fpc_address,
+        credit_fpc_address,
         token_address,
         rate_num,
         rate_den,
@@ -184,11 +184,11 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
 
     let transfer_call =
         token.transfer_private_to_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE);
-    add_private_authwit_from_call(env, user, alt_fpc_address, transfer_call);
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     env.call_private(
         user,
-        alt_fpc.pay_and_mint(
+        credit_fpc.pay_and_mint(
             TRANSFER_AUTHWIT_NONCE,
             rate_num,
             rate_den,
@@ -202,7 +202,7 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
     // but no new transfer authwit for TRANSFER_AUTHWIT_NONCE_2.
     let valid_until_2 = valid_until + 1;
     let quote_sig_2 = utils::sign_quote(
-        alt_fpc_address,
+        credit_fpc_address,
         token_address,
         rate_num,
         rate_den,
@@ -212,7 +212,7 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
 
     let _ = env.call_private(
         user,
-        alt_fpc.pay_and_mint(
+        credit_fpc.pay_and_mint(
             TRANSFER_AUTHWIT_NONCE_2,
             rate_num,
             rate_den,
@@ -235,8 +235,8 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
 // credit), and the resulting credit balance is 0.
 #[test]
 unconstrained fn pay_and_mint_credit_equals_mint_amount_minus_max_gas_cost() {
-    let (mut env, alt_fpc_address, token_address, operator, user) = utils::setup();
-    let alt_fpc = AltFPC::at(alt_fpc_address);
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = CreditFPC::at(credit_fpc_address);
     let token = Token::at(token_address);
 
     let rate_num = 1 as u128;
@@ -251,10 +251,10 @@ unconstrained fn pay_and_mint_credit_equals_mint_amount_minus_max_gas_cost() {
 
     let transfer_call =
         token.transfer_private_to_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE);
-    add_private_authwit_from_call(env, user, alt_fpc_address, transfer_call);
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     let quote_sig = utils::sign_quote(
-        alt_fpc_address,
+        credit_fpc_address,
         token_address,
         rate_num,
         rate_den,
@@ -264,7 +264,7 @@ unconstrained fn pay_and_mint_credit_equals_mint_amount_minus_max_gas_cost() {
 
     env.call_private(
         user,
-        alt_fpc.pay_and_mint(
+        credit_fpc.pay_and_mint(
             TRANSFER_AUTHWIT_NONCE,
             rate_num,
             rate_den,
@@ -275,7 +275,7 @@ unconstrained fn pay_and_mint_credit_equals_mint_amount_minus_max_gas_cost() {
     );
 
     // Verify the change note is exactly mint_amount - max_gas_cost = 500.
-    let credit = utils::credit_balance(env, alt_fpc_address, user);
+    let credit = utils::credit_balance(env, credit_fpc_address, user);
     assert_eq(credit, mint_amount - max_gas_cost);
 }
 
@@ -286,8 +286,8 @@ unconstrained fn pay_and_mint_credit_equals_mint_amount_minus_max_gas_cost() {
 // same hash, and the second push is rejected as a duplicate nullifier.
 #[test(should_fail)]
 unconstrained fn pay_and_mint_prevents_quote_replay() {
-    let (mut env, alt_fpc_address, token_address, operator, user) = utils::setup();
-    let alt_fpc = AltFPC::at(alt_fpc_address);
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = CreditFPC::at(credit_fpc_address);
     let token = Token::at(token_address);
 
     let rate_num = 1 as u128;
@@ -301,7 +301,7 @@ unconstrained fn pay_and_mint_prevents_quote_replay() {
     env.call_private(operator, token.mint_to_private(user, charge * (2 as u128) + (100 as u128)));
 
     let quote_sig = utils::sign_quote(
-        alt_fpc_address,
+        credit_fpc_address,
         token_address,
         rate_num,
         rate_den,
@@ -312,11 +312,11 @@ unconstrained fn pay_and_mint_prevents_quote_replay() {
     // First call: succeeds and commits quote_hash as a nullifier.
     let transfer_call =
         token.transfer_private_to_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE);
-    add_private_authwit_from_call(env, user, alt_fpc_address, transfer_call);
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     env.call_private(
         user,
-        alt_fpc.pay_and_mint(
+        credit_fpc.pay_and_mint(
             TRANSFER_AUTHWIT_NONCE,
             rate_num,
             rate_den,
@@ -330,11 +330,11 @@ unconstrained fn pay_and_mint_prevents_quote_replay() {
     // The duplicate nullifier push must be rejected.
     let transfer_call_2 =
         token.transfer_private_to_private(user, operator, charge, TRANSFER_AUTHWIT_NONCE_2);
-    add_private_authwit_from_call(env, user, alt_fpc_address, transfer_call_2);
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call_2);
 
     let _ = env.call_private(
         user,
-        alt_fpc.pay_and_mint(
+        credit_fpc.pay_and_mint(
             TRANSFER_AUTHWIT_NONCE_2,
             rate_num,
             rate_den,

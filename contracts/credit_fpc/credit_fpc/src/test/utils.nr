@@ -1,4 +1,4 @@
-use crate::AltFPC;
+use crate::CreditFPC;
 use aztec::{
     authwit::auth::compute_inner_authwit_hash,
     protocol::{address::AztecAddress, traits::ToField},
@@ -175,11 +175,11 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let pk = test_operator_pubkey();
-    let alt_fpc_initializer = AltFPC::interface().constructor(operator, pk.x, pk.y, token_address);
-    let alt_fpc_address =
-        env.deploy("AltFPC").with_public_initializer(operator, alt_fpc_initializer);
+    let credit_fpc_initializer = CreditFPC::interface().constructor(operator, pk.x, pk.y, token_address);
+    let credit_fpc_address =
+        env.deploy("CreditFPC").with_public_initializer(operator, credit_fpc_initializer);
 
-    (env, alt_fpc_address, token_address, operator, user)
+    (env, credit_fpc_address, token_address, operator, user)
 }
 
 pub unconstrained fn max_gas_cost_no_teardown(env: TestEnvironment) -> u128 {
@@ -193,7 +193,7 @@ pub unconstrained fn max_gas_cost_no_teardown(env: TestEnvironment) -> u128 {
 /// Compute the quote hash (same preimage as the contract) and return a valid
 /// Schnorr signature for it using the test signing key.
 pub unconstrained fn sign_quote(
-    alt_fpc_address: AztecAddress,
+    credit_fpc_address: AztecAddress,
     accepted_asset: AztecAddress,
     rate_num: u128,
     rate_den: u128,
@@ -202,7 +202,7 @@ pub unconstrained fn sign_quote(
 ) -> [u8; 64] {
     let quote_hash = compute_inner_authwit_hash([
         QUOTE_DOMAIN_SEPARATOR,
-        alt_fpc_address.to_field(),
+        credit_fpc_address.to_field(),
         accepted_asset.to_field(),
         rate_num as Field,
         rate_den as Field,
@@ -223,8 +223,8 @@ pub unconstrained fn private_balance(
 
 pub unconstrained fn credit_balance(
     env: TestEnvironment,
-    alt_fpc_address: AztecAddress,
+    credit_fpc_address: AztecAddress,
     account: AztecAddress,
 ) -> u128 {
-    env.simulate_utility(AltFPC::at(alt_fpc_address).balance_of(account))
+    env.simulate_utility(CreditFPC::at(credit_fpc_address).balance_of(account))
 }
