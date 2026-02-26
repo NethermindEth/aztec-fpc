@@ -176,7 +176,9 @@ function getConfig(): SmokeConfig {
     );
   }
   if (mintBuffer <= 0n) {
-    throw new Error(`CREDIT_FPC_SMOKE_MINT_BUFFER must be > 0, got ${mintBuffer}`);
+    throw new Error(
+      `CREDIT_FPC_SMOKE_MINT_BUFFER must be > 0, got ${mintBuffer}`,
+    );
   }
 
   return {
@@ -333,7 +335,9 @@ async function topUpContractFeeJuice(
     }
     await sleep(2_000);
   }
-  throw new Error(`Timed out waiting for Fee Juice credit on ${feePayerAddress}`);
+  throw new Error(
+    `Timed out waiting for Fee Juice credit on ${feePayerAddress}`,
+  );
 }
 
 async function main() {
@@ -360,9 +364,7 @@ async function main() {
       setTimeout(
         () =>
           reject(
-            new Error(
-              `Timed out waiting for Aztec node at ${config.nodeUrl}`,
-            ),
+            new Error(`Timed out waiting for Aztec node at ${config.nodeUrl}`),
           ),
         config.nodeTimeoutMs,
       ),
@@ -561,7 +563,9 @@ async function main() {
   );
   console.log(`[credit-smoke] user_debited=${userDebited}`);
   console.log(`[credit-smoke] operator_credited=${operatorCredited}`);
-  console.log(`[credit-smoke] credit_after_pay_and_mint=${creditAfterPayAndMint}`);
+  console.log(
+    `[credit-smoke] credit_after_pay_and_mint=${creditAfterPayAndMint}`,
+  );
 
   if (userDebited !== expectedCharge) {
     throw new Error(
