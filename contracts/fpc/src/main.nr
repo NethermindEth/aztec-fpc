@@ -27,12 +27,10 @@ use ::aztec::macros::aztec;
 ///
 /// ## Storage
 ///
-/// - operator          (PublicImmutable) -- receives fee revenue as private notes.
-///                                         Set once at construction.
-/// - operator_pubkey_x (PublicImmutable) -- operator signing public key x coord.
-/// - operator_pubkey_y (PublicImmutable) -- operator signing public key y coord.
-/// - accepted_asset    (PublicImmutable) -- the one token contract this FPC accepts.
-///                                         Enforced on every call.
+/// - config            (PublicImmutable<Config>) -- packed immutable config
+///                                                  containing operator address,
+///                                                  operator signing key, and
+///                                                  accepted asset.
 #[aztec]
 pub contract FPC {
     use crate::fee_math::fee_juice_to_asset;
@@ -41,7 +39,10 @@ pub contract FPC {
         context::PrivateContext,
         macros::{functions::{allow_phase_change, external, initializer}, storage::storage},
         oracle::nullifiers::check_nullifier_exists,
-        protocol::{address::AztecAddress, traits::ToField},
+        protocol::{
+            address::AztecAddress,
+            traits::{Deserialize, Packable, Serialize, ToField},
+        },
         state_vars::PublicImmutable,
     };
     use std::embedded_curve_ops::EmbeddedCurvePoint;
@@ -51,20 +52,25 @@ pub contract FPC {
     // Quotes must expire within this many seconds from the tx anchor timestamp.
     global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
 
+    /// Packed configuration stored as a single PublicImmutable slot.
+    /// Reduces the 4 separate Merkle membership proofs to one.
+    #[derive(Deserialize, Eq, Packable, Serialize)]
+    pub struct Config {
+        operator: AztecAddress,
+        /// Operator signing public key x coordinate.
+        operator_pubkey_x: Field,
+        /// Operator signing public key y coordinate.
+        operator_pubkey_y: Field,
+        accepted_asset: AztecAddress,
+    }
+
     // =========================================================================
     // Storage
     // =========================================================================
 
     #[storage]
     struct Storage<Context> {
-        /// Operator address. Receives fee payments as private notes.
-        operator: PublicImmutable<AztecAddress, Context>,
-        /// Operator signing public key x coordinate.
-        operator_pubkey_x: PublicImmutable<Field, Context>,
-        /// Operator signing public key y coordinate.
-        operator_pubkey_y: PublicImmutable<Field, Context>,
-        /// The one token contract this FPC accepts. Immutable after deploy.
-        accepted_asset: PublicImmutable<AztecAddress, Context>,
+        config: PublicImmutable<Config, Context>,
     }
 
     // =========================================================================
@@ -87,10 +93,9 @@ pub contract FPC {
                 == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
             "operator pubkey not on curve",
         );
-        self.storage.operator.initialize(operator);
-        self.storage.operator_pubkey_x.initialize(operator_pubkey_x);
-        self.storage.operator_pubkey_y.initialize(operator_pubkey_y);
-        self.storage.accepted_asset.initialize(accepted_asset);
+        self.storage.config.initialize(
+            Config { operator, operator_pubkey_x, operator_pubkey_y, accepted_asset },
+        );
     }
 
     // =========================================================================
@@ -110,17 +115,18 @@ pub contract FPC {
         valid_until: u64,
         quote_sig: [u8; 64],
     ) {
-        let operator = self.storage.operator.read();
-        let operator_pubkey_x = self.storage.operator_pubkey_x.read();
-        let operator_pubkey_y = self.storage.operator_pubkey_y.read();
-        let accepted_asset = self.storage.accepted_asset.read();
+        let config = self.storage.config.read();
         let sender = self.msg_sender();
         assert(rate_num > (0 as u128), "rate_num must be > 0");
 
         assert_valid_quote(
             self.context,
-            EmbeddedCurvePoint { x: operator_pubkey_x, y: operator_pubkey_y, is_infinite: false },
-            accepted_asset,
+            EmbeddedCurvePoint {
+                x: config.operator_pubkey_x,
+                y: config.operator_pubkey_y,
+                is_infinite: false,
+            },
+            config.accepted_asset,
             rate_num,
             rate_den,
             valid_until,
@@ -134,8 +140,8 @@ pub contract FPC {
             rate_den,
         );
 
-        Token::at(accepted_asset)
-            .transfer_private_to_private(sender, operator, charge, authwit_nonce)
+        Token::at(config.accepted_asset)
+            .transfer_private_to_private(sender, config.operator, charge, authwit_nonce)
             .call(self.context);
 
         self.context.set_as_fee_payer();
