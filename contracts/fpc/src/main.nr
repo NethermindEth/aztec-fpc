@@ -39,10 +39,7 @@ pub contract FPC {
         context::PrivateContext,
         macros::{functions::{allow_phase_change, external, initializer}, storage::storage},
         oracle::nullifiers::check_nullifier_exists,
-        protocol::{
-            address::AztecAddress,
-            traits::{Deserialize, Packable, Serialize, ToField},
-        },
+        protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
         state_vars::PublicImmutable,
     };
     use std::embedded_curve_ops::EmbeddedCurvePoint;
