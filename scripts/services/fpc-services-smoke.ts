@@ -113,8 +113,6 @@ type AssetResponse = {
 type ServiceFlowResult = {
   fjAmount: bigint;
   aaPaymentAmount: bigint;
-  rateNum: bigint;
-  rateDen: bigint;
   validUntil: bigint;
   quoteSigBytes: number[];
 };
@@ -1306,6 +1304,11 @@ async function runServiceScenario(
         `${scenarioPrefix} quote payment mismatch. expected=${expectedAaPaymentAmount} got=${aaPaymentAmount}`,
       );
     }
+    if (fjAmount !== quoteFjAmount) {
+      throw new Error(
+        `${scenarioPrefix} quote fj amount mismatch. expected=${quoteFjAmount} got=${fjAmount}`,
+      );
+    }
     await verifyAttestationQuoteSignature(
       schnorr,
       operatorPubKey,
@@ -1417,8 +1420,6 @@ async function runServiceScenario(
     return {
       fjAmount,
       aaPaymentAmount,
-      rateNum: expectedRateNum,
-      rateDen: expectedRateDen,
       validUntil,
       quoteSigBytes,
     };
@@ -1571,17 +1572,20 @@ async function runCreditFeeScenario(
   maxGasCostNoTeardown: bigint,
   feePerDaGas: bigint,
   feePerL2Gas: bigint,
-  schnorr: Schnorr,
-  operatorSigningKey: Uint8Array,
   quote: ServiceFlowResult,
 ): Promise<void> {
-  const mintAmount =
+  const requestedFjAmount =
     maxGasCostNoTeardown * config.creditMintMultiplier +
     config.creditMintBuffer;
-  const expectedCharge = ceilDiv(mintAmount * quote.rateNum, quote.rateDen);
-  const fjCreditAmount = mintAmount;
-  const aaPaymentAmount = expectedCharge;
-  console.log(`[services-smoke:credit] mint_amount=${mintAmount}`);
+  if (quote.fjAmount !== requestedFjAmount) {
+    throw new Error(
+      `[services-smoke:credit] quote fj amount mismatch. expected=${requestedFjAmount} got=${quote.fjAmount}`,
+    );
+  }
+  const fjCreditAmount = quote.fjAmount;
+  const aaPaymentAmount = quote.aaPaymentAmount;
+  const expectedCharge = aaPaymentAmount;
+  console.log(`[services-smoke:credit] mint_amount=${fjCreditAmount}`);
   console.log(`[services-smoke:credit] expected_charge=${expectedCharge}`);
 
   await token.methods
@@ -1600,23 +1604,7 @@ async function runCreditFeeScenario(
     caller: creditFpc.address,
     action: transferCall,
   });
-  const creditQuoteHash = await computeInnerAuthWitHash([
-    QUOTE_DOMAIN_SEPARATOR,
-    creditFpc.address.toField(),
-    token.address.toField(),
-    new Fr(fjCreditAmount),
-    new Fr(aaPaymentAmount),
-    new Fr(quote.validUntil),
-    user.toField(),
-  ]);
-  const creditQuoteSig = await schnorr.constructSignature(
-    creditQuoteHash.toBuffer(),
-    operatorSigningKey,
-  );
-  const creditQuoteSigBytes = Array.from(creditQuoteSig.toBuffer());
-  console.log(
-    "[services-smoke:credit] using locally signed credit quote (amount-bound preimage differs from attestation rate quote schema)",
-  );
+  console.log("[services-smoke:credit] using attestation quote payload");
 
   const userTokenBefore = BigInt(
     (
@@ -1637,7 +1625,7 @@ async function runCreditFeeScenario(
       fjCreditAmount,
       aaPaymentAmount,
       quote.validUntil,
-      creditQuoteSigBytes,
+      quote.quoteSigBytes,
     )
     .getFunctionCall();
   const payAndMintPaymentMethod = {
@@ -1687,7 +1675,7 @@ async function runCreditFeeScenario(
       await creditFpc.methods.balance_of(user).simulate({ from: user })
     ).toString(),
   );
-  const expectedCreditAfterPayAndMint = mintAmount - maxGasCostNoTeardown;
+  const expectedCreditAfterPayAndMint = fjCreditAmount - maxGasCostNoTeardown;
 
   console.log(
     `[services-smoke:credit] pay_and_mint_tx_fee_juice=${payAndMintReceipt.transactionFee}`,
@@ -1715,7 +1703,7 @@ async function runCreditFeeScenario(
   }
 
   const quoteUsed = await creditFpc.methods
-    .quote_used(fjCreditAmount, aaPaymentAmount, quote.validUntil, user)
+    .quote_used(quote.fjAmount, quote.aaPaymentAmount, quote.validUntil, user)
     .simulate({ from: user });
   if (!quoteUsed) {
     throw new Error(
@@ -2049,7 +2037,8 @@ async function main() {
         l1PrivateKey as Hex,
         topupThreshold,
         topupAmount,
-        maxGasCostNoTeardown,
+        maxGasCostNoTeardown * config.creditMintMultiplier +
+          config.creditMintBuffer,
       );
       await runCreditFeeScenario(
         config,
@@ -2061,8 +2050,6 @@ async function main() {
         maxGasCostNoTeardown,
         feePerDaGas,
         feePerL2Gas,
-        schnorr,
-        operatorSigningKey,
         quote,
       );
     }
