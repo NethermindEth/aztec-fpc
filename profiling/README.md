@@ -7,6 +7,9 @@ This directory contains profiling scripts for two FPC (Fee Payment Contract) imp
 | `run.sh` | `FPC` (standard authwit-based) | `fee_entrypoint` |
 | `run_credit_fpc.sh` | `CreditFPC` (Schnorr-quoted) | `pay_and_mint`, `pay_with_credit` |
 
+`run.sh` also runs [aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark)
+which produces structured JSON reports in `profiling/benchmarks/`.
+
 ## Prerequisites
 
 - **Aztec CLI** — version must match `.aztecrc` (currently `4.0.0-devnet.2-patch.1`)
@@ -38,8 +41,8 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 
 | Script | When | What |
 |---|---|---|
-| `setup.sh` | Once | Installs `@aztec/*` npm packages (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
-| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), deploys Token + FPC, profiles `fee_entrypoint`, prints gate counts |
+| `setup.sh` | Once | Installs `@aztec/*` npm packages + `aztec-benchmark` + `viem` (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
+| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), deploys Token + FPC, profiles `fee_entrypoint` (console output), then runs `aztec-benchmark` (JSON output) |
 | `run_credit_fpc.sh` | Every iteration | Compiles contracts, deploys Token + CreditFPC, profiles `pay_and_mint` and `pay_with_credit`, prints gate counts for both |
 | `teardown.sh` | When done | Stops the network (if started by `setup.sh`), removes temp files |
 
@@ -48,7 +51,7 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 | Variable | Default | Description |
 |---|---|---|
 | `AZTEC_NODE_URL` | `http://127.0.0.1:8080` | Aztec node endpoint (respected by all scripts) |
-| `L1_RPC_URL` | `http://127.0.0.1:8545` | L1 (anvil) endpoint — only needed by `run_credit_fpc.sh` for Fee Juice bridging |
+| `L1_RPC_URL` | `http://127.0.0.1:8545` | L1 (anvil) endpoint — needed by `run.sh` (benchmark step) and `run_credit_fpc.sh` for Fee Juice bridging |
 
 ## Iteration Workflow
 
@@ -78,7 +81,7 @@ off-chain and supplied to `fee_entrypoint` at call time.
 Internal calls traced: `FPC:fee_entrypoint`, `Token:transfer_private_to_private`,
 `SchnorrAccount:verify_private_authwit`, plus all kernel circuits.
 
-### Output
+### Console Output (Step 2 — custom profiler)
 
 ```
 === Gate Count Profile ===
@@ -91,6 +94,53 @@ FPC:fee_entrypoint                                              ...          ...
 ...
 ────────────────────────────────────────────────────────────────────────────────────────
 TOTAL                                                         xxx,xxx
+```
+
+### JSON Output (Step 3 — aztec-benchmark)
+
+`run.sh` also invokes the
+[aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark) CLI,
+which produces a structured JSON report at `profiling/benchmarks/fpc.benchmark.json`.
+The benchmark file lives at `profiling/benchmarks/fpc.benchmark.ts` and is
+referenced from the root `Nargo.toml` under `[benchmark]`.
+
+The JSON report contains:
+
+| Field | Description |
+|---|---|
+| `summary` | Total gate counts keyed by function name |
+| `results` | Detailed per-circuit gate counts for each profiled function |
+| `gasSummary` | Total gas (DA + L2) keyed by function name |
+| `provingTimeSummary` | Proving time in ms per function |
+| `systemInfo` | Hardware metadata (CPU, memory, OS) |
+
+The benchmark deploys a fresh Token + FPC, bridges Fee Juice from L1 so the
+FPC can act as a real fee payer, and profiles a dummy app transaction
+(`Token.transfer_private_to_private`) with the FPC as fee payment. This means
+the profile includes the full execution trace: `FPC:fee_entrypoint`, the token
+transfer, authwit verification, and all kernel circuits.
+
+#### Running the benchmark standalone
+
+```bash
+# From the profiling/ directory (after setup.sh):
+AZTEC_NODE_URL=http://127.0.0.1:8080 L1_RPC_URL=http://127.0.0.1:8545 \
+  npx aztec-benchmark \
+    --config ../Nargo.toml \
+    --output-dir ./benchmarks
+```
+
+#### Future CI integration
+
+The aztec-benchmark library ships reusable GitHub workflows for PR comparison
+and baseline management. When ready, add:
+
+```yaml
+# .github/workflows/pr-benchmark.yml
+uses: defi-wonderland/aztec-benchmark/.github/workflows/pr-benchmark.yml@v0
+
+# .github/workflows/update-baseline.yml
+uses: defi-wonderland/aztec-benchmark/.github/workflows/update-baseline.yml@v0
 ```
 
 ---

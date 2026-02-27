@@ -11,12 +11,15 @@
 #
 # Environment:
 #   AZTEC_NODE_URL  — override node endpoint (default http://127.0.0.1:8080)
+#   L1_RPC_URL      — L1 (anvil) endpoint  (default http://127.0.0.1:8545)
+#                     needed by the aztec-benchmark step for Fee Juice bridging
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
+L1_URL="${L1_RPC_URL:-http://127.0.0.1:8545}"
 
 # ── Preflight checks ─────────────────────────────────────────────────────────
 if [[ ! -d "$SCRIPT_DIR/node_modules/@aztec" ]]; then
@@ -40,10 +43,19 @@ fi
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# ── Step 2: Deploy + profile FPC.fee_entrypoint ───────────────────────────────
+# ── Step 2: Deploy + profile FPC.fee_entrypoint (custom profiler) ─────────────
 echo ""
 echo "[profile] Running FPC gate count profiler (fee_entrypoint)..."
 AZTEC_NODE_URL="$NODE_URL" node "$SCRIPT_DIR/profile-gates.mjs"
 
+# ── Step 3: Benchmark via aztec-benchmark (structured JSON output) ────────────
 echo ""
+echo "[profile] Running FPC benchmark (aztec-benchmark)..."
+AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
+  npx --prefix "$SCRIPT_DIR" aztec-benchmark \
+    --config "$REPO_ROOT/Nargo.toml" \
+    --output-dir "$SCRIPT_DIR/benchmarks"
+
+echo ""
+echo "[profile] Benchmark JSON saved to profiling/benchmarks/"
 echo "[profile] Done!"

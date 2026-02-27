@@ -1,0 +1,84 @@
+{
+  "summary": {
+    "transfer_private_to_private": 892985
+  },
+  "results": [
+    {
+      "name": "transfer_private_to_private",
+      "totalGateCount": 892985,
+      "gateCounts": [
+        {
+          "circuitName": "SchnorrAccount:entrypoint",
+          "gateCount": 54352
+        },
+        {
+          "circuitName": "private_kernel_init",
+          "gateCount": 46811
+        },
+        {
+          "circuitName": "FPC:fee_entrypoint",
+          "gateCount": 18657
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237
+        },
+        {
+          "circuitName": "Token:transfer_private_to_private",
+          "gateCount": 34237
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237
+        },
+        {
+          "circuitName": "SchnorrAccount:verify_private_authwit",
+          "gateCount": 14328
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237
+        },
+        {
+          "circuitName": "Token:transfer_private_to_private",
+          "gateCount": 34237
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237
+        },
+        {
+          "circuitName": "private_kernel_reset",
+          "gateCount": 122505
+        },
+        {
+          "circuitName": "private_kernel_reset",
+          "gateCount": 81979
+        },
+        {
+          "circuitName": "private_kernel_tail",
+          "gateCount": 44543
+        },
+        {
+          "circuitName": "hiding_kernel",
+          "gateCount": 36388
+        }
+      ],
+      "gas": {
+        "gasLimits": {
+          "daGas": 786432,
+          "l2Gas": 2000000
+        },
+        "teardownGasLimits": {
+          "daGas": 393216,
+          "l2Gas": 1000000
+        }
+      },
+      "profileTimeMs": 2231.706204000002,
+      "provingTimeMs": 11570.805143000005
+    }
+  ],
+  "gasSummary": {
+    "transfer_private_to_private": 4179648
+  }
+}
