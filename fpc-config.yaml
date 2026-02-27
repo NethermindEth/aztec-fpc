@@ -1,0 +1,26 @@
+# fpc-config.yaml — operator-tunable service settings.
+# Shared fields (fpc_address, accepted_asset, aztec_node_url, l1_rpc_url)
+# are injected from the deploy output at generation time.
+
+attestation:
+  accepted_asset_name: "humanUSDC"
+  market_rate_num: 1
+  market_rate_den: 1000
+  fee_bips: 200
+  port: 3000
+  quote_validity_seconds: 300
+  quote_auth_mode: "disabled"
+  quote_rate_limit_enabled: true
+  quote_rate_limit_max_requests: 60
+  quote_rate_limit_window_seconds: 60
+  quote_rate_limit_max_tracked_keys: 10000
+
+topup:
+  threshold: "1000000000000000000"
+  top_up_amount: "10000000000000000000"
+  bridge_state_path: ".topup-bridge-state.json"
+  ops_port: 3001
+  check_interval_ms: 60000
+  confirmation_timeout_ms: 180000
+  confirmation_poll_initial_ms: 1000
+  confirmation_poll_max_ms: 15000

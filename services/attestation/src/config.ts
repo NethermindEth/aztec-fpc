@@ -55,7 +55,7 @@ const AztecAddressSchema = z
 const ConfigSchema = z.object({
   runtime_profile: RuntimeProfileSchema.default("development"),
   fpc_address: AztecAddressSchema,
-  aztec_node_url: AztecNodeUrlSchema,
+  aztec_node_url: AztecNodeUrlSchema.optional(),
   quote_validity_seconds: z
     .number()
     .int()
@@ -139,6 +139,7 @@ export interface QuoteRateLimitConfig {
 export type Config = Omit<
   ParsedConfig,
   | "operator_secret_key"
+  | "aztec_node_url"
   | "quote_auth_mode"
   | "quote_auth_api_key"
   | "quote_auth_api_key_header"
@@ -150,6 +151,7 @@ export type Config = Omit<
   | "quote_rate_limit_max_tracked_keys"
 > & {
   runtime_profile: RuntimeProfile;
+  aztec_node_url: string;
   operator_secret_key: string;
   operator_secret_key_source: SecretSource;
   operator_secret_key_provider: SecretProvider;
