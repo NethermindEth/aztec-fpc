@@ -268,6 +268,43 @@ Useful overrides:
 - `FPC_DEPLOY_SMOKE_RELAY_ADVANCE_BLOCKS` (default `2`, must be `>=2`)
 - `FPC_DEPLOY_SMOKE_TOPUP_WEI` (default `1000000`)
 
+### Devnet deployment and validation (live network)
+
+For the current devnet deployment flow, use:
+
+- [devnet-deployment-how-to.md](devnet-deployment-how-to.md)
+- [local-docs/devnet-deployment-implementation-plan.md](local-docs/devnet-deployment-implementation-plan.md)
+
+Canonical command sequence:
+
+```bash
+cd /home/ametel/source/aztec-fpc
+
+# Load your local env file if used by your setup
+set -a; source .env; set +a
+
+# 1) Deploy Token/FPC/CreditFPC and write canonical manifest
+bun run deploy:fpc:devnet
+
+# 2) Verify deployed contracts and FPC immutables from manifest
+bun run verify:deploy:fpc:devnet
+
+# 3) Render attestation/topup configs from manifest
+export FPC_DEVNET_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
+# If your .env uses L1_ADDRESS_PK, map it to the renderer's expected variable
+export L1_OPERATOR_PRIVATE_KEY="${L1_ADDRESS_PK}"
+bun run render:config:devnet
+
+# 4) Execute post-deploy runtime smoke (FPC + CreditFPC paths)
+bun run smoke:deploy:fpc:devnet
+```
+
+Manifest secret-handling warning:
+
+- `deployments/devnet-manifest-v2.json` can contain raw private keys if you use `FPC_DEVNET_DEPLOYER_PRIVATE_KEY` or `L1_OPERATOR_PRIVATE_KEY`.
+- Treat the manifest as secret material and do not commit it to public repos.
+- Prefer key reference inputs (`*_PRIVATE_KEY_REF`, `*_SECRET_REF`) where supported.
+
 ### 10. Deploy contracts manually (alternative)
 
 ```bash
