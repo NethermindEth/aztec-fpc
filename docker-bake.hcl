@@ -19,15 +19,7 @@ variable "PLATFORM_SUFFIX" {
 }
 
 group "default" {
-  targets = ["attestation", "topup", "contract-compile", "contract-deploy"]
-}
-
-group "smoke" {
-  targets = ["smoke-test"]
-}
-
-group "contract" {
-  targets = ["contract-compile", "contract-deploy"]
+  targets = ["attestation", "topup", "deploy", "smoke"]
 }
 
 group "services" {
@@ -81,27 +73,15 @@ target "topup" {
   ])
 }
 
-target "contract-compile" {
-  inherits   = ["_labels"]
-  context    = "."
-  dockerfile = "scripts/contract/Dockerfile.deploy"
-  platforms  = PLATFORMS
-  target     = "compile"
-  tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-contract-compile:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-compile:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
-  ])
-}
-
-target "contract-deploy" {
+target "deploy" {
   inherits   = ["_labels"]
   context    = "."
   dockerfile = "scripts/contract/Dockerfile.deploy"
   platforms  = PLATFORMS
   target     = "deploy"
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-contract-deploy:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-deploy:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+    "${REGISTRY}nethermind/aztec-fpc-deploy:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-deploy:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
 
@@ -111,7 +91,7 @@ target "smoke-base" {
   target     = "runtime"
 }
 
-target "smoke-test" {
+target "smoke" {
   inherits   = ["_labels"]
   context    = "."
   dockerfile = "Dockerfile.smoke"
