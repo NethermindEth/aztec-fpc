@@ -1,0 +1,75 @@
+{
+  "status": "deploy_ok",
+  "generated_at": "2026-02-27T10:42:49.308Z",
+  "network": {
+    "node_url": "https://v4-devnet-2.aztec-labs.com/",
+    "node_version": "4.0.0-devnet.2-patch.2",
+    "l1_chain_id": 11155111,
+    "rollup_version": 615022430
+  },
+  "aztec_required_addresses": {
+    "l1_contract_addresses": {
+      "registryAddress": "0x52945c29d2788ccb076e910509c0449bfcbe29e6",
+      "rollupAddress": "0xcd1a7be18501092f3ba8d80ce5629501ba178de0",
+      "inboxAddress": "0xef5730d1e07b306aecbe01400630d61e3ccb68af",
+      "outboxAddress": "0x34fc558b6f97e50149bcc140060bbe3f7d04bc59",
+      "feeJuiceAddress": "0x35d0186d1fd53b72996475d965c5ed171d52b986",
+      "feeJuicePortalAddress": "0x516e3f74fd1c19b24da0706d28b5a30578f054ab",
+      "feeAssetHandlerAddress": "0xed9c5557d2e0abcc7c7fca958ee4292199413494"
+    },
+    "protocol_contract_addresses": {
+      "instanceRegistry": "0x0000000000000000000000000000000000000000000000000000000000000002",
+      "classRegistry": "0x0000000000000000000000000000000000000000000000000000000000000003",
+      "multiCallEntrypoint": "0x0000000000000000000000000000000000000000000000000000000000000004",
+      "feeJuice": "0x0000000000000000000000000000000000000000000000000000000000000005"
+    },
+    "sponsored_fpc_address": "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2"
+  },
+  "deployment_accounts": {
+    "l2_deployer": {
+      "alias": "my-wallet",
+      "address": "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
+      "private_key": "0x1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  },
+  "contracts": {
+    "accepted_asset": "0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a",
+    "fpc": "0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5",
+    "credit_fpc": "0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3"
+  },
+  "operator": {
+    "address": "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
+    "pubkey_x": "0x0f99ab4432460a28021b55434ff1f43e7a8d70b74dbea32aa75a16617c0e8407",
+    "pubkey_y": "0x1769d06eb4e55894f84223efe6cdc0068438e717b4707dfedb5e3348de662d11"
+  },
+  "tx_hashes": {
+    "accepted_asset_deploy": "0x1efb858ca7a1e0322352b3b935ff33942bc8d10c4f6f57deeecf4d7c6c0753d8",
+    "fpc_deploy": "0x0f8d0024bfd61409958c266ad847eb8aa823701b0d66c55db3d86472413292f7",
+    "credit_fpc_deploy": "0x165e0a7559b6f18e0a1f7758b2d1ec081d265bb0ea32ee7aeaf65437fdae5843"
+  },
+  "payment_mode": "fpc-sponsored",
+  "aztec_node_url": "https://v4-devnet-2.aztec-labs.com/",
+  "l1_chain_id": 11155111,
+  "operator_address": "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
+  "accepted_asset": "0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a",
+  "fpc_address": "0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5",
+  "credit_fpc_address": "0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3",
+  "node_contracts": {
+    "fee_juice_portal_address": "0x516e3f74fd1c19b24da0706d28b5a30578f054ab",
+    "fee_juice_address": "0x35d0186d1fd53b72996475d965c5ed171d52b986"
+  },
+  "deploy": {
+    "token": {
+      "address": "0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a",
+      "source": "deployed"
+    },
+    "fpc": {
+      "address": "0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5",
+      "source": "deployed"
+    },
+    "credit_fpc": {
+      "address": "0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3",
+      "source": "deployed"
+    }
+  }
+}
