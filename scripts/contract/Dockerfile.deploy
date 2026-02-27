@@ -55,7 +55,12 @@ COPY --from=compile /app/target/ target/
 # ══════════════════════════════════════════════════════════════
 FROM runtime AS deploy
 
+# Install yq for YAML processing during config generation
+RUN curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+    -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
+
 COPY scripts/contract/deploy-fpc-local.ts scripts/contract/
 COPY scripts/contract/deploy-fpc-local.sh scripts/contract/
+COPY scripts/config/ scripts/config/
 
 ENTRYPOINT ["scripts/contract/deploy-fpc-local.sh"]

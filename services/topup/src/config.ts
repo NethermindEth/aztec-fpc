@@ -33,8 +33,8 @@ const ConfigSchema = z
         AZTEC_ADDRESS_PATTERN,
         "must be a 32-byte 0x-prefixed hex address",
       ),
-    aztec_node_url: z.string().url(),
-    l1_rpc_url: z.string().url(),
+    aztec_node_url: z.string().url().optional(),
+    l1_rpc_url: z.string().url().optional(),
     /** Secret provider strategy for L1 bridge key. */
     l1_operator_secret_provider: SecretProviderSchema.default("auto"),
     /** Reference used by external secret providers (kms/hsm). */
@@ -75,8 +75,13 @@ const ConfigSchema = z
 
 type ParsedConfig = z.infer<typeof ConfigSchema>;
 
-export type Config = Omit<ParsedConfig, "l1_operator_private_key"> & {
+export type Config = Omit<
+  ParsedConfig,
+  "l1_operator_private_key" | "aztec_node_url" | "l1_rpc_url"
+> & {
   runtime_profile: RuntimeProfile;
+  aztec_node_url: string;
+  l1_rpc_url: string;
   l1_operator_private_key: string;
   l1_operator_private_key_source: SecretSource;
   l1_operator_private_key_provider: SecretProvider;
@@ -157,11 +162,17 @@ export function loadConfig(
 
   PrivateKeySchema.parse(resolvedSecret.value);
 
+  const UrlSchema = z.string().url();
+  const aztecNodeUrl = UrlSchema.parse(
+    process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
+  );
+  const l1RpcUrl = UrlSchema.parse(process.env.L1_RPC_URL ?? config.l1_rpc_url);
+
   return {
     ...config,
     runtime_profile: runtimeProfile,
-    aztec_node_url: process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
-    l1_rpc_url: process.env.L1_RPC_URL ?? config.l1_rpc_url,
+    aztec_node_url: aztecNodeUrl,
+    l1_rpc_url: l1RpcUrl,
     bridge_state_path:
       process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
     ops_port: parseIntegerOverride(

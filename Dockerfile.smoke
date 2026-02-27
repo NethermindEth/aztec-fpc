@@ -1,0 +1,24 @@
+FROM common
+
+# ── TypeScript config ──
+COPY tsconfig.base.json ./
+COPY services/attestation/tsconfig.json services/attestation/
+COPY services/topup/tsconfig.json services/topup/
+
+# ── Service source & build ──
+COPY services/attestation/src/ services/attestation/src/
+COPY services/topup/src/ services/topup/src/
+RUN cd services/attestation && bun run build
+RUN cd services/topup && bun run build
+
+# ── Test files ──
+COPY services/attestation/test/ services/attestation/test/
+
+# ── Config examples (used by services smoke to generate runtime configs) ──
+COPY services/attestation/config.example.yaml services/attestation/
+COPY services/topup/config.example.yaml services/topup/
+
+# ── Smoke & deploy scripts ──
+COPY scripts/ scripts/
+
+ENTRYPOINT ["bunx", "tsx"]
