@@ -313,6 +313,10 @@ cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, aztec_node_url, l1_rpc_url
 # l1_chain_id and fee juice L1 addresses are auto-discovered from nodeInfo
 # Bridge confirmation uses L1->L2 message readiness plus Fee Juice balance-delta fallback
+# In-flight bridge metadata is persisted to bridge_state_path (or TOPUP_BRIDGE_STATE_PATH)
+# so restarts reconcile pending bridges before submitting new ones.
+# If reconciliation times out, the state is retained and bridge submissions are deferred
+# until a later reconciliation attempt succeeds.
 # Default runtime_profile is development (config secrets allowed).
 # In production, set runtime_profile=production and provide L1_OPERATOR_PRIVATE_KEY
 # and remove config.l1_operator_private_key from config.yaml
@@ -393,6 +397,7 @@ Environment variables take precedence over values in the config file:
 | `QUOTE_RATE_LIMIT_WINDOW_SECONDS` | attestation | `60` |
 | `QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS` | attestation | `10000` |
 | `L1_OPERATOR_PRIVATE_KEY` | topup | — |
+| `TOPUP_BRIDGE_STATE_PATH` | topup | `.topup-bridge-state.json` |
 
 Pass them via a `.env` file or inline:
 
