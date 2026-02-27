@@ -1030,6 +1030,59 @@ async function executeFeePaidTx(
   return { expectedCharge, receipt };
 }
 
+type PayWithCreditTxParams = {
+  token: Contract;
+  fpc: Contract;
+  payer: AztecAddress;
+  recipient: AztecAddress;
+  transferAmount: bigint;
+};
+
+async function executePayWithCreditTx(
+  config: FullE2EConfig,
+  result: DeploymentRuntimeResult,
+  params: PayWithCreditTxParams,
+): Promise<{ receipt: { transactionFee: unknown } }> {
+  await params.token.methods
+    .mint_to_public(params.payer, params.transferAmount)
+    .send({ from: result.operator });
+
+  const payWithCreditCall = await params.fpc.methods
+    .pay_with_credit()
+    .getFunctionCall();
+  const paymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload([payWithCreditCall], [], [], [], params.fpc.address),
+    getFeePayer: async () => params.fpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  const receipt = await params.token.methods
+    .transfer_public_to_public(
+      params.payer,
+      params.recipient,
+      params.transferAmount,
+      Fr.random(),
+    )
+    .send({
+      from: params.payer,
+      fee: {
+        paymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          maxFeesPerGas: {
+            feePerDaGas: result.feePerDaGas,
+            feePerL2Gas: result.feePerL2Gas,
+          },
+        },
+      },
+      wait: { timeout: 180 },
+    });
+
+  return { receipt };
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.stack ?? error.message;
@@ -2027,11 +2080,12 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   const topupConfigPath = path.join(isolatedRunDir, "topup.config.yaml");
 
   const minimumBudget = 1_000_000n;
-  const txHeadroom =
+  const baselineSingleTxBudget =
     estimatedSingleTxFeeJuice <= 0n
       ? 1_000_000_000n
-      : ceilDiv(estimatedSingleTxFeeJuice, 2n);
-  const budgetWei = result.maxGasCostNoTeardown + txHeadroom + 1_000_000n;
+      : estimatedSingleTxFeeJuice;
+  const txHeadroom = ceilDiv(baselineSingleTxBudget, 10n);
+  const budgetWei = baselineSingleTxBudget + txHeadroom + 1_000_000n;
   const effectiveBudgetWei =
     budgetWei > minimumBudget ? budgetWei : minimumBudget;
 
@@ -2121,7 +2175,9 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     await stopManagedProcess(isolatedTopup);
   }
 
-  const fjAmount = result.maxGasCostNoTeardown;
+  const fjAmount =
+    result.maxGasCostNoTeardown * config.creditMintMultiplier +
+    config.creditMintBuffer;
   const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const quoteAnchor = await getLatestL2Timestamp(node);
   const quote1 = await signQuoteForUser(
@@ -2131,15 +2187,6 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     fjAmount,
     aaPaymentAmount,
     quoteAnchor + 600n,
-    result.user,
-  );
-  const quote2 = await signQuoteForUser(
-    result,
-    isolatedFpc.address,
-    isolatedToken.address,
-    fjAmount,
-    aaPaymentAmount,
-    quoteAnchor + 601n,
     result.user,
   );
 
@@ -2161,13 +2208,12 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
       "not enough fee",
     ],
     () =>
-      executeFeePaidTx(config, result, {
+      executePayWithCreditTx(config, result, {
         token: isolatedToken,
         fpc: isolatedFpc,
         payer: result.user,
         recipient: result.operator,
         transferAmount: 1n,
-        quote: quote2,
       }),
   );
 
