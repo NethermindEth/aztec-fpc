@@ -97,10 +97,9 @@ class PayAndMintPaymentMethod {
   transferAuthWit: any;
   quoteSigFields: any[];
   transferNonce: bigint;
-  rateNum: bigint;
-  rateDen: bigint;
+  fjCreditAmount: bigint;
+  aaPaymentAmount: bigint;
   validUntil: bigint;
-  mintAmount: bigint;
   gasSettings: any;
 
   constructor(
@@ -108,20 +107,18 @@ class PayAndMintPaymentMethod {
     transferAuthWit: any,
     quoteSigFields: any[],
     transferNonce: bigint,
-    rateNum: bigint,
-    rateDen: bigint,
+    fjCreditAmount: bigint,
+    aaPaymentAmount: bigint,
     validUntil: bigint,
-    mintAmount: bigint,
     gasSettings: any,
   ) {
     this.fpcAddress = fpcAddress;
     this.transferAuthWit = transferAuthWit;
     this.quoteSigFields = quoteSigFields;
     this.transferNonce = transferNonce;
-    this.rateNum = rateNum;
-    this.rateDen = rateDen;
+    this.fjCreditAmount = fjCreditAmount;
+    this.aaPaymentAmount = aaPaymentAmount;
     this.validUntil = validUntil;
-    this.mintAmount = mintAmount;
     this.gasSettings = gasSettings;
   }
 
@@ -137,7 +134,7 @@ class PayAndMintPaymentMethod {
 
   async getExecutionPayload() {
     const selector = await FunctionSelector.fromSignature(
-      'pay_and_mint(Field,u128,u128,u64,[u8;64],u128)',
+      'pay_and_mint(Field,u128,u128,u64,[u8;64])',
     );
 
     const feeCall = FunctionCall.from({
@@ -149,11 +146,10 @@ class PayAndMintPaymentMethod {
       isStatic: false,
       args: [
         new Fr(this.transferNonce),
-        new Fr(this.rateNum),
-        new Fr(this.rateDen),
+        new Fr(this.fjCreditAmount),
+        new Fr(this.aaPaymentAmount),
         new Fr(this.validUntil),
         ...this.quoteSigFields,
-        new Fr(this.mintAmount),
       ],
       returnTypes: [],
     });
@@ -587,8 +583,8 @@ export default class CreditFPCBenchmark {
       operatorSigningKey,
       fpcAddress,
       tokenAddress,
-      RATE_NUM,
-      RATE_DEN,
+      sendCreditMint,
+      sendTokenCharge,
       VALID_UNTIL,
       userAddress,
       QUOTE_DOMAIN_SEP,
@@ -609,10 +605,9 @@ export default class CreditFPCBenchmark {
       sendTransferAuthWit,
       sendQuoteSigFields,
       SEND_NONCE,
-      RATE_NUM,
-      RATE_DEN,
-      VALID_UNTIL,
       sendCreditMint,
+      sendTokenCharge,
+      VALID_UNTIL,
       gasSettings,
     );
 
@@ -682,8 +677,8 @@ export default class CreditFPCBenchmark {
         operatorSigningKey,
         fpcAddress,
         tokenAddress,
-        RATE_NUM,
-        RATE_DEN,
+        devMintAmount,
+        devTokenCharge,
         DEV_VALID_UNTIL,
         userAddress,
         QUOTE_DOMAIN_SEP,
@@ -694,10 +689,9 @@ export default class CreditFPCBenchmark {
         devTransferAuthWit,
         devQuoteSigFields,
         DEV_NONCE,
-        RATE_NUM,
-        RATE_DEN,
-        DEV_VALID_UNTIL,
         devMintAmount,
+        devTokenCharge,
+        DEV_VALID_UNTIL,
         gasSettings,
       );
 
@@ -751,8 +745,8 @@ export default class CreditFPCBenchmark {
       operatorSigningKey,
       fpcAddress,
       tokenAddress,
-      RATE_NUM,
-      RATE_DEN,
+      profileCreditMint,
+      profileTokenCharge,
       PROFILE_VALID_UNTIL,
       userAddress,
       QUOTE_DOMAIN_SEP,
@@ -773,10 +767,9 @@ export default class CreditFPCBenchmark {
       profileTransferAuthWit,
       profileQuoteSigFields,
       PROFILE_NONCE,
-      RATE_NUM,
-      RATE_DEN,
-      PROFILE_VALID_UNTIL,
       profileCreditMint,
+      profileTokenCharge,
+      PROFILE_VALID_UNTIL,
       gasSettings,
     );
 
