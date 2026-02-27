@@ -59,5 +59,8 @@ jobs:
       - name: Build contracts
         run: aztec compile --workspace
 
-      - name: Test contracts
+      - name: Test fpc contract
         run: aztec test --package fpc
+
+      - name: Test credit_fpc contract
+        run: aztec test --package credit_fpc
