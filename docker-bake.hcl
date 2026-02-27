@@ -22,6 +22,10 @@ group "default" {
   targets = ["attestation", "topup", "contract-compile", "contract-deploy"]
 }
 
+group "smoke" {
+  targets = ["smoke-test"]
+}
+
 group "contract" {
   targets = ["contract-compile", "contract-deploy"]
 }
@@ -98,5 +102,23 @@ target "contract-deploy" {
   tags = compact([
     "${REGISTRY}nethermind/aztec-fpc-contract-deploy:${TAG}${PLATFORM_SUFFIX}",
     GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-deploy:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+  ])
+}
+
+target "smoke-base" {
+  context    = "."
+  dockerfile = "scripts/contract/Dockerfile.deploy"
+  target     = "runtime"
+}
+
+target "smoke-test" {
+  inherits   = ["_labels"]
+  context    = "."
+  dockerfile = "Dockerfile.smoke"
+  contexts   = { common = "target:smoke-base" }
+  platforms  = PLATFORMS
+  tags = compact([
+    "${REGISTRY}nethermind/aztec-fpc-smoke:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-smoke:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
