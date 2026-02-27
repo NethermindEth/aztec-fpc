@@ -50,7 +50,7 @@ aztec-fpc/
 - Aztec CLI
 
 ```bash
-VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.1)
+VERSION=4.0.0-devnet.2-patch.2 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.2)
 ```
 
 ### 1. Clone the repository with submodules (required)

@@ -9,7 +9,7 @@ This directory contains profiling scripts for two FPC (Fee Payment Contract) imp
 
 ## Prerequisites
 
-- **Aztec CLI** — version must match `.aztecrc` (currently `4.0.0-devnet.2-patch.1`)
+- **Aztec CLI** — version must match `.aztecrc` (currently `4.0.0-devnet.2-patch.2`)
 
 ```bash
 VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .aztecrc))
