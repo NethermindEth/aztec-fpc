@@ -6,6 +6,8 @@ Operator-run fee payment contracts for Aztec L2:
 
 Full protocol specification: [docs/spec.md](docs/spec.md)
 
+Operational probes and metrics: [docs/operational-metrics.md](docs/operational-metrics.md)
+
 ---
 
 ## Repository Layout
@@ -220,6 +222,7 @@ Useful overrides:
 - `FPC_SERVICES_SMOKE_L1_PRIVATE_KEY` (default local anvil key)
 - `FPC_SERVICES_SMOKE_TOPUP_WEI`, `FPC_SERVICES_SMOKE_THRESHOLD_WEI`
 - `FPC_SERVICES_SMOKE_ATTESTATION_PORT` (default `3300`)
+- `FPC_SERVICES_SMOKE_TOPUP_OPS_PORT` (default `3401`)
 - `FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS` (default: `2`; sends mock L2 txs after bridge submit so local relay can finalize)
 - `FPC_SERVICES_SMOKE_CREDIT_MINT_MULTIPLIER` (default `5`)
 - `FPC_SERVICES_SMOKE_CREDIT_MINT_BUFFER` (default `1000000`)
@@ -317,6 +320,10 @@ cp config.example.yaml config.yaml
 # so restarts reconcile pending bridges before submitting new ones.
 # If reconciliation times out, the state is retained and bridge submissions are deferred
 # until a later reconciliation attempt succeeds.
+# Top-up exposes ops endpoints on ops_port (default 3001):
+# - /health (liveness)
+# - /ready (readiness)
+# - /metrics (Prometheus format)
 # Default runtime_profile is development (config secrets allowed).
 # In production, set runtime_profile=production and provide L1_OPERATOR_PRIVATE_KEY
 # and remove config.l1_operator_private_key from config.yaml
@@ -363,7 +370,7 @@ The compose stack (`docker-compose.yaml`) includes:
 | `anvil` | Local L1 chain (Foundry) | 8545 |
 | `aztec-node` | Aztec sandbox node | 8080 |
 | `attestation` | FPC attestation service | 3000 |
-| `topup` | FPC Fee Juice top-up daemon | — |
+| `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
 
 Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
 
@@ -398,6 +405,7 @@ Environment variables take precedence over values in the config file:
 | `QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS` | attestation | `10000` |
 | `L1_OPERATOR_PRIVATE_KEY` | topup | — |
 | `TOPUP_BRIDGE_STATE_PATH` | topup | `.topup-bridge-state.json` |
+| `TOPUP_OPS_PORT` | topup | `3001` |
 
 Pass them via a `.env` file or inline:
 
@@ -413,6 +421,7 @@ docker compose up
 
 ```bash
 curl http://localhost:3000/health
+curl http://localhost:3000/metrics
 curl http://localhost:3000/asset
 # quote_auth_mode=disabled
 curl "http://localhost:3000/quote?user=<your_aztec_address>"
@@ -420,6 +429,9 @@ curl "http://localhost:3000/quote?user=<your_aztec_address>"
 curl -H "x-api-key: <your_api_key>" "http://localhost:3000/quote?user=<your_aztec_address>"
 # quote_auth_mode=trusted_header
 curl -H "x-internal-attestation: allow" "http://localhost:3000/quote?user=<your_aztec_address>"
+curl http://localhost:3001/health
+curl http://localhost:3001/ready
+curl http://localhost:3001/metrics
 ```
 
 ### Troubleshooting
