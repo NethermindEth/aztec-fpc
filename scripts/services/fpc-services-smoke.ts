@@ -69,6 +69,7 @@ type SmokeConfig = {
   nodeUrl: string;
   l1RpcUrl: string;
   attestationPort: number;
+  topupOpsPort: number;
   nodeTimeoutMs: number;
   httpTimeoutMs: number;
   topupWaitTimeoutMs: number;
@@ -195,6 +196,7 @@ function getConfig(): SmokeConfig {
     l1RpcUrl:
       process.env.FPC_SERVICES_SMOKE_L1_RPC_URL ?? "http://127.0.0.1:8545",
     attestationPort: readEnvNumber("FPC_SERVICES_SMOKE_ATTESTATION_PORT", 3300),
+    topupOpsPort: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_OPS_PORT", 3401),
     nodeTimeoutMs: readEnvNumber("FPC_SERVICES_SMOKE_NODE_TIMEOUT_MS", 45_000),
     httpTimeoutMs: readEnvNumber("FPC_SERVICES_SMOKE_HTTP_TIMEOUT_MS", 30_000),
     topupWaitTimeoutMs: readEnvNumber(
@@ -710,6 +712,106 @@ async function fetchAsset(
   );
 }
 
+async function fetchMetrics(
+  metricsUrl: string,
+  timeoutMs: number,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: string | undefined;
+
+  while (Date.now() <= deadline) {
+    try {
+      const response = await fetch(metricsUrl);
+      const bodyText = await response.text();
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}: ${bodyText}`;
+      } else {
+        return bodyText;
+      }
+    } catch (error) {
+      lastError = (error as Error).message;
+    }
+
+    await sleep(500);
+  }
+
+  throw new Error(`Timed out requesting metrics. Last error: ${lastError}`);
+}
+
+function parsePrometheusLabelSet(raw: string): Map<string, string> {
+  const labels = new Map<string, string>();
+  if (!raw.trim()) {
+    return labels;
+  }
+
+  for (const segment of raw.split(",")) {
+    const [rawKey, rawValue] = segment.split("=", 2);
+    if (!rawKey || rawValue === undefined) {
+      continue;
+    }
+
+    const key = rawKey.trim();
+    const valueMatch = rawValue.trim().match(/^"((?:\\.|[^"])*)"$/);
+    if (!valueMatch) {
+      continue;
+    }
+
+    labels.set(key, valueMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\"));
+  }
+
+  return labels;
+}
+
+function getPrometheusMetricValue(
+  metricsText: string,
+  metricName: string,
+  labels: Record<string, string> = {},
+): number | undefined {
+  const expectedLabelEntries = Object.entries(labels);
+
+  for (const line of metricsText.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const match = trimmed.match(
+      /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{([^}]*)\})?\s+([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)$/,
+    );
+    if (!match) {
+      continue;
+    }
+
+    const [, name, labelSetRaw = "", valueRaw] = match;
+    if (name !== metricName) {
+      continue;
+    }
+
+    const actualLabels = parsePrometheusLabelSet(labelSetRaw);
+    if (actualLabels.size !== expectedLabelEntries.length) {
+      continue;
+    }
+
+    let labelsMatch = true;
+    for (const [key, value] of expectedLabelEntries) {
+      if (actualLabels.get(key) !== value) {
+        labelsMatch = false;
+        break;
+      }
+    }
+    if (!labelsMatch) {
+      continue;
+    }
+
+    const parsedValue = Number(valueRaw);
+    if (Number.isFinite(parsedValue)) {
+      return parsedValue;
+    }
+  }
+
+  return undefined;
+}
+
 function assertPrivateKeyHex(value: string, fieldName: string): void {
   if (!HEX_32_BYTE_PATTERN.test(value)) {
     throw new Error(`${fieldName} must be a 32-byte 0x-prefixed private key`);
@@ -777,6 +879,7 @@ async function runServiceScenario(
         `l1_rpc_url: "${config.l1RpcUrl}"`,
         `threshold: "${topupThreshold}"`,
         `top_up_amount: "${topupAmount}"`,
+        `ops_port: ${config.topupOpsPort}`,
         "check_interval_ms: 60000",
         `confirmation_timeout_ms: ${config.topupConfirmTimeoutMs}`,
         `confirmation_poll_initial_ms: ${config.topupConfirmPollInitialMs}`,
@@ -807,6 +910,13 @@ async function runServiceScenario(
     const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
     await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
     console.log(`${scenarioPrefix} PASS: attestation service health endpoint`);
+    const badQuoteResponse = await fetch(`${attestationBaseUrl}/quote`);
+    if (badQuoteResponse.status !== 400) {
+      throw new Error(
+        `${scenarioPrefix} expected bad quote request to return 400, got ${badQuoteResponse.status}`,
+      );
+    }
+    console.log(`${scenarioPrefix} PASS: attestation bad quote request`);
     const asset = await fetchAsset(
       `${attestationBaseUrl}/asset`,
       config.httpTimeoutMs,
@@ -846,6 +956,9 @@ async function runServiceScenario(
       },
     );
     managed.push(topup);
+    const topupOpsBaseUrl = `http://127.0.0.1:${config.topupOpsPort}`;
+    await waitForHealth(`${topupOpsBaseUrl}/health`, config.httpTimeoutMs);
+    console.log(`${scenarioPrefix} PASS: topup service health endpoint`);
 
     await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
     await waitForLog(
@@ -853,6 +966,8 @@ async function runServiceScenario(
       "FPC Fee Juice balance:",
       config.topupWaitTimeoutMs,
     );
+    await waitForHealth(`${topupOpsBaseUrl}/ready`, config.topupWaitTimeoutMs);
+    console.log(`${scenarioPrefix} PASS: topup service readiness endpoint`);
     const bridgeSubmission = await waitForTopupBridgeSubmission(
       topup,
       config.topupWaitTimeoutMs,
@@ -1019,6 +1134,66 @@ async function runServiceScenario(
         `${scenarioPrefix} top-up service logs did not include Fee Juice balance read`,
       );
     }
+
+    const attestationMetrics = await fetchMetrics(
+      `${attestationBaseUrl}/metrics`,
+      config.httpTimeoutMs,
+    );
+    const attestationSuccessCount = getPrometheusMetricValue(
+      attestationMetrics,
+      "attestation_quote_requests_total",
+      { outcome: "success" },
+    );
+    if ((attestationSuccessCount ?? 0) < 1) {
+      throw new Error(
+        `${scenarioPrefix} attestation metrics missing non-zero success quote count`,
+      );
+    }
+    const attestationErrorCount = getPrometheusMetricValue(
+      attestationMetrics,
+      "attestation_quote_errors_total",
+      { error_type: "bad_request" },
+    );
+    if ((attestationErrorCount ?? 0) < 1) {
+      throw new Error(
+        `${scenarioPrefix} attestation metrics missing non-zero bad_request error count`,
+      );
+    }
+    const attestationLatencyCount = getPrometheusMetricValue(
+      attestationMetrics,
+      "attestation_quote_latency_seconds_count",
+      { outcome: "success" },
+    );
+    if ((attestationLatencyCount ?? 0) < 1) {
+      throw new Error(
+        `${scenarioPrefix} attestation metrics missing non-zero success latency count`,
+      );
+    }
+    const topupMetrics = await fetchMetrics(
+      `${topupOpsBaseUrl}/metrics`,
+      config.httpTimeoutMs,
+    );
+    const topupSubmittedCount = getPrometheusMetricValue(
+      topupMetrics,
+      "topup_bridge_events_total",
+      { event: "submitted" },
+    );
+    if ((topupSubmittedCount ?? 0) < 1) {
+      throw new Error(
+        `${scenarioPrefix} topup metrics missing non-zero submitted bridge count`,
+      );
+    }
+    const topupOutcomeCount = getPrometheusMetricValue(
+      topupMetrics,
+      "topup_bridge_events_total",
+      { event: topupOutcome },
+    );
+    if ((topupOutcomeCount ?? 0) < 1) {
+      throw new Error(
+        `${scenarioPrefix} topup metrics missing non-zero ${topupOutcome} bridge count`,
+      );
+    }
+    console.log(`${scenarioPrefix} PASS: service metrics endpoints`);
 
     return { rateNum, rateDen, validUntil, quoteSigBytes };
   } finally {
