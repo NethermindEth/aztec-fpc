@@ -297,6 +297,11 @@ cp config.example.yaml config.yaml
 # - production: quote_auth_mode must be one of
 #   api_key, trusted_header, api_key_or_trusted_header, api_key_and_trusted_header
 #   and required auth fields must be configured.
+# /quote rate limiting:
+# - fixed-window throttling is enabled by default
+# - identity is valid API key (when api-key auth mode is active), otherwise remote IP
+# - behind reverse proxies, ensure the service sees real client IPs if using IP-based limits
+# - tune with quote_rate_limit_* config keys or QUOTE_RATE_LIMIT_* env overrides
 bun install && bun run build && bun run start
 ```
 
@@ -383,6 +388,10 @@ Environment variables take precedence over values in the config file:
 | `QUOTE_AUTH_API_KEY_HEADER` | attestation | `x-api-key` |
 | `QUOTE_AUTH_TRUSTED_HEADER_NAME` | attestation | — |
 | `QUOTE_AUTH_TRUSTED_HEADER_VALUE` | attestation | — |
+| `QUOTE_RATE_LIMIT_ENABLED` | attestation | `true` |
+| `QUOTE_RATE_LIMIT_MAX_REQUESTS` | attestation | `60` |
+| `QUOTE_RATE_LIMIT_WINDOW_SECONDS` | attestation | `60` |
+| `QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS` | attestation | `10000` |
 | `L1_OPERATOR_PRIVATE_KEY` | topup | — |
 
 Pass them via a `.env` file or inline:
