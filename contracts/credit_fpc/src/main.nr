@@ -18,8 +18,6 @@ use ::aztec::macros::aztec;
 pub contract CreditFPC {
     use crate::fee_math::fee_juice_to_asset;
     use aztec::{
-        authwit::auth::compute_inner_authwit_hash,
-        context::PrivateContext,
         macros::{
             functions::{allow_phase_change, external, initializer, only_self},
             storage::storage,
@@ -30,11 +28,13 @@ pub contract CreditFPC {
         state_vars::{Owned, PublicImmutable},
     };
     use balance_set::BalanceSet;
+    use fpc_lib::{
+        gas::{get_max_gas_cost, get_max_gas_cost_no_teardown},
+        quote::{assert_valid_quote, compute_quote_hash},
+    };
     use std::embedded_curve_ops::EmbeddedCurvePoint;
     use token::Token;
     use uint_note::PartialUintNote;
-
-    global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
 
     /// Packed configuration stored as a single PublicImmutable slot.
     /// Reduces the 4 separate Merkle membership proofs to one.
@@ -88,7 +88,7 @@ pub contract CreditFPC {
         let config = self.storage.config.read();
         let sender = self.msg_sender();
 
-        assert_valid_quote(
+        let _ = assert_valid_quote(
             self.context,
             EmbeddedCurvePoint {
                 x: config.operator_pubkey_x,
@@ -158,15 +158,14 @@ pub contract CreditFPC {
         user_address: AztecAddress,
     ) -> bool {
         let config = self.storage.config.read();
-        let quote_hash = compute_inner_authwit_hash([
-            QUOTE_DOMAIN_SEPARATOR,
-            self.address.to_field(),
-            config.accepted_asset.to_field(),
-            rate_num as Field,
-            rate_den as Field,
-            valid_until as Field,
-            user_address.to_field(),
-        ]);
+        let quote_hash = compute_quote_hash(
+            self.address,
+            config.accepted_asset,
+            rate_num,
+            rate_den,
+            valid_until,
+            user_address,
+        );
         check_nullifier_exists(quote_hash)
     }
 
@@ -177,73 +176,5 @@ pub contract CreditFPC {
     fn dev_mint(amount: u128) {
         let sender = self.msg_sender();
         self.storage.balances.at(sender).add(amount).deliver(MessageDelivery.ONCHAIN_UNCONSTRAINED);
-    }
-
-    /// Compute the quote hash and verify the operator's Schnorr signature
-    /// inline. Pushes a nullifier to prevent replay.
-    ///
-    /// Quote preimage (hashed with compute_inner_authwit_hash for compatibility):
-    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, rate_num, rate_den,
-    ///              valid_until, user_address])
-    #[contract_library_method]
-    fn assert_valid_quote(
-        context: &mut PrivateContext,
-        operator_pubkey: EmbeddedCurvePoint,
-        accepted_asset: AztecAddress,
-        rate_num: u128,
-        rate_den: u128,
-        valid_until: u64,
-        user_address: AztecAddress,
-        quote_sig: [u8; 64],
-    ) {
-        let quote_hash = compute_inner_authwit_hash([
-            QUOTE_DOMAIN_SEPARATOR,
-            context.this_address().to_field(),
-            accepted_asset.to_field(),
-            rate_num as Field,
-            rate_den as Field,
-            valid_until as Field,
-            user_address.to_field(),
-        ]);
-
-        assert(
-            schnorr::verify_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>()),
-            "invalid quote signature",
-        );
-
-        // Safety: this is only used as a best-effort pre-check for a clearer
-        // replay error before the canonical duplicate-nullifier protection.
-        let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
-        assert(!quote_already_used, "quote already used");
-
-        // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
-        context.push_nullifier(quote_hash);
-
-        let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
-        assert(anchor_ts <= valid_until, "quote expired");
-        context.set_expiration_timestamp(valid_until);
-    }
-
-    #[contract_library_method]
-    pub fn get_max_gas_cost(context: &mut PrivateContext) -> u128 {
-        let gas_settings = context.gas_settings();
-
-        let l2_gas_limit = gas_settings.gas_limits.l2_gas;
-        let da_gas_limit = gas_settings.gas_limits.da_gas;
-        let l2_teardown_gas_limit = gas_settings.teardown_gas_limits.l2_gas;
-        let da_teardown_gas_limit = gas_settings.teardown_gas_limits.da_gas;
-
-        let max_fee_per_da_gas = gas_settings.max_fees_per_gas.fee_per_da_gas;
-        let max_fee_per_l2_gas = gas_settings.max_fees_per_gas.fee_per_l2_gas;
-
-        max_fee_per_da_gas * (da_gas_limit as u128 + da_teardown_gas_limit as u128)
-            + max_fee_per_l2_gas * (l2_gas_limit as u128 + l2_teardown_gas_limit as u128)
-    }
-
-    #[contract_library_method]
-    fn get_max_gas_cost_no_teardown(context: &mut PrivateContext) -> u128 {
-        let s = context.gas_settings();
-        s.max_fees_per_gas.fee_per_da_gas * (s.gas_limits.da_gas as u128)
-            + s.max_fees_per_gas.fee_per_l2_gas * (s.gas_limits.l2_gas as u128)
     }
 }

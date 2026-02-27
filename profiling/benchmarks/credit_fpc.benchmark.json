@@ -1,0 +1,218 @@
+{
+  "summary": {
+    "pay_and_mint": 797003,
+    "pay_with_credit": 512236
+  },
+  "results": [
+    {
+      "name": "pay_and_mint",
+      "totalGateCount": 797003,
+      "gas": {
+        "gasLimits": {
+          "daGas": 2781,
+          "l2Gas": 564
+        },
+        "teardownGasLimits": {
+          "daGas": 0,
+          "l2Gas": 0
+        }
+      },
+      "provingTime": 5309.464116000003,
+      "fpcGateCounts": [
+        {
+          "circuitName": "CreditFPC:pay_and_mint",
+          "gateCount": 33363,
+          "witgenMs": 58.00042399999802
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 133.28804300000775
+        },
+        {
+          "circuitName": "Token:transfer_private_to_private",
+          "gateCount": 34237,
+          "witgenMs": 54.91745599999558
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 134.20692299999064
+        },
+        {
+          "circuitName": "SchnorrAccount:verify_private_authwit",
+          "gateCount": 14328,
+          "witgenMs": 10.591902000000118
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 131.01347700000042
+        }
+      ],
+      "fpcTotalGateCount": 385639,
+      "fpcTotalWitgenMs": 522.0182249999925,
+      "fullTrace": [
+        {
+          "circuitName": "SchnorrAccount:entrypoint",
+          "gateCount": 54352,
+          "witgenMs": 37.96915600000648
+        },
+        {
+          "circuitName": "private_kernel_init",
+          "gateCount": 46811,
+          "witgenMs": 66.096669999999
+        },
+        {
+          "circuitName": "CreditFPC:pay_and_mint",
+          "gateCount": 33363,
+          "witgenMs": 58.00042399999802
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 133.28804300000775
+        },
+        {
+          "circuitName": "Token:transfer_private_to_private",
+          "gateCount": 34237,
+          "witgenMs": 54.91745599999558
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 134.20692299999064
+        },
+        {
+          "circuitName": "SchnorrAccount:verify_private_authwit",
+          "gateCount": 14328,
+          "witgenMs": 10.591902000000118
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 131.01347700000042
+        },
+        {
+          "circuitName": "Noop:noop",
+          "gateCount": 5528,
+          "witgenMs": 2.2934110000060173
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 129.19642799999565
+        },
+        {
+          "circuitName": "private_kernel_reset",
+          "gateCount": 122505,
+          "witgenMs": 254.36194500001147
+        },
+        {
+          "circuitName": "private_kernel_tail",
+          "gateCount": 44543,
+          "witgenMs": 54.47103299999435
+        },
+        {
+          "circuitName": "hiding_kernel",
+          "gateCount": 36388,
+          "witgenMs": 11.554552000001422
+        }
+      ]
+    },
+    {
+      "name": "pay_with_credit",
+      "totalGateCount": 512236,
+      "gas": {
+        "gasLimits": {
+          "daGas": 775,
+          "l2Gas": 564
+        },
+        "teardownGasLimits": {
+          "daGas": 0,
+          "l2Gas": 0
+        }
+      },
+      "provingTime": 3959.421549000006,
+      "fpcGateCounts": [
+        {
+          "circuitName": "CreditFPC:pay_with_credit",
+          "gateCount": 9605,
+          "witgenMs": 21.14065899999696
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 127.10436699999264
+        }
+      ],
+      "fpcTotalGateCount": 110842,
+      "fpcTotalWitgenMs": 148.2450259999896,
+      "fullTrace": [
+        {
+          "circuitName": "SchnorrAccount:entrypoint",
+          "gateCount": 54352,
+          "witgenMs": 36.92992900000536
+        },
+        {
+          "circuitName": "private_kernel_init",
+          "gateCount": 46811,
+          "witgenMs": 65.5968739999953
+        },
+        {
+          "circuitName": "CreditFPC:pay_with_credit",
+          "gateCount": 9605,
+          "witgenMs": 21.14065899999696
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 127.10436699999264
+        },
+        {
+          "circuitName": "Noop:noop",
+          "gateCount": 5528,
+          "witgenMs": 2.2835530000011204
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 126.5172559999919
+        },
+        {
+          "circuitName": "private_kernel_reset",
+          "gateCount": 112535,
+          "witgenMs": 232.79441800000495
+        },
+        {
+          "circuitName": "private_kernel_tail",
+          "gateCount": 44543,
+          "witgenMs": 58.23357500000566
+        },
+        {
+          "circuitName": "hiding_kernel",
+          "gateCount": 36388,
+          "witgenMs": 11.358351000002585
+        }
+      ]
+    }
+  ],
+  "gasSummary": {
+    "pay_and_mint": 3345,
+    "pay_with_credit": 1339
+  },
+  "provingTimeSummary": {
+    "pay_and_mint": 5309.464116000003,
+    "pay_with_credit": 3959.421549000006
+  },
+  "systemInfo": {
+    "cpuModel": "AMD Ryzen 9 7900X 12-Core Processor",
+    "cpuCores": 24,
+    "totalMemoryGiB": 62,
+    "arch": "x64"
+  },
+  "fpcSummary": {
+    "pay_and_mint": 385639,
+    "pay_with_credit": 110842
+  }
+}
