@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ETH_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -72,7 +73,7 @@ export type DevnetDeployManifest = {
 export type LegacyDeployOutputCompat = {
   aztec_node_url: string;
   l1_chain_id: number;
-  operator: string;
+  operator_address: string;
   accepted_asset: string;
   fpc_address: string;
   credit_fpc_address: string;
@@ -585,7 +586,7 @@ export function withLegacyDeployCompat(
     ...manifest,
     aztec_node_url: manifest.network.node_url,
     l1_chain_id: manifest.network.l1_chain_id,
-    operator: manifest.operator.address,
+    operator_address: manifest.operator.address,
     accepted_asset: manifest.contracts.accepted_asset,
     fpc_address: manifest.contracts.fpc,
     credit_fpc_address: manifest.contracts.credit_fpc,
@@ -800,14 +801,20 @@ function main(argv: string[]): void {
   );
 }
 
-try {
-  main(process.argv.slice(2));
-} catch (error) {
-  if (error instanceof ManifestValidationError) {
-    console.error(`[devnet-manifest] ERROR: ${error.message}`);
-    console.error(usage());
-  } else {
-    console.error("[devnet-manifest] Unexpected error:", error);
+const EXECUTED_AS_ENTRYPOINT =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (EXECUTED_AS_ENTRYPOINT) {
+  try {
+    main(process.argv.slice(2));
+  } catch (error) {
+    if (error instanceof ManifestValidationError) {
+      console.error(`[devnet-manifest] ERROR: ${error.message}`);
+      console.error(usage());
+    } else {
+      console.error("[devnet-manifest] Unexpected error:", error);
+    }
+    process.exit(1);
   }
-  process.exit(1);
 }

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { writeDevnetDeployManifest } from "./devnet-manifest.ts";
 
 type CliArgs = {
   nodeUrl: string;
@@ -83,6 +84,11 @@ type OperatorIdentity = {
   pubkeyY: string;
 };
 
+type ContractDeployResult = {
+  address: string;
+  txHash: string;
+};
+
 type OperatorDerivationDeps = {
   getSchnorrAccountContractAddress: (
     secretKey: unknown,
@@ -106,6 +112,7 @@ const ZERO_AZTEC_ADDRESS_PATTERN = /^0x0{64}$/i;
 const L1_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const ZERO_L1_ADDRESS_PATTERN = /^0x0{40}$/i;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+const ZERO_HEX_32_PATTERN = /^0x0{64}$/i;
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
 const WALLET_ACCOUNT_PREFIX = "accounts:";
@@ -146,7 +153,7 @@ function usage(): string {
     "  - --l1-rpc-url is optional for deployment-only preflight.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
     "  - In preflight mode, the script may register missing wallet aliases but sends no contract deploy txs.",
-    "  - Full Token/FPC/CreditFPC deployment will be implemented in step 4.",
+    "  - Without --preflight-only, the script deploys Token (unless --accepted-asset is provided), FPC, and CreditFPC and writes a validated manifest.",
   ].join("\n");
 }
 
@@ -859,6 +866,157 @@ function parseFieldValueString(value: unknown, context: string): string {
   return raw;
 }
 
+function parseTxHash(value: unknown, context: string): string {
+  const txHash = stringifyWithToString(value, context).trim();
+  if (!HEX_32_PATTERN.test(txHash) || ZERO_HEX_32_PATTERN.test(txHash)) {
+    throw new CliError(
+      `${context} returned invalid tx hash ${txHash}. Expected a non-zero 32-byte 0x-prefixed hash.`,
+    );
+  }
+  return txHash;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function collectJsonObjectsFromOutput(output: string): unknown[] {
+  const sanitized = stripAnsi(output).replace(/\r\n/g, "\n");
+  const candidates: unknown[] = [];
+
+  for (let start = 0; start < sanitized.length; start += 1) {
+    if (sanitized[start] !== "{") {
+      continue;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaping = false;
+    let end = -1;
+
+    for (let i = start; i < sanitized.length; i += 1) {
+      const char = sanitized[i];
+
+      if (inString) {
+        if (escaping) {
+          escaping = false;
+          continue;
+        }
+        if (char === "\\") {
+          escaping = true;
+          continue;
+        }
+        if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+      if (char === "{") {
+        depth += 1;
+        continue;
+      }
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+
+    if (end === -1) {
+      continue;
+    }
+
+    const slice = sanitized.slice(start, end + 1);
+    try {
+      candidates.push(JSON.parse(slice));
+    } catch {
+      // Ignore non-JSON brace blocks from logs.
+    }
+  }
+
+  return candidates;
+}
+
+function parseDeployCommandResult(
+  rawOutput: string,
+  context: string,
+): ContractDeployResult {
+  const candidates = collectJsonObjectsFromOutput(rawOutput);
+
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const candidate = candidates[i];
+    if (!isObjectRecord(candidate)) {
+      continue;
+    }
+
+    const contractRaw = candidate.contract;
+    if (!isObjectRecord(contractRaw)) {
+      continue;
+    }
+
+    try {
+      const txHash = parseTxHash(candidate.hash, `${context} json.hash`);
+      const address = parseAztecAddress(
+        stringifyWithToString(
+          contractRaw.address,
+          `${context} json.contract.address`,
+        ),
+        `${context} contract address`,
+      );
+
+      return { address, txHash };
+    } catch {
+      // Try the next JSON object candidate.
+    }
+  }
+
+  throw new CliError(
+    `Failed to parse deployment result for ${context}. Wallet output did not contain a valid JSON payload with hash and contract.address.\nRaw output:\n${rawOutput}`,
+  );
+}
+
+function deployContractWithAztecWallet(params: {
+  nodeUrl: string;
+  fromAlias: string;
+  sponsoredFpcAddress: string;
+  artifactPath: string;
+  init?: string;
+  alias?: string;
+  constructorArgs: string[];
+  context: string;
+}): ContractDeployResult {
+  const commandArgs = [
+    "deploy",
+    params.artifactPath,
+    "--from",
+    params.fromAlias,
+    "--payment",
+    `method=fpc-sponsored,fpc=${params.sponsoredFpcAddress}`,
+    "--json",
+  ];
+  if (params.init) {
+    commandArgs.push("--init", params.init);
+  }
+  if (params.alias) {
+    commandArgs.push("--alias", params.alias);
+  }
+  commandArgs.push("--args", ...params.constructorArgs);
+
+  const rawOutput = runAztecWalletCommand(
+    params.nodeUrl,
+    commandArgs,
+    `deploy ${params.context}`,
+  );
+  return parseDeployCommandResult(rawOutput, params.context);
+}
+
 async function importWithWorkspaceFallback(
   moduleId: string,
 ): Promise<Record<string, unknown>> {
@@ -1232,8 +1390,141 @@ async function main(): Promise<void> {
     return;
   }
 
-  throw new CliError(
-    "Deployment flow is not implemented yet in step 3. Continue to step 4 implementation for contract deployments + manifest persistence.",
+  const aliasSuffix = Date.now().toString();
+  const paymentMode = "fpc-sponsored";
+
+  let acceptedAssetAddress: string;
+  let acceptedAssetDeployTxHash: string | null = null;
+  if (args.acceptedAsset) {
+    acceptedAssetAddress = args.acceptedAsset;
+    console.log(
+      `[deploy-fpc-devnet] accepted_asset provided; skipping token deployment. accepted_asset=${acceptedAssetAddress}`,
+    );
+  } else {
+    console.log("[deploy-fpc-devnet] deploying Token contract");
+    const tokenDeploy = deployContractWithAztecWallet({
+      nodeUrl: args.nodeUrl,
+      fromAlias: deployer.walletAlias,
+      sponsoredFpcAddress: args.sponsoredFpcAddress,
+      artifactPath: REQUIRED_ARTIFACTS.token,
+      init: "constructor_with_minter",
+      alias: `devnet-token-${aliasSuffix}`,
+      constructorArgs: [
+        "FpcAcceptedAsset",
+        "FPCA",
+        "18",
+        operatorIdentity.address,
+        operatorIdentity.address,
+      ],
+      context: "Token",
+    });
+    acceptedAssetAddress = tokenDeploy.address;
+    acceptedAssetDeployTxHash = tokenDeploy.txHash;
+    console.log(
+      `[deploy-fpc-devnet] token deployed. address=${acceptedAssetAddress} tx_hash=${acceptedAssetDeployTxHash}`,
+    );
+  }
+
+  console.log("[deploy-fpc-devnet] deploying FPC contract");
+  const fpcDeploy = deployContractWithAztecWallet({
+    nodeUrl: args.nodeUrl,
+    fromAlias: deployer.walletAlias,
+    sponsoredFpcAddress: args.sponsoredFpcAddress,
+    artifactPath: REQUIRED_ARTIFACTS.fpc,
+    alias: `devnet-fpc-${aliasSuffix}`,
+    constructorArgs: [
+      operatorIdentity.address,
+      operatorIdentity.pubkeyX,
+      operatorIdentity.pubkeyY,
+      acceptedAssetAddress,
+    ],
+    context: "FPC",
+  });
+  console.log(
+    `[deploy-fpc-devnet] fpc deployed. address=${fpcDeploy.address} tx_hash=${fpcDeploy.txHash}`,
+  );
+
+  console.log("[deploy-fpc-devnet] deploying CreditFPC contract");
+  const creditFpcDeploy = deployContractWithAztecWallet({
+    nodeUrl: args.nodeUrl,
+    fromAlias: deployer.walletAlias,
+    sponsoredFpcAddress: args.sponsoredFpcAddress,
+    artifactPath: REQUIRED_ARTIFACTS.creditFpc,
+    alias: `devnet-credit-fpc-${aliasSuffix}`,
+    constructorArgs: [
+      operatorIdentity.address,
+      operatorIdentity.pubkeyX,
+      operatorIdentity.pubkeyY,
+      acceptedAssetAddress,
+    ],
+    context: "CreditFPC",
+  });
+  console.log(
+    `[deploy-fpc-devnet] credit_fpc deployed. address=${creditFpcDeploy.address} tx_hash=${creditFpcDeploy.txHash}`,
+  );
+
+  const manifest = writeDevnetDeployManifest(args.out, {
+    status: "deploy_ok",
+    generated_at: new Date().toISOString(),
+    network: {
+      node_url: args.nodeUrl,
+      node_version: nodeState.nodeVersion,
+      l1_chain_id: nodeState.l1ChainId,
+      rollup_version: nodeState.rollupVersion,
+    },
+    aztec_required_addresses: {
+      l1_contract_addresses: {
+        registryAddress: nodeState.l1ContractAddresses.registryAddress,
+        rollupAddress: nodeState.l1ContractAddresses.rollupAddress,
+        inboxAddress: nodeState.l1ContractAddresses.inboxAddress,
+        outboxAddress: nodeState.l1ContractAddresses.outboxAddress,
+        feeJuiceAddress: nodeState.l1ContractAddresses.feeJuiceAddress,
+        feeJuicePortalAddress:
+          nodeState.l1ContractAddresses.feeJuicePortalAddress,
+        feeAssetHandlerAddress:
+          nodeState.l1ContractAddresses.feeAssetHandlerAddress,
+      },
+      protocol_contract_addresses: {
+        instanceRegistry: nodeState.protocolContractAddresses.instanceRegistry,
+        classRegistry: nodeState.protocolContractAddresses.classRegistry,
+        multiCallEntrypoint:
+          nodeState.protocolContractAddresses.multiCallEntrypoint,
+        feeJuice: nodeState.protocolContractAddresses.feeJuice,
+      },
+      sponsored_fpc_address: args.sponsoredFpcAddress,
+    },
+    deployment_accounts: {
+      l2_deployer: {
+        alias: deployer.alias,
+        address: deployer.address,
+        ...(deployer.privateKey
+          ? { private_key: deployer.privateKey }
+          : { private_key_ref: deployer.privateKeyRef }),
+      },
+    },
+    contracts: {
+      accepted_asset: acceptedAssetAddress,
+      fpc: fpcDeploy.address,
+      credit_fpc: creditFpcDeploy.address,
+    },
+    operator: {
+      address: operatorIdentity.address,
+      pubkey_x: operatorIdentity.pubkeyX,
+      pubkey_y: operatorIdentity.pubkeyY,
+    },
+    tx_hashes: {
+      accepted_asset_deploy: acceptedAssetDeployTxHash,
+      fpc_deploy: fpcDeploy.txHash,
+      credit_fpc_deploy: creditFpcDeploy.txHash,
+    },
+    payment_mode: paymentMode,
+  });
+
+  console.log(
+    `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
+  );
+  console.log(
+    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} credit_fpc=${manifest.contracts.credit_fpc}`,
   );
 }
 
