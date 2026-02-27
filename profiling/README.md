@@ -166,7 +166,7 @@ Two GitHub Actions workflows automate benchmarking:
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `update-baseline.yml` | Push to `main` | Runs benchmark, uploads result as baseline artifact (90-day retention) |
-| `pr-benchmark.yml` | Pull request | Runs benchmark, downloads baseline, posts gate count comparison as PR comment |
+| `fpc-benchmark.yml` | Pull request | Runs benchmark, downloads baseline, posts gate count comparison as PR comment |
 
 The workflows reuse the same Aztec setup pattern as the smoke tests (read
 `.aztecrc`, cache toolchain, install via `aztec-up use`). The benchmark runs
