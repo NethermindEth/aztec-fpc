@@ -1,0 +1,74 @@
+# fpc-config.yaml — operator-tunable service settings.
+# Shared fields (fpc_address, accepted_asset, aztec_node_url, l1_rpc_url)
+# are injected from the deploy output at generation time.
+#
+# Copy this file to fpc-config.yaml and adjust to your environment.
+# After deploying contracts, run:
+#   bun run generate:configs
+# or the deploy script will auto-generate configs if fpc-config.yaml exists.
+
+attestation:
+  # Human-readable name for the accepted asset token
+  accepted_asset_name: "humanUSDC"
+
+  # Exchange rate: market_rate_num / market_rate_den = accepted_asset per 1 FeeJuice
+  # Example: 1 FeeJuice = 0.001 USDC -> num=1, den=1000
+  market_rate_num: 1
+  market_rate_den: 1000
+
+  # Operator margin in basis points (100 = 1%)
+  fee_bips: 200
+
+  # HTTP port the attestation service listens on
+  port: 3000
+
+  # How long (seconds) each signed quote is valid
+  quote_validity_seconds: 300
+
+  # /quote endpoint auth mode: disabled | api_key | trusted_header |
+  #   api_key_or_trusted_header | api_key_and_trusted_header
+  # production profile requires quote_auth_mode != disabled
+  quote_auth_mode: "disabled"
+  # quote_auth_api_key: "replace-with-random-secret"
+  # quote_auth_api_key_header: "x-api-key"
+  # quote_auth_trusted_header_name: "x-internal-attestation"
+  # quote_auth_trusted_header_value: "allow"
+
+  # Fixed-window rate limiting per identity (API key or IP)
+  quote_rate_limit_enabled: true
+  quote_rate_limit_max_requests: 60
+  quote_rate_limit_window_seconds: 60
+  quote_rate_limit_max_tracked_keys: 10000
+
+  # Optional fields (uncomment to override defaults):
+  # runtime_profile: "development"
+  # operator_secret_provider: "auto"
+  # operator_address: "0x..."
+  # pxe_data_directory: "./pxe_data"
+
+topup:
+  # Bridge when FPC Fee Juice balance drops below this (in wei)
+  # Example: 1e18 = 1 FeeJuice unit
+  threshold: "1000000000000000000"
+
+  # Amount to bridge each time the threshold is hit (in wei)
+  # Example: 10e18 = 10 FeeJuice units
+  top_up_amount: "10000000000000000000"
+
+  # Local file to persist in-flight bridge metadata across restarts
+  bridge_state_path: ".topup-bridge-state.json"
+
+  # Ops HTTP server port (health/readiness/metrics)
+  ops_port: 3001
+
+  # How often to check the balance (milliseconds)
+  check_interval_ms: 60000
+
+  # Confirmation polling settings after an L1 bridge is mined
+  confirmation_timeout_ms: 180000
+  confirmation_poll_initial_ms: 1000
+  confirmation_poll_max_ms: 15000
+
+  # Optional fields (uncomment to override defaults):
+  # runtime_profile: "development"
+  # l1_operator_secret_provider: "auto"
