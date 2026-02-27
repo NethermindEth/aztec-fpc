@@ -418,6 +418,8 @@ async function main() {
     maxGasCostNoTeardown * config.rateNum,
     config.rateDen,
   );
+  const fjFeeAmount = maxGasCostNoTeardown;
+  const aaPaymentAmount = expectedCharge;
   const mintAmount = expectedCharge + 1_000_000n;
   console.log(`[smoke] expected_charge=${expectedCharge}`);
 
@@ -437,8 +439,8 @@ async function main() {
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
     token.address.toField(),
-    new Fr(config.rateNum),
-    new Fr(config.rateDen),
+    new Fr(fjFeeAmount),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     user.toField(),
   ]);
@@ -452,7 +454,7 @@ async function main() {
   const transferCall = token.methods.transfer_private_to_private(
     user,
     operator,
-    expectedCharge,
+    aaPaymentAmount,
     transferAuthwitNonce,
   );
   const transferAuthwit = await wallet.createAuthWit(user, {
@@ -476,8 +478,8 @@ async function main() {
   const feeEntrypointCall = await fpc.methods
     .fee_entrypoint(
       transferAuthwitNonce,
-      config.rateNum,
-      config.rateDen,
+      fjFeeAmount,
+      aaPaymentAmount,
       validUntil,
       quoteSigBytes,
     )

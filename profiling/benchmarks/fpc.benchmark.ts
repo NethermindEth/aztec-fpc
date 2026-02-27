@@ -90,8 +90,8 @@ class CustomFPCPaymentMethod {
   transferAuthWit: any;
   quoteSigFields: any[];
   transferNonce: bigint;
-  rateNum: bigint;
-  rateDen: bigint;
+  fjFeeAmount: bigint;
+  aaPaymentAmount: bigint;
   validUntil: bigint;
   gasSettings: any;
 
@@ -100,8 +100,8 @@ class CustomFPCPaymentMethod {
     transferAuthWit: any,
     quoteSigFields: any[],
     transferNonce: bigint,
-    rateNum: bigint,
-    rateDen: bigint,
+    fjFeeAmount: bigint,
+    aaPaymentAmount: bigint,
     validUntil: bigint,
     gasSettings: any,
   ) {
@@ -109,8 +109,8 @@ class CustomFPCPaymentMethod {
     this.transferAuthWit = transferAuthWit;
     this.quoteSigFields = quoteSigFields;
     this.transferNonce = transferNonce;
-    this.rateNum = rateNum;
-    this.rateDen = rateDen;
+    this.fjFeeAmount = fjFeeAmount;
+    this.aaPaymentAmount = aaPaymentAmount;
     this.validUntil = validUntil;
     this.gasSettings = gasSettings;
   }
@@ -139,8 +139,8 @@ class CustomFPCPaymentMethod {
       isStatic: false,
       args: [
         new Fr(this.transferNonce),
-        new Fr(this.rateNum),
-        new Fr(this.rateDen),
+        new Fr(this.fjFeeAmount),
+        new Fr(this.aaPaymentAmount),
         new Fr(this.validUntil),
         ...this.quoteSigFields,
       ],
@@ -508,8 +508,8 @@ export default class FPCBenchmark {
       operatorSigningKey,
       fpcAddress,
       tokenAddress,
-      RATE_NUM,
-      RATE_DEN,
+      maxGasCost,
+      charge,
       VALID_UNTIL,
       userAddress,
       QUOTE_DOMAIN_SEP,
@@ -540,8 +540,8 @@ export default class FPCBenchmark {
       transferAuthWit,
       quoteSigFields,
       TX_NONCE,
-      RATE_NUM,
-      RATE_DEN,
+      maxGasCost,
+      charge,
       VALID_UNTIL,
       gasSettings,
     );

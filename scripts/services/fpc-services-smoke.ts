@@ -99,8 +99,8 @@ type SmokeConfig = {
 
 type QuoteResponse = {
   accepted_asset: string;
-  rate_num: string;
-  rate_den: string;
+  fj_amount: string;
+  aa_payment_amount: string;
   valid_until: string;
   signature: string;
 };
@@ -111,6 +111,8 @@ type AssetResponse = {
 };
 
 type ServiceFlowResult = {
+  fjAmount: bigint;
+  aaPaymentAmount: bigint;
   rateNum: bigint;
   rateDen: bigint;
   validUntil: bigint;
@@ -816,8 +818,8 @@ async function fetchQuote(
         const parsed = JSON.parse(bodyText) as QuoteResponse;
         if (
           typeof parsed.accepted_asset === "string" &&
-          typeof parsed.rate_num === "string" &&
-          typeof parsed.rate_den === "string" &&
+          typeof parsed.fj_amount === "string" &&
+          typeof parsed.aa_payment_amount === "string" &&
           typeof parsed.valid_until === "string" &&
           typeof parsed.signature === "string"
         ) {
@@ -993,8 +995,8 @@ async function verifyAttestationQuoteSignature(
   feePayerAddress: AztecAddress,
   tokenAddress: AztecAddress,
   user: AztecAddress,
-  rateNum: bigint,
-  rateDen: bigint,
+  fjAmount: bigint,
+  aaPaymentAmount: bigint,
   validUntil: bigint,
   quoteSigBytes: number[],
   scenarioPrefix: string,
@@ -1003,8 +1005,8 @@ async function verifyAttestationQuoteSignature(
     QUOTE_DOMAIN_SEPARATOR,
     feePayerAddress.toField(),
     tokenAddress.toField(),
-    new Fr(rateNum),
-    new Fr(rateDen),
+    new Fr(fjAmount),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     user.toField(),
   ]);
@@ -1016,7 +1018,7 @@ async function verifyAttestationQuoteSignature(
   );
   if (!isValid) {
     throw new Error(
-      `${scenarioPrefix} quote signature failed Schnorr verification for quoted rate preimage`,
+      `${scenarioPrefix} quote signature failed Schnorr verification for quoted amount preimage`,
     );
   }
 }
@@ -1038,6 +1040,7 @@ async function runServiceScenario(
   l1PrivateKey: Hex,
   topupThreshold: bigint,
   topupAmount: bigint,
+  quoteFjAmount: bigint,
 ): Promise<ServiceFlowResult> {
   const scenarioPrefix = `[services-smoke:${scenario}]`;
   const managed: ManagedProcess[] = [];
@@ -1256,15 +1259,15 @@ async function runServiceScenario(
 
     const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
     const quote = await fetchQuote(
-      `${attestationBaseUrl}/quote?user=${user.toString()}`,
+      `${attestationBaseUrl}/quote?user=${user.toString()}&fj_amount=${quoteFjAmount.toString()}`,
       config.httpTimeoutMs,
     );
     const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
     const quoteSigBytes = Array.from(
       Buffer.from(quote.signature.replace("0x", ""), "hex"),
     );
-    const rateNum = BigInt(quote.rate_num);
-    const rateDen = BigInt(quote.rate_den);
+    const fjAmount = BigInt(quote.fj_amount);
+    const aaPaymentAmount = BigInt(quote.aa_payment_amount);
     const validUntil = BigInt(quote.valid_until);
 
     if (quoteSigBytes.length !== 64) {
@@ -1272,9 +1275,14 @@ async function runServiceScenario(
         `${scenarioPrefix} quote signature length must be 64 bytes, got ${quoteSigBytes.length}`,
       );
     }
-    if (rateDen === 0n) {
+    if (fjAmount <= 0n) {
       throw new Error(
-        `${scenarioPrefix} attestation quote returned zero denominator`,
+        `${scenarioPrefix} attestation quote returned non-positive fj_amount`,
+      );
+    }
+    if (aaPaymentAmount <= 0n) {
+      throw new Error(
+        `${scenarioPrefix} attestation quote returned non-positive aa_payment_amount`,
       );
     }
     if (
@@ -1289,9 +1297,13 @@ async function runServiceScenario(
     const expectedRateNum =
       BigInt(config.marketRateNum) * BigInt(10_000 + config.feeBips);
     const expectedRateDen = BigInt(config.marketRateDen) * 10_000n;
-    if (rateNum !== expectedRateNum || rateDen !== expectedRateDen) {
+    const expectedAaPaymentAmount = ceilDiv(
+      fjAmount * expectedRateNum,
+      expectedRateDen,
+    );
+    if (aaPaymentAmount !== expectedAaPaymentAmount) {
       throw new Error(
-        `${scenarioPrefix} quote rate mismatch. expected_num=${expectedRateNum} expected_den=${expectedRateDen} got_num=${rateNum} got_den=${rateDen}`,
+        `${scenarioPrefix} quote payment mismatch. expected=${expectedAaPaymentAmount} got=${aaPaymentAmount}`,
       );
     }
     await verifyAttestationQuoteSignature(
@@ -1300,8 +1312,8 @@ async function runServiceScenario(
       feePayerAddress,
       token.address,
       user,
-      rateNum,
-      rateDen,
+      fjAmount,
+      aaPaymentAmount,
       validUntil,
       quoteSigBytes,
       scenarioPrefix,
@@ -1402,7 +1414,14 @@ async function runServiceScenario(
     }
     console.log(`${scenarioPrefix} PASS: service metrics endpoints`);
 
-    return { rateNum, rateDen, validUntil, quoteSigBytes };
+    return {
+      fjAmount,
+      aaPaymentAmount,
+      rateNum: expectedRateNum,
+      rateDen: expectedRateDen,
+      validUntil,
+      quoteSigBytes,
+    };
   } finally {
     for (const proc of managed.reverse()) {
       await stopManagedProcess(proc);
@@ -1422,10 +1441,13 @@ async function runFpcFeeEntrypointScenario(
   feePerL2Gas: bigint,
   quote: ServiceFlowResult,
 ): Promise<void> {
-  const expectedCharge = ceilDiv(
-    maxGasCostNoTeardown * quote.rateNum,
-    quote.rateDen,
-  );
+  const expectedCharge = quote.aaPaymentAmount;
+  const quotedFjAmount = quote.fjAmount;
+  if (quotedFjAmount !== maxGasCostNoTeardown) {
+    throw new Error(
+      `[services-smoke:fpc] quote fj amount mismatch. expected=${maxGasCostNoTeardown} got=${quotedFjAmount}`,
+    );
+  }
   const mintAmount = expectedCharge + 1_000_000n;
   console.log(`[services-smoke:fpc] expected_charge=${expectedCharge}`);
 
@@ -1438,7 +1460,7 @@ async function runFpcFeeEntrypointScenario(
   const transferCall = token.methods.transfer_private_to_private(
     user,
     operator,
-    expectedCharge,
+    quote.aaPaymentAmount,
     transferAuthwitNonce,
   );
   const transferAuthwit = await wallet.createAuthWit(user, {
@@ -1471,8 +1493,8 @@ async function runFpcFeeEntrypointScenario(
   const feeEntrypointCall = await fpc.methods
     .fee_entrypoint(
       transferAuthwitNonce,
-      quote.rateNum,
-      quote.rateDen,
+      quote.fjAmount,
+      quote.aaPaymentAmount,
       quote.validUntil,
       quote.quoteSigBytes,
     )
@@ -1988,6 +2010,7 @@ async function main() {
           l1PrivateKey as Hex,
           topupThreshold,
           topupAmount,
+          maxGasCostNoTeardown,
         );
         await runFpcFeeEntrypointScenario(
           config,
@@ -2026,6 +2049,7 @@ async function main() {
         l1PrivateKey as Hex,
         topupThreshold,
         topupAmount,
+        maxGasCostNoTeardown,
       );
       await runCreditFeeScenario(
         config,

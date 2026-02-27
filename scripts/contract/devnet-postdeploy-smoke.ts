@@ -1153,6 +1153,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
     maxGasCostNoTeardown * args.fpcRateNum,
     args.fpcRateDen,
   );
+  const fpcFjAmount = maxGasCostNoTeardown;
+  const fpcAaAmount = fpcExpectedCharge;
   await token.methods
     .mint_to_private(operatorAddress, fpcExpectedCharge + 1_000_000n)
     .send({ from: operatorAddress, wait: { timeout: 180 } });
@@ -1169,8 +1171,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
     token.address.toField(),
-    new deps.Fr(args.fpcRateNum),
-    new deps.Fr(args.fpcRateDen),
+    new deps.Fr(fpcFjAmount),
+    new deps.Fr(fpcAaAmount),
     new deps.Fr(fpcValidUntil),
     operatorAddress.toField(),
   ]);
@@ -1183,7 +1185,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const fpcTransferCall = token.methods.transfer_private_to_private(
     operatorAddress,
     operatorAddress,
-    fpcExpectedCharge,
+    fpcAaAmount,
     fpcAuthwitNonce,
   );
   const fpcTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
@@ -1193,8 +1195,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const fpcFeeEntrypointCall = await fpc.methods
     .fee_entrypoint(
       fpcAuthwitNonce,
-      args.fpcRateNum,
-      args.fpcRateDen,
+      fpcFjAmount,
+      fpcAaAmount,
       fpcValidUntil,
       fpcQuoteSigBytes,
     )

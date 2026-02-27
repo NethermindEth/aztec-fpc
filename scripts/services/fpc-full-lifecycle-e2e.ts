@@ -98,15 +98,15 @@ type TopupLogCounters = {
 
 type QuoteResponse = {
   accepted_asset: string;
-  rate_num: string;
-  rate_den: string;
+  fj_amount: string;
+  aa_payment_amount: string;
   valid_until: string;
   signature: string;
 };
 
 type QuoteInput = {
-  rateNum: bigint;
-  rateDen: bigint;
+  fjAmount: bigint;
+  aaPaymentAmount: bigint;
   validUntil: bigint;
   quoteSigBytes: number[];
 };
@@ -776,8 +776,8 @@ async function fetchQuote(
         const parsed = JSON.parse(bodyText) as QuoteResponse;
         if (
           typeof parsed.accepted_asset === "string" &&
-          typeof parsed.rate_num === "string" &&
-          typeof parsed.rate_den === "string" &&
+          typeof parsed.fj_amount === "string" &&
+          typeof parsed.aa_payment_amount === "string" &&
           typeof parsed.valid_until === "string" &&
           typeof parsed.signature === "string"
         ) {
@@ -804,6 +804,14 @@ function getFinalRate(config: FullE2EConfig): {
   };
 }
 
+function computeAaPaymentFromFj(
+  config: FullE2EConfig,
+  fjAmount: bigint,
+): bigint {
+  const { rateNum, rateDen } = getFinalRate(config);
+  return ceilDiv(fjAmount * rateNum, rateDen);
+}
+
 function parseQuoteResponse(
   quote: QuoteResponse,
   expectedAsset: AztecAddress,
@@ -812,8 +820,8 @@ function parseQuoteResponse(
     Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
   );
   const parsed: QuoteInput = {
-    rateNum: BigInt(quote.rate_num),
-    rateDen: BigInt(quote.rate_den),
+    fjAmount: BigInt(quote.fj_amount),
+    aaPaymentAmount: BigInt(quote.aa_payment_amount),
     validUntil: BigInt(quote.valid_until),
     quoteSigBytes,
   };
@@ -823,8 +831,11 @@ function parseQuoteResponse(
       `Quote signature length must be 64 bytes, got ${parsed.quoteSigBytes.length}`,
     );
   }
-  if (parsed.rateDen === 0n) {
-    throw new Error("Attestation quote returned zero denominator");
+  if (parsed.fjAmount <= 0n) {
+    throw new Error("Attestation quote returned non-positive fj_amount");
+  }
+  if (parsed.aaPaymentAmount <= 0n) {
+    throw new Error("Attestation quote returned non-positive aa_payment_amount");
   }
   if (
     quote.accepted_asset.toLowerCase() !==
@@ -851,8 +862,8 @@ async function signQuoteForUser(
   result: DeploymentRuntimeResult,
   fpcAddress: AztecAddress,
   acceptedAsset: AztecAddress,
-  rateNum: bigint,
-  rateDen: bigint,
+  fjAmount: bigint,
+  aaPaymentAmount: bigint,
   validUntil: bigint,
   userAddress: AztecAddress,
 ): Promise<QuoteInput> {
@@ -863,8 +874,8 @@ async function signQuoteForUser(
     QUOTE_DOMAIN_SEPARATOR,
     fpcAddress.toField(),
     acceptedAsset.toField(),
-    new Fr(rateNum),
-    new Fr(rateDen),
+    new Fr(fjAmount),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     userAddress.toField(),
   ]);
@@ -873,8 +884,8 @@ async function signQuoteForUser(
     signingKey,
   );
   return {
-    rateNum,
-    rateDen,
+    fjAmount,
+    aaPaymentAmount,
     validUntil,
     quoteSigBytes: Array.from(signature.toBuffer()),
   };
@@ -894,8 +905,11 @@ async function executeFeePaidTx(
   result: DeploymentRuntimeResult,
   params: FeePaidTxParams,
 ): Promise<{ expectedCharge: bigint; receipt: { transactionFee: unknown } }> {
-  if (params.quote.rateDen === 0n) {
-    throw new Error("rate_den must be non-zero");
+  if (params.quote.fjAmount <= 0n) {
+    throw new Error("fj_amount must be positive");
+  }
+  if (params.quote.aaPaymentAmount <= 0n) {
+    throw new Error("aa_payment_amount must be positive");
   }
   if (params.quote.quoteSigBytes.length !== 64) {
     throw new Error(
@@ -903,10 +917,12 @@ async function executeFeePaidTx(
     );
   }
 
-  const expectedCharge = ceilDiv(
-    result.maxGasCostNoTeardown * params.quote.rateNum,
-    params.quote.rateDen,
-  );
+  if (params.quote.fjAmount !== result.maxGasCostNoTeardown) {
+    throw new Error(
+      `quoted fj_amount mismatch. expected=${result.maxGasCostNoTeardown} got=${params.quote.fjAmount}`,
+    );
+  }
+  const expectedCharge = params.quote.aaPaymentAmount;
   const mintAmount = expectedCharge + 1_000_000n;
 
   await params.token.methods
@@ -920,7 +936,7 @@ async function executeFeePaidTx(
   const transferCall = params.token.methods.transfer_private_to_private(
     params.payer,
     result.operator,
-    expectedCharge,
+    params.quote.aaPaymentAmount,
     transferAuthwitNonce,
   );
   const transferAuthwit = await result.wallet.createAuthWit(params.payer, {
@@ -931,8 +947,8 @@ async function executeFeePaidTx(
   const feeEntrypointCall = await params.fpc.methods
     .fee_entrypoint(
       transferAuthwitNonce,
-      params.quote.rateNum,
-      params.quote.rateDen,
+      params.quote.fjAmount,
+      params.quote.aaPaymentAmount,
       params.quote.validUntil,
       params.quote.quoteSigBytes,
     )
@@ -1454,15 +1470,16 @@ async function runFeePaidTargetTxAndAssert(
   txLabel: "tx1" | "tx2",
   targetTransferAmount: bigint,
 ): Promise<bigint> {
+  const requestedFjAmount = result.maxGasCostNoTeardown;
   const quote = await fetchQuote(
-    `${attestationBaseUrl}/quote?user=${result.user.toString()}`,
+    `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
     config.httpTimeoutMs,
   );
   const quoteSigBytes = Array.from(
     Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
   );
-  const rateNum = BigInt(quote.rate_num);
-  const rateDen = BigInt(quote.rate_den);
+  const fjAmount = BigInt(quote.fj_amount);
+  const aaPaymentAmount = BigInt(quote.aa_payment_amount);
   const validUntil = BigInt(quote.valid_until);
 
   if (quoteSigBytes.length !== 64) {
@@ -1470,8 +1487,16 @@ async function runFeePaidTargetTxAndAssert(
       `Quote signature length must be 64 bytes, got ${quoteSigBytes.length}`,
     );
   }
-  if (rateDen === 0n) {
-    throw new Error("Attestation quote returned zero denominator");
+  if (fjAmount <= 0n) {
+    throw new Error("Attestation quote returned non-positive fj_amount");
+  }
+  if (aaPaymentAmount <= 0n) {
+    throw new Error("Attestation quote returned non-positive aa_payment_amount");
+  }
+  if (fjAmount !== requestedFjAmount) {
+    throw new Error(
+      `Attestation quote fj_amount mismatch. expected=${requestedFjAmount} got=${fjAmount}`,
+    );
   }
   if (
     quote.accepted_asset.toLowerCase() !==
@@ -1482,10 +1507,7 @@ async function runFeePaidTargetTxAndAssert(
     );
   }
 
-  const expectedCharge = ceilDiv(
-    result.maxGasCostNoTeardown * rateNum,
-    rateDen,
-  );
+  const expectedCharge = aaPaymentAmount;
   const mintAmount = expectedCharge + 1_000_000n;
   await result.token.methods
     .mint_to_private(result.user, mintAmount)
@@ -1524,7 +1546,7 @@ async function runFeePaidTargetTxAndAssert(
   const transferCall = result.token.methods.transfer_private_to_private(
     result.user,
     result.operator,
-    expectedCharge,
+    aaPaymentAmount,
     transferAuthwitNonce,
   );
   const transferAuthwit = await result.wallet.createAuthWit(result.user, {
@@ -1535,8 +1557,8 @@ async function runFeePaidTargetTxAndAssert(
   const feeEntrypointCall = await result.fpc.methods
     .fee_entrypoint(
       transferAuthwitNonce,
-      rateNum,
-      rateDen,
+      fjAmount,
+      aaPaymentAmount,
       validUntil,
       quoteSigBytes,
     )
@@ -1644,9 +1666,10 @@ async function negativeQuoteReplayRejected(
   result: DeploymentRuntimeResult,
   attestationBaseUrl: string,
 ): Promise<void> {
+  const requestedFjAmount = result.maxGasCostNoTeardown;
   const quote = parseQuoteResponse(
     await fetchQuote(
-      `${attestationBaseUrl}/quote?user=${result.user.toString()}`,
+      `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
       config.httpTimeoutMs,
     ),
     result.token.address,
@@ -1681,14 +1704,15 @@ async function negativeExpiredQuoteRejected(
   result: DeploymentRuntimeResult,
   node: ReturnType<typeof createAztecNodeClient>,
 ): Promise<void> {
-  const { rateNum, rateDen } = getFinalRate(config);
+  const fjAmount = result.maxGasCostNoTeardown;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const latestTimestamp = await getLatestL2Timestamp(node);
   const expiredQuote = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
-    rateNum,
-    rateDen,
+    fjAmount,
+    aaPaymentAmount,
     latestTimestamp,
     result.user,
   );
@@ -1715,15 +1739,16 @@ async function negativeOverlongTtlRejected(
   result: DeploymentRuntimeResult,
   node: ReturnType<typeof createAztecNodeClient>,
 ): Promise<void> {
-  const { rateNum, rateDen } = getFinalRate(config);
+  const fjAmount = result.maxGasCostNoTeardown;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const latestTimestamp = await getLatestL2Timestamp(node);
   const ttlSafetyBufferSeconds = 600n;
   const ttlTooLargeQuote = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
-    rateNum,
-    rateDen,
+    fjAmount,
+    aaPaymentAmount,
     latestTimestamp +
       BigInt(MAX_QUOTE_VALIDITY_SECONDS) +
       ttlSafetyBufferSeconds,
@@ -1750,14 +1775,15 @@ async function negativeSenderBindingRejected(
   result: DeploymentRuntimeResult,
   node: ReturnType<typeof createAztecNodeClient>,
 ): Promise<void> {
-  const { rateNum, rateDen } = getFinalRate(config);
+  const fjAmount = result.maxGasCostNoTeardown;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const latestTimestamp = await getLatestL2Timestamp(node);
   const quoteSignedForUser = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
-    rateNum,
-    rateDen,
+    fjAmount,
+    aaPaymentAmount,
     latestTimestamp + 600n,
     result.user,
   );
@@ -1935,14 +1961,15 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     await stopManagedProcess(isolatedTopup);
   }
 
-  const { rateNum, rateDen } = getFinalRate(config);
+  const fjAmount = result.maxGasCostNoTeardown;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const quoteAnchor = await getLatestL2Timestamp(node);
   const quote1 = await signQuoteForUser(
     result,
     isolatedFpc.address,
     isolatedToken.address,
-    rateNum,
-    rateDen,
+    fjAmount,
+    aaPaymentAmount,
     quoteAnchor + 600n,
     result.user,
   );
@@ -1950,8 +1977,8 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     result,
     isolatedFpc.address,
     isolatedToken.address,
-    rateNum,
-    rateDen,
+    fjAmount,
+    aaPaymentAmount,
     quoteAnchor + 601n,
     result.user,
   );
