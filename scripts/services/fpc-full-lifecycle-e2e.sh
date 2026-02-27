@@ -183,7 +183,7 @@ if [[ "$RESET_LOCAL_STATE" == "1" ]]; then
   rm -rf "$REPO_ROOT"/services/attestation/wallet_data_* "$REPO_ROOT"/services/attestation/pxe_data_*
 fi
 
-if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
+if ! bun --cwd "$REPO_ROOT/scripts" -e "import('@aztec/accounts/testing')" >/dev/null 2>&1; then
   echo "[full-lifecycle-e2e] Installing workspace dependencies"
   bun install
 fi

@@ -154,7 +154,7 @@ fi
 export FPC_SERVICES_SMOKE_MODE="$SMOKE_MODE"
 echo "[services-smoke] Mode: $SMOKE_MODE"
 
-if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
+if ! bun --cwd "$REPO_ROOT/scripts" -e "import('@aztec/accounts/testing')" >/dev/null 2>&1; then
   echo "[services-smoke] Installing workspace dependencies"
   bun install
 fi
