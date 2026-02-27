@@ -9,6 +9,8 @@ import { computeQuoteHash } from "../src/signer.js";
 const VALID_USER =
   "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
 const VALID_FJ_AMOUNT = "1000000";
+const U128_MAX = "340282366920938463463374607431768211455";
+const U128_MAX_PLUS_ONE = "340282366920938463463374607431768211456";
 
 function quoteUrl(
   user: string = VALID_USER,
@@ -274,6 +276,54 @@ describe("server", () => {
         error: {
           code: "BAD_REQUEST",
           message: "Missing or invalid query param: fj_amount",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 400 for fj_amount above u128 range", async () => {
+    const app = buildServer(TEST_CONFIG, mockSigner());
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: quoteUrl(VALID_USER, U128_MAX_PLUS_ONE),
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Missing or invalid query param: fj_amount",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 400 when computed aa_payment_amount exceeds u128 range", async () => {
+    const app = buildServer(
+      {
+        ...TEST_CONFIG,
+        market_rate_num: 2,
+        market_rate_den: 1,
+        fee_bips: 0,
+      },
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: quoteUrl(VALID_USER, U128_MAX),
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Computed aa_payment_amount does not fit in u128",
         },
       });
     } finally {

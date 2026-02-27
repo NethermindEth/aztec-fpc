@@ -21,7 +21,13 @@ function rateLimited() {
   };
 }
 
-function parsePositiveBigIntDecimal(
+const U128_MAX = (1n << 128n) - 1n;
+
+function isU128(value: bigint): boolean {
+  return value >= 0n && value <= U128_MAX;
+}
+
+function parsePositiveU128Decimal(
   value: string | undefined,
 ): bigint | undefined {
   const trimmed = value?.trim();
@@ -31,8 +37,12 @@ function parsePositiveBigIntDecimal(
   if (!/^[0-9]+$/.test(trimmed)) {
     return undefined;
   }
+  // Keep parsing bounded and aligned with the on-chain u128 type.
+  if (trimmed.length > 39) {
+    return undefined;
+  }
   const parsed = BigInt(trimmed);
-  if (parsed <= 0n) {
+  if (parsed <= 0n || !isU128(parsed)) {
     return undefined;
   }
   return parsed;
@@ -263,130 +273,140 @@ export function buildServer(
   app.get<{ Querystring: { user?: string; fj_amount?: string } }>(
     "/quote",
     async (req, reply) => {
-    const startedAtNs = process.hrtime.bigint();
-    let metricsRecorded = false;
-    const observe = (outcome: QuoteOutcome): void => {
-      if (metricsRecorded) {
-        return;
+      const startedAtNs = process.hrtime.bigint();
+      let metricsRecorded = false;
+      const observe = (outcome: QuoteOutcome): void => {
+        if (metricsRecorded) {
+          return;
+        }
+        metricsRecorded = true;
+        const durationNs = process.hrtime.bigint() - startedAtNs;
+        const durationSeconds = Number(durationNs) / 1_000_000_000;
+        metrics.observeQuote(outcome, durationSeconds);
+      };
+
+      const nowSeconds = BigInt(await nowUnixSeconds());
+
+      if (rateLimiter) {
+        const identity = resolveQuoteRateLimitIdentity(
+          config,
+          req.headers,
+          req.ip,
+        );
+        const decision = rateLimiter.consume(identity.cacheKey, nowSeconds);
+        if (!decision.allowed) {
+          req.log.warn(
+            {
+              event: "quote_rate_limited",
+              identity_kind: identity.kind,
+              retry_after_seconds: decision.retryAfterSeconds,
+            },
+            "Rate limited quote request",
+          );
+          observe("rate_limited");
+          return reply
+            .header("retry-after", decision.retryAfterSeconds.toString())
+            .code(429)
+            .send(rateLimited());
+        }
       }
-      metricsRecorded = true;
-      const durationNs = process.hrtime.bigint() - startedAtNs;
-      const durationSeconds = Number(durationNs) / 1_000_000_000;
-      metrics.observeQuote(outcome, durationSeconds);
-    };
 
-    const nowSeconds = BigInt(await nowUnixSeconds());
-
-    if (rateLimiter) {
-      const identity = resolveQuoteRateLimitIdentity(
-        config,
-        req.headers,
-        req.ip,
-      );
-      const decision = rateLimiter.consume(identity.cacheKey, nowSeconds);
-      if (!decision.allowed) {
+      if (!isQuoteAuthorized(config, req.headers)) {
         req.log.warn(
           {
-            event: "quote_rate_limited",
-            identity_kind: identity.kind,
-            retry_after_seconds: decision.retryAfterSeconds,
+            event: "quote_auth_rejected",
+            mode: config.quote_auth.mode,
           },
-          "Rate limited quote request",
+          "Rejected unauthorized quote request",
         );
-        observe("rate_limited");
-        return reply
-          .header("retry-after", decision.retryAfterSeconds.toString())
-          .code(429)
-          .send(rateLimited());
+        observe("unauthorized");
+        return reply.code(401).send(unauthorized());
       }
-    }
 
-    if (!isQuoteAuthorized(config, req.headers)) {
-      req.log.warn(
-        {
-          event: "quote_auth_rejected",
-          mode: config.quote_auth.mode,
-        },
-        "Rejected unauthorized quote request",
-      );
-      observe("unauthorized");
-      return reply.code(401).send(unauthorized());
-    }
+      const userAddress = req.query.user?.trim();
+      if (!userAddress) {
+        observe("bad_request");
+        return reply
+          .code(400)
+          .send(badRequest("Missing required query param: user"));
+      }
+      let parsedUserAddress: AztecAddress;
+      try {
+        parsedUserAddress = AztecAddress.fromString(userAddress);
+      } catch {
+        observe("bad_request");
+        return reply.code(400).send(badRequest("Invalid user address"));
+      }
+      if (parsedUserAddress.isZero()) {
+        observe("bad_request");
+        return reply.code(400).send(badRequest("Invalid user address"));
+      }
 
-    const userAddress = req.query.user?.trim();
-    if (!userAddress) {
-      observe("bad_request");
-      return reply
-        .code(400)
-        .send(badRequest("Missing required query param: user"));
-    }
-    let parsedUserAddress: AztecAddress;
-    try {
-      parsedUserAddress = AztecAddress.fromString(userAddress);
-    } catch {
-      observe("bad_request");
-      return reply.code(400).send(badRequest("Invalid user address"));
-    }
+      const fjFeeAmount = parsePositiveU128Decimal(req.query.fj_amount);
+      if (!fjFeeAmount) {
+        observe("bad_request");
+        return reply
+          .code(400)
+          .send(badRequest("Missing or invalid query param: fj_amount"));
+      }
 
-    const fjFeeAmount = parsePositiveBigIntDecimal(
-      req.query.fj_amount,
-    );
-    if (!fjFeeAmount) {
-      observe("bad_request");
-      return reply
-        .code(400)
-        .send(badRequest("Missing or invalid query param: fj_amount"));
-    }
+      try {
+        const { rate_num, rate_den } = computeFinalRate(config);
+        const expiry = validUntil(nowSeconds);
+        const aaPaymentAmount = ceilDiv(fjFeeAmount * rate_num, rate_den);
+        if (!isU128(aaPaymentAmount) || aaPaymentAmount <= 0n) {
+          observe("bad_request");
+          return reply
+            .code(400)
+            .send(
+              badRequest("Computed aa_payment_amount does not fit in u128"),
+            );
+        }
 
-    try {
-      const { rate_num, rate_den } = computeFinalRate(config);
-      const expiry = validUntil(nowSeconds);
-      const aaPaymentAmount = ceilDiv(fjFeeAmount * rate_num, rate_den);
+        const signature = await signQuote(quoteSigner, {
+          fpcAddress,
+          acceptedAsset,
+          fjFeeAmount,
+          aaPaymentAmount,
+          validUntil: expiry,
+          userAddress: parsedUserAddress,
+        });
 
-      const signature = await signQuote(quoteSigner, {
-        fpcAddress,
-        acceptedAsset,
-        fjFeeAmount,
-        aaPaymentAmount,
-        validUntil: expiry,
-        userAddress: parsedUserAddress,
-      });
+        req.log.info(
+          {
+            event: "quote_issued",
+            user: parsedUserAddress.toString(),
+            valid_until: expiry.toString(),
+            fj_amount: fjFeeAmount.toString(),
+            aa_payment_amount: aaPaymentAmount.toString(),
+          },
+          "Quote issued",
+        );
+        observe("success");
 
-      req.log.info(
-        {
-          event: "quote_issued",
-          user: parsedUserAddress.toString(),
-          valid_until: expiry.toString(),
+        return {
+          accepted_asset: config.accepted_asset_address,
           fj_amount: fjFeeAmount.toString(),
           aa_payment_amount: aaPaymentAmount.toString(),
-        },
-        "Quote issued",
-      );
-      observe("success");
-
-      return {
-        accepted_asset: config.accepted_asset_address,
-        fj_amount: fjFeeAmount.toString(),
-        aa_payment_amount: aaPaymentAmount.toString(),
-        valid_until: expiry.toString(),
-        signature,
-      };
-    } catch (error) {
-      observe("internal_error");
-      req.log.error(
-        {
-          err: error,
-          user: parsedUserAddress.toString(),
-        },
-        "Failed to issue quote",
-      );
-      return reply.code(500).send({
-        error: {
-          code: "INTERNAL_ERROR",
-          message: "Internal server error",
-        },
-      });
-    }
+          valid_until: expiry.toString(),
+          signature,
+        };
+      } catch (error) {
+        observe("internal_error");
+        req.log.error(
+          {
+            err: error,
+            user: parsedUserAddress.toString(),
+          },
+          "Failed to issue quote",
+        );
+        return reply.code(500).send({
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Internal server error",
+          },
+        });
+      }
     },
   );
 
