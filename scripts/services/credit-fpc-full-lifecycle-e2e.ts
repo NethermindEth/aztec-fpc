@@ -148,6 +148,7 @@ const UINT_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const MAX_PORT = 65535;
+const CREDIT_EXPECTED_PAID_TX_COUNT = 2n;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DIAGNOSTIC_TAIL_LINES = 200;
 const managedProcessRegistry = new Set<ManagedProcess>();
@@ -758,6 +759,30 @@ async function claimTopupBridgeSubmission(
       feePayerAddress: result.fpc.address,
       topupAmountWei: result.topupAmountWei,
     },
+    submission,
+    relayAdvanceBlocks,
+    timeoutMs,
+    pollMs,
+  );
+}
+
+async function tryClaimTopupBridgeSubmission(
+  node: ReturnType<typeof createAztecNodeClient>,
+  result: DeploymentRuntimeResult,
+  submission: TopupBridgeSubmission,
+  relayAdvanceBlocks: number,
+  timeoutMs: number,
+  pollMs: number,
+): Promise<bigint | null> {
+  if (!submission.claimSecret) {
+    console.log(
+      `[credit-full-lifecycle-e2e] bridge message ${submission.messageHash} has no claim_secret in logs; skipping explicit claim and waiting for balance update`,
+    );
+    return null;
+  }
+  return claimTopupBridgeSubmission(
+    node,
+    result,
     submission,
     relayAdvanceBlocks,
     timeoutMs,
@@ -1406,12 +1431,12 @@ async function deployContractsAndWriteRuntimeConfig(
   const minimumTopupWei =
     maxGasCostNoTeardown *
       config.feeJuiceTopupSafetyMultiplier *
-      BigInt(config.requiredTopupCycles) +
+      CREDIT_EXPECTED_PAID_TX_COUNT +
     1_000_000n;
   const topupAmountWei = config.topupWei ?? minimumTopupWei;
   if (topupAmountWei < minimumTopupWei) {
     throw new Error(
-      `FPC_CREDIT_FULL_E2E_TOPUP_WEI=${topupAmountWei} is below required minimum ${minimumTopupWei}`,
+      `FPC_CREDIT_FULL_E2E_TOPUP_WEI=${topupAmountWei} is below required minimum ${minimumTopupWei} (computed for ${CREDIT_EXPECTED_PAID_TX_COUNT} paid txs)`,
     );
   }
   const topupThresholdWei = config.thresholdWei ?? topupAmountWei;
@@ -1488,6 +1513,7 @@ async function deployContractsAndWriteRuntimeConfig(
         attestationConfigPath,
         topupConfigPath,
         topupBridgeStatePath,
+        expectedPaidTxCount: CREDIT_EXPECTED_PAID_TX_COUNT.toString(),
         topupThresholdWei: topupThresholdWei.toString(),
         topupAmountWei: topupAmountWei.toString(),
       },
@@ -2183,6 +2209,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
   const managed: ManagedProcess[] = [];
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNodeReady(node, config.nodeTimeoutMs);
+  const creditFpcAddress = result.fpc.address;
 
   const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
   const topupOpsBaseUrl = `http://127.0.0.1:${config.topupOpsPort}`;
@@ -2292,15 +2319,12 @@ async function orchestrateServicesAndAssertBridgeCycles(
     topupCounters.timeoutCount = cycle1Outcome.timeoutCount;
     topupCounters.failedCount = cycle1Outcome.failedCount;
 
-    let feeJuiceAfterCycle1 = await getFeeJuiceBalance(
-      result.fpc.address,
-      node,
-    );
+    let feeJuiceAfterCycle1 = await getFeeJuiceBalance(creditFpcAddress, node);
     if (feeJuiceAfterCycle1 === 0n) {
       console.log(
         `[credit-full-lifecycle-e2e] bridge cycle #1 confirmed but Fee Juice is still zero; claiming bridge message ${cycle1Submission.submission.messageHash}`,
       );
-      feeJuiceAfterCycle1 = await claimTopupBridgeSubmission(
+      const claimedBalance = await tryClaimTopupBridgeSubmission(
         node,
         result,
         cycle1Submission.submission,
@@ -2308,6 +2332,14 @@ async function orchestrateServicesAndAssertBridgeCycles(
         config.topupWaitTimeoutMs,
         config.topupPollMs,
       );
+      feeJuiceAfterCycle1 =
+        claimedBalance ??
+        (await waitForPositiveFeeJuiceBalance(
+          node,
+          creditFpcAddress,
+          config.topupWaitTimeoutMs,
+          config.topupPollMs,
+        ));
     }
     topupCounters = getTopupLogCountersFromProcess(topup);
     console.log(
@@ -2327,7 +2359,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
       "tx1",
       1n,
     );
-    const feeJuiceAfterTx1 = await getFeeJuiceBalance(result.fpc.address, node);
+    const feeJuiceAfterTx1 = await getFeeJuiceBalance(creditFpcAddress, node);
     console.log(
       `[credit-full-lifecycle-e2e] fee_juice_after_tx1=${feeJuiceAfterTx1}`,
     );
@@ -2358,12 +2390,12 @@ async function orchestrateServicesAndAssertBridgeCycles(
       topupCounters.timeoutCount = cycle2Outcome.timeoutCount;
       topupCounters.failedCount = cycle2Outcome.failedCount;
 
-      feeJuiceAfterCycle2 = await getFeeJuiceBalance(result.fpc.address, node);
+      feeJuiceAfterCycle2 = await getFeeJuiceBalance(creditFpcAddress, node);
       if (feeJuiceAfterCycle2 <= feeJuiceAfterTx1) {
         console.log(
           `[credit-full-lifecycle-e2e] bridge cycle #2 confirmed but Fee Juice did not increase; claiming bridge message ${cycle2Submission.submission.messageHash}`,
         );
-        await claimTopupBridgeSubmission(
+        await tryClaimTopupBridgeSubmission(
           node,
           result,
           cycle2Submission.submission,
@@ -2373,7 +2405,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
         );
         feeJuiceAfterCycle2 = await waitForFeeJuiceBalanceAboveBaseline(
           node,
-          result.fpc.address,
+          creditFpcAddress,
           feeJuiceAfterTx1,
           config.topupWaitTimeoutMs,
           config.topupPollMs,
@@ -2397,7 +2429,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
       "tx2",
       1n,
     );
-    const feeJuiceAfterTx2 = await getFeeJuiceBalance(result.fpc.address, node);
+    const feeJuiceAfterTx2 = await getFeeJuiceBalance(creditFpcAddress, node);
     console.log(
       `[credit-full-lifecycle-e2e] fee_juice_after_tx2=${feeJuiceAfterTx2}`,
     );
