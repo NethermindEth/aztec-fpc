@@ -1,0 +1,58 @@
+ARG AZTEC_VERSION=4.0.0-devnet.2-patch.1
+
+# ══════════════════════════════════════════════════════════════
+# Stage 1: aztec — base image with aztec toolchain
+# ══════════════════════════════════════════════════════════════
+FROM node:24-trixie-slim AS aztec
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl git g++ jq make python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG AZTEC_VERSION
+RUN curl -sL https://install.aztec.network/${AZTEC_VERSION} | VERSION=${AZTEC_VERSION} bash -i
+
+ENV PATH="/root/.aztec/versions/${AZTEC_VERSION}/bin:/root/.aztec/versions/${AZTEC_VERSION}/node_modules/.bin:$PATH"
+
+# ══════════════════════════════════════════════════════════════
+# Stage 2: compile — contract compilation only
+# ══════════════════════════════════════════════════════════════
+FROM aztec AS compile
+
+WORKDIR /app
+
+COPY Nargo.toml ./
+COPY contracts/ contracts/
+COPY vendor/ vendor/
+
+RUN aztec compile --workspace --force
+
+# ══════════════════════════════════════════════════════════════
+# Stage 3: runtime — common runtime image with JS dependencies
+# ══════════════════════════════════════════════════════════════
+FROM aztec AS runtime
+
+# ── Install Bun ──
+COPY --from=oven/bun:1.3.9-slim /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=oven/bun:1.3.9-slim /usr/local/bin/bunx /usr/local/bin/bunx
+
+WORKDIR /app
+
+# ── Install JS dependencies (layer-cached until package.json/bun.lock change) ──
+COPY package.json bun.lock ./
+COPY services/attestation/package.json services/attestation/
+COPY services/topup/package.json services/topup/
+RUN bun install --frozen-lockfile
+
+# ── Pull compiled contract artifacts from compile stage ──
+COPY --from=compile /app/target/ target/
+
+# ══════════════════════════════════════════════════════════════
+# Stage 4: deploy — deploying compiled contracts
+# ══════════════════════════════════════════════════════════════
+FROM runtime AS deploy
+
+COPY scripts/contract/deploy-fpc-local.ts scripts/contract/
+COPY scripts/contract/deploy-fpc-local.sh scripts/contract/
+
+ENTRYPOINT ["scripts/contract/deploy-fpc-local.sh"]
