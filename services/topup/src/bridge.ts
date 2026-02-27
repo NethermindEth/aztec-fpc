@@ -26,6 +26,7 @@ export interface BridgeResult {
   claimSecretHash: string;
   messageHash: Hex;
   messageLeafIndex: bigint;
+  submittedAtMs: number;
 }
 
 type ExtendedWalletClient = Parameters<typeof L1FeeJuicePortalManager.new>[1];
@@ -162,5 +163,6 @@ export async function bridgeFeeJuice(
     claimSecretHash: claim.claimSecretHash.toString(),
     messageHash: claim.messageHash,
     messageLeafIndex: claim.messageLeafIndex,
+    submittedAtMs: Date.now(),
   };
 }

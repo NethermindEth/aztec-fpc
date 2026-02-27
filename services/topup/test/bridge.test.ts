@@ -100,13 +100,13 @@ describe("bridge", () => {
     assert.equal(capturedChainId, 31337);
     assert.equal(capturedTo?.toString(), FPC.toString());
     assert.equal(capturedAmount, 123n);
-    assert.deepEqual(result, {
-      amount: 123n,
-      claimSecret: new Fr(1n).toString(),
-      claimSecretHash: new Fr(2n).toString(),
-      messageHash: MESSAGE_HASH,
-      messageLeafIndex: 7n,
-    });
+    assert.equal(result.amount, 123n);
+    assert.equal(result.claimSecret, new Fr(1n).toString());
+    assert.equal(result.claimSecretHash, new Fr(2n).toString());
+    assert.equal(result.messageHash, MESSAGE_HASH);
+    assert.equal(result.messageLeafIndex, 7n);
+    assert.equal(typeof result.submittedAtMs, "number");
+    assert.equal(Number.isFinite(result.submittedAtMs), true);
   });
 
   it("fails fast on zero fpc address", async () => {

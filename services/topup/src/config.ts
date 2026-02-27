@@ -45,6 +45,8 @@ const ConfigSchema = z
     threshold: PositiveBigIntString,
     /** Amount to bridge per top-up (bigint string, wei units). */
     top_up_amount: PositiveBigIntString,
+    /** Local durable JSON file for persisting in-flight bridge metadata. */
+    bridge_state_path: z.string().min(1).default(".topup-bridge-state.json"),
     check_interval_ms: z.number().int().positive().default(60_000),
     confirmation_timeout_ms: z.number().int().positive().default(180_000),
     confirmation_poll_initial_ms: z.number().int().positive().default(1_000),
@@ -139,6 +141,8 @@ export function loadConfig(
     runtime_profile: runtimeProfile,
     aztec_node_url: process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
     l1_rpc_url: process.env.L1_RPC_URL ?? config.l1_rpc_url,
+    bridge_state_path:
+      process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
     l1_operator_private_key: resolvedSecret.value,
     l1_operator_private_key_source: resolvedSecret.source,
     l1_operator_private_key_provider: resolvedSecret.provider,
