@@ -42,6 +42,7 @@
     "smoke:credit-fpc:devnet": "bash scripts/contract/credit-fpc-devnet-smoke.sh",
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-fpc-local-smoke.sh",
     "smoke:services": "bash scripts/services/fpc-services-smoke.sh",
+    "e2e:full-lifecycle": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
     "test": "bun run test:contracts && bun run test:ts"
   },
   "workspaces": [
