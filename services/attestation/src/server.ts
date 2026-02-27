@@ -3,6 +3,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import Fastify from "fastify";
 import type { Config } from "./config.js";
 import { computeFinalRate } from "./config.js";
+import { AttestationMetrics, type QuoteOutcome } from "./metrics.js";
 import type { QuoteSchnorrSigner } from "./signer.js";
 import { signQuote } from "./signer.js";
 
@@ -199,6 +200,7 @@ export function buildServer(
   clock: QuoteClock = {},
 ) {
   const app = Fastify({ logger: true });
+  const metrics = new AttestationMetrics();
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const acceptedAsset = AztecAddress.fromString(config.accepted_asset_address);
 
@@ -220,6 +222,14 @@ export function buildServer(
 
   app.get("/health", async () => ({ status: "ok" }));
 
+  // ── GET /metrics ───────────────────────────────────────────────────────────
+
+  app.get("/metrics", async (_req, reply) => {
+    return reply
+      .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
+      .send(metrics.renderPrometheus());
+  });
+
   // ── GET /asset ───────────────────────────────────────────────────────────────
 
   app.get("/asset", async () => ({
@@ -230,6 +240,18 @@ export function buildServer(
   // ── GET /quote?user=<address> ─────────────────────────────────────────────
 
   app.get<{ Querystring: { user?: string } }>("/quote", async (req, reply) => {
+    const startedAtNs = process.hrtime.bigint();
+    let metricsRecorded = false;
+    const observe = (outcome: QuoteOutcome): void => {
+      if (metricsRecorded) {
+        return;
+      }
+      metricsRecorded = true;
+      const durationNs = process.hrtime.bigint() - startedAtNs;
+      const durationSeconds = Number(durationNs) / 1_000_000_000;
+      metrics.observeQuote(outcome, durationSeconds);
+    };
+
     const nowSeconds = BigInt(await nowUnixSeconds());
 
     if (rateLimiter) {
@@ -248,6 +270,7 @@ export function buildServer(
           },
           "Rate limited quote request",
         );
+        observe("rate_limited");
         return reply
           .header("retry-after", decision.retryAfterSeconds.toString())
           .code(429)
@@ -263,11 +286,13 @@ export function buildServer(
         },
         "Rejected unauthorized quote request",
       );
+      observe("unauthorized");
       return reply.code(401).send(unauthorized());
     }
 
     const userAddress = req.query.user?.trim();
     if (!userAddress) {
+      observe("bad_request");
       return reply
         .code(400)
         .send(badRequest("Missing required query param: user"));
@@ -276,6 +301,7 @@ export function buildServer(
     try {
       parsedUserAddress = AztecAddress.fromString(userAddress);
     } catch {
+      observe("bad_request");
       return reply.code(400).send(badRequest("Invalid user address"));
     }
 
@@ -302,6 +328,7 @@ export function buildServer(
         },
         "Quote issued",
       );
+      observe("success");
 
       return {
         accepted_asset: config.accepted_asset_address,
@@ -311,6 +338,7 @@ export function buildServer(
         signature,
       };
     } catch (error) {
+      observe("internal_error");
       req.log.error(
         {
           err: error,
