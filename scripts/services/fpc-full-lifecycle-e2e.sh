@@ -198,4 +198,7 @@ echo "[full-lifecycle-e2e] Building topup service"
 bun run --filter @aztec-fpc/topup build
 
 echo "[full-lifecycle-e2e] Running full lifecycle E2E runner"
-bun run "$REPO_ROOT/scripts/services/fpc-full-lifecycle-e2e.ts" "$@"
+(
+  cd "$REPO_ROOT/scripts"
+  bun run "./services/fpc-full-lifecycle-e2e.ts" "$@"
+)

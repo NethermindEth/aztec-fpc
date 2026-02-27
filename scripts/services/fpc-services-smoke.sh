@@ -169,4 +169,7 @@ echo "[services-smoke] Building topup service"
 bun run --filter @aztec-fpc/topup build
 
 echo "[services-smoke] Running services end-to-end smoke"
-bun run "$REPO_ROOT/scripts/services/fpc-services-smoke.ts"
+(
+  cd "$REPO_ROOT/scripts"
+  bun run "./services/fpc-services-smoke.ts"
+)
