@@ -444,6 +444,8 @@ async function main() {
   const mintAmount =
     maxGasCostNoTeardown * config.mintMultiplier + config.mintBuffer;
   const expectedCharge = ceilDiv(mintAmount * config.rateNum, config.rateDen);
+  const fjCreditAmount = mintAmount;
+  const aaPaymentAmount = expectedCharge;
   console.log(`[credit-smoke] mint_amount=${mintAmount}`);
   console.log(`[credit-smoke] expected_charge=${expectedCharge}`);
 
@@ -463,8 +465,8 @@ async function main() {
     QUOTE_DOMAIN_SEPARATOR,
     creditFpc.address.toField(),
     token.address.toField(),
-    new Fr(config.rateNum),
-    new Fr(config.rateDen),
+    new Fr(fjCreditAmount),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     user.toField(),
   ]);
@@ -478,7 +480,7 @@ async function main() {
   const transferCall = token.methods.transfer_private_to_private(
     user,
     operator,
-    expectedCharge,
+    aaPaymentAmount,
     transferAuthwitNonce,
   );
   const transferAuthwit = await wallet.createAuthWit(user, {
@@ -502,11 +504,10 @@ async function main() {
   const payAndMintCall = await creditFpc.methods
     .pay_and_mint(
       transferAuthwitNonce,
-      config.rateNum,
-      config.rateDen,
+      fjCreditAmount,
+      aaPaymentAmount,
       validUntil,
       quoteSigBytes,
-      mintAmount,
     )
     .getFunctionCall();
   const payAndMintPaymentMethod = {

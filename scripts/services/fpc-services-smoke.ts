@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url";
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { lookupValidity } from "@aztec/aztec.js/authorization";
+import {
+  computeInnerAuthWitHash,
+  lookupValidity,
+} from "@aztec/aztec.js/authorization";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
@@ -17,7 +20,7 @@ import {
   ProtocolContractAddress,
 } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
-import { Schnorr } from "@aztec/foundation/crypto/schnorr";
+import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import {
   loadContractArtifact,
   loadContractArtifactForPublic,
@@ -49,6 +52,7 @@ const FEE_JUICE_PORTAL_ABI = parseAbi([
   "function depositToAztecPublic(bytes32 to, uint256 amount, bytes32 secretHash) returns (bytes32, uint256)",
   "event DepositToAztecPublic(bytes32 indexed to, uint256 amount, bytes32 secretHash, bytes32 key, uint256 index)",
 ]);
+const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 
 type ManagedProcess = {
   name: string;
@@ -65,6 +69,7 @@ type TopupBridgeSubmission = {
 
 type SmokeMode = "fpc" | "credit" | "both";
 type ScenarioKind = "fpc" | "credit";
+type SchnorrPoint = Awaited<ReturnType<Schnorr["computePublicKey"]>>;
 
 type SmokeConfig = {
   mode: SmokeMode;
@@ -982,6 +987,40 @@ function getScenarioKinds(mode: SmokeMode): ScenarioKind[] {
   }
 }
 
+async function verifyAttestationQuoteSignature(
+  schnorr: Schnorr,
+  operatorPubKey: SchnorrPoint,
+  feePayerAddress: AztecAddress,
+  tokenAddress: AztecAddress,
+  user: AztecAddress,
+  rateNum: bigint,
+  rateDen: bigint,
+  validUntil: bigint,
+  quoteSigBytes: number[],
+  scenarioPrefix: string,
+): Promise<void> {
+  const quoteHash = await computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    feePayerAddress.toField(),
+    tokenAddress.toField(),
+    new Fr(rateNum),
+    new Fr(rateDen),
+    new Fr(validUntil),
+    user.toField(),
+  ]);
+  const signature = SchnorrSignature.fromBuffer(Buffer.from(quoteSigBytes));
+  const isValid = await schnorr.verifySignature(
+    quoteHash.toBuffer(),
+    operatorPubKey,
+    signature,
+  );
+  if (!isValid) {
+    throw new Error(
+      `${scenarioPrefix} quote signature failed Schnorr verification for quoted rate preimage`,
+    );
+  }
+}
+
 async function runServiceScenario(
   scenario: ScenarioKind,
   config: SmokeConfig,
@@ -993,6 +1032,8 @@ async function runServiceScenario(
   operator: AztecAddress,
   user: AztecAddress,
   feePayerAddress: AztecAddress,
+  schnorr: Schnorr,
+  operatorPubKey: SchnorrPoint,
   operatorSecretHex: string,
   l1PrivateKey: Hex,
   topupThreshold: bigint,
@@ -1253,6 +1294,19 @@ async function runServiceScenario(
         `${scenarioPrefix} quote rate mismatch. expected_num=${expectedRateNum} expected_den=${expectedRateDen} got_num=${rateNum} got_den=${rateDen}`,
       );
     }
+    await verifyAttestationQuoteSignature(
+      schnorr,
+      operatorPubKey,
+      feePayerAddress,
+      token.address,
+      user,
+      rateNum,
+      rateDen,
+      validUntil,
+      quoteSigBytes,
+      scenarioPrefix,
+    );
+    console.log(`${scenarioPrefix} PASS: quote signature verification`);
 
     const chainNowMin =
       chainNowBeforeQuote < chainNowAfterQuote
@@ -1495,12 +1549,16 @@ async function runCreditFeeScenario(
   maxGasCostNoTeardown: bigint,
   feePerDaGas: bigint,
   feePerL2Gas: bigint,
+  schnorr: Schnorr,
+  operatorSigningKey: Uint8Array,
   quote: ServiceFlowResult,
 ): Promise<void> {
   const mintAmount =
     maxGasCostNoTeardown * config.creditMintMultiplier +
     config.creditMintBuffer;
   const expectedCharge = ceilDiv(mintAmount * quote.rateNum, quote.rateDen);
+  const fjCreditAmount = mintAmount;
+  const aaPaymentAmount = expectedCharge;
   console.log(`[services-smoke:credit] mint_amount=${mintAmount}`);
   console.log(`[services-smoke:credit] expected_charge=${expectedCharge}`);
 
@@ -1513,13 +1571,30 @@ async function runCreditFeeScenario(
   const transferCall = token.methods.transfer_private_to_private(
     user,
     operator,
-    expectedCharge,
+    aaPaymentAmount,
     transferAuthwitNonce,
   );
   const transferAuthwit = await wallet.createAuthWit(user, {
     caller: creditFpc.address,
     action: transferCall,
   });
+  const creditQuoteHash = await computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    creditFpc.address.toField(),
+    token.address.toField(),
+    new Fr(fjCreditAmount),
+    new Fr(aaPaymentAmount),
+    new Fr(quote.validUntil),
+    user.toField(),
+  ]);
+  const creditQuoteSig = await schnorr.constructSignature(
+    creditQuoteHash.toBuffer(),
+    operatorSigningKey,
+  );
+  const creditQuoteSigBytes = Array.from(creditQuoteSig.toBuffer());
+  console.log(
+    "[services-smoke:credit] using locally signed credit quote (amount-bound preimage differs from attestation rate quote schema)",
+  );
 
   const userTokenBefore = BigInt(
     (
@@ -1537,11 +1612,10 @@ async function runCreditFeeScenario(
   const payAndMintCall = await creditFpc.methods
     .pay_and_mint(
       transferAuthwitNonce,
-      quote.rateNum,
-      quote.rateDen,
+      fjCreditAmount,
+      aaPaymentAmount,
       quote.validUntil,
-      quote.quoteSigBytes,
-      mintAmount,
+      creditQuoteSigBytes,
     )
     .getFunctionCall();
   const payAndMintPaymentMethod = {
@@ -1619,7 +1693,7 @@ async function runCreditFeeScenario(
   }
 
   const quoteUsed = await creditFpc.methods
-    .quote_used(quote.rateNum, quote.rateDen, quote.validUntil, user)
+    .quote_used(fjCreditAmount, aaPaymentAmount, quote.validUntil, user)
     .simulate({ from: user });
   if (!quoteUsed) {
     throw new Error(
@@ -1908,6 +1982,8 @@ async function main() {
           operator,
           user,
           fpc.address,
+          schnorr,
+          operatorPubKey,
           operatorSecretHex,
           l1PrivateKey as Hex,
           topupThreshold,
@@ -1944,6 +2020,8 @@ async function main() {
         operator,
         user,
         creditFpc.address,
+        schnorr,
+        operatorPubKey,
         operatorSecretHex,
         l1PrivateKey as Hex,
         topupThreshold,
@@ -1959,6 +2037,8 @@ async function main() {
         maxGasCostNoTeardown,
         feePerDaGas,
         feePerL2Gas,
+        schnorr,
+        operatorSigningKey,
         quote,
       );
     }

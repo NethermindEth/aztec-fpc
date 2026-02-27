@@ -1240,6 +1240,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
     creditMintAmount * args.creditRateNum,
     args.creditRateDen,
   );
+  const creditFjAmount = creditMintAmount;
+  const creditAaAmount = creditExpectedCharge;
   await token.methods
     .mint_to_private(operatorAddress, creditExpectedCharge + 1_000_000n)
     .send({ from: operatorAddress, wait: { timeout: 180 } });
@@ -1258,8 +1260,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
     QUOTE_DOMAIN_SEPARATOR,
     creditFpc.address.toField(),
     token.address.toField(),
-    new deps.Fr(args.creditRateNum),
-    new deps.Fr(args.creditRateDen),
+    new deps.Fr(creditFjAmount),
+    new deps.Fr(creditAaAmount),
     new deps.Fr(creditValidUntil),
     operatorAddress.toField(),
   ]);
@@ -1272,7 +1274,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const creditTransferCall = token.methods.transfer_private_to_private(
     operatorAddress,
     operatorAddress,
-    creditExpectedCharge,
+    creditAaAmount,
     creditAuthwitNonce,
   );
   const creditTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
@@ -1282,11 +1284,10 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const payAndMintCall = await creditFpc.methods
     .pay_and_mint(
       creditAuthwitNonce,
-      args.creditRateNum,
-      args.creditRateDen,
+      creditFjAmount,
+      creditAaAmount,
       creditValidUntil,
       creditQuoteSigBytes,
-      creditMintAmount,
     )
     .getFunctionCall();
   const creditPayAndMintMethod = {
