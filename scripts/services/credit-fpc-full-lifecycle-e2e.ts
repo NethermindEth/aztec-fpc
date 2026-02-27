@@ -48,6 +48,8 @@ type FullE2EConfig = {
   marketRateNum: number;
   marketRateDen: number;
   feeBips: number;
+  creditMintMultiplier: bigint;
+  creditMintBuffer: bigint;
   daGasLimit: number;
   l2GasLimit: number;
   feeJuiceTopupSafetyMultiplier: bigint;
@@ -174,6 +176,8 @@ Config env vars:
 - FPC_CREDIT_FULL_E2E_MARKET_RATE_NUM (default: 1)
 - FPC_CREDIT_FULL_E2E_MARKET_RATE_DEN (default: 1000)
 - FPC_CREDIT_FULL_E2E_FEE_BIPS (default: 200)
+- FPC_CREDIT_FULL_E2E_CREDIT_MINT_MULTIPLIER (default: 5, must be > 1)
+- FPC_CREDIT_FULL_E2E_CREDIT_MINT_BUFFER (default: 1000000)
 - FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS (default: 180000)
 - FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS (default: 1000)
 - FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS (default: 15000)
@@ -1187,6 +1191,14 @@ function getConfig(): FullE2EConfig {
   );
   const topupOpsPort = readEnvPort("FPC_CREDIT_FULL_E2E_TOPUP_OPS_PORT", 3401);
   const feeBips = readEnvPositiveInteger("FPC_CREDIT_FULL_E2E_FEE_BIPS", 200);
+  const creditMintMultiplier = readEnvBigInt(
+    "FPC_CREDIT_FULL_E2E_CREDIT_MINT_MULTIPLIER",
+    5n,
+  );
+  const creditMintBuffer = readEnvBigInt(
+    "FPC_CREDIT_FULL_E2E_CREDIT_MINT_BUFFER",
+    1_000_000n,
+  );
   if (feeBips > 10_000) {
     throw new Error(
       `FPC_CREDIT_FULL_E2E_FEE_BIPS must be <= 10000, got ${feeBips}`,
@@ -1226,6 +1238,11 @@ function getConfig(): FullE2EConfig {
   if (attestationPort === topupOpsPort) {
     throw new Error(
       "FPC_CREDIT_FULL_E2E_ATTESTATION_PORT must differ from FPC_CREDIT_FULL_E2E_TOPUP_OPS_PORT",
+    );
+  }
+  if (creditMintMultiplier <= 1n) {
+    throw new Error(
+      `FPC_CREDIT_FULL_E2E_CREDIT_MINT_MULTIPLIER must be > 1, got ${creditMintMultiplier}`,
     );
   }
 
@@ -1273,6 +1290,8 @@ function getConfig(): FullE2EConfig {
       1000,
     ),
     feeBips,
+    creditMintMultiplier,
+    creditMintBuffer,
     daGasLimit: readEnvPositiveInteger(
       "FPC_CREDIT_FULL_E2E_DA_GAS_LIMIT",
       1_000_000,
@@ -1293,7 +1312,7 @@ function getConfig(): FullE2EConfig {
 
 function printConfigSummary(config: FullE2EConfig): void {
   console.log(
-    `[credit-full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, l1RpcUrl=${config.l1RpcUrl}, relayAdvanceBlocks=${config.relayAdvanceBlocks}, requiredTopupCycles=${config.requiredTopupCycles}`,
+    `[credit-full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, l1RpcUrl=${config.l1RpcUrl}, relayAdvanceBlocks=${config.relayAdvanceBlocks}, requiredTopupCycles=${config.requiredTopupCycles}, creditMintMultiplier=${config.creditMintMultiplier}, creditMintBuffer=${config.creditMintBuffer}`,
   );
 }
 
@@ -1314,10 +1333,14 @@ async function deployContractsAndWriteRuntimeConfig(
     "target",
     "token_contract-Token.json",
   );
-  const fpcArtifactPath = path.join(repoRoot, "target", "fpc-FPC.json");
+  const creditFpcArtifactPath = path.join(
+    repoRoot,
+    "target",
+    "credit_fpc-CreditFPC.json",
+  );
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
-  const fpcArtifact = loadArtifact(fpcArtifactPath);
+  const creditFpcArtifact = loadArtifact(creditFpcArtifactPath);
 
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNodeReady(node, config.nodeTimeoutMs);
@@ -1366,7 +1389,7 @@ async function deployContractsAndWriteRuntimeConfig(
     operatorData.signingKey ?? deriveSigningKey(operatorData.secret);
   const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-  const fpc = await Contract.deploy(wallet, fpcArtifact, [
+  const fpc = await Contract.deploy(wallet, creditFpcArtifact, [
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
@@ -1455,8 +1478,13 @@ async function deployContractsAndWriteRuntimeConfig(
         operator: operator.toString(),
         user: user.toString(),
         otherUser: otherUser.toString(),
+        contracts: {
+          token: token.address.toString(),
+          credit_fpc: fpc.address.toString(),
+        },
         tokenAddress: token.address.toString(),
         fpcAddress: fpc.address.toString(),
+        creditFpcAddress: fpc.address.toString(),
         attestationConfigPath,
         topupConfigPath,
         topupBridgeStatePath,
@@ -1497,51 +1525,6 @@ async function runFeePaidTargetTxAndAssert(
   txLabel: "tx1" | "tx2",
   targetTransferAmount: bigint,
 ): Promise<bigint> {
-  const requestedFjAmount = result.maxGasCostNoTeardown;
-  const quote = await fetchQuote(
-    `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
-    config.httpTimeoutMs,
-  );
-  const quoteSigBytes = Array.from(
-    Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
-  );
-  const fjAmount = BigInt(quote.fj_amount);
-  const aaPaymentAmount = BigInt(quote.aa_payment_amount);
-  const validUntil = BigInt(quote.valid_until);
-
-  if (quoteSigBytes.length !== 64) {
-    throw new Error(
-      `Quote signature length must be 64 bytes, got ${quoteSigBytes.length}`,
-    );
-  }
-  if (fjAmount <= 0n) {
-    throw new Error("Attestation quote returned non-positive fj_amount");
-  }
-  if (aaPaymentAmount <= 0n) {
-    throw new Error(
-      "Attestation quote returned non-positive aa_payment_amount",
-    );
-  }
-  if (fjAmount !== requestedFjAmount) {
-    throw new Error(
-      `Attestation quote fj_amount mismatch. expected=${requestedFjAmount} got=${fjAmount}`,
-    );
-  }
-  if (
-    quote.accepted_asset.toLowerCase() !==
-    result.token.address.toString().toLowerCase()
-  ) {
-    throw new Error(
-      `Quote accepted_asset mismatch. expected=${result.token.address.toString()} got=${quote.accepted_asset}`,
-    );
-  }
-
-  const expectedCharge = aaPaymentAmount;
-  const mintAmount = expectedCharge + 1_000_000n;
-  await result.token.methods
-    .mint_to_private(result.user, mintAmount)
-    .send({ from: result.operator });
-
   const userPrivateBefore = BigInt(
     (
       await result.token.methods
@@ -1570,42 +1553,98 @@ async function runFeePaidTargetTxAndAssert(
         .simulate({ from: result.operator })
     ).toString(),
   );
-
-  const transferAuthwitNonce = Fr.random();
-  const transferCall = result.token.methods.transfer_private_to_private(
-    result.user,
-    result.operator,
-    aaPaymentAmount,
-    transferAuthwitNonce,
+  const creditBefore = BigInt(
+    (
+      await result.fpc.methods
+        .balance_of(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
   );
-  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
-    caller: result.fpc.address,
-    action: transferCall,
-  });
 
-  const feeEntrypointCall = await result.fpc.methods
-    .fee_entrypoint(
-      transferAuthwitNonce,
-      fjAmount,
-      aaPaymentAmount,
-      validUntil,
-      quoteSigBytes,
-    )
-    .getFunctionCall();
-
-  const paymentMethod = {
-    getAsset: async () => ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [transferAuthwit],
-        [],
-        [],
-        result.fpc.address,
-      ),
-    getFeePayer: async () => result.fpc.address,
-    getGasSettings: () => undefined,
+  let expectedCharge = 0n;
+  let tx1Quote: QuoteInput | undefined;
+  let paymentMethod: {
+    getAsset: () => Promise<AztecAddress>;
+    getExecutionPayload: () => Promise<ExecutionPayload>;
+    getFeePayer: () => Promise<AztecAddress>;
+    getGasSettings: () => undefined;
   };
+
+  if (txLabel === "tx1") {
+    const requestedFjAmount =
+      result.maxGasCostNoTeardown * config.creditMintMultiplier +
+      config.creditMintBuffer;
+    const quote = parseQuoteResponse(
+      await fetchQuote(
+        `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
+        config.httpTimeoutMs,
+      ),
+      result.token.address,
+    );
+    tx1Quote = quote;
+    if (quote.fjAmount !== requestedFjAmount) {
+      throw new Error(
+        `Attestation quote fj_amount mismatch. expected=${requestedFjAmount} got=${quote.fjAmount}`,
+      );
+    }
+    expectedCharge = quote.aaPaymentAmount;
+
+    await result.token.methods
+      .mint_to_private(result.user, expectedCharge + 1_000_000n)
+      .send({ from: result.operator });
+
+    const transferAuthwitNonce = Fr.random();
+    const transferCall = result.token.methods.transfer_private_to_private(
+      result.user,
+      result.operator,
+      quote.aaPaymentAmount,
+      transferAuthwitNonce,
+    );
+    const transferAuthwit = await result.wallet.createAuthWit(result.user, {
+      caller: result.fpc.address,
+      action: transferCall,
+    });
+    const payAndMintCall = await result.fpc.methods
+      .pay_and_mint(
+        transferAuthwitNonce,
+        quote.fjAmount,
+        quote.aaPaymentAmount,
+        quote.validUntil,
+        quote.quoteSigBytes,
+      )
+      .getFunctionCall();
+
+    paymentMethod = {
+      getAsset: async () => ProtocolContractAddress.FeeJuice,
+      getExecutionPayload: async () =>
+        new ExecutionPayload(
+          [payAndMintCall],
+          [transferAuthwit],
+          [],
+          [],
+          result.fpc.address,
+        ),
+      getFeePayer: async () => result.fpc.address,
+      getGasSettings: () => undefined,
+    };
+  } else {
+    const payWithCreditCall = await result.fpc.methods
+      .pay_with_credit()
+      .getFunctionCall();
+    paymentMethod = {
+      getAsset: async () => ProtocolContractAddress.FeeJuice,
+      getExecutionPayload: async () =>
+        new ExecutionPayload(
+          [payWithCreditCall],
+          [],
+          [],
+          [],
+          result.fpc.address,
+        ),
+      getFeePayer: async () => result.fpc.address,
+      getGasSettings: () => undefined,
+    };
+  }
 
   const receipt = await result.token.methods
     .transfer_public_to_public(
@@ -1657,20 +1696,16 @@ async function runFeePaidTargetTxAndAssert(
         .simulate({ from: result.operator })
     ).toString(),
   );
+  const creditAfter = BigInt(
+    (
+      await result.fpc.methods
+        .balance_of(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
 
   const userDebited = userPrivateBefore - userPrivateAfter;
   const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
-  if (userDebited !== expectedCharge) {
-    throw new Error(
-      `[credit-full-lifecycle-e2e] ${txLabel} user debit mismatch. expected=${expectedCharge} got=${userDebited}`,
-    );
-  }
-  if (operatorCredited !== expectedCharge) {
-    throw new Error(
-      `[credit-full-lifecycle-e2e] ${txLabel} operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
-    );
-  }
-
   const userPublicDelta = userPublicAfter - userPublicBefore;
   const operatorPublicDelta = operatorPublicAfter - operatorPublicBefore;
   if (userPublicDelta !== -targetTransferAmount) {
@@ -1684,8 +1719,66 @@ async function runFeePaidTargetTxAndAssert(
     );
   }
 
+  if (txLabel === "tx1") {
+    if (!tx1Quote) {
+      throw new Error("tx1 quote missing after pay_and_mint execution");
+    }
+    if (userDebited !== expectedCharge) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx1 user debit mismatch after pay_and_mint. expected=${expectedCharge} got=${userDebited}`,
+      );
+    }
+    if (operatorCredited !== expectedCharge) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx1 operator credit mismatch after pay_and_mint. expected=${expectedCharge} got=${operatorCredited}`,
+      );
+    }
+    const expectedCreditAfterPayAndMint =
+      creditBefore + tx1Quote.fjAmount - result.maxGasCostNoTeardown;
+    if (creditAfter !== expectedCreditAfterPayAndMint) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx1 credit balance mismatch after pay_and_mint. expected=${expectedCreditAfterPayAndMint} got=${creditAfter}`,
+      );
+    }
+    const quoteUsed = await result.fpc.methods
+      .quote_used(
+        tx1Quote.fjAmount,
+        tx1Quote.aaPaymentAmount,
+        tx1Quote.validUntil,
+        result.user,
+      )
+      .simulate({ from: result.user });
+    if (!quoteUsed) {
+      throw new Error(
+        "[credit-full-lifecycle-e2e] tx1 quote_used returned false after successful pay_and_mint",
+      );
+    }
+    console.log(
+      `[credit-full-lifecycle-e2e] PASS: tx1 pay_and_mint invariants (user_debited=${userDebited}, operator_credited=${operatorCredited}, credit_after_pay_and_mint=${creditAfter}, quote_used=${quoteUsed})`,
+    );
+  } else {
+    if (userDebited !== 0n) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx2 user private balance changed during pay_with_credit. expected=0 got=${userDebited}`,
+      );
+    }
+    if (operatorCredited !== 0n) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx2 operator private balance changed during pay_with_credit. expected=0 got=${operatorCredited}`,
+      );
+    }
+    if (creditAfter >= creditBefore) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx2 credit should decrease after pay_with_credit. before=${creditBefore} after=${creditAfter}`,
+      );
+    }
+    console.log(
+      `[credit-full-lifecycle-e2e] PASS: tx2 pay_with_credit credit consumption (credit_before=${creditBefore}, credit_after=${creditAfter}, operator_private_unchanged=true)`,
+    );
+  }
+
   console.log(
-    `[credit-full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_debited=${userDebited}, operator_credited=${operatorCredited}, user_public_delta=${userPublicDelta}, operator_public_delta=${operatorPublicDelta})`,
+    `[credit-full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_public_delta=${userPublicDelta}, operator_public_delta=${operatorPublicDelta})`,
   );
   return expectedCharge;
 }
@@ -1865,7 +1958,11 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     "target",
     "token_contract-Token.json",
   );
-  const fpcArtifactPath = path.join(result.repoRoot, "target", "fpc-FPC.json");
+  const fpcArtifactPath = path.join(
+    result.repoRoot,
+    "target",
+    "credit_fpc-CreditFPC.json",
+  );
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
 
@@ -2439,7 +2536,7 @@ async function main(): Promise<void> {
       `[credit-full-lifecycle-e2e] token=${result.token.address.toString()}`,
     );
     console.log(
-      `[credit-full-lifecycle-e2e] fpc=${result.fpc.address.toString()}`,
+      `[credit-full-lifecycle-e2e] credit_fpc=${result.fpc.address.toString()}`,
     );
     console.log(
       `[credit-full-lifecycle-e2e] topup_threshold_wei=${result.topupThresholdWei}`,
@@ -2459,6 +2556,7 @@ async function main(): Promise<void> {
 
     recordPhaseResult(result.summaryPath, "step4", "PASS", {
       runDir: result.runDir,
+      credit_fpc: result.fpc.address.toString(),
       attestationConfigPath: result.attestationConfigPath,
       topupConfigPath: result.topupConfigPath,
     });
