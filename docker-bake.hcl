@@ -3,7 +3,7 @@ variable "REGISTRY" {
 }
 
 variable "TAG" {
-  default = "latest"
+  default = "local"
 }
 
 variable "GIT_SHA" {

@@ -1,16 +1,16 @@
 services:
-  # anvil:
-  #   image: ghcr.io/foundry-rs/foundry:v1.4.1
-  #   entrypoint: ["anvil"]
-  #   command: ["--host", "0.0.0.0", "--silent"]
-  #   ports:
-  #     - "8545:8545"
-  #   healthcheck:
-  #     test: ["CMD", "cast", "bn", "--rpc-url", "http://localhost:8545"]
-  #     interval: 1s
-  #     timeout: 5s
-  #     retries: 24
-  #     start_period: 5s
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.4.1
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--silent"]
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test: ["CMD", "cast", "bn", "--rpc-url", "http://localhost:8545"]
+      interval: 1s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
 
   aztec-node:
     image: aztecprotocol/aztec:4.0.0-devnet.2-patch.1
@@ -28,7 +28,9 @@ services:
       DEPLOY_AZTEC_CONTRACTS_SALT: 1
       L1_CHAIN_ID: 31337
       ETHEREUM_HOSTS: "http://anvil:8545"
-
+    depends_on:
+      anvil:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -44,13 +46,7 @@ services:
       start_period: 30s
 
   attestation:
-    build:
-      context: .
-      dockerfile: services/Dockerfile.common
-      target: runtime
-      args:
-        SERVICE: attestation
-    entrypoint: ["bun", "run", "services/attestation/dist/index.js"]
+    image: nethermind/aztec-fpc-attestation:local
     ports:
       - "3000:3000"
     configs:
@@ -62,27 +58,9 @@ services:
     depends_on:
       aztec-node:
         condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "bun",
-          "-e",
-          "await fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) throw 1 })",
-        ]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
 
   topup:
-    build:
-      context: .
-      dockerfile: services/Dockerfile.common
-      target: runtime
-      args:
-        SERVICE: topup
-    entrypoint: ["bun", "run", "services/topup/dist/index.js"]
+    image: nethermind/aztec-fpc-topup:local
     ports:
       - "3001:3001"
     configs:
