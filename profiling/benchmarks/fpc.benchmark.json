@@ -1,69 +1,11 @@
 {
   "summary": {
-    "transfer_private_to_private": 892985
+    "fee_entrypoint": 772327
   },
   "results": [
     {
-      "name": "transfer_private_to_private",
-      "totalGateCount": 892985,
-      "gateCounts": [
-        {
-          "circuitName": "SchnorrAccount:entrypoint",
-          "gateCount": 54352
-        },
-        {
-          "circuitName": "private_kernel_init",
-          "gateCount": 46811
-        },
-        {
-          "circuitName": "FPC:fee_entrypoint",
-          "gateCount": 18657
-        },
-        {
-          "circuitName": "private_kernel_inner",
-          "gateCount": 101237
-        },
-        {
-          "circuitName": "Token:transfer_private_to_private",
-          "gateCount": 34237
-        },
-        {
-          "circuitName": "private_kernel_inner",
-          "gateCount": 101237
-        },
-        {
-          "circuitName": "SchnorrAccount:verify_private_authwit",
-          "gateCount": 14328
-        },
-        {
-          "circuitName": "private_kernel_inner",
-          "gateCount": 101237
-        },
-        {
-          "circuitName": "Token:transfer_private_to_private",
-          "gateCount": 34237
-        },
-        {
-          "circuitName": "private_kernel_inner",
-          "gateCount": 101237
-        },
-        {
-          "circuitName": "private_kernel_reset",
-          "gateCount": 122505
-        },
-        {
-          "circuitName": "private_kernel_reset",
-          "gateCount": 81979
-        },
-        {
-          "circuitName": "private_kernel_tail",
-          "gateCount": 44543
-        },
-        {
-          "circuitName": "hiding_kernel",
-          "gateCount": 36388
-        }
-      ],
+      "name": "fee_entrypoint",
+      "totalGateCount": 772327,
       "gas": {
         "gasLimits": {
           "daGas": 786432,
@@ -74,11 +16,117 @@
           "l2Gas": 1000000
         }
       },
-      "profileTimeMs": 2231.706204000002,
-      "provingTimeMs": 11570.805143000005
+      "provingTime": 5396.480523999999,
+      "fpcGateCounts": [
+        {
+          "circuitName": "FPC:fee_entrypoint",
+          "gateCount": 18657,
+          "witgenMs": 41.23424700000032
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 130.66218200000003
+        },
+        {
+          "circuitName": "Token:transfer_private_to_private",
+          "gateCount": 34237,
+          "witgenMs": 82.94120499999553
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 125.76682599999185
+        },
+        {
+          "circuitName": "SchnorrAccount:verify_private_authwit",
+          "gateCount": 14328,
+          "witgenMs": 10.662024000004749
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 125.86389900000358
+        }
+      ],
+      "fpcTotalGateCount": 370933,
+      "fpcTotalWitgenMs": 517.1303829999961,
+      "fullTrace": [
+        {
+          "circuitName": "SchnorrAccount:entrypoint",
+          "gateCount": 54352,
+          "witgenMs": 37.63381199998548
+        },
+        {
+          "circuitName": "private_kernel_init",
+          "gateCount": 46811,
+          "witgenMs": 65.85510300000897
+        },
+        {
+          "circuitName": "FPC:fee_entrypoint",
+          "gateCount": 18657,
+          "witgenMs": 41.23424700000032
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 130.66218200000003
+        },
+        {
+          "circuitName": "Token:transfer_private_to_private",
+          "gateCount": 34237,
+          "witgenMs": 82.94120499999553
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 125.76682599999185
+        },
+        {
+          "circuitName": "SchnorrAccount:verify_private_authwit",
+          "gateCount": 14328,
+          "witgenMs": 10.662024000004749
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 125.86389900000358
+        },
+        {
+          "circuitName": "Noop:noop",
+          "gateCount": 5528,
+          "witgenMs": 15.815167000007932
+        },
+        {
+          "circuitName": "private_kernel_inner",
+          "gateCount": 101237,
+          "witgenMs": 132.63141899999755
+        },
+        {
+          "circuitName": "private_kernel_reset",
+          "gateCount": 112535,
+          "witgenMs": 235.3184750000073
+        },
+        {
+          "circuitName": "private_kernel_tail",
+          "gateCount": 44543,
+          "witgenMs": 54.284960999997566
+        },
+        {
+          "circuitName": "hiding_kernel",
+          "gateCount": 36388,
+          "witgenMs": 11.497845000005327
+        }
+      ]
     }
   ],
   "gasSummary": {
-    "transfer_private_to_private": 4179648
+    "fee_entrypoint": 4179648
+  },
+  "fpcSummary": {
+    "fee_entrypoint": 370933
+  },
+  "provingTimeSummary": {
+    "fee_entrypoint": 5396.480523999999
   }
 }

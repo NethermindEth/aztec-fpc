@@ -1,26 +1,32 @@
 /**
  * FPC benchmark using @defi-wonderland/aztec-benchmark.
  *
- * Deploys Token + FPC on a running local network, bridges Fee Juice,
- * mints tokens, builds authwits, and benchmarks FPC.fee_entrypoint
- * via a dummy app transaction (token self-transfer).
+ * Deploys Token + FPC + Noop on a running local network, bridges Fee Juice,
+ * mints tokens, builds authwits, and benchmarks FPC.fee_entrypoint via a
+ * minimal Noop app transaction (same approach as the custom profiler).
  *
- * The aztec-benchmark profiler calls .simulate(), .profile(), and .send()
- * on each interaction. The FPC fee payment method is attached automatically
- * so the profile captures all execution steps including fee_entrypoint.
+ * The aztec-benchmark profiler calls f.request(), f.estimateGas(), f.profile(),
+ * and f.send().wait() directly on each interaction returned by getMethods().
+ * FeeWrappedInteraction injects the FPC fee payment method, sender address,
+ * and additional scopes into every call, and captures SDK timing data
+ * (per-circuit witgen, proving time) for teardown to enrich the JSON.
+ *
+ * After profiling, teardown post-processes the JSON to:
+ *  - Rename "noop" keys to "fee_entrypoint" for readability
+ *  - Extract fpcGateCounts / fpcTotalGateCount (FPC-only gate breakdown)
+ *  - Rename gateCounts to fullTrace to clarify it's the entire tx trace
+ *  - Inject per-circuit witness generation timing (witgenMs) and proving time
+ *  - Print a human-readable console summary
  *
  * Environment:
  *   AZTEC_NODE_URL  — node endpoint  (default http://127.0.0.1:8080)
  *   L1_RPC_URL      — L1 (anvil) endpoint (default http://127.0.0.1:8545)
  */
 
-import type { ContractFunctionInteractionCallIntent } from '@aztec/aztec.js/authorization';
 import type { FeePaymentMethod } from '@aztec/aztec.js/fee';
 import { createAztecNodeClient } from '@aztec/aztec.js/node';
 import { Contract } from '@aztec/aztec.js/contracts';
-import { AccountManager } from '@aztec/aztec.js/wallet';
 import { L1FeeJuicePortalManager } from '@aztec/aztec.js/ethereum';
-import { SchnorrAccountContract } from '@aztec/accounts/schnorr';
 import { getInitialTestAccountsData } from '@aztec/accounts/testing';
 import { Fr } from '@aztec/foundation/curves/bn254';
 import { createLogger } from '@aztec/foundation/log';
@@ -28,7 +34,6 @@ import { Schnorr } from '@aztec/foundation/crypto/schnorr';
 import { FeeJuiceArtifact } from '@aztec/protocol-contracts/fee-juice';
 import { ProtocolContractAddress } from '@aztec/protocol-contracts';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
-import { computeInnerAuthWitHash } from '@aztec/stdlib/auth-witness';
 import {
   FunctionCall,
   FunctionSelector,
@@ -39,7 +44,6 @@ import { ExecutionPayload } from '@aztec/stdlib/tx';
 import { Gas, GasFees, GasSettings } from '@aztec/stdlib/gas';
 import { deriveSigningKey } from '@aztec/stdlib/keys';
 import { createPXE, getPXEConfig } from '@aztec/pxe/server';
-import { BaseWallet } from '@aztec/wallet-sdk/base-wallet';
 import {
   createWalletClient,
   defineChain,
@@ -47,9 +51,16 @@ import {
   publicActions,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import {
+  findArtifact,
+  feeJuiceToAsset,
+  SimpleWallet,
+  signQuote,
+  extractFpcSteps,
+} from '../profile-utils.mjs';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -67,104 +78,6 @@ const QUOTE_TTL_SECONDS = 3500n;
 const QUOTE_DOMAIN_SEP = 0x465043n; // "FPC" as field
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TARGET = join(__dirname, '../../target');
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function findArtifact(contractName: string): string {
-  const suffix = `-${contractName}.json`;
-  const matches = readdirSync(TARGET).filter((f) => f.endsWith(suffix));
-  if (matches.length === 0) {
-    throw new Error(
-      `No artifact matching *${suffix} in ${TARGET}. Did you run 'aztec compile'?`,
-    );
-  }
-  if (matches.length > 1) {
-    throw new Error(
-      `Multiple artifacts matching *${suffix} in ${TARGET}: ${matches.join(', ')}`,
-    );
-  }
-  return join(TARGET, matches[0]);
-}
-
-/** Ceiling division mirroring fee_math.nr */
-function feeJuiceToAsset(
-  feeJuice: bigint,
-  rateNum: bigint,
-  rateDen: bigint,
-): bigint {
-  if (feeJuice === 0n) return 0n;
-  const product = feeJuice * rateNum;
-  return (product + rateDen - 1n) / rateDen;
-}
-
-/** Sign a quote with the operator's Schnorr key. */
-async function signQuote(
-  schnorr: any,
-  operatorSigningKey: any,
-  fpcAddress: any,
-  tokenAddress: any,
-  rateNum: bigint,
-  rateDen: bigint,
-  validUntil: bigint,
-  userAddress: any,
-): Promise<any[]> {
-  const quoteHash = await computeInnerAuthWitHash([
-    new Fr(QUOTE_DOMAIN_SEP),
-    fpcAddress.toField(),
-    tokenAddress.toField(),
-    new Fr(rateNum),
-    new Fr(rateDen),
-    new Fr(validUntil),
-    userAddress.toField(),
-  ]);
-  const sig = await schnorr.constructSignature(
-    quoteHash.toBuffer(),
-    operatorSigningKey,
-  );
-  return Array.from(sig.toBuffer()).map((b: number) => new Fr(b));
-}
-
-// ── SimpleWallet ─────────────────────────────────────────────────────────────
-
-class SimpleWallet extends BaseWallet {
-  #accounts = new Map<string, any>();
-
-  constructor(pxe: any, node: any) {
-    super(pxe, node);
-  }
-
-  async addSchnorrAccount(secret: any, salt: any) {
-    const contract = new SchnorrAccountContract(deriveSigningKey(secret));
-    const manager = await AccountManager.create(
-      this,
-      secret,
-      contract,
-      new Fr(salt),
-    );
-    const instance = manager.getInstance();
-    const artifact = await contract.getContractArtifact();
-    await this.registerContract(instance, artifact, secret);
-    this.#accounts.set(
-      manager.address.toString(),
-      await manager.getAccount(),
-    );
-    return manager.address;
-  }
-
-  async getAccountFromAddress(address: any) {
-    const key = address.toString();
-    if (!this.#accounts.has(key)) throw new Error(`Account not found: ${key}`);
-    return this.#accounts.get(key);
-  }
-
-  async getAccounts() {
-    return [...this.#accounts.keys()].map((addr) => ({
-      alias: '',
-      item: AztecAddress.fromString(addr),
-    }));
-  }
-}
 
 // ── CustomFPCPaymentMethod ───────────────────────────────────────────────────
 
@@ -198,6 +111,9 @@ class CustomFPCPaymentMethod {
     this.gasSettings = gasSettings;
   }
 
+  getAsset(): Promise<any> {
+    throw new Error('Asset is not required for custom FPC.');
+  }
   getFeePayer() {
     return Promise.resolve(this.fpcAddress);
   }
@@ -268,7 +184,7 @@ async function mineL1Blocks(l1Client: any, count: number) {
  */
 async function fundFpcWithFeeJuice(
   node: any,
-  wallet: SimpleWallet,
+  wallet: InstanceType<typeof SimpleWallet>,
   fpcAddress: any,
   userAddress: any,
   tokenContract: any,
@@ -359,12 +275,14 @@ async function fundFpcWithFeeJuice(
 }
 
 // ── Interaction wrapper ──────────────────────────────────────────────────────
-// The published aztec-benchmark profiler calls f.request(), f.estimateGas(),
+// The installed aztec-benchmark profiler calls f.request(), f.estimateGas(),
 // f.profile(), and f.send().wait() directly on each item returned by
-// getMethods(). It does NOT inject fee payment or sender options.
+// getMethods(). It does NOT inject fee payment, sender, or additional scopes.
 // This wrapper proxies a ContractFunctionInteraction and injects the FPC fee
-// payment method + sender address into every call so the profile includes the
-// FPC's fee_entrypoint execution steps.
+// payment method + sender address + additional scopes into every call so the
+// profile captures the full trace including fee_entrypoint.
+// It also captures SDK timing data (per-circuit witgen, proving time) from the
+// profile result for teardown to inject into the JSON.
 
 class FeeWrappedInteraction {
   #action: any;
@@ -373,8 +291,8 @@ class FeeWrappedInteraction {
   #additionalScopes: any[];
   #gasSettings: any;
 
-  profileTimeMs?: number;
-  provingTimeMs?: number;
+  /** Per-function timing data captured from profile().stats.timings. */
+  timings?: { perFunction: any[]; proving?: number; total?: number };
 
   constructor(
     action: any,
@@ -407,36 +325,30 @@ class FeeWrappedInteraction {
   }
 
   async profile(opts?: any) {
-    const start = performance.now();
     const result = await this.#action.profile({
       ...opts,
       from: this.#from,
       fee: this.#feeOpts,
       additionalScopes: this.#additionalScopes,
+      skipProofGeneration: false,
     });
-    this.profileTimeMs = performance.now() - start;
+    this.timings = result.stats?.timings ?? undefined;
     return result;
   }
 
   send(opts?: any) {
-    const self = this;
-    const start = performance.now();
     const originalPromise = this.#action.send({
       ...opts,
       from: this.#from,
       fee: this.#feeOpts,
       additionalScopes: this.#additionalScopes,
     });
-    // Wrap to capture proving time (proof generation dominates send())
-    const timed: any = originalPromise.then((sentTx: any) => {
-      self.provingTimeMs = performance.now() - start;
-      return sentTx;
-    });
-    // The published profiler calls f.send().wait(). In this Aztec version
-    // SentTx is directly awaitable but may not expose .wait(). Shim it so
-    // the profiler's `await f.send().wait()` resolves correctly.
-    timed.wait = () => timed;
-    return timed;
+    // The profiler calls f.send().wait(). In this Aztec version SentTx is
+    // directly awaitable but may not expose .wait(). Shim it so the
+    // profiler's `await f.send().wait()` resolves correctly.
+    const shimmed: any = originalPromise.then((sentTx: any) => sentTx);
+    shimmed.wait = () => shimmed;
+    return shimmed;
   }
 }
 
@@ -448,6 +360,7 @@ interface FPCBenchmarkContext {
   feePaymentMethod?: FeePaymentMethod;
   gasSettings: any;
   tokenAsUser: any;
+  noopAsUser: any;
   userAddress: any;
   operatorAddress: any;
   fpcAddress: any;
@@ -513,6 +426,9 @@ export default class FPCBenchmark {
     const fpcArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('FPC'), 'utf8')),
     );
+    const noopArtifact = loadContractArtifact(
+      JSON.parse(readFileSync(findArtifact('Noop'), 'utf8')),
+    );
 
     // ── Deploy Token ───────────────────────────────────────────────────────
     console.log('\nDeploying Token...');
@@ -537,7 +453,15 @@ export default class FPCBenchmark {
     const fpcAddress = fpcDeploy.address;
     console.log('FPC:  ', fpcAddress.toString());
 
+    // ── Deploy Noop (minimal app tx placeholder for profiling) ────────────
+    console.log('Deploying Noop...');
+    const noopDeploy = await Contract.deploy(wallet, noopArtifact, []).send({
+      from: userAddress,
+    });
+    console.log('Noop: ', noopDeploy.address.toString());
+
     const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
+    const noopAsUser = Contract.at(noopDeploy.address, noopArtifact, wallet);
 
     // ── Bridge Fee Juice to FPC via L1 ─────────────────────────────────────
     const l1Client = await createL1Client(node);
@@ -581,6 +505,7 @@ export default class FPCBenchmark {
       RATE_DEN,
       VALID_UNTIL,
       userAddress,
+      QUOTE_DOMAIN_SEP,
     );
     console.log('Quote signature created.');
 
@@ -620,6 +545,7 @@ export default class FPCBenchmark {
       pxe,
       wallet,
       tokenAsUser,
+      noopAsUser,
       userAddress,
       operatorAddress,
       fpcAddress,
@@ -629,15 +555,8 @@ export default class FPCBenchmark {
   }
 
   getMethods(context: FPCBenchmarkContext) {
-    const action = context.tokenAsUser.methods.transfer_private_to_private(
-      context.userAddress,
-      context.userAddress,
-      1n,
-      0n,
-    );
-
     const interaction = new FeeWrappedInteraction(
-      action,
+      context.noopAsUser.methods.noop(),
       context.feePaymentMethod,
       context.gasSettings,
       context.userAddress,
@@ -648,16 +567,91 @@ export default class FPCBenchmark {
   }
 
   async teardown(context: FPCBenchmarkContext): Promise<void> {
-    // Post-process the saved JSON to inject timing data that the published
-    // profiler doesn't capture (profile simulation time + proving time).
-    const jsonPath = join(__dirname, 'fpc.benchmark.json');
+    // The CLI writes suffixed files (e.g. fpc_latest.benchmark.json) in CI,
+    // or fpc.benchmark.json locally. Find the most recently written match.
+    const jsonPath = readdirSync(__dirname)
+      .filter((f: string) => f.startsWith('fpc') && f.endsWith('.benchmark.json'))
+      .map((f: string) => join(__dirname, f))
+      .sort((a: string, b: string) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
+
+    const DISPLAY_NAME = 'fee_entrypoint';
+    if (!jsonPath) {
+      console.warn('No fpc*.benchmark.json found in', __dirname);
+      return;
+    }
     try {
       const report = JSON.parse(readFileSync(jsonPath, 'utf8'));
+
       for (let i = 0; i < report.results.length && i < this.#interactions.length; i++) {
         const ix = this.#interactions[i];
-        report.results[i].profileTimeMs = ix.profileTimeMs ?? null;
-        report.results[i].provingTimeMs = ix.provingTimeMs ?? null;
+        const r = report.results[i];
+
+        // Inject proving time from SDK timings captured in our wrapper.
+        const provingTime = ix.timings?.proving ?? null;
+        r.provingTime = provingTime;
+
+        // Build a lookup of witgen timing by index from the SDK's perFunction.
+        // perFunction and gateCounts share the same order (both derived from
+        // executionSteps), so matching by index is safe.
+        const perFunction: any[] = ix.timings?.perFunction ?? [];
+        const witgenByIndex = new Map<number, number>();
+        for (let j = 0; j < perFunction.length; j++) {
+          if (perFunction[j]?.time != null) {
+            witgenByIndex.set(j, perFunction[j].time);
+          }
+        }
+
+        // Annotate each gate count entry with witgenMs.
+        const rawSteps = r.gateCounts ?? [];
+        for (let j = 0; j < rawSteps.length; j++) {
+          rawSteps[j].witgenMs = witgenByIndex.get(j) ?? null;
+        }
+
+        // Extract FPC-only steps.
+        const allSteps = rawSteps.map(
+          (gc: any) => ({ functionName: gc.circuitName, gateCount: gc.gateCount, witgenMs: gc.witgenMs }),
+        );
+        const fpcSteps = extractFpcSteps(allSteps, 'FPC');
+        r.fpcGateCounts = fpcSteps.map((s: any) => ({
+          circuitName: s.functionName,
+          gateCount: s.gateCount,
+          witgenMs: s.witgenMs,
+        }));
+        r.fpcTotalGateCount = fpcSteps.reduce(
+          (sum: number, s: any) => sum + (s.gateCount ?? 0), 0,
+        );
+        r.fpcTotalWitgenMs = fpcSteps.reduce(
+          (sum: number, s: any) => sum + (s.witgenMs ?? 0), 0,
+        );
+
+        // Rename gateCounts → fullTrace for clarity.
+        r.fullTrace = r.gateCounts;
+        delete r.gateCounts;
+
+        // Rename "noop" → "fee_entrypoint" (the installed profiler discovers
+        // the name from .request() which returns "noop").
+        const oldName = r.name;
+        r.name = DISPLAY_NAME;
+        if (report.summary?.[oldName] !== undefined) {
+          report.summary[DISPLAY_NAME] = report.summary[oldName];
+          delete report.summary[oldName];
+        }
+        if (report.gasSummary?.[oldName] !== undefined) {
+          report.gasSummary[DISPLAY_NAME] = report.gasSummary[oldName];
+          delete report.gasSummary[oldName];
+        }
+
+        this.#printResultTable(r);
       }
+
+      // Add FPC-only and proving-time summaries.
+      report.fpcSummary = {};
+      report.provingTimeSummary = {};
+      for (const r of report.results) {
+        report.fpcSummary[r.name] = r.fpcTotalGateCount ?? 0;
+        report.provingTimeSummary[r.name] = r.provingTime ?? 0;
+      }
+
       writeFileSync(jsonPath, JSON.stringify(report, null, 2));
     } catch (e: any) {
       console.warn('Could not post-process benchmark JSON:', e.message);
@@ -670,5 +664,69 @@ export default class FPCBenchmark {
     // The PXE / node client leave open handles that prevent Node from exiting.
     // Give the CLI a moment to print its final messages, then force exit.
     setTimeout(() => process.exit(0), 500);
+  }
+
+  #printResultTable(r: any) {
+    const pad = (s: string, n: number) => String(s).padEnd(n);
+    const numFmt = (n: number) => n.toLocaleString();
+    const msFmt = (n: number | null) => n != null ? n.toFixed(1) : '-';
+    const LINE = '\u2500'.repeat(100);
+
+    console.log(`\n=== FPC Benchmark Results: ${r.name} ===`);
+
+    // FPC-only gate counts.
+    if (r.fpcGateCounts?.length) {
+      console.log('\nFPC-Only Gate Counts:');
+      console.log(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      console.log(LINE);
+      let sub = 0;
+      for (const gc of r.fpcGateCounts) {
+        sub += gc.gateCount ?? 0;
+        console.log(
+          pad(gc.circuitName, 50),
+          pad(numFmt(gc.gateCount ?? 0), 14),
+          pad(msFmt(gc.witgenMs), 14),
+          numFmt(sub),
+        );
+      }
+      console.log(LINE);
+      console.log(
+        pad('FPC TOTAL', 50),
+        pad(numFmt(r.fpcTotalGateCount), 14),
+        pad(msFmt(r.fpcTotalWitgenMs), 14),
+        '',
+      );
+    }
+
+    // Full transaction trace.
+    if (r.fullTrace?.length) {
+      console.log('\nFull Transaction Trace:');
+      console.log(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      console.log(LINE);
+      let sub = 0;
+      for (const gc of r.fullTrace) {
+        sub += gc.gateCount ?? 0;
+        console.log(
+          pad(gc.circuitName, 50),
+          pad(numFmt(gc.gateCount ?? 0), 14),
+          pad(msFmt(gc.witgenMs), 14),
+          numFmt(sub),
+        );
+      }
+      console.log(LINE);
+      console.log(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
+    }
+
+    // Proving time + gas summary.
+    const provingStr = r.provingTime != null
+      ? `${numFmt(Math.round(r.provingTime))}ms (hardware-dependent, full tx)`
+      : 'N/A';
+    console.log(`\nProving time:  ${provingStr}`);
+    if (r.gas) {
+      const da = r.gas.gasLimits?.daGas ?? 'N/A';
+      const l2 = r.gas.gasLimits?.l2Gas ?? 'N/A';
+      console.log(`Gas:           DA ${typeof da === 'number' ? numFmt(da) : da} | L2 ${typeof l2 === 'number' ? numFmt(l2) : l2}`);
+    }
+    console.log('');
   }
 }

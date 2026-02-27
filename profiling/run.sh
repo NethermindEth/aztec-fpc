@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Compile contracts, deploy, and profile FPC.fee_entrypoint gate count.
+# Compile contracts and benchmark FPC.fee_entrypoint via aztec-benchmark.
 #
-# This is the default profiler for the standard FPC contract.
+# Produces both structured JSON (profiling/benchmarks/fpc.benchmark.json) and
+# a human-readable console summary (gate counts, gas, proving time).
+#
 # For CreditFPC profiling (pay_and_mint + pay_with_credit), use run_credit_fpc.sh.
 #
 # Run ./profiling/setup.sh once first, then re-run this after every contract change.
@@ -12,7 +14,6 @@
 # Environment:
 #   AZTEC_NODE_URL  — override node endpoint (default http://127.0.0.1:8080)
 #   L1_RPC_URL      — L1 (anvil) endpoint  (default http://127.0.0.1:8545)
-#                     needed by the aztec-benchmark step for Fee Juice bridging
 
 set -euo pipefail
 
@@ -43,12 +44,7 @@ fi
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# ── Step 2: Deploy + profile FPC.fee_entrypoint (custom profiler) ─────────────
-echo ""
-echo "[profile] Running FPC gate count profiler (fee_entrypoint)..."
-AZTEC_NODE_URL="$NODE_URL" node "$SCRIPT_DIR/profile-gates.mjs"
-
-# ── Step 3: Benchmark via aztec-benchmark (structured JSON output) ────────────
+# ── Step 2: Benchmark via aztec-benchmark (JSON + console output) ─────────────
 echo ""
 echo "[profile] Running FPC benchmark (aztec-benchmark)..."
 AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \

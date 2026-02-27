@@ -1,0 +1,172 @@
+name: PR benchmark
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Read Aztec version
+        id: aztec-version
+        run: echo "version=$(cat .aztecrc | tr -d '\n')" >> $GITHUB_OUTPUT
+
+      - name: Add Aztec to PATH
+        run: |
+          echo "$HOME/.aztec/current/bin" >> $GITHUB_PATH
+          echo "$HOME/.aztec/current/node_modules/.bin" >> $GITHUB_PATH
+          echo "$HOME/.aztec/bin" >> $GITHUB_PATH
+
+      - name: Cache Aztec toolchain
+        uses: actions/cache@v5
+        with:
+          path: ~/.aztec
+          key: aztec-${{ runner.os }}-${{ steps.aztec-version.outputs.version }}
+
+      - name: Install Aztec
+        env:
+          VERSION: ${{ steps.aztec-version.outputs.version }}
+        run: |
+          output=$(aztec-up use 2>&1) || true
+          if echo "$output" | grep -q "Using aztec version $VERSION"; then
+            echo "Already using Aztec version $VERSION, skipping install"
+            exit 0
+          fi
+          bash -i <(curl -sL https://install.aztec.network/$VERSION)
+
+      - name: Compile contracts
+        run: aztec compile
+
+      - name: Install profiling dependencies
+        run: npm install --prefix profiling
+
+      - name: Run benchmark
+        run: |
+          set -euo pipefail
+
+          aztec start --local-network >/tmp/aztec-local-network.log 2>&1 &
+          AZTEC_PID=$!
+
+          cleanup() {
+            if kill -0 "$AZTEC_PID" >/dev/null 2>&1; then
+              kill "$AZTEC_PID" >/dev/null 2>&1 || true
+              wait "$AZTEC_PID" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT INT TERM
+
+          for i in $(seq 1 180); do
+            if (echo >/dev/tcp/127.0.0.1/8080) >/dev/null 2>&1 && \
+               (echo >/dev/tcp/127.0.0.1/8545) >/dev/null 2>&1; then
+              echo "Aztec local network is reachable"
+              break
+            fi
+
+            if [[ "$i" == "180" ]]; then
+              echo "ERROR: local network did not become reachable in time" >&2
+              tail -n 200 /tmp/aztec-local-network.log >&2 || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          npx --prefix profiling aztec-benchmark \
+            --config Nargo.toml \
+            --output-dir profiling/benchmarks \
+            --suffix _new
+
+      - name: Encode base branch name
+        id: encode-base
+        run: |
+          encoded=$(echo "${{ github.event.pull_request.base.ref }}" | sed 's/\//-/g')
+          echo "base-ref-encoded=${encoded}" >> $GITHUB_OUTPUT
+
+      - name: Download baseline artifact
+        id: download-baseline
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@0bd50d53a6d7fb5cb921e607957e9cc12b4ce392
+        with:
+          workflow: update-baseline.yml
+          branch: ${{ github.event.pull_request.base.ref }}
+          name: benchmark-baseline-${{ steps.encode-base.outputs.base-ref-encoded }}
+          path: profiling/benchmarks
+          if_no_artifact_found: warn
+
+      - name: Generate comparison report
+        if: steps.download-baseline.outcome == 'success'
+        run: |
+          node -e "
+            let runComparison;
+            try {
+              ({ runComparison } = require('./profiling/node_modules/@defi-wonderland/aztec-benchmark/action/comparison.cjs'));
+            } catch (e) {
+              if (e.code === 'MODULE_NOT_FOUND') {
+                console.error(
+                  'ERROR: @defi-wonderland/aztec-benchmark comparison module not found.\n' +
+                  'Ensure profiling dependencies are installed.'
+                );
+              }
+              throw e;
+            }
+            const fs = require('fs');
+            const result = runComparison({
+              reportsDir: 'profiling/benchmarks',
+              baseSuffix: '_latest',
+              prSuffix: '_new',
+              threshold: 2.5
+            });
+            fs.writeFileSync('benchmark-comparison.md', result);
+          "
+
+      - name: Comment diff on PR
+        if: steps.download-baseline.outcome == 'success'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: benchmark-comparison.md
+
+      - name: No baseline available
+        if: steps.download-baseline.outcome != 'success'
+        run: echo "No baseline artifact found for branch ${{ github.event.pull_request.base.ref }}. Skipping comparison."
+
+      - name: Rename to baseline format
+        run: |
+          for file in profiling/benchmarks/*_new.benchmark.json; do
+            [ -f "$file" ] && mv "$file" "${file/_new.benchmark.json/_latest.benchmark.json}"
+          done
+
+      - name: Encode head branch name
+        id: encode-head
+        run: |
+          encoded=$(echo "${{ github.event.pull_request.head.ref }}" | sed 's/\//-/g')
+          echo "head-ref-encoded=${encoded}" >> $GITHUB_OUTPUT
+
+      - name: Upload baseline for PR branch
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline-${{ steps.encode-head.outputs.head-ref-encoded }}
+          path: profiling/benchmarks/*_latest.benchmark.json
+          retention-days: 90
+          if-no-files-found: error

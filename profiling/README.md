@@ -7,8 +7,9 @@ This directory contains profiling scripts for two FPC (Fee Payment Contract) imp
 | `run.sh` | `FPC` (standard authwit-based) | `fee_entrypoint` |
 | `run_credit_fpc.sh` | `CreditFPC` (Schnorr-quoted) | `pay_and_mint`, `pay_with_credit` |
 
-`run.sh` also runs [aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark)
-which produces structured JSON reports in `profiling/benchmarks/`.
+`run.sh` runs [aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark)
+which produces structured JSON reports in `profiling/benchmarks/` and prints a
+human-readable console summary.
 
 ## Prerequisites
 
@@ -42,7 +43,7 @@ VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .
 | Script | When | What |
 |---|---|---|
 | `setup.sh` | Once | Installs `@aztec/*` npm packages + `aztec-benchmark` + `viem` (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
-| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), deploys Token + FPC, profiles `fee_entrypoint` (console output), then runs `aztec-benchmark` (JSON output) |
+| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), runs `aztec-benchmark` to deploy + profile `fee_entrypoint` (JSON + console output) |
 | `run_credit_fpc.sh` | Every iteration | Compiles contracts, deploys Token + CreditFPC, profiles `pay_and_mint` and `pay_with_credit`, prints gate counts for both |
 | `teardown.sh` | When done | Stops the network (if started by `setup.sh`), removes temp files |
 
@@ -81,44 +82,72 @@ off-chain and supplied to `fee_entrypoint` at call time.
 Internal calls traced: `FPC:fee_entrypoint`, `Token:transfer_private_to_private`,
 `SchnorrAccount:verify_private_authwit`, plus all kernel circuits.
 
-### Console Output (Step 2 — custom profiler)
+### Output
+
+`run.sh` invokes [aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark)
+which deploys Token + FPC + Noop, bridges Fee Juice from L1, and profiles a
+minimal Noop app transaction with the FPC as fee payment. The Noop boundary
+lets the teardown step extract FPC-specific gate counts (from
+`FPC:fee_entrypoint` up to `Noop:noop`).
+
+The benchmark produces both a **console summary** and a **JSON report** at
+`profiling/benchmarks/fpc.benchmark.json`. The benchmark file lives at
+`profiling/benchmarks/fpc.benchmark.ts` and is referenced from the root
+`Nargo.toml` under `[benchmark]`.
+
+#### Console output
 
 ```
-=== Gate Count Profile ===
+=== FPC Benchmark Results: fee_entrypoint ===
 
-Function                                                     Own gates    Subtotal
-────────────────────────────────────────────────────────────────────────────────────────
-SchnorrAccount:entrypoint                                    54,352       54,352
-private_kernel_init                                          46,811       101,163
-FPC:fee_entrypoint                                              ...          ...
-...
-────────────────────────────────────────────────────────────────────────────────────────
-TOTAL                                                         xxx,xxx
+FPC-Only Gate Counts:
+Function                                           Own gates      Witgen (ms)    Subtotal
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+FPC:fee_entrypoint                                 18,657         45.2           18,657
+private_kernel_inner                               101,237        12.3           119,894
+Token:transfer_private_to_private                  34,237         28.1           154,131
+private_kernel_inner                               101,237        11.8           255,368
+SchnorrAccount:verify_private_authwit              14,328         9.4            269,696
+private_kernel_inner                               101,237        11.5           370,933
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+FPC TOTAL                                          370,933        118.3
+
+Full Transaction Trace:
+Function                                           Own gates      Witgen (ms)    Subtotal
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+SchnorrAccount:entrypoint                          54,352         32.1           54,352
+private_kernel_init                                46,811         8.7            101,163
+...                                                ...            ...            ...
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+TX TOTAL                                           772,327
+
+Proving time:  10,517ms (hardware-dependent, full tx)
+Gas:           DA 786,432 | L2 2,000,000
 ```
 
-### JSON Output (Step 3 — aztec-benchmark)
-
-`run.sh` also invokes the
-[aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark) CLI,
-which produces a structured JSON report at `profiling/benchmarks/fpc.benchmark.json`.
-The benchmark file lives at `profiling/benchmarks/fpc.benchmark.ts` and is
-referenced from the root `Nargo.toml` under `[benchmark]`.
-
-The JSON report contains:
+#### JSON report fields
 
 | Field | Description |
 |---|---|
-| `summary` | Total gate counts keyed by function name |
-| `results` | Detailed per-circuit gate counts for each profiled function |
-| `gasSummary` | Total gas (DA + L2) keyed by function name |
-| `provingTimeSummary` | Proving time in ms per function |
-| `systemInfo` | Hardware metadata (CPU, memory, OS) |
+| `summary` | Total gate counts (full trace) keyed by entry point name |
+| `fpcSummary` | FPC-only gate counts keyed by entry point name |
+| `results[].fullTrace` | Full per-circuit gate counts + witgen timing (all execution steps in the tx) |
+| `results[].fullTrace[].witgenMs` | Witness generation time in ms for this circuit (from SDK `executionSteps[].timings.witgen`) |
+| `results[].fpcGateCounts` | FPC-only per-circuit gate counts + witgen timing (`fee_entrypoint` + sub-calls) |
+| `results[].fpcGateCounts[].witgenMs` | Witness generation time in ms for this FPC circuit |
+| `results[].fpcTotalGateCount` | Sum of FPC-only gate counts |
+| `results[].fpcTotalWitgenMs` | Sum of FPC-only witness generation times in ms |
+| `results[].provingTime` | SDK proving time in ms (hardware-dependent, full tx) |
+| `results[].gas` | Gas limits (DA + L2, including teardown) |
+| `gasSummary` | Total gas (DA + L2) keyed by entry point name |
+| `provingTimeSummary` | SDK proving time keyed by entry point name |
+| `systemInfo` | Hardware info (CPU, cores, RAM, arch) recorded by aztec-benchmark |
 
-The benchmark deploys a fresh Token + FPC, bridges Fee Juice from L1 so the
-FPC can act as a real fee payer, and profiles a dummy app transaction
-(`Token.transfer_private_to_private`) with the FPC as fee payment. This means
-the profile includes the full execution trace: `FPC:fee_entrypoint`, the token
-transfer, authwit verification, and all kernel circuits.
+> **Note on metrics:** Gate counts and gas are deterministic and
+> hardware-independent — they are the primary metrics for comparing FPC
+> implementations. Witness generation time (`witgenMs`) and proving time vary
+> by CPU, RAM, and concurrency; they are included for informational purposes
+> and are not used for CI regression detection.
 
 #### Running the benchmark standalone
 
@@ -130,18 +159,27 @@ AZTEC_NODE_URL=http://127.0.0.1:8080 L1_RPC_URL=http://127.0.0.1:8545 \
     --output-dir ./benchmarks
 ```
 
-#### Future CI integration
+#### CI integration
 
-The aztec-benchmark library ships reusable GitHub workflows for PR comparison
-and baseline management. When ready, add:
+Two GitHub Actions workflows automate benchmarking:
 
-```yaml
-# .github/workflows/pr-benchmark.yml
-uses: defi-wonderland/aztec-benchmark/.github/workflows/pr-benchmark.yml@v0
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `update-baseline.yml` | Push to `main` | Runs benchmark, uploads result as baseline artifact (90-day retention) |
+| `pr-benchmark.yml` | Pull request | Runs benchmark, downloads baseline, posts gate count comparison as PR comment |
 
-# .github/workflows/update-baseline.yml
-uses: defi-wonderland/aztec-benchmark/.github/workflows/update-baseline.yml@v0
-```
+The workflows reuse the same Aztec setup pattern as the smoke tests (read
+`.aztecrc`, cache toolchain, install via `aztec-up use`). The benchmark runs
+on a fresh `aztec start --local-network` instance within each job.
+
+The comparison uses `@defi-wonderland/aztec-benchmark`'s `runComparison()`
+with a 2.5% threshold — changes below this are not flagged. Gate counts and
+gas are hardware-independent, so comparisons are valid across runs. Timing
+metrics (witgen, proving) may vary between runs on the same hardware.
+
+To switch to Wonderland's default runner for hardware parity, change
+`runs-on: ubuntu-latest` to `runs-on: ubuntu-latest-m` in both workflows
+(requires GitHub Teams/Enterprise or larger runners enabled).
 
 ---
 

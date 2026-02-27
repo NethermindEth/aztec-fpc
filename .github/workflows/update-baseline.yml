@@ -1,0 +1,113 @@
+name: Update benchmark baseline
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  update-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Read Aztec version
+        id: aztec-version
+        run: echo "version=$(cat .aztecrc | tr -d '\n')" >> $GITHUB_OUTPUT
+
+      - name: Add Aztec to PATH
+        run: |
+          echo "$HOME/.aztec/current/bin" >> $GITHUB_PATH
+          echo "$HOME/.aztec/current/node_modules/.bin" >> $GITHUB_PATH
+          echo "$HOME/.aztec/bin" >> $GITHUB_PATH
+
+      - name: Cache Aztec toolchain
+        uses: actions/cache@v5
+        with:
+          path: ~/.aztec
+          key: aztec-${{ runner.os }}-${{ steps.aztec-version.outputs.version }}
+
+      - name: Install Aztec
+        env:
+          VERSION: ${{ steps.aztec-version.outputs.version }}
+        run: |
+          output=$(aztec-up use 2>&1) || true
+          if echo "$output" | grep -q "Using aztec version $VERSION"; then
+            echo "Already using Aztec version $VERSION, skipping install"
+            exit 0
+          fi
+          bash -i <(curl -sL https://install.aztec.network/$VERSION)
+
+      - name: Compile contracts
+        run: aztec compile
+
+      - name: Install profiling dependencies
+        run: npm install --prefix profiling
+
+      - name: Run benchmark
+        run: |
+          set -euo pipefail
+
+          aztec start --local-network >/tmp/aztec-local-network.log 2>&1 &
+          AZTEC_PID=$!
+
+          cleanup() {
+            if kill -0 "$AZTEC_PID" >/dev/null 2>&1; then
+              kill "$AZTEC_PID" >/dev/null 2>&1 || true
+              wait "$AZTEC_PID" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT INT TERM
+
+          for i in $(seq 1 180); do
+            if (echo >/dev/tcp/127.0.0.1/8080) >/dev/null 2>&1 && \
+               (echo >/dev/tcp/127.0.0.1/8545) >/dev/null 2>&1; then
+              echo "Aztec local network is reachable"
+              break
+            fi
+
+            if [[ "$i" == "180" ]]; then
+              echo "ERROR: local network did not become reachable in time" >&2
+              tail -n 200 /tmp/aztec-local-network.log >&2 || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          npx --prefix profiling aztec-benchmark \
+            --config Nargo.toml \
+            --output-dir profiling/benchmarks \
+            --suffix _latest
+
+      - name: List baseline files
+        run: ls -lh profiling/benchmarks/*_latest.benchmark.json
+
+      - name: Encode branch name
+        id: encode
+        run: |
+          encoded=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+          echo "branch-encoded=${encoded}" >> $GITHUB_OUTPUT
+
+      - name: Upload baseline artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline-${{ steps.encode.outputs.branch-encoded }}
+          path: profiling/benchmarks/*_latest.benchmark.json
+          retention-days: 90
+          if-no-files-found: error
