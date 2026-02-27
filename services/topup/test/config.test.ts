@@ -79,6 +79,7 @@ describe("topup config secret providers", () => {
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: undefined,
         TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_OPS_PORT: undefined,
       },
       () => {
         const config = loadConfig(configPath);
@@ -107,6 +108,7 @@ describe("topup config secret providers", () => {
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: undefined,
         TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_OPS_PORT: undefined,
       },
       () => {
         assert.throws(
@@ -135,6 +137,7 @@ describe("topup config secret providers", () => {
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: VALID_PRIVATE_KEY,
         TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_OPS_PORT: undefined,
       },
       () => {
         const config = loadConfig(configPath);
@@ -164,6 +167,7 @@ describe("topup config secret providers", () => {
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: VALID_PRIVATE_KEY,
         TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_OPS_PORT: undefined,
       },
       () => {
         assert.throws(
@@ -192,6 +196,7 @@ describe("topup config secret providers", () => {
         L1_OPERATOR_PRIVATE_KEY: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_OPS_PORT: undefined,
       },
       () => {
         const config = loadConfig(configPath, {
@@ -227,10 +232,39 @@ describe("topup config secret providers", () => {
         L1_OPERATOR_PRIVATE_KEY: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         TOPUP_BRIDGE_STATE_PATH: "./state-from-env.json",
+        TOPUP_OPS_PORT: undefined,
       },
       () => {
         const config = loadConfig(configPath);
         assert.equal(config.bridge_state_path, "./state-from-env.json");
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
+
+  it("supports ops port override via env", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "l1_operator_secret_provider: auto",
+          `l1_operator_private_key: "${VALID_PRIVATE_KEY}"`,
+          "ops_port: 3001",
+        ].join("\n"),
+      ),
+    );
+
+    withEnv(
+      {
+        L1_OPERATOR_PRIVATE_KEY: undefined,
+        L1_OPERATOR_SECRET_PROVIDER: undefined,
+        TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_OPS_PORT: "3100",
+      },
+      () => {
+        const config = loadConfig(configPath);
+        assert.equal(config.ops_port, 3100);
       },
     );
 

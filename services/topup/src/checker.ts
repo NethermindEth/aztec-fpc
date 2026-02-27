@@ -23,6 +23,7 @@ export interface TopupCheckerDependencies {
     bridgeResult: BridgeResult,
     confirmation: BridgeConfirmationResult,
   ) => Promise<void> | void;
+  onBridgeFailed?: (error: unknown) => Promise<void> | void;
   logger?: Pick<Console, "log" | "warn" | "error">;
 }
 
@@ -110,6 +111,11 @@ export function createTopupChecker(
         );
       }
     } catch (err) {
+      try {
+        await deps.onBridgeFailed?.(err);
+      } catch (hookError) {
+        logger.error("Bridge failure hook failed", hookError);
+      }
       logger.error("Bridge confirmation outcome=failed", err);
     } finally {
       bridgeInFlight = false;

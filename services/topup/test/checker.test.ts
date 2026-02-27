@@ -211,4 +211,37 @@ describe("checker", () => {
     assert.equal(submitted, 1);
     assert.equal(settled, 1);
   });
+
+  it("invokes failure hook when bridge flow throws", async () => {
+    let bridgeFailures = 0;
+    const checker = createTopupChecker(
+      { threshold: 5n, topUpAmount: 2n },
+      {
+        getBalance: async () => 1n,
+        bridge: async () => {
+          throw new Error("bridge rpc unavailable");
+        },
+        confirm: async () => ({
+          status: "confirmed",
+          baselineBalance: 1n,
+          maxObservedBalance: 3n,
+          lastObservedBalance: 3n,
+          observedDelta: 2n,
+          elapsedMs: 1,
+          attempts: 1,
+          pollErrors: 0,
+          messageCheckAttempted: true,
+          messageReady: true,
+          messageCheckFailed: false,
+        }),
+        onBridgeFailed: () => {
+          bridgeFailures += 1;
+        },
+      },
+    );
+
+    await checker.checkAndTopUp();
+    assert.equal(bridgeFailures, 1);
+    assert.equal(checker.isBridgeInFlight(), false);
+  });
 });

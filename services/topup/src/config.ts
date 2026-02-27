@@ -47,6 +47,7 @@ const ConfigSchema = z
     top_up_amount: PositiveBigIntString,
     /** Local durable JSON file for persisting in-flight bridge metadata. */
     bridge_state_path: z.string().min(1).default(".topup-bridge-state.json"),
+    ops_port: z.number().int().min(1).max(65535).default(3001),
     check_interval_ms: z.number().int().positive().default(60_000),
     confirmation_timeout_ms: z.number().int().positive().default(180_000),
     confirmation_poll_initial_ms: z.number().int().positive().default(1_000),
@@ -106,6 +107,26 @@ function parseSecretProvider(
   return SecretProviderSchema.parse(envOverride.trim());
 }
 
+function parseIntegerOverride(
+  configValue: number,
+  envOverride: string | undefined,
+  envName: string,
+  min: number,
+  max: number,
+): number {
+  if (envOverride === undefined) {
+    return configValue;
+  }
+
+  const parsed = Number(envOverride.trim());
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(
+      `Invalid ${envName}: expected integer in range [${min}, ${max}]`,
+    );
+  }
+  return parsed;
+}
+
 export function loadConfig(
   path: string,
   options: LoadConfigOptions = {},
@@ -143,6 +164,13 @@ export function loadConfig(
     l1_rpc_url: process.env.L1_RPC_URL ?? config.l1_rpc_url,
     bridge_state_path:
       process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
+    ops_port: parseIntegerOverride(
+      config.ops_port,
+      process.env.TOPUP_OPS_PORT,
+      "TOPUP_OPS_PORT",
+      1,
+      65535,
+    ),
     l1_operator_private_key: resolvedSecret.value,
     l1_operator_private_key_source: resolvedSecret.source,
     l1_operator_private_key_provider: resolvedSecret.provider,

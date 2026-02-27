@@ -83,6 +83,8 @@ services:
       args:
         SERVICE: topup
     entrypoint: ["bun", "run", "services/topup/dist/index.js"]
+    ports:
+      - "3001:3001"
     configs:
       - source: topup-config
         target: /app/config.yaml
@@ -90,6 +92,7 @@ services:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
       L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-}"
+      TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
     depends_on:
       aztec-node:
         condition: service_healthy
