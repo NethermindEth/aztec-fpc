@@ -1,3 +1,14 @@
+/// Originally derived from defi-wonderland/aztec-fee-payment:
+/// https://github.com/defi-wonderland/aztec-fee-payment/blob/dev/src/nr/metered_contract/src/main.nr
+/// Licensed under MIT.
+///
+/// Key changes from upstream:
+/// - Replaced authwit-delegated owner verification with operator Schnorr-signed quotes
+/// - Added quote replay protection via nullifiers
+/// - Replaced pay_fee / pay_fee_exact with pay_and_mint / pay_with_credit
+/// - Packed config into single PublicImmutable slot (1 Merkle proof vs 4)
+/// - Added exchange-rate conversion via fee_math
+
 mod fee_math;
 mod test;
 
