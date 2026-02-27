@@ -835,7 +835,9 @@ function parseQuoteResponse(
     throw new Error("Attestation quote returned non-positive fj_amount");
   }
   if (parsed.aaPaymentAmount <= 0n) {
-    throw new Error("Attestation quote returned non-positive aa_payment_amount");
+    throw new Error(
+      "Attestation quote returned non-positive aa_payment_amount",
+    );
   }
   if (
     quote.accepted_asset.toLowerCase() !==
@@ -1491,7 +1493,9 @@ async function runFeePaidTargetTxAndAssert(
     throw new Error("Attestation quote returned non-positive fj_amount");
   }
   if (aaPaymentAmount <= 0n) {
-    throw new Error("Attestation quote returned non-positive aa_payment_amount");
+    throw new Error(
+      "Attestation quote returned non-positive aa_payment_amount",
+    );
   }
   if (fjAmount !== requestedFjAmount) {
     throw new Error(
