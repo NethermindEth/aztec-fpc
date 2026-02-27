@@ -18,6 +18,7 @@ import { loadConfig } from "./config.js";
 import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
 import { assertL1RpcChainIdMatches } from "./l1.js";
 import { createFeeJuiceBalanceReader } from "./monitor.js";
+import { createTopupOpsServer, TopupOpsState } from "./ops.js";
 import { reconcilePersistedBridgeState } from "./reconcile.js";
 import { createBridgeStateStore } from "./state.js";
 
@@ -74,6 +75,11 @@ async function main() {
   const bridgeStateStore = createBridgeStateStore(config.bridge_state_path);
   const balanceReader = await createFeeJuiceBalanceReader(pxe);
   const shutdownController = new AbortController();
+  const opsState = new TopupOpsState({
+    checkIntervalMs: config.check_interval_ms,
+  });
+  const opsServer = createTopupOpsServer(opsState);
+  await opsServer.listen("0.0.0.0", config.ops_port);
 
   console.log(`Top-up service started`);
   console.log(`  FPC address:   ${config.fpc_address}`);
@@ -91,6 +97,7 @@ async function main() {
   console.log(
     `  Fee Juice contract: ${balanceReader.feeJuiceAddress.toString()} (${balanceReader.addressSource})`,
   );
+  console.log(`  Ops endpoint:  http://0.0.0.0:${config.ops_port}`);
   if (logClaimSecret) {
     console.warn(
       "TOPUP_LOG_CLAIM_SECRET=1 enabled: bridge claim secrets will be printed to logs (for local smoke/debug only)",
@@ -107,7 +114,16 @@ async function main() {
   const checker = createTopupChecker(
     { threshold, topUpAmount, logClaimSecret },
     {
-      getBalance: () => balanceReader.getBalance(fpcAddress),
+      getBalance: async () => {
+        try {
+          const balance = await balanceReader.getBalance(fpcAddress);
+          opsState.recordBalanceCheckSuccess();
+          return balance;
+        } catch (error) {
+          opsState.recordBalanceCheckFailure(error);
+          throw error;
+        }
+      },
       bridge: (amount) =>
         bridgeFeeJuice(
           pxe,
@@ -133,12 +149,14 @@ async function main() {
           },
         }),
       onBridgeSubmitted: async (baselineBalance, bridgeResult) => {
+        opsState.recordBridgeEvent("submitted");
         await bridgeStateStore.write(baselineBalance, bridgeResult);
         console.log(
           `Persisted in-flight bridge metadata message_hash=${bridgeResult.messageHash} leaf_index=${bridgeResult.messageLeafIndex}`,
         );
       },
       onBridgeSettled: async (_baselineBalance, bridgeResult, confirmation) => {
+        opsState.recordBridgeEvent(confirmation.status);
         if (confirmation.status !== "confirmed") {
           console.warn(
             `Retaining persisted bridge metadata message_hash=${bridgeResult.messageHash} outcome=${confirmation.status}`,
@@ -150,6 +168,9 @@ async function main() {
           `Cleared persisted bridge metadata message_hash=${bridgeResult.messageHash} outcome=${confirmation.status}`,
         );
       },
+      onBridgeFailed: () => {
+        opsState.recordBridgeEvent("failed");
+      },
     },
   );
 
@@ -158,6 +179,7 @@ async function main() {
       return;
     }
     console.log(`Received ${signal}. Starting graceful shutdown...`);
+    opsState.markShutdownRequested();
     checker.requestStop();
     shutdownController.abort();
     if (intervalHandle) {
@@ -165,9 +187,15 @@ async function main() {
       intervalHandle = undefined;
     }
     void (async () => {
-      await inFlightCheck;
-      console.log("Top-up service stopped");
-      shutdownResolve?.();
+      try {
+        await inFlightCheck;
+        await opsServer.close();
+      } catch (error) {
+        console.error("Failed to stop top-up ops server cleanly:", error);
+      } finally {
+        console.log("Top-up service stopped");
+        shutdownResolve?.();
+      }
     })();
   };
 

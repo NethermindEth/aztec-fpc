@@ -32,6 +32,9 @@ top_up_amount: "10000000000000000000"
 # out, this state is retained and retried on the next cycle.
 bridge_state_path: ".topup-bridge-state.json"
 
+# Ops HTTP server port (health/readiness/metrics).
+ops_port: 3001
+
 # How often to check the balance (milliseconds). 60000 = every minute.
 check_interval_ms: 60000
 

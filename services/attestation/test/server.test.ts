@@ -107,6 +107,58 @@ describe("server", () => {
     }
   });
 
+  it("exposes baseline quote metrics on /metrics", async () => {
+    const app = buildServer(TEST_CONFIG, mockSigner());
+
+    try {
+      const success = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      assert.equal(success.statusCode, 200);
+
+      const badRequest = await app.inject({
+        method: "GET",
+        url: "/quote",
+      });
+      assert.equal(badRequest.statusCode, 400);
+
+      const metrics = await app.inject({
+        method: "GET",
+        url: "/metrics",
+      });
+      assert.equal(metrics.statusCode, 200);
+      assert.match(
+        metrics.headers["content-type"] ?? "",
+        /^text\/plain; version=0\.0\.4;/,
+      );
+
+      const body = metrics.body;
+      assert.match(
+        body,
+        /attestation_quote_requests_total\{outcome="success"\} 1/,
+      );
+      assert.match(
+        body,
+        /attestation_quote_requests_total\{outcome="bad_request"\} 1/,
+      );
+      assert.match(
+        body,
+        /attestation_quote_errors_total\{error_type="bad_request"\} 1/,
+      );
+      assert.match(
+        body,
+        /attestation_quote_latency_seconds_count\{outcome="success"\} 1/,
+      );
+      assert.match(
+        body,
+        /attestation_quote_latency_seconds_count\{outcome="bad_request"\} 1/,
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns quote payload with required fields on happy path", async () => {
     let calledQuoteHashHex: string | undefined;
     const signer: QuoteSchnorrSigner = {
