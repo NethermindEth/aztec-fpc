@@ -116,8 +116,8 @@ type QuoteInput = {
 type NegativeScenarioResult = {
   quoteReplayRejected: boolean;
   expiredQuoteRejected: boolean;
-  overlongTtlRejected: boolean;
   senderBindingRejected: boolean;
+  mintedCreditTooLowRejected: boolean;
   insufficientFeeJuiceRejected: boolean;
   insufficientFeeJuiceBudgetWei: bigint;
 };
@@ -931,6 +931,7 @@ type FeePaidTxParams = {
   recipient: AztecAddress;
   transferAmount: bigint;
   quote: QuoteInput;
+  enforceQuotedFjMatchesMax?: boolean;
 };
 
 async function executeFeePaidTx(
@@ -950,7 +951,10 @@ async function executeFeePaidTx(
     );
   }
 
-  if (params.quote.fjAmount !== result.maxGasCostNoTeardown) {
+  if (
+    (params.enforceQuotedFjMatchesMax ?? true) &&
+    params.quote.fjAmount !== result.maxGasCostNoTeardown
+  ) {
     throw new Error(
       `quoted fj_amount mismatch. expected=${result.maxGasCostNoTeardown} got=${params.quote.fjAmount}`,
     );
@@ -977,8 +981,8 @@ async function executeFeePaidTx(
     action: transferCall,
   });
 
-  const feeEntrypointCall = await params.fpc.methods
-    .fee_entrypoint(
+  const payAndMintCall = await params.fpc.methods
+    .pay_and_mint(
       transferAuthwitNonce,
       params.quote.fjAmount,
       params.quote.aaPaymentAmount,
@@ -991,7 +995,7 @@ async function executeFeePaidTx(
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
       new ExecutionPayload(
-        [feeEntrypointCall],
+        [payAndMintCall],
         [transferAuthwit],
         [],
         [],
@@ -1882,30 +1886,33 @@ async function negativeExpiredQuoteRejected(
   );
 }
 
-async function negativeOverlongTtlRejected(
+async function negativeMintedCreditTooLowRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
   node: ReturnType<typeof createAztecNodeClient>,
 ): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
+  if (result.maxGasCostNoTeardown <= 1n) {
+    throw new Error(
+      "Cannot build minted-credit-too-low quote: maxGasCostNoTeardown must be > 1",
+    );
+  }
+
+  const fjAmount = result.maxGasCostNoTeardown - 1n;
   const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const latestTimestamp = await getLatestL2Timestamp(node);
-  const ttlSafetyBufferSeconds = 600n;
-  const ttlTooLargeQuote = await signQuoteForUser(
+  const lowMintQuote = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
     fjAmount,
     aaPaymentAmount,
-    latestTimestamp +
-      BigInt(MAX_QUOTE_VALIDITY_SECONDS) +
-      ttlSafetyBufferSeconds,
+    latestTimestamp + 600n,
     result.user,
   );
 
   await expectFailure(
-    "negative overlong quote ttl rejected",
-    ["quote ttl too large"],
+    "negative minted credit too low rejected",
+    ["minted credit too low for max fee"],
     () =>
       executeFeePaidTx(config, result, {
         token: result.token,
@@ -1913,7 +1920,8 @@ async function negativeOverlongTtlRejected(
         payer: result.user,
         recipient: result.operator,
         transferAmount: 1n,
-        quote: ttlTooLargeQuote,
+        quote: lowMintQuote,
+        enforceQuotedFjMatchesMax: false,
       }),
   );
 }
@@ -2176,8 +2184,8 @@ async function runStep7NegativeScenarios(
 ): Promise<NegativeScenarioResult> {
   await negativeQuoteReplayRejected(config, result, attestationBaseUrl);
   await negativeExpiredQuoteRejected(config, result, node);
-  await negativeOverlongTtlRejected(config, result, node);
   await negativeSenderBindingRejected(config, result, node);
+  await negativeMintedCreditTooLowRejected(config, result, node);
 
   await stopManagedProcess(topup);
   console.log(
@@ -2195,8 +2203,8 @@ async function runStep7NegativeScenarios(
   return {
     quoteReplayRejected: true,
     expiredQuoteRejected: true,
-    overlongTtlRejected: true,
     senderBindingRejected: true,
+    mintedCreditTooLowRejected: true,
     insufficientFeeJuiceRejected: true,
     insufficientFeeJuiceBudgetWei,
   };
@@ -2512,8 +2520,8 @@ function writeStep5Summary(
     completedAt: new Date().toISOString(),
     quoteReplayRejected: orchestration.step7.quoteReplayRejected,
     expiredQuoteRejected: orchestration.step7.expiredQuoteRejected,
-    overlongTtlRejected: orchestration.step7.overlongTtlRejected,
     senderBindingRejected: orchestration.step7.senderBindingRejected,
+    mintedCreditTooLowRejected: orchestration.step7.mintedCreditTooLowRejected,
     insufficientFeeJuiceRejected:
       orchestration.step7.insufficientFeeJuiceRejected,
     insufficientFeeJuiceBudgetWei:
