@@ -163,14 +163,46 @@ bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts \
   --node-ready-timeout-ms 45000
 ```
 
-## 10. Current Caveats
+## 10. Render Service Configs From Manifest (Step 6)
+
+Render `services/attestation/config.yaml` and `services/topup/config.yaml` from the canonical manifest:
+
+```bash
+cd /home/ametel/source/aztec-fpc
+export FPC_DEVNET_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
+export L1_OPERATOR_PRIVATE_KEY="0x..."
+bun run render:config:devnet
+```
+
+Equivalent explicit command (with overrides):
+
+```bash
+bun run render:config:devnet -- \
+  --l1-rpc-url "https://sepolia.infura.io/v3/<key>" \
+  --l1-operator-private-key "0x..." \
+  --accepted-asset-name "humanUSDC"
+```
+
+Build validation:
+
+```bash
+bun run attestation:build
+bun run topup:build
+```
+
+Notes:
+
+- Script default manifest is `./deployments/devnet-manifest-v2.json`.
+- Topup bridge addresses are intentionally not written; topup resolves them dynamically from `node_getNodeInfo`.
+
+## 11. Current Caveats
 
 - Full deploy currently needs `--operator-secret-key` (inline). `--operator-secret-key-ref` is only workable in preflight-only mode.
 - If you run with one-command defaults, local `aztec-wallet` alias state can change due to account import/creation.
 - Preflight-only mode does not deploy contracts.
 - Devnet can be transiently unstable (reorg/timeout class errors). The deploy script now retries wallet deploy calls by default.
 
-## 11. Retry/Debug Env Knobs
+## 12. Retry/Debug Env Knobs
 
 Deploy retry behavior:
 
@@ -193,7 +225,7 @@ Then run:
 bun run deploy:fpc:devnet
 ```
 
-## 12. Quick Verify Manifest
+## 13. Quick Verify Manifest
 
 ```bash
 jq . deployments/devnet-manifest-v2.json
