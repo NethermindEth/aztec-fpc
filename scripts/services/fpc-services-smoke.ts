@@ -41,6 +41,8 @@ const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ERC20_ABI = parseAbi([
+  "function balanceOf(address account) view returns (uint256)",
+  "function mint(address to, uint256 amount)",
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
 const FEE_JUICE_PORTAL_ABI = parseAbi([
@@ -74,6 +76,7 @@ type SmokeConfig = {
   httpTimeoutMs: number;
   topupWaitTimeoutMs: number;
   topupPollMs: number;
+  topupCheckIntervalMs: number;
   quoteValiditySeconds: number;
   marketRateNum: number;
   marketRateDen: number;
@@ -108,6 +111,9 @@ type ServiceFlowResult = {
   validUntil: bigint;
   quoteSigBytes: number[];
 };
+
+const managedProcessRegistry = new Set<ManagedProcess>();
+let shutdownInProgress = false;
 
 function parseSmokeMode(value: string | undefined): SmokeMode {
   const normalized = (value ?? "both").trim().toLowerCase();
@@ -188,6 +194,100 @@ function normalizeHexAddress(value: unknown, fieldName: string): Hex {
   throw new Error(`Invalid L1 address in node info for ${fieldName}`);
 }
 
+async function getFeeJuiceL1Addresses(
+  node: ReturnType<typeof createAztecNodeClient>,
+): Promise<{ tokenAddress: Hex; portalAddress: Hex }> {
+  const nodeInfo = await node.getNodeInfo();
+  const l1Addresses = nodeInfo.l1ContractAddresses as Record<string, unknown>;
+  const tokenAddressValue = l1Addresses.feeJuiceAddress ?? l1Addresses.feeJuice;
+  const portalAddressValue =
+    l1Addresses.feeJuicePortalAddress ?? l1Addresses.feeJuicePortal;
+  if (!tokenAddressValue || !portalAddressValue) {
+    throw new Error("Node info is missing FeeJuice L1 contract addresses");
+  }
+
+  return {
+    tokenAddress: normalizeHexAddress(tokenAddressValue, "feeJuiceAddress"),
+    portalAddress: normalizeHexAddress(
+      portalAddressValue,
+      "feeJuicePortalAddress",
+    ),
+  };
+}
+
+async function getL1FeeJuiceBalance(
+  node: ReturnType<typeof createAztecNodeClient>,
+  l1RpcUrl: string,
+  l1PrivateKey: Hex,
+): Promise<bigint> {
+  const { tokenAddress } = await getFeeJuiceL1Addresses(node);
+  const account = privateKeyToAccount(l1PrivateKey);
+  const publicClient = createPublicClient({ transport: http(l1RpcUrl) });
+  const balance = await publicClient.readContract({
+    address: tokenAddress,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: [account.address],
+  });
+
+  return balance;
+}
+
+async function tryMintL1FeeJuice(
+  node: ReturnType<typeof createAztecNodeClient>,
+  l1RpcUrl: string,
+  l1PrivateKey: Hex,
+  amount: bigint,
+): Promise<{ minted: boolean; resultingBalance: bigint }> {
+  if (amount <= 0n) {
+    return {
+      minted: false,
+      resultingBalance: await getL1FeeJuiceBalance(
+        node,
+        l1RpcUrl,
+        l1PrivateKey,
+      ),
+    };
+  }
+
+  const { tokenAddress } = await getFeeJuiceL1Addresses(node);
+  const account = privateKeyToAccount(l1PrivateKey);
+  const walletClient = createWalletClient({
+    account,
+    transport: http(l1RpcUrl),
+  });
+  const publicClient = createPublicClient({
+    transport: http(l1RpcUrl),
+  });
+
+  try {
+    const mintTxHash = await walletClient.writeContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: "mint",
+      args: [account.address, amount],
+    });
+    await publicClient.waitForTransactionReceipt({ hash: mintTxHash });
+    return {
+      minted: true,
+      resultingBalance: await getL1FeeJuiceBalance(
+        node,
+        l1RpcUrl,
+        l1PrivateKey,
+      ),
+    };
+  } catch {
+    return {
+      minted: false,
+      resultingBalance: await getL1FeeJuiceBalance(
+        node,
+        l1RpcUrl,
+        l1PrivateKey,
+      ),
+    };
+  }
+}
+
 function getConfig(): SmokeConfig {
   const mode = parseSmokeMode(process.env.FPC_SERVICES_SMOKE_MODE);
   const config: SmokeConfig = {
@@ -204,6 +304,10 @@ function getConfig(): SmokeConfig {
       240_000,
     ),
     topupPollMs: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_POLL_MS", 2_000),
+    topupCheckIntervalMs: readEnvNumber(
+      "FPC_SERVICES_SMOKE_TOPUP_CHECK_INTERVAL_MS",
+      300_000,
+    ),
     quoteValiditySeconds: readEnvNumber(
       "FPC_SERVICES_SMOKE_QUOTE_VALIDITY_SECONDS",
       3600,
@@ -270,6 +374,7 @@ function startManagedProcess(
   const processHandle = spawn(command, args, {
     cwd: options.cwd,
     env: options.env ?? process.env,
+    detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -284,27 +389,90 @@ function startManagedProcess(
     process.stderr.write(`[${name}] ${text}`);
   });
 
-  return {
+  const managed: ManagedProcess = {
     name,
     process: processHandle,
     getLogs: () => logs,
   };
+  managedProcessRegistry.add(managed);
+  processHandle.on("exit", () => {
+    managedProcessRegistry.delete(managed);
+  });
+  return managed;
 }
 
 async function stopManagedProcess(proc: ManagedProcess): Promise<void> {
   if (proc.process.exitCode !== null) {
+    managedProcessRegistry.delete(proc);
     return;
   }
 
-  proc.process.kill("SIGTERM");
+  const pid = proc.process.pid;
+  let signaled = false;
+  if (typeof pid === "number" && pid > 0) {
+    try {
+      process.kill(-pid, "SIGTERM");
+      signaled = true;
+    } catch {
+      signaled = false;
+    }
+  }
+  if (!signaled) {
+    try {
+      proc.process.kill("SIGTERM");
+    } catch {
+      managedProcessRegistry.delete(proc);
+      return;
+    }
+  }
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (proc.process.exitCode !== null) {
+      managedProcessRegistry.delete(proc);
       return;
     }
     await sleep(100);
   }
-  proc.process.kill("SIGKILL");
+  if (typeof pid === "number" && pid > 0) {
+    try {
+      process.kill(-pid, "SIGKILL");
+      managedProcessRegistry.delete(proc);
+      return;
+    } catch {
+      // Fallback to direct child kill if process groups are unavailable.
+    }
+  }
+  try {
+    proc.process.kill("SIGKILL");
+  } catch {
+    // Process may have already exited between checks.
+  }
+  managedProcessRegistry.delete(proc);
+}
+
+async function stopAllManagedProcesses(): Promise<void> {
+  for (const proc of Array.from(managedProcessRegistry).reverse()) {
+    await stopManagedProcess(proc);
+  }
+}
+
+function installManagedProcessSignalHandlers(): void {
+  const handleSignal = (signal: NodeJS.Signals) => {
+    if (shutdownInProgress) {
+      return;
+    }
+    shutdownInProgress = true;
+    void (async () => {
+      console.error(
+        `[services-smoke] Received ${signal}; stopping managed processes...`,
+      );
+      await stopAllManagedProcesses();
+      process.exit(signal === "SIGINT" ? 130 : 143);
+    })();
+  };
+
+  process.once("SIGINT", () => handleSignal("SIGINT"));
+  process.once("SIGTERM", () => handleSignal("SIGTERM"));
 }
 
 async function waitForNodeReady(
@@ -534,23 +702,8 @@ async function topUpFpcFeeJuiceManually(
   timeoutMs: number,
   pollMs: number,
 ): Promise<bigint> {
-  const nodeInfo = await node.getNodeInfo();
-  const l1Addresses = nodeInfo.l1ContractAddresses as Record<string, unknown>;
-  const tokenAddressValue = l1Addresses.feeJuiceAddress ?? l1Addresses.feeJuice;
-  const portalAddressValue =
-    l1Addresses.feeJuicePortalAddress ?? l1Addresses.feeJuicePortal;
-  if (!tokenAddressValue || !portalAddressValue) {
-    throw new Error("Node info is missing FeeJuice L1 contract addresses");
-  }
-
-  const feeJuiceTokenAddress = normalizeHexAddress(
-    tokenAddressValue,
-    "feeJuiceAddress",
-  );
-  const portalAddress = normalizeHexAddress(
-    portalAddressValue,
-    "feeJuicePortalAddress",
-  );
+  const { tokenAddress: feeJuiceTokenAddress, portalAddress } =
+    await getFeeJuiceL1Addresses(node);
   const recipientBytes32 =
     `0x${feePayerAddress.replace("0x", "").padStart(64, "0")}` as Hex;
 
@@ -880,7 +1033,7 @@ async function runServiceScenario(
         `threshold: "${topupThreshold}"`,
         `top_up_amount: "${topupAmount}"`,
         `ops_port: ${config.topupOpsPort}`,
-        "check_interval_ms: 60000",
+        `check_interval_ms: ${config.topupCheckIntervalMs}`,
         `confirmation_timeout_ms: ${config.topupConfirmTimeoutMs}`,
         `confirmation_poll_initial_ms: ${config.topupConfirmPollInitialMs}`,
         `confirmation_poll_max_ms: ${config.topupConfirmPollMaxMs}`,
@@ -1541,6 +1694,7 @@ async function runCreditFeeScenario(
 }
 
 async function main() {
+  installManagedProcessSignalHandlers();
   const config = getConfig();
   const scriptDir =
     typeof __dirname === "string"
@@ -1573,6 +1727,12 @@ async function main() {
     const node = createAztecNodeClient(config.nodeUrl);
     await waitForNodeReady(node, config.nodeTimeoutMs);
     const wallet = await EmbeddedWallet.create(node);
+    const scenarioKinds = getScenarioKinds(config.mode);
+
+    const l1PrivateKey =
+      process.env.FPC_SERVICES_SMOKE_L1_PRIVATE_KEY ??
+      DEFAULT_LOCAL_L1_PRIVATE_KEY;
+    assertPrivateKeyHex(l1PrivateKey, "FPC_SERVICES_SMOKE_L1_PRIVATE_KEY");
 
     const minFees = await node.getCurrentMinFees();
     const feePerDaGas = minFees.feePerDaGas;
@@ -1589,18 +1749,73 @@ async function main() {
     const configuredTopupWei = readOptionalEnvBigInt(
       "FPC_SERVICES_SMOKE_TOPUP_WEI",
     );
-    const topupAmount = configuredTopupWei ?? minimumTopupWei;
-    if (topupAmount < minimumTopupWei) {
-      throw new Error(
-        `FPC_SERVICES_SMOKE_TOPUP_WEI=${topupAmount} is below required minimum ${minimumTopupWei}`,
+    const desiredTopupWei = configuredTopupWei ?? minimumTopupWei;
+
+    if (configuredTopupWei !== null && configuredTopupWei < minimumTopupWei) {
+      console.warn(
+        `[services-smoke] configured topup (${configuredTopupWei}) is below computed recommendation (${minimumTopupWei}); continuing with configured value`,
       );
     }
+
+    let l1Balance = await getL1FeeJuiceBalance(
+      node,
+      config.l1RpcUrl,
+      l1PrivateKey as Hex,
+    );
+    const desiredTotalTopupWei = desiredTopupWei * BigInt(scenarioKinds.length);
+    if (l1Balance < desiredTotalTopupWei) {
+      const missingWei = desiredTotalTopupWei - l1Balance;
+      console.warn(
+        `[services-smoke] L1 FeeJuice balance (${l1Balance}) is below desired total topup budget (${desiredTotalTopupWei}); attempting local mint of ${missingWei}`,
+      );
+      const mintResult = await tryMintL1FeeJuice(
+        node,
+        config.l1RpcUrl,
+        l1PrivateKey as Hex,
+        missingWei,
+      );
+      l1Balance = mintResult.resultingBalance;
+      if (mintResult.minted) {
+        console.log(
+          `[services-smoke] minted additional L1 FeeJuice for smoke budget. new_balance=${l1Balance}`,
+        );
+      } else {
+        console.warn(
+          `[services-smoke] could not mint additional L1 FeeJuice with the configured operator key. balance=${l1Balance}`,
+        );
+      }
+    }
+    console.log(`[services-smoke] l1_operator_fee_juice_balance=${l1Balance}`);
+
+    let topupAmount = desiredTopupWei;
+    if (l1Balance < desiredTotalTopupWei) {
+      if (configuredTopupWei !== null) {
+        throw new Error(
+          `FPC_SERVICES_SMOKE_TOPUP_WEI=${configuredTopupWei} across ${scenarioKinds.length} scenario(s) requires ${desiredTotalTopupWei} L1 FeeJuice, but operator balance is ${l1Balance}`,
+        );
+      }
+      topupAmount = l1Balance / BigInt(scenarioKinds.length);
+      if (topupAmount <= 0n) {
+        throw new Error(
+          `Insufficient L1 FeeJuice for smoke scenarios. balance=${l1Balance} scenarios=${scenarioKinds.length}`,
+        );
+      }
+      console.warn(
+        `[services-smoke] auto-scaling topup amount to fit available L1 FeeJuice. scaled_topup_wei=${topupAmount} desired_per_scenario=${desiredTopupWei} scenarios=${scenarioKinds.length}`,
+      );
+    }
+
     const thresholdOverride = readOptionalEnvBigInt(
       "FPC_SERVICES_SMOKE_THRESHOLD_WEI",
     );
     const topupThreshold = thresholdOverride ?? topupAmount;
     if (topupThreshold <= 0n) {
       throw new Error("Top-up threshold must be greater than zero");
+    }
+    if (topupThreshold > topupAmount) {
+      throw new Error(
+        `Top-up threshold (${topupThreshold}) must be <= top-up amount (${topupAmount}) to prevent repeated bridge loops`,
+      );
     }
 
     const testAccounts = await getInitialTestAccountsData();
@@ -1675,11 +1890,7 @@ async function main() {
     const operatorSecretHex = operatorData.secret.toString();
     assertPrivateKeyHex(operatorSecretHex, "operator secret");
 
-    const l1PrivateKey =
-      process.env.FPC_SERVICES_SMOKE_L1_PRIVATE_KEY ??
-      DEFAULT_LOCAL_L1_PRIVATE_KEY;
-    assertPrivateKeyHex(l1PrivateKey, "FPC_SERVICES_SMOKE_L1_PRIVATE_KEY");
-    for (const scenario of getScenarioKinds(config.mode)) {
+    for (const scenario of scenarioKinds) {
       if (scenario === "fpc") {
         if (!fpc) {
           throw new Error(

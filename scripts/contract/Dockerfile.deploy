@@ -1,4 +1,4 @@
-ARG AZTEC_VERSION=4.0.0-devnet.2-patch.1
+ARG AZTEC_VERSION=4.0.0-devnet.2-patch.2
 
 # ══════════════════════════════════════════════════════════════
 # Stage 1: aztec — base image with aztec toolchain
@@ -21,6 +21,7 @@ FROM aztec AS compile
 
 WORKDIR /app
 
+COPY .aztecrc ./
 COPY Nargo.toml ./
 COPY contracts/ contracts/
 COPY vendor/ vendor/

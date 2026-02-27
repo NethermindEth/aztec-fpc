@@ -13,10 +13,10 @@ human-readable console summary.
 
 ## Prerequisites
 
-- **Aztec CLI** — version must match `.aztecrc` (currently `4.0.0-devnet.2-patch.1`)
+- **Aztec CLI (profiling pin)** — `4.0.0-devnet.2-patch.1`
 
 ```bash
-VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$(cat .aztecrc))
+VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.1)
 ```
 
 - **Node.js >=20** (usually bundled with the Aztec toolchain)
@@ -346,10 +346,9 @@ trigger L2 block production.
 
 ## Version Pinning
 
-The `package.json` in this directory pins `@aztec/*` packages to the version in
-`.aztecrc`. When `.aztecrc` changes, `setup.sh` automatically detects the
-mismatch and re-installs the correct versions. Just re-run `setup.sh` after
-updating `.aztecrc`.
+`profiling/package.json` and `profiling/setup.sh` are intentionally pinned to
+`4.0.0-devnet.2-patch.1` (independent from repo `.aztecrc`) because
+`@defi-wonderland/aztec-benchmark` is only published up to this patch line.
 
 ## Gotchas
 

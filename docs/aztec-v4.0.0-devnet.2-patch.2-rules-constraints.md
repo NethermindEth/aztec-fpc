@@ -1,8 +1,8 @@
-# Aztec `v4.0.0-devnet.2-patch.1` Rules And Constraints (LLM-Optimized)
+# Aztec `v4.0.0-devnet.2-patch.2` Rules And Constraints (LLM-Optimized)
 
 ## Source And Scope
 - Source URL: `https://docs.aztec.network/developers/docs/resources/migration_notes`
-- Version in docs navbar: `Devnet (v4.0.0-devnet.2-patch.1)`
+- Version in docs navbar: `Devnet (v4.0.0-devnet.2-patch.2)`
 - Scope extracted: new rules/constraints for this version section only (not older historical sections).
 - Retrieved on: `2026-02-26`
 

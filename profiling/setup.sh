@@ -18,7 +18,10 @@ NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
 PID_FILE="$SCRIPT_DIR/.aztec-network.pid"
 
 # ── Prerequisite checks ──────────────────────────────────────────────────────
-AZTEC_VERSION=$(tr -d '\n' < "$REPO_ROOT/.aztecrc")
+# Profiling is intentionally pinned to patch.1 due aztec-benchmark package availability.
+PROFILING_DEFAULT_AZTEC_VERSION="4.0.0-devnet.2-patch.1"
+AZTEC_VERSION="${PROFILING_AZTEC_VERSION:-$PROFILING_DEFAULT_AZTEC_VERSION}"
+REPO_AZTEC_VERSION="$(tr -d '\n' < "$REPO_ROOT/.aztecrc")"
 
 check_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -28,13 +31,25 @@ check_cmd() {
 }
 
 check_cmd aztec "Install with: VERSION=$AZTEC_VERSION bash -i <(curl -sL https://install.aztec.network/$AZTEC_VERSION)"
+check_cmd aztec-up "Install with: VERSION=$AZTEC_VERSION bash -i <(curl -sL https://install.aztec.network/$AZTEC_VERSION)"
 check_cmd node  "Node.js >=20 is required (usually bundled with the Aztec toolchain)."
 
-echo "[setup] Aztec version: $AZTEC_VERSION"
+echo "[setup] Profiling Aztec version: $AZTEC_VERSION"
+if [[ "$REPO_AZTEC_VERSION" != "$AZTEC_VERSION" ]]; then
+  echo "[setup] NOTE: repo .aztecrc is $REPO_AZTEC_VERSION; profiling remains pinned to $AZTEC_VERSION" >&2
+fi
+
+echo "[setup] Switching aztec toolchain to $AZTEC_VERSION..."
+if ! aztec-up use "$AZTEC_VERSION" >/dev/null 2>&1; then
+  echo "[setup] Aztec version $AZTEC_VERSION is not installed yet; installing..."
+  aztec-up install "$AZTEC_VERSION" >/dev/null
+  aztec-up use "$AZTEC_VERSION" >/dev/null
+fi
 
 # ── Step 1: Initialize git submodules (vendor/aztec-standards) ────────────────
 echo "[setup] Initializing git submodules..."
 (cd "$REPO_ROOT" && git submodule update --init)
+echo "[setup] Submodules initialized."
 
 # ── Step 2: Install profiling npm dependencies ────────────────────────────────
 AZTEC_PKGS=(
@@ -50,9 +65,10 @@ AZTEC_PKGS=(
 
 # Non-Aztec packages needed for benchmarking (viem for L1 bridging,
 # aztec-benchmark for the structured profiler).
+VIEM_VERSION="${PROFILING_VIEM_VERSION:-2.31.0}"
 EXTRA_PKGS=(
   "@defi-wonderland/aztec-benchmark@${AZTEC_VERSION}"
-  "viem"
+  "viem@${VIEM_VERSION}"
 )
 
 install_deps() {
@@ -63,9 +79,9 @@ install_deps() {
 
   cd "$SCRIPT_DIR"
   if command -v npm >/dev/null 2>&1; then
-    npm install "${versioned[@]}" "${EXTRA_PKGS[@]}"
+    npm install --no-save "${versioned[@]}" "${EXTRA_PKGS[@]}"
   elif command -v bun >/dev/null 2>&1; then
-    bun add "${versioned[@]}" "${EXTRA_PKGS[@]}"
+    bun add --no-save "${versioned[@]}" "${EXTRA_PKGS[@]}"
   else
     echo "[setup] ERROR: npm or bun is required to install dependencies." >&2
     exit 1
@@ -77,7 +93,12 @@ if [[ -d "$SCRIPT_DIR/node_modules/@aztec/aztec.js" ]]; then
   INSTALLED_VERSION=$(node -e "console.log(require('$SCRIPT_DIR/node_modules/@aztec/aztec.js/package.json').version)" 2>/dev/null || echo "")
 fi
 
-if [[ "$INSTALLED_VERSION" != "$AZTEC_VERSION" ]]; then
+BENCHMARK_INSTALLED_VERSION=""
+if [[ -d "$SCRIPT_DIR/node_modules/@defi-wonderland/aztec-benchmark" ]]; then
+  BENCHMARK_INSTALLED_VERSION=$(node -e "console.log(require('$SCRIPT_DIR/node_modules/@defi-wonderland/aztec-benchmark/package.json').version)" 2>/dev/null || echo "")
+fi
+
+if [[ "$INSTALLED_VERSION" != "$AZTEC_VERSION" || "$BENCHMARK_INSTALLED_VERSION" != "$AZTEC_VERSION" ]]; then
   echo "[setup] Installing Aztec SDK packages ($AZTEC_VERSION)..."
   install_deps
 else
