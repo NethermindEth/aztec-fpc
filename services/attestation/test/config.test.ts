@@ -52,6 +52,10 @@ function withAttestationEnv(
       QUOTE_AUTH_API_KEY_HEADER: undefined,
       QUOTE_AUTH_TRUSTED_HEADER_NAME: undefined,
       QUOTE_AUTH_TRUSTED_HEADER_VALUE: undefined,
+      QUOTE_RATE_LIMIT_ENABLED: undefined,
+      QUOTE_RATE_LIMIT_MAX_REQUESTS: undefined,
+      QUOTE_RATE_LIMIT_WINDOW_SECONDS: undefined,
+      QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS: undefined,
       ...overrides,
     },
     fn,
@@ -450,6 +454,114 @@ describe("attestation config secret providers", () => {
         assert.equal(config.quote_auth.mode, "api_key");
         assert.equal(config.quote_auth.apiKey, QUOTE_API_KEY);
         assert.equal(config.quote_auth.apiKeyHeader, "x-env-api-key");
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
+
+  it("applies default quote rate limit settings", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+        ].join("\n"),
+      ),
+    );
+
+    withAttestationEnv({}, () => {
+      const config = loadConfig(configPath);
+      assert.equal(config.quote_rate_limit.enabled, true);
+      assert.equal(config.quote_rate_limit.maxRequests, 60);
+      assert.equal(config.quote_rate_limit.windowSeconds, 60);
+      assert.equal(config.quote_rate_limit.maxTrackedKeys, 10000);
+    });
+
+    cleanupConfig(configPath);
+  });
+
+  it("applies quote rate limit env overrides over config values", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+          "quote_rate_limit_enabled: true",
+          "quote_rate_limit_max_requests: 20",
+          "quote_rate_limit_window_seconds: 120",
+          "quote_rate_limit_max_tracked_keys: 2048",
+        ].join("\n"),
+      ),
+    );
+
+    withAttestationEnv(
+      {
+        QUOTE_RATE_LIMIT_ENABLED: "false",
+        QUOTE_RATE_LIMIT_MAX_REQUESTS: "7",
+        QUOTE_RATE_LIMIT_WINDOW_SECONDS: "30",
+        QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS: "256",
+      },
+      () => {
+        const config = loadConfig(configPath);
+        assert.equal(config.quote_rate_limit.enabled, false);
+        assert.equal(config.quote_rate_limit.maxRequests, 7);
+        assert.equal(config.quote_rate_limit.windowSeconds, 30);
+        assert.equal(config.quote_rate_limit.maxTrackedKeys, 256);
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
+
+  it("fails fast when quote rate limit env override is invalid", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+        ].join("\n"),
+      ),
+    );
+
+    withAttestationEnv(
+      {
+        QUOTE_RATE_LIMIT_MAX_REQUESTS: "0",
+      },
+      () => {
+        assert.throws(
+          () => loadConfig(configPath),
+          /Invalid QUOTE_RATE_LIMIT_MAX_REQUESTS/,
+        );
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
+
+  it("fails fast when quote rate limit enabled override is not a boolean", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+        ].join("\n"),
+      ),
+    );
+
+    withAttestationEnv(
+      {
+        QUOTE_RATE_LIMIT_ENABLED: "maybe",
+      },
+      () => {
+        assert.throws(
+          () => loadConfig(configPath),
+          /Invalid QUOTE_RATE_LIMIT_ENABLED/,
+        );
       },
     );
 

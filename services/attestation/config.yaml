@@ -33,6 +33,15 @@ quote_auth_mode: "disabled"
 # quote_auth_trusted_header_name: "x-internal-attestation"
 # quote_auth_trusted_header_value: "allow"
 
+# Optional /quote rate limiting (recommended in all environments).
+# Uses valid API key identity when configured, otherwise source IP.
+# If running behind a reverse proxy, ensure this service sees real client IPs
+# before relying on IP-based limits.
+quote_rate_limit_enabled: true
+quote_rate_limit_max_requests: 60
+quote_rate_limit_window_seconds: 60
+quote_rate_limit_max_tracked_keys: 10000
+
 # ─── Accepted asset ───────────────────────────────────────────────────────────
 # The single token this FPC accepts. Must match `accepted_asset` in the
 # deployed contract — the contract enforces this on every call.

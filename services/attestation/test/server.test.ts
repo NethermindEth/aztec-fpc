@@ -35,6 +35,12 @@ const TEST_CONFIG: Config = {
     trustedHeaderName: undefined,
     trustedHeaderValue: undefined,
   },
+  quote_rate_limit: {
+    enabled: true,
+    maxRequests: 60,
+    windowSeconds: 60,
+    maxTrackedKeys: 10000,
+  },
   pxe_data_directory: undefined,
 };
 
@@ -56,6 +62,19 @@ function withQuoteAuth(quoteAuth: Partial<Config["quote_auth"]>): Config {
     quote_auth: {
       ...TEST_CONFIG.quote_auth,
       ...quoteAuth,
+    },
+  };
+}
+
+function withQuoteRateLimit(
+  quoteRateLimit: Partial<Config["quote_rate_limit"]>,
+  config: Config = TEST_CONFIG,
+): Config {
+  return {
+    ...config,
+    quote_rate_limit: {
+      ...config.quote_rate_limit,
+      ...quoteRateLimit,
     },
   };
 }
@@ -381,6 +400,249 @@ describe("server", () => {
         },
       });
       assert.equal(response.statusCode, 200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 429 when quote rate limit is exceeded", async () => {
+    const nowUnix = 1_700_000_000n;
+    const app = buildServer(
+      withQuoteRateLimit({
+        enabled: true,
+        maxRequests: 2,
+        windowSeconds: 60,
+      }),
+      mockSigner(),
+      {
+        nowUnixSeconds: () => nowUnix,
+      },
+    );
+
+    try {
+      const r1 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      const r2 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      const r3 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+
+      assert.equal(r1.statusCode, 200);
+      assert.equal(r2.statusCode, 200);
+      assert.equal(r3.statusCode, 429);
+      assert.deepEqual(r3.json(), {
+        error: {
+          code: "RATE_LIMITED",
+          message: "Too many quote requests",
+        },
+      });
+
+      const expectedRetryAfter = String(60 - (Number(nowUnix) % 60) || 60);
+      assert.equal(r3.headers["retry-after"], expectedRetryAfter);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("does not throttle when quote rate limiting is disabled", async () => {
+    const app = buildServer(
+      withQuoteRateLimit({
+        enabled: false,
+        maxRequests: 1,
+        windowSeconds: 60,
+      }),
+      mockSigner(),
+      {
+        nowUnixSeconds: () => 1_700_000_000n,
+      },
+    );
+
+    try {
+      const r1 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      const r2 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+
+      assert.equal(r1.statusCode, 200);
+      assert.equal(r2.statusCode, 200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("resets quote rate limit after the fixed window elapses", async () => {
+    let nowUnix = 1_700_000_000n;
+    const app = buildServer(
+      withQuoteRateLimit({
+        enabled: true,
+        maxRequests: 1,
+        windowSeconds: 60,
+      }),
+      mockSigner(),
+      {
+        nowUnixSeconds: () => nowUnix,
+      },
+    );
+
+    try {
+      const r1 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      const r2 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      nowUnix += 60n;
+      const r3 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+
+      assert.equal(r1.statusCode, 200);
+      assert.equal(r2.statusCode, 429);
+      assert.equal(r3.statusCode, 200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("uses api key identity for rate limiting when a valid api key is presented", async () => {
+    const app = buildServer(
+      withQuoteRateLimit(
+        {
+          enabled: true,
+          maxRequests: 1,
+          windowSeconds: 60,
+        },
+        withQuoteAuth({
+          mode: "api_key",
+          apiKey: "good-key",
+        }),
+      ),
+      mockSigner(),
+      {
+        nowUnixSeconds: () => 1_700_000_000n,
+      },
+    );
+
+    try {
+      const goodKeyFirst = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "good-key",
+        },
+      });
+      const badKeyResponse = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "bad-key",
+        },
+      });
+      const goodKeySecond = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "good-key",
+        },
+      });
+
+      assert.equal(goodKeyFirst.statusCode, 200);
+      assert.equal(badKeyResponse.statusCode, 401);
+      assert.equal(goodKeySecond.statusCode, 429);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("falls back to ip rate limiting when api key is missing or invalid", async () => {
+    const app = buildServer(
+      withQuoteRateLimit(
+        {
+          enabled: true,
+          maxRequests: 1,
+          windowSeconds: 60,
+        },
+        withQuoteAuth({
+          mode: "api_key",
+          apiKey: "good-key",
+        }),
+      ),
+      mockSigner(),
+      {
+        nowUnixSeconds: () => 1_700_000_000n,
+      },
+    );
+
+    try {
+      const badKeyFirst = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "bad-key-1",
+        },
+      });
+      const badKeySecond = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "bad-key-2",
+        },
+      });
+
+      assert.equal(badKeyFirst.statusCode, 401);
+      assert.equal(badKeySecond.statusCode, 429);
+      assert.deepEqual(badKeySecond.json(), {
+        error: {
+          code: "RATE_LIMITED",
+          message: "Too many quote requests",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("uses ip identity for rate limiting when api key auth mode is disabled", async () => {
+    const app = buildServer(
+      withQuoteRateLimit({
+        enabled: true,
+        maxRequests: 1,
+        windowSeconds: 60,
+      }),
+      mockSigner(),
+      {
+        nowUnixSeconds: () => 1_700_000_000n,
+      },
+    );
+
+    try {
+      const r1 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      const r2 = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+        headers: {
+          "x-api-key": "attempt-bypass",
+        },
+      });
+
+      assert.equal(r1.statusCode, 200);
+      assert.equal(r2.statusCode, 429);
     } finally {
       await app.close();
     }
