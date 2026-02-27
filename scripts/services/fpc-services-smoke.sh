@@ -169,8 +169,4 @@ echo "[services-smoke] Building topup service"
 bun run --filter @aztec-fpc/topup build
 
 echo "[services-smoke] Running services end-to-end smoke"
-(
-  cd "$REPO_ROOT/services/attestation"
-  NODE_PATH="$REPO_ROOT/services/attestation/node_modules${NODE_PATH:+:$NODE_PATH}" \
-    bunx tsx "$REPO_ROOT/scripts/services/fpc-services-smoke.ts"
-)
+bun run "$REPO_ROOT/scripts/services/fpc-services-smoke.ts"

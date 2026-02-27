@@ -15,6 +15,7 @@ WORKDIR /app
 # Bun workspace resolution requires every member's package.json present
 # before `bun install` will accept the lockfile.
 COPY package.json bun.lock ./
+COPY scripts/package.json scripts/
 COPY services/attestation/package.json services/attestation/
 COPY services/topup/package.json services/topup/
 

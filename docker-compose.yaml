@@ -92,57 +92,21 @@ services:
       deploy:
         condition: service_completed_successfully
 
-  smoke-fee-entrypoint:
+  smoke:
     image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke-fee-entrypoint"]
-    command: ["services/attestation/test/fee-entrypoint-devnet-smoke.ts"]
+    profiles: ["smoke"]
+    command:
+      - "scripts/services/fpc-services-smoke.ts"
+      - "services/attestation/test/fee-entrypoint-devnet-smoke.ts"
+      - "services/attestation/test/credit-fpc-devnet-smoke.ts"
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"
-    depends_on:
-      aztec-node:
-        condition: service_healthy
-
-  smoke-credit-fpc:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke-credit-fpc"]
-    command: ["services/attestation/test/credit-fpc-devnet-smoke.ts"]
-    environment:
-      AZTEC_NODE_URL: "http://aztec-node:8080"
       CREDIT_FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"
-    depends_on:
-      aztec-node:
-        condition: service_healthy
-
-  smoke-deploy:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke-deploy"]
-    entrypoint: ["bash", "-c"]
-    command:
-      - |
-        FPC_LOCAL_OUT=/tmp/deploy-out.json \
-          scripts/contract/deploy-fpc-local.sh && \
-        FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT=/tmp/deploy-out.json \
-          bunx tsx scripts/contract/deploy-fpc-local-smoke.ts
-    environment:
-      AZTEC_NODE_URL: "http://aztec-node:8080"
-      L1_RPC_URL: "http://anvil:8545"
-      FPC_DEPLOY_SMOKE_L1_RPC_URL: "http://anvil:8545"
-      FPC_DEPLOY_SMOKE_START_LOCAL_NETWORK: "0"
-    depends_on:
-      aztec-node:
-        condition: service_healthy
-
-  smoke-services:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke-services"]
-    command: ["scripts/services/fpc-services-smoke.ts"]
-    environment:
-      AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_SERVICES_SMOKE_L1_RPC_URL: "http://anvil:8545"
     depends_on:
-      aztec-node:
-        condition: service_healthy
+      deploy:
+        condition: service_completed_successfully
 
 configs:
   fpc-config:

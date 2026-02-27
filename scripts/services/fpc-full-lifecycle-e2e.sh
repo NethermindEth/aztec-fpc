@@ -198,8 +198,4 @@ echo "[full-lifecycle-e2e] Building topup service"
 bun run --filter @aztec-fpc/topup build
 
 echo "[full-lifecycle-e2e] Running full lifecycle E2E runner"
-(
-  cd "$REPO_ROOT/services/attestation"
-  NODE_PATH="$REPO_ROOT/services/attestation/node_modules${NODE_PATH:+:$NODE_PATH}" \
-    bunx tsx "$REPO_ROOT/scripts/services/fpc-full-lifecycle-e2e.ts" "$@"
-)
+bun run "$REPO_ROOT/scripts/services/fpc-full-lifecycle-e2e.ts" "$@"

@@ -11,6 +11,18 @@
         "typescript": "^5.4.0",
       },
     },
+    "scripts": {
+      "name": "@aztec-fpc/scripts",
+      "version": "0.1.0",
+      "dependencies": {
+        "@aztec/accounts": "4.0.0-devnet.2-patch.2",
+        "@aztec/aztec.js": "4.0.0-devnet.2-patch.2",
+        "@aztec/foundation": "4.0.0-devnet.2-patch.2",
+        "@aztec/stdlib": "4.0.0-devnet.2-patch.2",
+        "@aztec/wallets": "4.0.0-devnet.2-patch.2",
+        "viem": "^2.18.0",
+      },
+    },
     "services/attestation": {
       "name": "@aztec-fpc/attestation",
       "version": "0.1.0",
@@ -131,6 +143,8 @@
     "@aws/lambda-invoke-store": ["@aws/lambda-invoke-store@0.2.3", "", {}, "sha512-oLvsaPMTBejkkmHhjf09xTgk71mOqyr/409NKhRIL08If7AhVfUsJhVsx386uJaqNd42v9kWamQ9lFbkoC2dYw=="],
 
     "@aztec-fpc/attestation": ["@aztec-fpc/attestation@workspace:services/attestation"],
+
+    "@aztec-fpc/scripts": ["@aztec-fpc/scripts@workspace:scripts"],
 
     "@aztec-fpc/topup": ["@aztec-fpc/topup@workspace:services/topup"],
 

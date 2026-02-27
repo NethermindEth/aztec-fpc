@@ -1,0 +1,14 @@
+{
+  "name": "@aztec-fpc/scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aztec/accounts": "4.0.0-devnet.2-patch.2",
+    "@aztec/aztec.js": "4.0.0-devnet.2-patch.2",
+    "@aztec/foundation": "4.0.0-devnet.2-patch.2",
+    "@aztec/stdlib": "4.0.0-devnet.2-patch.2",
+    "@aztec/wallets": "4.0.0-devnet.2-patch.2",
+    "viem": "^2.18.0"
+  }
+}
