@@ -25,11 +25,8 @@ COPY .aztecrc ./
 COPY Nargo.toml ./
 COPY contracts/ contracts/
 COPY vendor/ vendor/
-COPY scripts/vendor/align-aztec-standards-version.sh scripts/vendor/
-COPY scripts/vendor/run-with-aligned-aztec-standards.sh scripts/vendor/
 
-RUN bash scripts/vendor/run-with-aligned-aztec-standards.sh -- \
-    aztec compile --workspace --force
+RUN aztec compile --workspace --force
 
 # ══════════════════════════════════════════════════════════════
 # Stage 3: runtime — common runtime image with JS dependencies

@@ -39,9 +39,8 @@ fi
 cd "${REPO_ROOT}"
 
 if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPC.json || ! -f target/credit_fpc-CreditFPC.json ]]; then
-  echo "Compiling Aztec workspace artifacts (ephemeral aztec-standards alignment)..."
-  bash "$REPO_ROOT/scripts/vendor/run-with-aligned-aztec-standards.sh" -- \
-    aztec compile --workspace --force
+  echo "Compiling Aztec workspace artifacts..."
+  aztec compile --workspace --force
 fi
 
 cmd=(

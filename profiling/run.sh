@@ -37,11 +37,8 @@ if ! node_is_up; then
 fi
 
 # ── Step 1: Compile contracts ─────────────────────────────────────────────────
-echo "[profile] Compiling contracts (ephemeral aztec-standards alignment)..."
-(
-  cd "$REPO_ROOT" && \
-    bash scripts/vendor/run-with-aligned-aztec-standards.sh -- aztec compile
-)
+echo "[profile] Compiling contracts..."
+(cd "$REPO_ROOT" && aztec compile)
 
 # ── Step 2: Deploy + profile FPC.fee_entrypoint ───────────────────────────────
 echo ""

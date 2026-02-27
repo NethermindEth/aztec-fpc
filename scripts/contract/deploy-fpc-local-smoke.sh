@@ -155,9 +155,8 @@ if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   bun install
 fi
 
-echo "[deploy-smoke] Compiling contracts workspace (ephemeral aztec-standards alignment)"
-bash "$REPO_ROOT/scripts/vendor/run-with-aligned-aztec-standards.sh" -- \
-  aztec compile --workspace --force
+echo "[deploy-smoke] Compiling contracts workspace"
+aztec compile --workspace --force
 
 DEPLOY_OUTPUT="${FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT:-$TMP_DIR/deploy-fpc-local.json}"
 AZTEC_NODE_URL="http://${NODE_HOST}:${NODE_PORT}"

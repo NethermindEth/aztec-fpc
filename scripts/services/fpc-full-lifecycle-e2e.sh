@@ -188,9 +188,8 @@ if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   bun install
 fi
 
-echo "[full-lifecycle-e2e] Compiling contracts workspace (ephemeral aztec-standards alignment)"
-bash "$REPO_ROOT/scripts/vendor/run-with-aligned-aztec-standards.sh" -- \
-  aztec compile --workspace --force
+echo "[full-lifecycle-e2e] Compiling contracts workspace"
+aztec compile --workspace --force
 
 echo "[full-lifecycle-e2e] Building attestation service"
 bun run --filter @aztec-fpc/attestation build

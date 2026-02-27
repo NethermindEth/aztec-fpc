@@ -25,9 +25,8 @@ if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   fi
 fi
 
-echo "[credit-smoke] Compiling contracts workspace (ephemeral aztec-standards alignment)"
-bash "$REPO_ROOT/scripts/vendor/run-with-aligned-aztec-standards.sh" -- \
-  aztec compile --workspace --force
+echo "[credit-smoke] Compiling contracts workspace"
+aztec compile --workspace --force
 
 echo "[credit-smoke] Running credit_fpc devnet smoke flow"
 bunx tsx "$REPO_ROOT/services/attestation/test/credit-fpc-devnet-smoke.ts"

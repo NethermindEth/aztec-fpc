@@ -25,9 +25,8 @@ if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   fi
 fi
 
-echo "[smoke] Compiling contracts (ephemeral aztec-standards alignment)"
-bash "$REPO_ROOT/scripts/vendor/run-with-aligned-aztec-standards.sh" -- \
-  aztec compile
+echo "[smoke] Compiling contracts"
+aztec compile
 
 echo "[smoke] Running fee entrypoint devnet smoke flow"
 bunx tsx "$REPO_ROOT/services/attestation/test/fee-entrypoint-devnet-smoke.ts"
