@@ -21,6 +21,27 @@ function rateLimited() {
   };
 }
 
+function parsePositiveBigIntDecimal(
+  value: string | undefined,
+): bigint | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (!/^[0-9]+$/.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = BigInt(trimmed);
+  if (parsed <= 0n) {
+    return undefined;
+  }
+  return parsed;
+}
+
+function ceilDiv(numerator: bigint, denominator: bigint): bigint {
+  return (numerator + denominator - 1n) / denominator;
+}
+
 function headerMatchesSecret(
   candidateValue: string | string[] | undefined,
   expectedValue: string | undefined,
@@ -237,9 +258,11 @@ export function buildServer(
     address: config.accepted_asset_address,
   }));
 
-  // ── GET /quote?user=<address> ─────────────────────────────────────────────
+  // ── GET /quote?user=<address>&fj_amount=<positive_integer> ───────────────
 
-  app.get<{ Querystring: { user?: string } }>("/quote", async (req, reply) => {
+  app.get<{ Querystring: { user?: string; fj_amount?: string } }>(
+    "/quote",
+    async (req, reply) => {
     const startedAtNs = process.hrtime.bigint();
     let metricsRecorded = false;
     const observe = (outcome: QuoteOutcome): void => {
@@ -305,15 +328,26 @@ export function buildServer(
       return reply.code(400).send(badRequest("Invalid user address"));
     }
 
+    const fjFeeAmount = parsePositiveBigIntDecimal(
+      req.query.fj_amount,
+    );
+    if (!fjFeeAmount) {
+      observe("bad_request");
+      return reply
+        .code(400)
+        .send(badRequest("Missing or invalid query param: fj_amount"));
+    }
+
     try {
       const { rate_num, rate_den } = computeFinalRate(config);
       const expiry = validUntil(nowSeconds);
+      const aaPaymentAmount = ceilDiv(fjFeeAmount * rate_num, rate_den);
 
       const signature = await signQuote(quoteSigner, {
         fpcAddress,
         acceptedAsset,
-        rateNum: rate_num,
-        rateDen: rate_den,
+        fjFeeAmount,
+        aaPaymentAmount,
         validUntil: expiry,
         userAddress: parsedUserAddress,
       });
@@ -323,8 +357,8 @@ export function buildServer(
           event: "quote_issued",
           user: parsedUserAddress.toString(),
           valid_until: expiry.toString(),
-          rate_num: rate_num.toString(),
-          rate_den: rate_den.toString(),
+          fj_amount: fjFeeAmount.toString(),
+          aa_payment_amount: aaPaymentAmount.toString(),
         },
         "Quote issued",
       );
@@ -332,8 +366,8 @@ export function buildServer(
 
       return {
         accepted_asset: config.accepted_asset_address,
-        rate_num: rate_num.toString(),
-        rate_den: rate_den.toString(),
+        fj_amount: fjFeeAmount.toString(),
+        aa_payment_amount: aaPaymentAmount.toString(),
         valid_until: expiry.toString(),
         signature,
       };
@@ -353,7 +387,8 @@ export function buildServer(
         },
       });
     }
-  });
+    },
+  );
 
   return app;
 }

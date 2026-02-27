@@ -6,7 +6,7 @@
  *
  * Quote hash preimage (matches assert_valid_quote in main.nr):
  *   computeInnerAuthWitHash([DOMAIN_SEP, fpc_address, accepted_asset,
- *     rate_num, rate_den, valid_until, user_address])
+ *     fj_fee_amount, aa_payment_amount, valid_until, user_address])
  *
  * All quotes are user-specific: user_address = msg_sender (never zero).
  *
@@ -25,8 +25,8 @@ const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 export interface QuoteParams {
   fpcAddress: AztecAddress;
   acceptedAsset: AztecAddress;
-  rateNum: bigint;
-  rateDen: bigint;
+  fjFeeAmount: bigint;
+  aaPaymentAmount: bigint;
   validUntil: bigint;
   /** The user's Aztec address. Always non-zero — all quotes are user-specific. */
   userAddress: AztecAddress;
@@ -48,8 +48,8 @@ export function computeQuoteHash(params: QuoteParams): Promise<Fr> {
     QUOTE_DOMAIN_SEPARATOR,
     params.fpcAddress.toField(),
     params.acceptedAsset.toField(),
-    new Fr(params.rateNum),
-    new Fr(params.rateDen),
+    new Fr(params.fjFeeAmount),
+    new Fr(params.aaPaymentAmount),
     new Fr(params.validUntil),
     params.userAddress.toField(),
   ]);

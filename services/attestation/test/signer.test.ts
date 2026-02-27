@@ -28,8 +28,8 @@ function makeQuoteParams(): QuoteParams {
   return {
     fpcAddress: FPC,
     acceptedAsset: ASSET,
-    rateNum: 10200n,
-    rateDen: 10000000n,
+    fjFeeAmount: 1_000_000n,
+    aaPaymentAmount: 1020n,
     validUntil: 1740000300n,
     userAddress: USER,
   };
@@ -43,8 +43,8 @@ describe("signer", () => {
       Fr.fromHexString("0x465043"), // "FPC"
       params.fpcAddress.toField(),
       params.acceptedAsset.toField(),
-      new Fr(params.rateNum),
-      new Fr(params.rateDen),
+      new Fr(params.fjFeeAmount),
+      new Fr(params.aaPaymentAmount),
       new Fr(params.validUntil),
       params.userAddress.toField(),
     ]);
@@ -56,8 +56,8 @@ describe("signer", () => {
       Fr.fromHexString("0x465043"),
       params.fpcAddress.toField(),
       params.acceptedAsset.toField(),
-      new Fr(params.rateDen), // swapped
-      new Fr(params.rateNum), // swapped
+      new Fr(params.aaPaymentAmount), // swapped
+      new Fr(params.fjFeeAmount), // swapped
       new Fr(params.validUntil),
       params.userAddress.toField(),
     ]);
