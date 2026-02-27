@@ -108,6 +108,9 @@ type OrchestrationResult = {
   feeJuiceAfterCycle1: bigint;
   feeJuiceAfterTx1: bigint;
   feeJuiceAfterCycle2: bigint | null;
+  feeJuiceAfterTx2: bigint;
+  tx1ExpectedCharge: bigint;
+  tx2ExpectedCharge: bigint;
 };
 
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
@@ -942,11 +945,13 @@ async function deployContractsAndWriteRuntimeConfig(
   };
 }
 
-async function runTx1ToCreatePostFeeSpendBoundary(
+async function runFeePaidTargetTxAndAssert(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
   attestationBaseUrl: string,
-): Promise<void> {
+  txLabel: "tx1" | "tx2",
+  targetTransferAmount: bigint,
+): Promise<bigint> {
   const quote = await fetchQuote(
     `${attestationBaseUrl}/quote?user=${result.user.toString()}`,
     config.httpTimeoutMs,
@@ -980,9 +985,35 @@ async function runTx1ToCreatePostFeeSpendBoundary(
   await result.token.methods
     .mint_to_private(result.user, mintAmount)
     .send({ from: result.operator });
-  await result.token.methods
-    .mint_to_public(result.user, 2n)
-    .send({ from: result.operator });
+
+  const userPrivateBefore = BigInt(
+    (
+      await result.token.methods
+        .balance_of_private(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
+  const operatorPrivateBefore = BigInt(
+    (
+      await result.token.methods
+        .balance_of_private(result.operator)
+        .simulate({ from: result.operator })
+    ).toString(),
+  );
+  const userPublicBefore = BigInt(
+    (
+      await result.token.methods
+        .balance_of_public(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
+  const operatorPublicBefore = BigInt(
+    (
+      await result.token.methods
+        .balance_of_public(result.operator)
+        .simulate({ from: result.operator })
+    ).toString(),
+  );
 
   const transferAuthwitNonce = Fr.random();
   const transferCall = result.token.methods.transfer_private_to_private(
@@ -1020,29 +1051,87 @@ async function runTx1ToCreatePostFeeSpendBoundary(
     getGasSettings: () => undefined,
   };
 
-  await result.token.methods.transfer_public_to_public(
-    result.user,
-    result.user,
-    1n,
-    Fr.random(),
-  ).send({
-    from: result.user,
-    fee: {
-      paymentMethod,
-      gasSettings: {
-        gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-        maxFeesPerGas: {
-          feePerDaGas: result.feePerDaGas,
-          feePerL2Gas: result.feePerL2Gas,
+  const receipt = await result.token.methods
+    .transfer_public_to_public(
+      result.user,
+      result.operator,
+      targetTransferAmount,
+      Fr.random(),
+    )
+    .send({
+      from: result.user,
+      fee: {
+        paymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          maxFeesPerGas: {
+            feePerDaGas: result.feePerDaGas,
+            feePerL2Gas: result.feePerL2Gas,
+          },
         },
       },
-    },
-    wait: { timeout: 180 },
-  });
+      wait: { timeout: 180 },
+    });
+
+  const userPrivateAfter = BigInt(
+    (
+      await result.token.methods
+        .balance_of_private(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
+  const operatorPrivateAfter = BigInt(
+    (
+      await result.token.methods
+        .balance_of_private(result.operator)
+        .simulate({ from: result.operator })
+    ).toString(),
+  );
+  const userPublicAfter = BigInt(
+    (
+      await result.token.methods
+        .balance_of_public(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
+  const operatorPublicAfter = BigInt(
+    (
+      await result.token.methods
+        .balance_of_public(result.operator)
+        .simulate({ from: result.operator })
+    ).toString(),
+  );
+
+  const userDebited = userPrivateBefore - userPrivateAfter;
+  const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
+  if (userDebited !== expectedCharge) {
+    throw new Error(
+      `[full-lifecycle-e2e] ${txLabel} user debit mismatch. expected=${expectedCharge} got=${userDebited}`,
+    );
+  }
+  if (operatorCredited !== expectedCharge) {
+    throw new Error(
+      `[full-lifecycle-e2e] ${txLabel} operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
+    );
+  }
+
+  const userPublicDelta = userPublicAfter - userPublicBefore;
+  const operatorPublicDelta = operatorPublicAfter - operatorPublicBefore;
+  if (userPublicDelta !== -targetTransferAmount) {
+    throw new Error(
+      `[full-lifecycle-e2e] ${txLabel} target call user public delta mismatch. expected=${-targetTransferAmount} got=${userPublicDelta}`,
+    );
+  }
+  if (operatorPublicDelta !== targetTransferAmount) {
+    throw new Error(
+      `[full-lifecycle-e2e] ${txLabel} target call operator public delta mismatch. expected=${targetTransferAmount} got=${operatorPublicDelta}`,
+    );
+  }
 
   console.log(
-    `[full-lifecycle-e2e] tx1 boundary transaction accepted (expected_charge=${expectedCharge})`,
+    `[full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_debited=${userDebited}, operator_credited=${operatorCredited}, user_public_delta=${userPublicDelta}, operator_public_delta=${operatorPublicDelta})`,
   );
+  return expectedCharge;
 }
 
 async function orchestrateServicesAndAssertBridgeCycles(
@@ -1163,8 +1252,18 @@ async function orchestrateServicesAndAssertBridgeCycles(
       `[full-lifecycle-e2e] PASS: bridge cycle #1 confirmed before tx1 (message_hash=${cycle1Submission.submission.messageHash}, leaf_index=${cycle1Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle1})`,
     );
 
+    await result.token.methods
+      .mint_to_public(result.user, 2n)
+      .send({ from: result.operator });
+
     const cycle2Baseline: TopupLogCounters = { ...topupCounters };
-    await runTx1ToCreatePostFeeSpendBoundary(config, result, attestationBaseUrl);
+    const tx1ExpectedCharge = await runFeePaidTargetTxAndAssert(
+      config,
+      result,
+      attestationBaseUrl,
+      "tx1",
+      1n,
+    );
     const feeJuiceAfterTx1 = await getFeeJuiceBalance(result.fpc.address, node);
     console.log(`[full-lifecycle-e2e] fee_juice_after_tx1=${feeJuiceAfterTx1}`);
 
@@ -1224,6 +1323,16 @@ async function orchestrateServicesAndAssertBridgeCycles(
       );
     }
 
+    const tx2ExpectedCharge = await runFeePaidTargetTxAndAssert(
+      config,
+      result,
+      attestationBaseUrl,
+      "tx2",
+      1n,
+    );
+    const feeJuiceAfterTx2 = await getFeeJuiceBalance(result.fpc.address, node);
+    console.log(`[full-lifecycle-e2e] fee_juice_after_tx2=${feeJuiceAfterTx2}`);
+
     const finalTopupCounters = getTopupLogCountersFromProcess(topup);
     return {
       attestationBaseUrl,
@@ -1233,6 +1342,9 @@ async function orchestrateServicesAndAssertBridgeCycles(
       feeJuiceAfterCycle1,
       feeJuiceAfterTx1,
       feeJuiceAfterCycle2,
+      feeJuiceAfterTx2,
+      tx1ExpectedCharge,
+      tx2ExpectedCharge,
     };
   } finally {
     for (const proc of managed.reverse()) {
@@ -1268,6 +1380,12 @@ function writeStep5Summary(
         ? null
         : orchestration.feeJuiceAfterCycle2.toString(),
   };
+  summary.step6 = {
+    completedAt: new Date().toISOString(),
+    tx1ExpectedCharge: orchestration.tx1ExpectedCharge.toString(),
+    tx2ExpectedCharge: orchestration.tx2ExpectedCharge.toString(),
+    feeJuiceAfterTx2: orchestration.feeJuiceAfterTx2.toString(),
+  };
 
   writeFileSync(summaryPath, JSON.stringify(summary, null, 2), "utf8");
 }
@@ -1301,7 +1419,10 @@ async function main(): Promise<void> {
   console.log(
     `[full-lifecycle-e2e] Step 5 complete: service orchestration and bridge-cycle assertions passed (confirmed_cycles=${orchestration.observedBridgeConfirmed})`,
   );
-  console.log("[full-lifecycle-e2e] Step 6+ tx invariant assertions are pending.");
+  console.log(
+    `[full-lifecycle-e2e] Step 6 complete: tx invariants and target state deltas passed (tx1_expected_charge=${orchestration.tx1ExpectedCharge}, tx2_expected_charge=${orchestration.tx2ExpectedCharge})`,
+  );
+  console.log("[full-lifecycle-e2e] Step 7+ negative scenarios are pending.");
 }
 
 main().catch((error: unknown) => {
