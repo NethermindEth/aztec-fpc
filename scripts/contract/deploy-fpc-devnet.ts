@@ -577,7 +577,16 @@ function runAztecWalletCommand(
   description: string,
 ): string {
   const walletBin = process.env.AZTEC_WALLET_BIN ?? "aztec-wallet";
-  const commandArgs = ["--node-url", nodeUrl, ...args];
+  const walletDataDir =
+    process.env.AZTEC_WALLET_DATA_DIR ??
+    process.env.FPC_DEVNET_WALLET_DATA_DIR ??
+    null;
+  const commandArgs = [
+    ...(walletDataDir ? ["--data-dir", walletDataDir] : []),
+    "--node-url",
+    nodeUrl,
+    ...args,
+  ];
   try {
     return execFileSync(walletBin, commandArgs, {
       cwd: REPO_ROOT,
@@ -601,6 +610,17 @@ function runAztecWalletCommand(
       `Failed to ${description}: ${String(error)} (wallet binary: ${walletBin})`,
     );
   }
+}
+
+function isRetryableWalletDeployError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("this might indicate a reorg has occurred") ||
+    normalized.includes("simulation error: block") ||
+    normalized.includes("timeout awaiting ismined") ||
+    normalized.includes("timeout awaiting mined") ||
+    normalized.includes("failed to fetch tx effect for tx")
+  );
 }
 
 function parseWalletAliasMap(output: string): Map<string, string> {
@@ -982,7 +1002,7 @@ function parseDeployCommandResult(
   );
 }
 
-function deployContractWithAztecWallet(params: {
+async function deployContractWithAztecWallet(params: {
   nodeUrl: string;
   fromAlias: string;
   sponsoredFpcAddress: string;
@@ -991,7 +1011,7 @@ function deployContractWithAztecWallet(params: {
   alias?: string;
   constructorArgs: string[];
   context: string;
-}): ContractDeployResult {
+}): Promise<ContractDeployResult> {
   const commandArgs = [
     "deploy",
     params.artifactPath,
@@ -1009,12 +1029,40 @@ function deployContractWithAztecWallet(params: {
   }
   commandArgs.push("--args", ...params.constructorArgs);
 
-  const rawOutput = runAztecWalletCommand(
-    params.nodeUrl,
-    commandArgs,
-    `deploy ${params.context}`,
+  const maxAttempts = parseEnvPositiveNumber("FPC_WALLET_DEPLOY_RETRIES", 3);
+  const retryBackoffMs = parseEnvPositiveNumber(
+    "FPC_WALLET_DEPLOY_RETRY_BACKOFF_MS",
+    2_000,
   );
-  return parseDeployCommandResult(rawOutput, params.context);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const rawOutput = runAztecWalletCommand(
+        params.nodeUrl,
+        commandArgs,
+        `deploy ${params.context}`,
+      );
+      return parseDeployCommandResult(rawOutput, params.context);
+    } catch (error) {
+      if (
+        !(error instanceof CliError) ||
+        !isRetryableWalletDeployError(error.message) ||
+        attempt >= maxAttempts
+      ) {
+        throw error;
+      }
+
+      const delayMs = retryBackoffMs * attempt;
+      console.warn(
+        `[deploy-fpc-devnet] retrying ${params.context} deployment after transient wallet error (attempt ${attempt + 1}/${maxAttempts}) in ${delayMs}ms`,
+      );
+      await sleep(delayMs);
+    }
+  }
+
+  throw new CliError(
+    `Failed to deploy ${params.context}: exhausted retry attempts.`,
+  );
 }
 
 async function importWithWorkspaceFallback(
@@ -1402,7 +1450,7 @@ async function main(): Promise<void> {
     );
   } else {
     console.log("[deploy-fpc-devnet] deploying Token contract");
-    const tokenDeploy = deployContractWithAztecWallet({
+    const tokenDeploy = await deployContractWithAztecWallet({
       nodeUrl: args.nodeUrl,
       fromAlias: deployer.walletAlias,
       sponsoredFpcAddress: args.sponsoredFpcAddress,
@@ -1426,7 +1474,7 @@ async function main(): Promise<void> {
   }
 
   console.log("[deploy-fpc-devnet] deploying FPC contract");
-  const fpcDeploy = deployContractWithAztecWallet({
+  const fpcDeploy = await deployContractWithAztecWallet({
     nodeUrl: args.nodeUrl,
     fromAlias: deployer.walletAlias,
     sponsoredFpcAddress: args.sponsoredFpcAddress,
@@ -1445,7 +1493,7 @@ async function main(): Promise<void> {
   );
 
   console.log("[deploy-fpc-devnet] deploying CreditFPC contract");
-  const creditFpcDeploy = deployContractWithAztecWallet({
+  const creditFpcDeploy = await deployContractWithAztecWallet({
     nodeUrl: args.nodeUrl,
     fromAlias: deployer.walletAlias,
     sponsoredFpcAddress: args.sponsoredFpcAddress,
