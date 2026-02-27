@@ -2,7 +2,6 @@
 # Compile contracts, deploy, and profile FPC.fee_entrypoint gate count.
 #
 # This is the default profiler for the standard FPC contract.
-# For CreditFPC profiling (pay_and_mint + pay_with_credit), use run_credit_fpc.sh.
 #
 # Run ./profiling/setup.sh once first, then re-run this after every contract change.
 #

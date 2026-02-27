@@ -3,36 +3,25 @@ mod test;
 
 use ::aztec::macros::aztec;
 
-/// Fee Payment Contract (FPC)
+/// Fee Payment Contract -- Multi-Asset Variant
 ///
-/// A minimal single-asset FPC. Users pay transaction fees in one fixed token
-/// via a private-to-private transfer to the operator. No public balance
-/// accumulates in this contract.
+/// Unlike the standard FPC which hardcodes `accepted_asset` at deploy time,
+/// this variant accepts the asset as a per-quote parameter. The user specifies
+/// which asset they want to pay with when requesting a quote, the operator
+/// signs a quote binding that asset+rate, and `fee_entrypoint` accepts the
+/// asset as an argument.
 ///
-/// ## Payment flow
-///
-/// 1. User requests a confidential quote from the attestation service, providing
-///    their Aztec address.
-/// 2. Attestation service returns a quote signed by the operator's Schnorr key,
-///    binding the rate and the user's address.
-/// 3. User creates one authwit:
-///    - Token transfer authwit -- authorises FPC to call
-///      `transfer_private_to_private(user -> operator, charge, nonce)`
-/// 4. User submits their tx with `fee_entrypoint` as the fee payment:
-///    - Quote signature is verified inline against the operator's public key
-///    - Charge is computed from gas settings
-///    - Token transfers private: user -> operator
-///    - FPC declares itself fee payer
-///    - Setup completes; protocol deducts Fee Juice from FPC's balance
+/// Security is preserved because the quote hash includes the asset in its
+/// preimage -- the operator's Schnorr signature binds the rate to a specific
+/// asset.
 ///
 /// ## Storage
 ///
 /// - config            (PublicImmutable<Config>) -- packed immutable config
-///                                                  containing operator address,
-///                                                  operator signing key, and
-///                                                  accepted asset.
+///                                                  containing operator address
+///                                                  and operator signing key.
 #[aztec]
-pub contract FPC {
+pub contract FPCMultiAsset {
     use crate::fee_math::fee_juice_to_asset;
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
@@ -50,7 +39,7 @@ pub contract FPC {
     global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
 
     /// Packed configuration stored as a single PublicImmutable slot.
-    /// Reduces the 4 separate Merkle membership proofs to one.
+    /// 3 fields (no accepted_asset -- that is now a per-quote parameter).
     #[derive(Deserialize, Eq, Packable, Serialize)]
     pub struct Config {
         operator: AztecAddress,
@@ -58,7 +47,6 @@ pub contract FPC {
         operator_pubkey_x: Field,
         /// Operator signing public key y coordinate.
         operator_pubkey_y: Field,
-        accepted_asset: AztecAddress,
     }
 
     // =========================================================================
@@ -80,10 +68,8 @@ pub contract FPC {
         operator: AztecAddress,
         operator_pubkey_x: Field,
         operator_pubkey_y: Field,
-        accepted_asset: AztecAddress,
     ) {
         assert(!operator.is_zero(), "invalid operator");
-        assert(!accepted_asset.is_zero(), "invalid accepted asset");
         // Basic on-curve check: y^2 = x^3 - 17 (Grumpkin)
         assert(
             operator_pubkey_y * operator_pubkey_y
@@ -91,7 +77,7 @@ pub contract FPC {
             "operator pubkey not on curve",
         );
         self.storage.config.initialize(
-            Config { operator, operator_pubkey_x, operator_pubkey_y, accepted_asset },
+            Config { operator, operator_pubkey_x, operator_pubkey_y },
         );
     }
 
@@ -106,6 +92,7 @@ pub contract FPC {
     #[external("private")]
     #[allow_phase_change]
     fn fee_entrypoint(
+        accepted_asset: AztecAddress,
         authwit_nonce: Field,
         rate_num: u128,
         rate_den: u128,
@@ -123,7 +110,7 @@ pub contract FPC {
                 y: config.operator_pubkey_y,
                 is_infinite: false,
             },
-            config.accepted_asset,
+            accepted_asset,
             rate_num,
             rate_den,
             valid_until,
@@ -137,7 +124,7 @@ pub contract FPC {
             rate_den,
         );
 
-        Token::at(config.accepted_asset)
+        Token::at(accepted_asset)
             .transfer_private_to_private(sender, config.operator, charge, authwit_nonce)
             .call(self.context);
 

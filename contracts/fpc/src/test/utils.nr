@@ -1,4 +1,4 @@
-use crate::{fee_math::fee_juice_to_asset, FPC};
+use crate::{fee_math::fee_juice_to_asset, FPCMultiAsset};
 use aztec::{
     authwit::auth::compute_inner_authwit_hash,
     protocol::{address::AztecAddress, traits::ToField},
@@ -171,8 +171,8 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let pk = test_operator_pubkey();
-    let fpc_initializer = FPC::interface().constructor(operator, pk.x, pk.y, token_address);
-    let fpc_address = env.deploy("FPC").with_public_initializer(operator, fpc_initializer);
+    let fpc_initializer = FPCMultiAsset::interface().constructor(operator, pk.x, pk.y);
+    let fpc_address = env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
 
     (env, fpc_address, token_address, operator, user)
 }

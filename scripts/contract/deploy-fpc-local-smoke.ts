@@ -49,7 +49,6 @@ type DeployOutput = {
   operator: string;
   accepted_asset: string;
   fpc_address: string;
-  credit_fpc_address: string;
   l1_chain_id: number;
   l2_chain_id: number;
   deployer?: {
@@ -225,10 +224,6 @@ function loadDeployOutput(deployOutputPath: string): DeployOutput {
     operator: parseAddress(parsed.operator, "operator"),
     accepted_asset: parseAddress(parsed.accepted_asset, "accepted_asset"),
     fpc_address: parseAddress(parsed.fpc_address, "fpc_address"),
-    credit_fpc_address: parseAddress(
-      parsed.credit_fpc_address,
-      "credit_fpc_address",
-    ),
     l1_chain_id: parsePositiveChainId(
       parsed.l1_chain_id,
       "deploy output l1_chain_id",
@@ -319,12 +314,10 @@ async function main() {
   const operatorAddress = AztecAddress.fromString(deployed.operator);
   const tokenAddress = AztecAddress.fromString(deployed.accepted_asset);
   const fpcAddress = AztecAddress.fromString(deployed.fpc_address);
-  const creditFpcAddress = AztecAddress.fromString(deployed.credit_fpc_address);
 
   console.log(`[deploy-smoke] operator=${operatorAddress.toString()}`);
   console.log(`[deploy-smoke] token=${tokenAddress.toString()}`);
   console.log(`[deploy-smoke] fpc=${fpcAddress.toString()}`);
-  console.log(`[deploy-smoke] credit_fpc=${creditFpcAddress.toString()}`);
 
   const node = createAztecNodeClient(config.nodeUrl);
   await Promise.race([
@@ -408,16 +401,6 @@ async function main() {
     path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   );
   const token = Contract.at(tokenAddress, tokenArtifact, wallet);
-  const creditFpcArtifact = loadArtifact(
-    path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
-  );
-  const creditFpc = Contract.at(creditFpcAddress, creditFpcArtifact, wallet);
-  const creditBalance = await creditFpc.methods
-    .balance_of(operatorAddress)
-    .simulate({ from: operatorAccount.address });
-  console.log(
-    `[deploy-smoke] credit_fpc_balance_of_operator=${String(creditBalance)}`,
-  );
 
   const l1Addresses = nodeInfo.l1ContractAddresses as Record<string, unknown>;
   const feeJuiceAddressRaw =

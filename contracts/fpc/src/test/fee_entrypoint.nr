@@ -1,4 +1,4 @@
-use crate::{FPC, test::utils};
+use crate::{FPCMultiAsset, test::utils};
 use aztec::protocol::address::AztecAddress;
 use aztec::test::helpers::authwit::add_private_authwit_from_call;
 use token::Token;
@@ -8,27 +8,18 @@ global TRANSFER_AUTHWIT_NONCE_2: Field = 43;
 
 #[test(should_fail_with = "invalid operator")]
 unconstrained fn constructor_rejects_zero_operator() {
-    let (mut env, _, token_address, operator, _) = utils::setup();
-
-    let pk = utils::test_operator_pubkey();
-    let fpc_initializer =
-        FPC::interface().constructor(AztecAddress::zero(), pk.x, pk.y, token_address);
-    let _ = env.deploy("FPC").with_public_initializer(operator, fpc_initializer);
-}
-
-#[test(should_fail_with = "invalid accepted asset")]
-unconstrained fn constructor_rejects_zero_accepted_asset() {
     let (mut env, _, _, operator, _) = utils::setup();
 
     let pk = utils::test_operator_pubkey();
-    let fpc_initializer = FPC::interface().constructor(operator, pk.x, pk.y, AztecAddress::zero());
-    let _ = env.deploy("FPC").with_public_initializer(operator, fpc_initializer);
+    let fpc_initializer =
+        FPCMultiAsset::interface().constructor(AztecAddress::zero(), pk.x, pk.y);
+    let _ = env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
 }
 
 #[test]
 unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
     let (mut env, fpc_address, token_address, operator, user) = utils::setup();
-    let fpc = FPC::at(fpc_address);
+    let fpc = FPCMultiAsset::at(fpc_address);
     let token = Token::at(token_address);
 
     let rate_num = 1 as u128;
@@ -56,7 +47,7 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
 
     env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(token_address, TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until, quote_sig),
     );
 
     let user_balance_after = utils::private_balance(env, token_address, user);
@@ -69,7 +60,7 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
 #[test(should_fail_with = "rate_num must be > 0")]
 unconstrained fn fee_entrypoint_rejects_zero_rate_numerator() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
-    let fpc = FPC::at(fpc_address);
+    let fpc = FPCMultiAsset::at(fpc_address);
 
     let rate_num = 0 as u128;
     let rate_den = 1 as u128;
@@ -86,14 +77,14 @@ unconstrained fn fee_entrypoint_rejects_zero_rate_numerator() {
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(token_address, authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
     );
 }
 
 #[test(should_fail_with = "Unknown auth witness for message hash")]
 unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
     let (mut env, fpc_address, token_address, operator, user) = utils::setup();
-    let fpc = FPC::at(fpc_address);
+    let fpc = FPCMultiAsset::at(fpc_address);
     let token = Token::at(token_address);
 
     let rate_num = 1 as u128;
@@ -118,7 +109,7 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
 
     env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(token_address, TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until, quote_sig),
     );
 
     // Use a fresh quote window for the second attempt so this test fails on
@@ -135,14 +126,14 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE_2, rate_num, rate_den, valid_until_2, quote_sig_2),
+        fpc.fee_entrypoint(token_address, TRANSFER_AUTHWIT_NONCE_2, rate_num, rate_den, valid_until_2, quote_sig_2),
     );
 }
 
 #[test(should_fail_with = "quote expired")]
 unconstrained fn fee_entrypoint_rejects_expired_quote() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
-    let fpc = FPC::at(fpc_address);
+    let fpc = FPCMultiAsset::at(fpc_address);
 
     let rate_num = 1 as u128;
     let rate_den = 1 as u128;
@@ -164,14 +155,14 @@ unconstrained fn fee_entrypoint_rejects_expired_quote() {
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(token_address, authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
     );
 }
 
 #[test(should_fail_with = "quote ttl too large")]
 unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
-    let fpc = FPC::at(fpc_address);
+    let fpc = FPCMultiAsset::at(fpc_address);
 
     let rate_num = 1 as u128;
     let rate_den = 1 as u128;
@@ -190,14 +181,14 @@ unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(token_address, authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
     );
 }
 
 #[test(should_fail_with = "invalid quote signature")]
 unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     let (mut env, fpc_address, token_address, operator, user) = utils::setup();
-    let fpc = FPC::at(fpc_address);
+    let fpc = FPCMultiAsset::at(fpc_address);
     let token = Token::at(token_address);
     let other_user = env.create_contract_account();
 
@@ -226,6 +217,6 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
 
     let _ = env.call_private(
         other_user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(token_address, authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
     );
 }
