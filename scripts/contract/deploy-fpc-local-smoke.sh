@@ -174,10 +174,9 @@ if [[ ! -f "$DEPLOY_OUTPUT" ]]; then
 fi
 
 echo "[deploy-smoke] Running relay-aware first-use smoke checks (FPC + CreditFPC)"
-NODE_PATH="$REPO_ROOT/services/attestation/node_modules${NODE_PATH:+:$NODE_PATH}" \
 AZTEC_NODE_URL="$AZTEC_NODE_URL" \
 FPC_DEPLOY_SMOKE_L1_RPC_URL="$L1_RPC_URL" \
 FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT="$DEPLOY_OUTPUT" \
-  bunx tsx "$REPO_ROOT/scripts/contract/deploy-fpc-local-smoke.ts"
+  bun run "$REPO_ROOT/scripts/contract/deploy-fpc-local-smoke.ts"
 
 echo "[deploy-smoke] PASS: full local deploy smoke flow succeeded"

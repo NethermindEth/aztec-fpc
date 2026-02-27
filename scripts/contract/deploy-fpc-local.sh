@@ -13,7 +13,7 @@ FPC_LOCAL_OUT="${FPC_LOCAL_OUT:-./tmp/deploy-fpc-local.json}"
 cd "${REPO_ROOT}"
 
 # Deploys token (if needed), FPC, and CreditFPC to local devnet.
-bunx tsx scripts/contract/deploy-fpc-local.ts \
+bun run scripts/contract/deploy-fpc-local.ts \
   --aztec-node-url "${AZTEC_NODE_URL}" \
   --l1-rpc-url "${L1_RPC_URL}" \
   --operator "${FPC_LOCAL_OPERATOR}" \

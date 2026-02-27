@@ -39,11 +39,13 @@ COPY --from=oven/bun:1.3.9-slim /usr/local/bin/bunx /usr/local/bin/bunx
 
 WORKDIR /app
 
-# ── Install JS dependencies (layer-cached until package.json/bun.lock change) ──
+# ── JS dependencies (reused from deps stage via bake context) ──
 COPY package.json bun.lock ./
+COPY scripts/package.json scripts/
 COPY services/attestation/package.json services/attestation/
 COPY services/topup/package.json services/topup/
-RUN bun install --frozen-lockfile
+COPY --from=deps /app/node_modules node_modules/
+COPY --from=deps /app/scripts/node_modules scripts/node_modules/
 
 # ── Pull compiled contract artifacts from compile stage ──
 COPY --from=compile /app/target/ target/

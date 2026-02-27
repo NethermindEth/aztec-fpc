@@ -50,6 +50,7 @@
     "test": "bun run test:contracts && bun run test:ts"
   },
   "workspaces": [
+    "scripts",
     "services/*"
   ]
 }

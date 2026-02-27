@@ -8,8 +8,6 @@ COPY services/topup/tsconfig.json services/topup/
 # ── Service source & build ──
 COPY services/attestation/src/ services/attestation/src/
 COPY services/topup/src/ services/topup/src/
-RUN cd services/attestation && bun run build
-RUN cd services/topup && bun run build
 
 # ── Test files ──
 COPY services/attestation/test/ services/attestation/test/
@@ -18,7 +16,13 @@ COPY services/attestation/test/ services/attestation/test/
 COPY services/attestation/config.example.yaml services/attestation/
 COPY services/topup/config.example.yaml services/topup/
 
+# ── Compiled contract artifacts ──
+COPY --from=deploy /app/target/ target/
+
 # ── Smoke & deploy scripts ──
 COPY scripts/ scripts/
 
-ENTRYPOINT ["bunx", "tsx"]
+# ── Build services ──
+RUN bun run build
+
+ENTRYPOINT ["bun", "run", "--sequential"]

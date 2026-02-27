@@ -74,10 +74,18 @@ target "topup" {
   ])
 }
 
+target "deps" {
+  context    = "."
+  dockerfile = "services/Dockerfile.common"
+  target     = "deps"
+  platforms  = PLATFORMS
+}
+
 target "deploy" {
   inherits   = ["_labels"]
   context    = "."
   dockerfile = "scripts/contract/Dockerfile.deploy"
+  contexts   = { deps = "target:deps" }
   platforms  = PLATFORMS
   target     = "deploy"
   tags = compact([
@@ -86,17 +94,14 @@ target "deploy" {
   ])
 }
 
-target "smoke-base" {
-  context    = "."
-  dockerfile = "scripts/contract/Dockerfile.deploy"
-  target     = "runtime"
-}
-
 target "smoke" {
   inherits   = ["_labels"]
   context    = "."
   dockerfile = "Dockerfile.smoke"
-  contexts   = { common = "target:smoke-base" }
+  contexts   = {
+    common = "target:deps"
+    deploy = "target:deploy"
+  }
   platforms  = PLATFORMS
   tags = compact([
     "${REGISTRY}nethermind/aztec-fpc-smoke:${TAG}${PLATFORM_SUFFIX}",
