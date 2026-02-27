@@ -7,7 +7,7 @@
 /// - Added quote replay protection via nullifiers
 /// - Replaced pay_fee / pay_fee_exact with pay_and_mint / pay_with_credit
 /// - Packed config into single PublicImmutable slot (1 Merkle proof vs 4)
-/// - Added exchange-rate conversion via fee_math
+/// - Switched CreditFPC quotes to exact quoted credit/payment amounts
 
 mod fee_math;
 mod test;
@@ -16,7 +16,6 @@ use ::aztec::macros::aztec;
 
 #[aztec]
 pub contract CreditFPC {
-    use crate::fee_math::fee_juice_to_asset;
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
@@ -79,11 +78,10 @@ pub contract CreditFPC {
     #[allow_phase_change]
     fn pay_and_mint(
         authwit_nonce: Field,
-        rate_num: u128,
-        rate_den: u128,
+        fj_credit_amount: u128,
+        aa_payment_amount: u128,
         valid_until: u64,
         quote_sig: [u8; 64],
-        mint_amount: u128,
     ) {
         let config = self.storage.config.read();
         let sender = self.msg_sender();
@@ -96,20 +94,19 @@ pub contract CreditFPC {
                 is_infinite: false,
             },
             config.accepted_asset,
-            rate_num,
-            rate_den,
+            fj_credit_amount,
+            aa_payment_amount,
             valid_until,
             sender,
             quote_sig,
         );
 
-        let charge = fee_juice_to_asset(mint_amount, rate_num, rate_den);
         Token::at(config.accepted_asset)
-            .transfer_private_to_private(sender, config.operator, charge, authwit_nonce)
+            .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
         let balance_set = self.storage.balances.at(sender);
-        balance_set.add(mint_amount).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
+        balance_set.add(fj_credit_amount).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
         let max_gas_cost = get_max_gas_cost_no_teardown(self.context);
         let subtracted = balance_set.try_sub(max_gas_cost, 1);
@@ -152,8 +149,8 @@ pub contract CreditFPC {
 
     #[external("utility")]
     unconstrained fn quote_used(
-        rate_num: u128,
-        rate_den: u128,
+        fj_credit_amount: u128,
+        aa_payment_amount: u128,
         valid_until: u64,
         user_address: AztecAddress,
     ) -> bool {
@@ -162,8 +159,8 @@ pub contract CreditFPC {
             QUOTE_DOMAIN_SEPARATOR,
             self.address.to_field(),
             config.accepted_asset.to_field(),
-            rate_num as Field,
-            rate_den as Field,
+            fj_credit_amount as Field,
+            aa_payment_amount as Field,
             valid_until as Field,
             user_address.to_field(),
         ]);
@@ -183,15 +180,15 @@ pub contract CreditFPC {
     /// inline. Pushes a nullifier to prevent replay.
     ///
     /// Quote preimage (hashed with compute_inner_authwit_hash for compatibility):
-    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, rate_num, rate_den,
-    ///              valid_until, user_address])
+    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, fj_credit_amount,
+    ///              aa_payment_amount, valid_until, user_address])
     #[contract_library_method]
     fn assert_valid_quote(
         context: &mut PrivateContext,
         operator_pubkey: EmbeddedCurvePoint,
         accepted_asset: AztecAddress,
-        rate_num: u128,
-        rate_den: u128,
+        fj_credit_amount: u128,
+        aa_payment_amount: u128,
         valid_until: u64,
         user_address: AztecAddress,
         quote_sig: [u8; 64],
@@ -200,8 +197,8 @@ pub contract CreditFPC {
             QUOTE_DOMAIN_SEPARATOR,
             context.this_address().to_field(),
             accepted_asset.to_field(),
-            rate_num as Field,
-            rate_den as Field,
+            fj_credit_amount as Field,
+            aa_payment_amount as Field,
             valid_until as Field,
             user_address.to_field(),
         ]);
@@ -216,7 +213,7 @@ pub contract CreditFPC {
         let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
         assert(!quote_already_used, "quote already used");
 
-        // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
+        // Prevent replay: the quote hash is unique per (fpc, asset, amounts, expiry, user).
         context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;

@@ -192,16 +192,16 @@ pub unconstrained fn max_gas_cost_no_teardown(env: TestEnvironment) -> u128 {
 pub unconstrained fn sign_quote(
     credit_fpc_address: AztecAddress,
     accepted_asset: AztecAddress,
-    rate_num: u128,
-    rate_den: u128,
+    fj_credit_amount: u128,
+    aa_payment_amount: u128,
     valid_until: u64,
     user_address: AztecAddress,
 ) -> [u8; 64] {
     let quote_hash = quote_hash(
         credit_fpc_address,
         accepted_asset,
-        rate_num,
-        rate_den,
+        fj_credit_amount,
+        aa_payment_amount,
         valid_until,
         user_address,
     );
@@ -212,8 +212,8 @@ pub unconstrained fn sign_quote(
 pub unconstrained fn quote_hash(
     credit_fpc_address: AztecAddress,
     accepted_asset: AztecAddress,
-    rate_num: u128,
-    rate_den: u128,
+    fj_credit_amount: u128,
+    aa_payment_amount: u128,
     valid_until: u64,
     user_address: AztecAddress,
 ) -> Field {
@@ -221,8 +221,8 @@ pub unconstrained fn quote_hash(
         QUOTE_DOMAIN_SEPARATOR,
         credit_fpc_address.to_field(),
         accepted_asset.to_field(),
-        rate_num as Field,
-        rate_den as Field,
+        fj_credit_amount as Field,
+        aa_payment_amount as Field,
         valid_until as Field,
         user_address.to_field(),
     ])
