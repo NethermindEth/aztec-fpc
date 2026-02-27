@@ -6,3 +6,6 @@ members = [
     "vendor/aztec-standards/src/generic_proxy",
     "vendor/aztec-standards/src/token_contract",
 ]
+
+[benchmark]
+fpc = "profiling/benchmarks/fpc.benchmark.ts"

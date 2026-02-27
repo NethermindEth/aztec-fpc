@@ -41,10 +41,19 @@ echo "[setup] Submodules initialized."
 AZTEC_PKGS=(
   "@aztec/aztec.js"
   "@aztec/accounts"
+  "@aztec/constants"
   "@aztec/foundation"
-  "@aztec/stdlib"
+  "@aztec/protocol-contracts"
   "@aztec/pxe"
+  "@aztec/stdlib"
   "@aztec/wallet-sdk"
+)
+
+# Non-Aztec packages needed for benchmarking (viem for L1 bridging,
+# aztec-benchmark for the structured profiler).
+EXTRA_PKGS=(
+  "@defi-wonderland/aztec-benchmark@${AZTEC_VERSION}"
+  "viem"
 )
 
 install_deps() {
@@ -55,9 +64,9 @@ install_deps() {
 
   cd "$SCRIPT_DIR"
   if command -v npm >/dev/null 2>&1; then
-    npm install "${versioned[@]}"
+    npm install "${versioned[@]}" "${EXTRA_PKGS[@]}"
   elif command -v bun >/dev/null 2>&1; then
-    bun add "${versioned[@]}"
+    bun add "${versioned[@]}" "${EXTRA_PKGS[@]}"
   else
     echo "[setup] ERROR: npm or bun is required to install dependencies." >&2
     exit 1
