@@ -1,6 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -179,6 +178,7 @@ Config env vars:
 - FPC_FULL_E2E_NODE_HOST/FPC_FULL_E2E_NODE_PORT (default: 127.0.0.1:8080)
 - FPC_FULL_E2E_L1_HOST/FPC_FULL_E2E_L1_PORT (default: 127.0.0.1:8545)
 - FPC_FULL_E2E_L1_PRIVATE_KEY (default: local anvil key)
+- FPC_FULL_E2E_ARTIFACTS_DIR (default: <repo>/tmp)
 - AZTEC_NODE_URL or FPC_FULL_E2E_NODE_URL overrides node host/port
 - FPC_FULL_E2E_L1_RPC_URL overrides l1 host/port
 `);
@@ -980,6 +980,14 @@ function sanitizeLogName(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "-");
 }
 
+function getArtifactsRootDir(repoRoot: string): string {
+  const configured = readOptionalEnvString("FPC_FULL_E2E_ARTIFACTS_DIR");
+  const resolved =
+    configured === null ? path.join(repoRoot, "tmp") : path.resolve(configured);
+  mkdirSync(resolved, { recursive: true });
+  return resolved;
+}
+
 function persistFailureDiagnostics(
   runDir: string,
   summaryPath: string,
@@ -1188,7 +1196,10 @@ async function deployContractsAndWriteRuntimeConfig(
       ? __dirname
       : path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(scriptDir, "..", "..");
-  const runDir = mkdtempSync(path.join(os.tmpdir(), "fpc-full-lifecycle-e2e-"));
+  const artifactsRootDir = getArtifactsRootDir(repoRoot);
+  const runDir = mkdtempSync(
+    path.join(artifactsRootDir, "fpc-full-lifecycle-e2e-"),
+  );
   const tokenArtifactPath = path.join(
     repoRoot,
     "target",
@@ -1755,8 +1766,10 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     isolatedToken.address,
   ]).send({ from: result.operator });
 
+  const isolatedCasesRoot = path.join(result.runDir, "insufficient");
+  mkdirSync(isolatedCasesRoot, { recursive: true });
   const isolatedRunDir = mkdtempSync(
-    path.join(os.tmpdir(), "fpc-full-lifecycle-e2e-insufficient-"),
+    path.join(isolatedCasesRoot, "fpc-full-lifecycle-e2e-insufficient-"),
   );
   const bridgeStatePath = path.join(isolatedRunDir, "topup.bridge-state.json");
   const topupConfigPath = path.join(isolatedRunDir, "topup.config.yaml");
