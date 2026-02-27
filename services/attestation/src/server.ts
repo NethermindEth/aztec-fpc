@@ -14,6 +14,12 @@ function unauthorized() {
   return { error: { code: "UNAUTHORIZED", message: "Unauthorized" } };
 }
 
+function rateLimited() {
+  return {
+    error: { code: "RATE_LIMITED", message: "Too many quote requests" },
+  };
+}
+
 function headerMatchesSecret(
   candidateValue: string | string[] | undefined,
   expectedValue: string | undefined,
@@ -65,6 +71,124 @@ function isQuoteAuthorized(
   }
 }
 
+function modeUsesApiKey(mode: Config["quote_auth"]["mode"]): boolean {
+  return (
+    mode === "api_key" ||
+    mode === "api_key_or_trusted_header" ||
+    mode === "api_key_and_trusted_header"
+  );
+}
+
+function firstHeaderValue(
+  value: string | string[] | undefined,
+): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value) && value.length > 0) {
+    return value[0];
+  }
+  return undefined;
+}
+
+interface QuoteRateLimitIdentity {
+  cacheKey: string;
+  kind: "ip" | "api_key";
+}
+
+function resolveQuoteRateLimitIdentity(
+  config: Config,
+  headers: Record<string, string | string[] | undefined>,
+  remoteIp: string,
+): QuoteRateLimitIdentity {
+  if (modeUsesApiKey(config.quote_auth.mode)) {
+    const apiKeyCandidate = firstHeaderValue(
+      headers[config.quote_auth.apiKeyHeader],
+    );
+    if (
+      apiKeyCandidate &&
+      headerMatchesSecret(apiKeyCandidate, config.quote_auth.apiKey)
+    ) {
+      const apiKeyDigest = createHash("sha256")
+        .update(apiKeyCandidate, "utf8")
+        .digest("hex");
+      return { cacheKey: `api_key:${apiKeyDigest}`, kind: "api_key" };
+    }
+  }
+
+  return { cacheKey: `ip:${remoteIp}`, kind: "ip" };
+}
+
+interface RateLimitState {
+  windowStart: bigint;
+  count: number;
+}
+
+interface RateLimitDecision {
+  allowed: boolean;
+  retryAfterSeconds: bigint;
+}
+
+class FixedWindowRateLimiter {
+  private readonly state = new Map<string, RateLimitState>();
+  private readonly windowSeconds: bigint;
+
+  constructor(
+    private readonly maxRequests: number,
+    windowSeconds: number,
+    private readonly maxTrackedKeys: number,
+  ) {
+    this.windowSeconds = BigInt(windowSeconds);
+  }
+
+  consume(identity: string, nowSeconds: bigint): RateLimitDecision {
+    const windowStart = nowSeconds - (nowSeconds % this.windowSeconds);
+    let bucket = this.state.get(identity);
+
+    if (!bucket || bucket.windowStart !== windowStart) {
+      if (!bucket) {
+        this.ensureCapacity(windowStart);
+      }
+      bucket = { windowStart, count: 0 };
+      this.state.set(identity, bucket);
+    }
+
+    if (bucket.count >= this.maxRequests) {
+      return {
+        allowed: false,
+        retryAfterSeconds: windowStart + this.windowSeconds - nowSeconds,
+      };
+    }
+
+    bucket.count += 1;
+    return {
+      allowed: true,
+      retryAfterSeconds: 0n,
+    };
+  }
+
+  private ensureCapacity(currentWindowStart: bigint): void {
+    if (this.state.size < this.maxTrackedKeys) {
+      return;
+    }
+
+    for (const [key, value] of this.state.entries()) {
+      if (value.windowStart < currentWindowStart) {
+        this.state.delete(key);
+      }
+    }
+
+    if (this.state.size < this.maxTrackedKeys) {
+      return;
+    }
+
+    const oldestKey = this.state.keys().next().value;
+    if (oldestKey) {
+      this.state.delete(oldestKey);
+    }
+  }
+}
+
 export interface QuoteClock {
   nowUnixSeconds?: () => Promise<bigint> | bigint;
 }
@@ -80,11 +204,16 @@ export function buildServer(
 
   const nowUnixSeconds =
     clock.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000)));
+  const rateLimiter = config.quote_rate_limit.enabled
+    ? new FixedWindowRateLimiter(
+        config.quote_rate_limit.maxRequests,
+        config.quote_rate_limit.windowSeconds,
+        config.quote_rate_limit.maxTrackedKeys,
+      )
+    : undefined;
 
-  async function validUntil(): Promise<bigint> {
-    return (
-      BigInt(await nowUnixSeconds()) + BigInt(config.quote_validity_seconds)
-    );
+  function validUntil(nowSeconds: bigint): bigint {
+    return nowSeconds + BigInt(config.quote_validity_seconds);
   }
 
   // ── GET /health ─────────────────────────────────────────────────────────────
@@ -101,6 +230,31 @@ export function buildServer(
   // ── GET /quote?user=<address> ─────────────────────────────────────────────
 
   app.get<{ Querystring: { user?: string } }>("/quote", async (req, reply) => {
+    const nowSeconds = BigInt(await nowUnixSeconds());
+
+    if (rateLimiter) {
+      const identity = resolveQuoteRateLimitIdentity(
+        config,
+        req.headers,
+        req.ip,
+      );
+      const decision = rateLimiter.consume(identity.cacheKey, nowSeconds);
+      if (!decision.allowed) {
+        req.log.warn(
+          {
+            event: "quote_rate_limited",
+            identity_kind: identity.kind,
+            retry_after_seconds: decision.retryAfterSeconds,
+          },
+          "Rate limited quote request",
+        );
+        return reply
+          .header("retry-after", decision.retryAfterSeconds.toString())
+          .code(429)
+          .send(rateLimited());
+      }
+    }
+
     if (!isQuoteAuthorized(config, req.headers)) {
       req.log.warn(
         {
@@ -127,7 +281,7 @@ export function buildServer(
 
     try {
       const { rate_num, rate_den } = computeFinalRate(config);
-      const expiry = await validUntil();
+      const expiry = validUntil(nowSeconds);
 
       const signature = await signQuote(quoteSigner, {
         fpcAddress,

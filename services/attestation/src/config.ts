@@ -13,6 +13,9 @@ import {
 export const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const PRIVATE_KEY_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const HTTP_HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const QUOTE_RATE_LIMIT_MAX_WINDOW_SECONDS = 3600;
+const QUOTE_RATE_LIMIT_MAX_REQUESTS = 1_000_000;
+const QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS = 1_000_000;
 const OperatorSecretKeySchema = z
   .string()
   .regex(PRIVATE_KEY_PATTERN, "must be a 32-byte 0x-prefixed hex private key");
@@ -90,6 +93,29 @@ const ConfigSchema = z.object({
    *  When set, the service spins up a local PXE so it can call
    *  registerSender() and discover private fee-payment notes. */
   pxe_data_directory: z.string().optional(),
+  /** Enable/disable /quote rate limiting. */
+  quote_rate_limit_enabled: z.boolean().default(true),
+  /** Max /quote requests allowed per identity per fixed window. */
+  quote_rate_limit_max_requests: z
+    .number()
+    .int()
+    .positive()
+    .max(QUOTE_RATE_LIMIT_MAX_REQUESTS)
+    .default(60),
+  /** Fixed window size in seconds. */
+  quote_rate_limit_window_seconds: z
+    .number()
+    .int()
+    .positive()
+    .max(QUOTE_RATE_LIMIT_MAX_WINDOW_SECONDS)
+    .default(60),
+  /** Maximum number of tracked rate-limit identities in memory. */
+  quote_rate_limit_max_tracked_keys: z
+    .number()
+    .int()
+    .positive()
+    .max(QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS)
+    .default(10_000),
 });
 
 type ParsedConfig = z.infer<typeof ConfigSchema>;
@@ -103,6 +129,13 @@ export interface QuoteAuthConfig {
   trustedHeaderValue?: string;
 }
 
+export interface QuoteRateLimitConfig {
+  enabled: boolean;
+  maxRequests: number;
+  windowSeconds: number;
+  maxTrackedKeys: number;
+}
+
 export type Config = Omit<
   ParsedConfig,
   | "operator_secret_key"
@@ -111,6 +144,10 @@ export type Config = Omit<
   | "quote_auth_api_key_header"
   | "quote_auth_trusted_header_name"
   | "quote_auth_trusted_header_value"
+  | "quote_rate_limit_enabled"
+  | "quote_rate_limit_max_requests"
+  | "quote_rate_limit_window_seconds"
+  | "quote_rate_limit_max_tracked_keys"
 > & {
   runtime_profile: RuntimeProfile;
   operator_secret_key: string;
@@ -118,6 +155,7 @@ export type Config = Omit<
   operator_secret_key_provider: SecretProvider;
   operator_secret_key_dual_source: boolean;
   quote_auth: QuoteAuthConfig;
+  quote_rate_limit: QuoteRateLimitConfig;
 };
 
 export interface LoadConfigOptions {
@@ -157,6 +195,48 @@ function parseQuoteAuthMode(
 function normalizeOptional(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseBooleanOverride(
+  configValue: boolean,
+  envOverride: string | undefined,
+  envName: string,
+): boolean {
+  if (envOverride === undefined) {
+    return configValue;
+  }
+
+  const normalized = envOverride.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  throw new Error(
+    `Invalid ${envName}: expected boolean value (true/false, 1/0, yes/no, on/off)`,
+  );
+}
+
+function parseIntegerOverride(
+  configValue: number,
+  envOverride: string | undefined,
+  envName: string,
+  min: number,
+  max: number,
+): number {
+  if (envOverride === undefined) {
+    return configValue;
+  }
+
+  const parsed = Number(envOverride.trim());
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(
+      `Invalid ${envName}: expected integer in range [${min}, ${max}]`,
+    );
+  }
+  return parsed;
 }
 
 function normalizeHeaderName(value: string, label: string): string {
@@ -262,6 +342,44 @@ function resolveQuoteAuthConfig(
   };
 }
 
+function resolveQuoteRateLimitConfig(
+  config: ParsedConfig,
+): QuoteRateLimitConfig {
+  const enabled = parseBooleanOverride(
+    config.quote_rate_limit_enabled,
+    process.env.QUOTE_RATE_LIMIT_ENABLED,
+    "QUOTE_RATE_LIMIT_ENABLED",
+  );
+  const maxRequests = parseIntegerOverride(
+    config.quote_rate_limit_max_requests,
+    process.env.QUOTE_RATE_LIMIT_MAX_REQUESTS,
+    "QUOTE_RATE_LIMIT_MAX_REQUESTS",
+    1,
+    QUOTE_RATE_LIMIT_MAX_REQUESTS,
+  );
+  const windowSeconds = parseIntegerOverride(
+    config.quote_rate_limit_window_seconds,
+    process.env.QUOTE_RATE_LIMIT_WINDOW_SECONDS,
+    "QUOTE_RATE_LIMIT_WINDOW_SECONDS",
+    1,
+    QUOTE_RATE_LIMIT_MAX_WINDOW_SECONDS,
+  );
+  const maxTrackedKeys = parseIntegerOverride(
+    config.quote_rate_limit_max_tracked_keys,
+    process.env.QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS,
+    "QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS",
+    1,
+    QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS,
+  );
+
+  return {
+    enabled,
+    maxRequests,
+    windowSeconds,
+    maxTrackedKeys,
+  };
+}
+
 export function loadConfig(
   path: string,
   options: LoadConfigOptions = {},
@@ -294,6 +412,7 @@ export function loadConfig(
     process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
   );
   const quoteAuth = resolveQuoteAuthConfig(config, runtimeProfile);
+  const quoteRateLimit = resolveQuoteRateLimitConfig(config);
   const {
     operator_secret_key: _configuredOperatorSecretKey,
     quote_auth_mode: _quoteAuthMode,
@@ -301,6 +420,10 @@ export function loadConfig(
     quote_auth_api_key_header: _quoteAuthApiKeyHeader,
     quote_auth_trusted_header_name: _quoteAuthTrustedHeaderName,
     quote_auth_trusted_header_value: _quoteAuthTrustedHeaderValue,
+    quote_rate_limit_enabled: _quoteRateLimitEnabled,
+    quote_rate_limit_max_requests: _quoteRateLimitMaxRequests,
+    quote_rate_limit_window_seconds: _quoteRateLimitWindowSeconds,
+    quote_rate_limit_max_tracked_keys: _quoteRateLimitMaxTrackedKeys,
     ...restConfig
   } = config;
 
@@ -313,6 +436,7 @@ export function loadConfig(
     operator_secret_key_provider: resolvedSecret.provider,
     operator_secret_key_dual_source: resolvedSecret.dualSource,
     quote_auth: quoteAuth,
+    quote_rate_limit: quoteRateLimit,
   };
 }
 
