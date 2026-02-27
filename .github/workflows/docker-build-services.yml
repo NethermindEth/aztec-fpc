@@ -56,7 +56,7 @@ jobs:
           REGISTRY: ${{ env.DOCKER_REGISTRY }}/
           TAG: ${{ env.TAG }}
           GIT_SHA: ${{ github.sha }}
-          PLATFORMS: '["linux/amd64", "linux/arm64"]'
+          PLATFORMS: 'linux/amd64,linux/arm64'
         run: docker buildx bake services --push
 
       - name: Summary

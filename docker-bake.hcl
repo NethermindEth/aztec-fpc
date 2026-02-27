@@ -12,6 +12,7 @@ variable "GIT_SHA" {
 
 variable "PLATFORMS" {
   default = []
+  type = list(string)
 }
 
 variable "PLATFORM_SUFFIX" {
