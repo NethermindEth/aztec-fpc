@@ -1,6 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 type CliArgs = {
   nodeUrl: string;
@@ -66,12 +68,49 @@ type NodePreflightState = {
   };
 };
 
+type DeployerAccountResolution = {
+  alias: string;
+  walletAlias: string;
+  address: string;
+  privateKey: string | null;
+  privateKeyRef: string | null;
+  source: "existing" | "created" | "imported";
+};
+
+type OperatorIdentity = {
+  address: string;
+  pubkeyX: string;
+  pubkeyY: string;
+};
+
+type OperatorDerivationDeps = {
+  getSchnorrAccountContractAddress: (
+    secretKey: unknown,
+    salt: unknown,
+  ) => Promise<unknown>;
+  Fr: {
+    fromHexString: (value: string) => unknown;
+    ZERO: unknown;
+  };
+  deriveSigningKey: (secretKey: unknown) => unknown;
+  Schnorr: new () => {
+    computePublicKey: (signingKey: unknown) => Promise<{
+      x: unknown;
+      y: unknown;
+    }>;
+  };
+};
+
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_AZTEC_ADDRESS_PATTERN = /^0x0{64}$/i;
 const L1_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const ZERO_L1_ADDRESS_PATTERN = /^0x0{40}$/i;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
+const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
+const WALLET_ACCOUNT_PREFIX = "accounts:";
+const WALLET_CONTRACT_PREFIX = "contracts:";
+const WALLET_SPONSORED_FPC_ALIAS = "sponsoredfpc";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
@@ -106,8 +145,8 @@ function usage(): string {
     "Notes:",
     "  - --l1-rpc-url is optional for deployment-only preflight.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
-    "  - In preflight mode, no deployment tx is sent.",
-    "  - Deployment execution is intentionally not implemented until step 3/4.",
+    "  - In preflight mode, the script may register missing wallet aliases but sends no contract deploy txs.",
+    "  - Full Token/FPC/CreditFPC deployment will be implemented in step 4.",
   ].join("\n");
 }
 
@@ -506,6 +545,447 @@ function parseNonZeroAztecAddress(value: unknown, fieldName: string): string {
   return value;
 }
 
+function stripAnsi(value: string): string {
+  let result = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i];
+    if (char !== "\u001B") {
+      result += char;
+      continue;
+    }
+    if (value[i + 1] !== "[") {
+      continue;
+    }
+    i += 2;
+    while (i < value.length && !/[A-Za-z]/.test(value[i])) {
+      i += 1;
+    }
+  }
+  return result;
+}
+
+function runAztecWalletCommand(
+  nodeUrl: string,
+  args: string[],
+  description: string,
+): string {
+  const walletBin = process.env.AZTEC_WALLET_BIN ?? "aztec-wallet";
+  const commandArgs = ["--node-url", nodeUrl, ...args];
+  try {
+    return execFileSync(walletBin, commandArgs, {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "stderr" in error &&
+      "stdout" in error
+    ) {
+      const stdout = String((error as { stdout?: unknown }).stdout ?? "");
+      const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+      throw new CliError(
+        `Failed to ${description} via '${walletBin} ${commandArgs.join(" ")}'.\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+      );
+    }
+    throw new CliError(
+      `Failed to ${description}: ${String(error)} (wallet binary: ${walletBin})`,
+    );
+  }
+}
+
+function parseWalletAliasMap(output: string): Map<string, string> {
+  const aliases = new Map<string, string>();
+  const sanitized = stripAnsi(output).replace(/\r\n/g, "\n");
+  const regex = /^\s*([A-Za-z0-9:_-]+)\s*->\s*(0x[0-9a-fA-F]{64})\s*$/gim;
+  let match = regex.exec(sanitized);
+  while (match) {
+    aliases.set(match[1], match[2]);
+    match = regex.exec(sanitized);
+  }
+  return aliases;
+}
+
+function parseAliasLookupAddress(output: string, alias: string): string | null {
+  const sanitized = stripAnsi(output).replace(/\r\n/g, "\n");
+
+  const directAddressMatches = [
+    ...sanitized.matchAll(/^\s*(0x[0-9a-fA-F]{64})\s*$/gim),
+  ].map((match) => match[1]);
+  if (directAddressMatches.length > 0) {
+    return directAddressMatches[0];
+  }
+
+  const aliases = parseWalletAliasMap(output);
+  return aliases.get(alias) ?? null;
+}
+
+function normalizeDeployerAlias(alias: string): {
+  walletAlias: string;
+  bareAlias: string;
+} {
+  const trimmed = alias.trim();
+  if (trimmed.startsWith(WALLET_ACCOUNT_PREFIX)) {
+    const bareAlias = trimmed.slice(WALLET_ACCOUNT_PREFIX.length).trim();
+    if (bareAlias.length === 0) {
+      throw new CliError(
+        `Invalid --deployer-alias: "${alias}" has empty account alias suffix`,
+      );
+    }
+    return {
+      walletAlias: `${WALLET_ACCOUNT_PREFIX}${bareAlias}`,
+      bareAlias,
+    };
+  }
+  if (trimmed.includes(":")) {
+    throw new CliError(
+      `Invalid --deployer-alias: "${alias}" must be "<alias>" or "accounts:<alias>"`,
+    );
+  }
+  return {
+    walletAlias: `${WALLET_ACCOUNT_PREFIX}${trimmed}`,
+    bareAlias: trimmed,
+  };
+}
+
+function tryGetWalletAliasAddress(
+  nodeUrl: string,
+  alias: string,
+): string | null {
+  try {
+    const output = runAztecWalletCommand(
+      nodeUrl,
+      ["get-alias", alias],
+      `look up wallet alias ${alias}`,
+    );
+    const resolved = parseAliasLookupAddress(output, alias);
+    if (!resolved) {
+      throw new CliError(
+        `Wallet alias lookup failed for ${alias}: command succeeded but no address was returned.`,
+      );
+    }
+    return parseNonZeroAztecAddress(resolved, `wallet alias ${alias}`);
+  } catch (error) {
+    if (
+      error instanceof CliError &&
+      error.message.includes(`Could not find alias ${alias}`)
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function ensureSponsoredFpcIsRegistered(
+  nodeUrl: string,
+  sponsoredFpcAddress: string,
+): void {
+  const contractAlias = `${WALLET_CONTRACT_PREFIX}${WALLET_SPONSORED_FPC_ALIAS}`;
+  const existing = tryGetWalletAliasAddress(nodeUrl, contractAlias);
+
+  if (existing) {
+    if (existing.toLowerCase() !== sponsoredFpcAddress.toLowerCase()) {
+      throw new CliError(
+        `Wallet alias ${contractAlias} points to ${existing}, but --sponsored-fpc-address is ${sponsoredFpcAddress}. Reconcile wallet alias state before continuing.`,
+      );
+    }
+    return;
+  }
+
+  runAztecWalletCommand(
+    nodeUrl,
+    [
+      "register-contract",
+      "--alias",
+      WALLET_SPONSORED_FPC_ALIAS,
+      sponsoredFpcAddress,
+      "SponsoredFPC",
+      "--salt",
+      "0",
+    ],
+    `register sponsored FPC alias ${contractAlias}`,
+  );
+
+  const resolved = tryGetWalletAliasAddress(nodeUrl, contractAlias);
+  if (!resolved) {
+    throw new CliError(
+      `Wallet alias registration failed: ${contractAlias} was not persisted.`,
+    );
+  }
+  if (resolved.toLowerCase() !== sponsoredFpcAddress.toLowerCase()) {
+    throw new CliError(
+      `Wallet alias registration failed: ${contractAlias} resolved to ${resolved}, expected ${sponsoredFpcAddress}.`,
+    );
+  }
+}
+
+function isCreateAccountConflict(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("nullifier conflict") ||
+    normalized.includes("already exists") ||
+    normalized.includes("already registered")
+  );
+}
+
+function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
+  const alias = normalizeDeployerAlias(args.deployerAlias);
+  const existing = tryGetWalletAliasAddress(args.nodeUrl, alias.walletAlias);
+  if (existing) {
+    return {
+      alias: alias.bareAlias,
+      walletAlias: alias.walletAlias,
+      address: existing,
+      privateKey: args.deployerPrivateKey,
+      privateKeyRef: args.deployerPrivateKeyRef,
+      source: "existing",
+    };
+  }
+
+  if (!args.deployerPrivateKey) {
+    throw new CliError(
+      `Deployer account alias ${alias.walletAlias} was not found, and --deployer-private-key was not provided. Use --deployer-private-key to create/import the account, or pre-create alias ${alias.walletAlias} before retrying.`,
+    );
+  }
+
+  if (args.preflightOnly) {
+    runAztecWalletCommand(
+      args.nodeUrl,
+      [
+        "create-account",
+        "--register-only",
+        "--alias",
+        alias.bareAlias,
+        "--secret-key",
+        args.deployerPrivateKey,
+      ],
+      `register deployer account alias ${alias.walletAlias} in wallet (preflight-only import path)`,
+    );
+    const imported = tryGetWalletAliasAddress(args.nodeUrl, alias.walletAlias);
+    if (!imported) {
+      throw new CliError(
+        `Deployer account alias import failed: ${alias.walletAlias} remains unresolved after register-only operation.`,
+      );
+    }
+    return {
+      alias: alias.bareAlias,
+      walletAlias: alias.walletAlias,
+      address: imported,
+      privateKey: args.deployerPrivateKey,
+      privateKeyRef: args.deployerPrivateKeyRef,
+      source: "imported",
+    };
+  }
+
+  try {
+    runAztecWalletCommand(
+      args.nodeUrl,
+      [
+        "create-account",
+        "--alias",
+        alias.bareAlias,
+        "--secret-key",
+        args.deployerPrivateKey,
+        "--payment",
+        `method=fpc-sponsored,fpc=${args.sponsoredFpcAddress}`,
+      ],
+      `create deployer account alias ${alias.walletAlias} with sponsored payment`,
+    );
+  } catch (error) {
+    if (
+      !(error instanceof CliError) ||
+      !isCreateAccountConflict(error.message)
+    ) {
+      throw error;
+    }
+
+    runAztecWalletCommand(
+      args.nodeUrl,
+      [
+        "create-account",
+        "--register-only",
+        "--alias",
+        alias.bareAlias,
+        "--secret-key",
+        args.deployerPrivateKey,
+      ],
+      `import existing deployer account alias ${alias.walletAlias} after create-account conflict`,
+    );
+  }
+
+  const resolved = tryGetWalletAliasAddress(args.nodeUrl, alias.walletAlias);
+  if (!resolved) {
+    throw new CliError(
+      `Deployer account resolution failed: ${alias.walletAlias} is unresolved after account bootstrap.`,
+    );
+  }
+
+  return {
+    alias: alias.bareAlias,
+    walletAlias: alias.walletAlias,
+    address: resolved,
+    privateKey: args.deployerPrivateKey,
+    privateKeyRef: args.deployerPrivateKeyRef,
+    source: "created",
+  };
+}
+
+function stringifyWithToString(value: unknown, context: string): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "toString" in value &&
+    typeof value.toString === "function"
+  ) {
+    return value.toString();
+  }
+  throw new CliError(
+    `${context} returned invalid value ${String(value)} (expected string-like output)`,
+  );
+}
+
+function parseFieldValueString(value: unknown, context: string): string {
+  const raw = stringifyWithToString(value, context).trim();
+  if (!DECIMAL_UINT_PATTERN.test(raw) && !HEX_FIELD_PATTERN.test(raw)) {
+    throw new CliError(
+      `${context} returned invalid field value ${raw}. Expected decimal integer or 0x-prefixed hex.`,
+    );
+  }
+  return raw;
+}
+
+async function importWithWorkspaceFallback(
+  moduleId: string,
+): Promise<Record<string, unknown>> {
+  const errors: string[] = [];
+  try {
+    return (await import(moduleId)) as Record<string, unknown>;
+  } catch (error) {
+    errors.push(`direct import failed: ${String(error)}`);
+  }
+
+  const fallbackPackageJsons = [
+    path.join(REPO_ROOT, "services", "attestation", "package.json"),
+    path.join(REPO_ROOT, "services", "topup", "package.json"),
+  ];
+
+  for (const packageJsonPath of fallbackPackageJsons) {
+    try {
+      const requireFromWorkspace = createRequire(packageJsonPath);
+      const resolved = requireFromWorkspace.resolve(moduleId);
+      return (await import(pathToFileURL(resolved).href)) as Record<
+        string,
+        unknown
+      >;
+    } catch (error) {
+      errors.push(
+        `workspace import failed via ${packageJsonPath}: ${String(error)}`,
+      );
+    }
+  }
+
+  throw new CliError(
+    `Failed to load ${moduleId} for operator key derivation.\n${errors.join("\n")}`,
+  );
+}
+
+async function loadOperatorDerivationDeps(): Promise<OperatorDerivationDeps> {
+  const [schnorrAccountApi, fieldApi, schnorrApi, keysApi] = await Promise.all([
+    importWithWorkspaceFallback("@aztec/accounts/schnorr"),
+    importWithWorkspaceFallback("@aztec/aztec.js/fields"),
+    importWithWorkspaceFallback("@aztec/foundation/crypto/schnorr"),
+    importWithWorkspaceFallback("@aztec/stdlib/keys"),
+  ]);
+
+  const getSchnorrAccountContractAddress =
+    schnorrAccountApi.getSchnorrAccountContractAddress;
+  const Fr = fieldApi.Fr;
+  const Schnorr = schnorrApi.Schnorr;
+  const deriveSigningKey = keysApi.deriveSigningKey;
+
+  if (typeof getSchnorrAccountContractAddress !== "function") {
+    throw new CliError(
+      "Loaded @aztec/accounts/schnorr, but getSchnorrAccountContractAddress is not available",
+    );
+  }
+  if (
+    !Fr ||
+    typeof Fr !== "function" ||
+    typeof (Fr as { fromHexString?: unknown }).fromHexString !== "function" ||
+    !("ZERO" in (Fr as object))
+  ) {
+    throw new CliError(
+      "Loaded @aztec/aztec.js/fields, but Fr.fromHexString/Fr.ZERO are not available",
+    );
+  }
+  if (typeof Schnorr !== "function") {
+    throw new CliError(
+      "Loaded @aztec/foundation/crypto/schnorr, but Schnorr is not available",
+    );
+  }
+  if (typeof deriveSigningKey !== "function") {
+    throw new CliError(
+      "Loaded @aztec/stdlib/keys, but deriveSigningKey is not available",
+    );
+  }
+
+  return {
+    getSchnorrAccountContractAddress:
+      getSchnorrAccountContractAddress as OperatorDerivationDeps["getSchnorrAccountContractAddress"],
+    Fr: Fr as OperatorDerivationDeps["Fr"],
+    Schnorr: Schnorr as OperatorDerivationDeps["Schnorr"],
+    deriveSigningKey:
+      deriveSigningKey as OperatorDerivationDeps["deriveSigningKey"],
+  };
+}
+
+async function deriveOperatorIdentity(
+  operatorSecretKey: string,
+): Promise<OperatorIdentity> {
+  const deps = await loadOperatorDerivationDeps();
+
+  let secretKeyFr: unknown;
+  try {
+    secretKeyFr = deps.Fr.fromHexString(operatorSecretKey);
+  } catch (error) {
+    throw new CliError(
+      `Operator key derivation failed: invalid operator secret key. Underlying error: ${String(error)}`,
+    );
+  }
+
+  try {
+    const signingKey = deps.deriveSigningKey(secretKeyFr);
+    const schnorr = new deps.Schnorr();
+    const pubkey = await schnorr.computePublicKey(signingKey);
+    const operatorAddressRaw = await deps.getSchnorrAccountContractAddress(
+      secretKeyFr,
+      deps.Fr.ZERO,
+    );
+
+    const address = parseNonZeroAztecAddress(
+      stringifyWithToString(operatorAddressRaw, "operator address derivation"),
+      "operator address derivation",
+    );
+    const pubkeyX = parseFieldValueString(pubkey.x, "operator pubkey x");
+    const pubkeyY = parseFieldValueString(pubkey.y, "operator pubkey y");
+
+    return {
+      address,
+      pubkeyX,
+      pubkeyY,
+    };
+  } catch (error) {
+    throw new CliError(
+      `Operator key derivation failed: could not derive operator address/pubkey. Underlying error: ${String(error)}`,
+    );
+  }
+}
+
 async function assertAztecNodePreflight(
   nodeUrl: string,
 ): Promise<NodePreflightState> {
@@ -717,13 +1197,43 @@ async function main(): Promise<void> {
     );
   }
 
+  ensureSponsoredFpcIsRegistered(args.nodeUrl, args.sponsoredFpcAddress);
+  console.log(
+    `[deploy-fpc-devnet] sponsored payment contract is registered in wallet as ${WALLET_CONTRACT_PREFIX}${WALLET_SPONSORED_FPC_ALIAS}`,
+  );
+
+  const deployer = resolveDeployerAccount(args);
+  console.log(
+    `[deploy-fpc-devnet] deployer account resolved. alias=${deployer.alias} wallet_alias=${deployer.walletAlias} address=${deployer.address} source=${deployer.source} key_material=${deployer.privateKey ? "inline" : "ref"}`,
+  );
+
+  if (!args.operatorSecretKey) {
+    if (args.preflightOnly) {
+      console.log(
+        `[deploy-fpc-devnet] operator secret key reference detected (${args.operatorSecretKeyRef}); pubkey derivation is deferred in preflight-only mode`,
+      );
+      console.log("[deploy-fpc-devnet] step 3 preflight checks passed");
+      console.log("[deploy-fpc-devnet] preflight-only requested; exiting");
+      return;
+    }
+    throw new CliError(
+      `Operator pubkey derivation requires --operator-secret-key. The provided --operator-secret-key-ref (${args.operatorSecretKeyRef}) cannot be resolved by this script yet.`,
+    );
+  }
+
+  const operatorIdentity = await deriveOperatorIdentity(args.operatorSecretKey);
+  console.log(
+    `[deploy-fpc-devnet] operator identity derived. address=${operatorIdentity.address} pubkey_x=${operatorIdentity.pubkeyX} pubkey_y=${operatorIdentity.pubkeyY}`,
+  );
+  console.log("[deploy-fpc-devnet] step 3 account resolution checks passed");
+
   if (args.preflightOnly) {
     console.log("[deploy-fpc-devnet] preflight-only requested; exiting");
     return;
   }
 
   throw new CliError(
-    "Deployment flow is not implemented yet in step 2. Re-run with --preflight-only or continue to step 3/4 implementation.",
+    "Deployment flow is not implemented yet in step 3. Continue to step 4 implementation for contract deployments + manifest persistence.",
   );
 }
 
