@@ -1206,6 +1206,46 @@ function persistFailureDiagnostics(
   return { diagnosticsPath, logTailPaths };
 }
 
+function extractDiagnosticsPathFromError(error: unknown): string | null {
+  const match = errorMessage(error).match(/\(diagnostics=([^)]+)\)/);
+  return match?.[1] ?? null;
+}
+
+function persistBootstrapDiagnostics(
+  repoRoot: string,
+  phase: string,
+  error: unknown,
+): string {
+  const diagnosticsDir = path.join(
+    repoRoot,
+    "tmp",
+    "credit-fpc-full-lifecycle-e2e-bootstrap",
+    "diagnostics",
+  );
+  mkdirSync(diagnosticsDir, { recursive: true });
+
+  const diagnosticsPath = path.join(
+    diagnosticsDir,
+    `failure-${Date.now()}.json`,
+  );
+  writeFileSync(
+    diagnosticsPath,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        phase,
+        error: errorMessage(error),
+        tailLines: DIAGNOSTIC_TAIL_LINES,
+        logTailPaths: {},
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  return diagnosticsPath;
+}
+
 async function expectFailure(
   scenario: string,
   expectedSubstrings: string[],
@@ -2604,12 +2644,19 @@ async function main(): Promise<void> {
     return;
   }
 
-  const config = getConfig();
-  printConfigSummary(config);
-  let phase = "step4.deploy_runtime_wiring";
+  const scriptDir =
+    typeof __dirname === "string"
+      ? __dirname
+      : path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(scriptDir, "..", "..");
+  let phase = "step0.config";
   let result: DeploymentRuntimeResult | null = null;
 
   try {
+    const config = getConfig();
+    printConfigSummary(config);
+    phase = "step4.deploy_runtime_wiring";
+
     result = await deployContractsAndWriteRuntimeConfig(config);
     console.log(
       `[credit-full-lifecycle-e2e] operator=${result.operator.toString()}`,
@@ -2676,22 +2723,22 @@ async function main(): Promise<void> {
       "[credit-full-lifecycle-e2e] PASS: full lifecycle e2e succeeded",
     );
   } catch (error) {
-    if (result !== null) {
-      const summary = readSummary(result.summaryPath);
-      if (summary.failure === undefined) {
-        const diagnostics = persistFailureDiagnostics(
-          result.runDir,
-          result.summaryPath,
-          phase,
-          error,
-          [],
-        );
-        throw new Error(
-          `[phase=${phase}] ${errorMessage(error)} (diagnostics=${diagnostics.diagnosticsPath})`,
-        );
-      }
+    let diagnosticsPath = extractDiagnosticsPathFromError(error);
+    if (diagnosticsPath === null) {
+      diagnosticsPath =
+        result !== null
+          ? persistFailureDiagnostics(
+              result.runDir,
+              result.summaryPath,
+              phase,
+              error,
+              [],
+            ).diagnosticsPath
+          : persistBootstrapDiagnostics(repoRoot, phase, error);
     }
-    throw error;
+    throw new Error(
+      `[phase=${phase}] ${errorMessage(error)} (diagnostics=${diagnosticsPath})`,
+    );
   }
 }
 
