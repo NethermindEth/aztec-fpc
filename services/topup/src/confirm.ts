@@ -5,7 +5,7 @@ import type { AztecNode } from "@aztec/aztec.js/node";
 import type { Hex } from "viem";
 import type { FeeJuiceBalanceReader } from "./monitor.js";
 
-export type BridgeConfirmationStatus = "confirmed" | "timeout";
+export type BridgeConfirmationStatus = "confirmed" | "timeout" | "aborted";
 
 export interface BridgeMessageContext {
   node: Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">;
@@ -21,6 +21,7 @@ export interface BridgeConfirmationOptions {
   initialPollMs: number;
   maxPollMs: number;
   messageContext?: BridgeMessageContext;
+  abortSignal?: AbortSignal;
 }
 
 export interface BridgeConfirmDeps {
@@ -41,8 +42,32 @@ export interface BridgeConfirmationResult {
   messageCheckFailed: boolean;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, abortSignal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      cleanup();
+      reject(new Error("confirmation polling aborted"));
+    };
+
+    function cleanup() {
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", onAbort);
+    }
+
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        cleanup();
+        reject(new Error("confirmation polling aborted"));
+        return;
+      }
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
 }
 
 const DEFAULT_CONFIRM_DEPS: BridgeConfirmDeps = {
@@ -112,9 +137,11 @@ export async function waitForFeeJuiceBridgeConfirmation(
     await Promise.race([messageWaitPromise, sleep(0)]);
   }
 
-  function buildConfirmedResult(): BridgeConfirmationResult {
+  function buildResult(
+    status: BridgeConfirmationStatus,
+  ): BridgeConfirmationResult {
     return {
-      status: "confirmed",
+      status,
       baselineBalance: options.baselineBalance,
       maxObservedBalance,
       lastObservedBalance,
@@ -128,11 +155,19 @@ export async function waitForFeeJuiceBridgeConfirmation(
     };
   }
 
+  if (options.abortSignal?.aborted) {
+    return buildResult("aborted");
+  }
+
   while (Date.now() <= deadline) {
+    if (options.abortSignal?.aborted) {
+      return buildResult("aborted");
+    }
+
     attempts += 1;
     await settleMessageCheckNonBlocking();
     if (messageReady) {
-      return buildConfirmedResult();
+      return buildResult("confirmed");
     }
 
     try {
@@ -148,7 +183,7 @@ export async function waitForFeeJuiceBridgeConfirmation(
       const observedDelta = maxObservedBalance - options.baselineBalance;
       if (observedDelta > 0n) {
         await settleMessageCheckNonBlocking();
-        return buildConfirmedResult();
+        return buildResult("confirmed");
       }
     } catch (error) {
       pollErrors += 1;
@@ -159,13 +194,17 @@ export async function waitForFeeJuiceBridgeConfirmation(
     if (remainingMs <= 0) {
       break;
     }
-    await sleep(Math.min(pollMs, remainingMs));
+    try {
+      await sleep(Math.min(pollMs, remainingMs), options.abortSignal);
+    } catch {
+      return buildResult("aborted");
+    }
     pollMs = Math.min(options.maxPollMs, Math.floor(pollMs * 1.5));
   }
 
   await settleMessageCheckNonBlocking();
   if (messageReady) {
-    return buildConfirmedResult();
+    return buildResult("confirmed");
   }
 
   if (successfulReads === 0) {
@@ -174,17 +213,5 @@ export async function waitForFeeJuiceBridgeConfirmation(
     );
   }
 
-  return {
-    status: "timeout",
-    baselineBalance: options.baselineBalance,
-    maxObservedBalance,
-    lastObservedBalance,
-    observedDelta: maxObservedBalance - options.baselineBalance,
-    elapsedMs: Date.now() - start,
-    attempts,
-    pollErrors,
-    messageCheckAttempted,
-    messageReady,
-    messageCheckFailed,
-  };
+  return buildResult("timeout");
 }

@@ -143,3 +143,4 @@ target/
 wallet_data*
 pxe_data*
 tmp/
+.topup-bridge-state.json

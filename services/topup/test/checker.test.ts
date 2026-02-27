@@ -22,6 +22,7 @@ describe("checker", () => {
             claimSecretHash: SECRET_HASH,
             messageHash: HASH,
             messageLeafIndex: 1n,
+            submittedAtMs: 1,
           };
         },
         confirm: async (_baselineBalance, _bridgeResult) => {
@@ -69,6 +70,7 @@ describe("checker", () => {
       claimSecretHash: string;
       messageHash: `0x${string}`;
       messageLeafIndex: bigint;
+      submittedAtMs: number;
     }>((resolve) => {
       resolveBridge = resolve;
     });
@@ -114,11 +116,99 @@ describe("checker", () => {
       claimSecretHash: SECRET_HASH,
       messageHash: HASH,
       messageLeafIndex: 1n,
+      submittedAtMs: 1,
     });
     await firstRun;
 
     assert.equal(confirmCalls, 1);
     assert.equal(confirmBaseline, 1n);
     assert.equal(checker.isBridgeInFlight(), false);
+  });
+
+  it("does not start new checks after stop is requested", async () => {
+    let getBalanceCalls = 0;
+    let bridgeCalls = 0;
+    const checker = createTopupChecker(
+      { threshold: 5n, topUpAmount: 2n },
+      {
+        getBalance: async () => {
+          getBalanceCalls += 1;
+          return 1n;
+        },
+        bridge: async () => {
+          bridgeCalls += 1;
+          return {
+            amount: 2n,
+            claimSecret: SECRET,
+            claimSecretHash: SECRET_HASH,
+            messageHash: HASH,
+            messageLeafIndex: 1n,
+            submittedAtMs: 1,
+          };
+        },
+        confirm: async () => ({
+          status: "confirmed",
+          baselineBalance: 1n,
+          maxObservedBalance: 3n,
+          lastObservedBalance: 3n,
+          observedDelta: 2n,
+          elapsedMs: 1,
+          attempts: 1,
+          pollErrors: 0,
+          messageCheckAttempted: true,
+          messageReady: true,
+          messageCheckFailed: false,
+        }),
+      },
+    );
+
+    checker.requestStop();
+    assert.equal(checker.isStopping(), true);
+    await checker.checkAndTopUp();
+
+    assert.equal(getBalanceCalls, 0);
+    assert.equal(bridgeCalls, 0);
+  });
+
+  it("invokes bridge persistence hooks around submit and settle", async () => {
+    let submitted = 0;
+    let settled = 0;
+    const checker = createTopupChecker(
+      { threshold: 5n, topUpAmount: 2n },
+      {
+        getBalance: async () => 1n,
+        bridge: async () => ({
+          amount: 2n,
+          claimSecret: SECRET,
+          claimSecretHash: SECRET_HASH,
+          messageHash: HASH,
+          messageLeafIndex: 1n,
+          submittedAtMs: 1,
+        }),
+        confirm: async () => ({
+          status: "timeout",
+          baselineBalance: 1n,
+          maxObservedBalance: 1n,
+          lastObservedBalance: 1n,
+          observedDelta: 0n,
+          elapsedMs: 1,
+          attempts: 1,
+          pollErrors: 0,
+          messageCheckAttempted: true,
+          messageReady: false,
+          messageCheckFailed: false,
+        }),
+        onBridgeSubmitted: () => {
+          submitted += 1;
+        },
+        onBridgeSettled: () => {
+          settled += 1;
+        },
+      },
+    );
+
+    await checker.checkAndTopUp();
+    assert.equal(submitted, 1);
+    assert.equal(settled, 1);
   });
 });

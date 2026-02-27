@@ -78,6 +78,7 @@ describe("topup config secret providers", () => {
         FPC_RUNTIME_PROFILE: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: undefined,
+        TOPUP_BRIDGE_STATE_PATH: undefined,
       },
       () => {
         const config = loadConfig(configPath);
@@ -105,6 +106,7 @@ describe("topup config secret providers", () => {
         FPC_RUNTIME_PROFILE: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: undefined,
+        TOPUP_BRIDGE_STATE_PATH: undefined,
       },
       () => {
         assert.throws(
@@ -132,6 +134,7 @@ describe("topup config secret providers", () => {
         FPC_RUNTIME_PROFILE: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: VALID_PRIVATE_KEY,
+        TOPUP_BRIDGE_STATE_PATH: undefined,
       },
       () => {
         const config = loadConfig(configPath);
@@ -160,6 +163,7 @@ describe("topup config secret providers", () => {
         FPC_RUNTIME_PROFILE: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: VALID_PRIVATE_KEY,
+        TOPUP_BRIDGE_STATE_PATH: undefined,
       },
       () => {
         assert.throws(
@@ -187,6 +191,7 @@ describe("topup config secret providers", () => {
       {
         L1_OPERATOR_PRIVATE_KEY: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
+        TOPUP_BRIDGE_STATE_PATH: undefined,
       },
       () => {
         const config = loadConfig(configPath, {
@@ -199,6 +204,33 @@ describe("topup config secret providers", () => {
         });
 
         assert.equal(config.l1_operator_private_key_source, "hsm");
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
+
+  it("supports bridge state path override via env", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "l1_operator_secret_provider: auto",
+          `l1_operator_private_key: "${VALID_PRIVATE_KEY}"`,
+          'bridge_state_path: "./state-from-config.json"',
+        ].join("\n"),
+      ),
+    );
+
+    withEnv(
+      {
+        L1_OPERATOR_PRIVATE_KEY: undefined,
+        L1_OPERATOR_SECRET_PROVIDER: undefined,
+        TOPUP_BRIDGE_STATE_PATH: "./state-from-env.json",
+      },
+      () => {
+        const config = loadConfig(configPath);
+        assert.equal(config.bridge_state_path, "./state-from-env.json");
       },
     );
 

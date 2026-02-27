@@ -161,4 +161,30 @@ describe("confirm", () => {
       assert.equal(result.messageReady, true);
     });
   });
+
+  it("returns aborted when abort signal is triggered", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await waitForFeeJuiceBridgeConfirmation(
+      {
+        balanceReader: {
+          feeJuiceAddress: AztecAddress.zero(),
+          addressSource: "node_info",
+          getBalance: async () => 10n,
+        },
+        fpcAddress: FPC,
+        baselineBalance: 10n,
+        timeoutMs: 200,
+        initialPollMs: 1,
+        maxPollMs: 5,
+        abortSignal: controller.signal,
+      },
+      {
+        waitForL1ToL2MessageReady: async () => false,
+      },
+    );
+
+    assert.equal(result.status, "aborted");
+  });
 });

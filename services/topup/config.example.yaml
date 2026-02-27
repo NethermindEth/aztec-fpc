@@ -39,6 +39,11 @@ threshold: "1000000000000000000"
 # Example: 10e18 = 10 FeeJuice units
 top_up_amount: "10000000000000000000"
 
+# Local JSON file used to persist in-flight bridge metadata so restarts can
+# reconcile pending operations before new submissions. If reconciliation times
+# out, this state is retained and retried on the next cycle.
+bridge_state_path: ".topup-bridge-state.json"
+
 # How often to check the balance (milliseconds). 60000 = every minute.
 check_interval_ms: 60000
 
