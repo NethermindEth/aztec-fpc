@@ -66,6 +66,10 @@ export class SimpleWallet extends BaseWallet {
       item: AztecAddress.fromString(addr),
     }));
   }
+
+  async stop() {
+    await this.pxe?.stop?.();
+  }
 }
 
 // ── Sign a quote with the operator's Schnorr key ────────────────────────────

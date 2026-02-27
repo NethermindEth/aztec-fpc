@@ -5,17 +5,17 @@
  * mints tokens, builds authwits, and benchmarks FPC.fee_entrypoint via a
  * minimal Noop app transaction (same approach as the custom profiler).
  *
- * The aztec-benchmark profiler calls f.request(), f.estimateGas(), f.profile(),
- * and f.send().wait() directly on each interaction returned by getMethods().
- * FeeWrappedInteraction injects the FPC fee payment method, sender address,
- * and additional scopes into every call, and captures SDK timing data
- * (per-circuit witgen, proving time) for teardown to enrich the JSON.
+ * The aztec-benchmark profiler expects getMethods() to return items of shape
+ * {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
+ * The profiler injects the fee payment method (from runContext.feePaymentMethod)
+ * and origin address (from caller) into all SDK calls.  FPCActionWrapper adds
+ * additionalScopes and captures SDK timing data (per-circuit witgen, proving
+ * time) for teardown to enrich the JSON.
  *
  * After profiling, teardown post-processes the JSON to:
- *  - Rename "noop" keys to "fee_entrypoint" for readability
  *  - Extract fpcGateCounts / fpcTotalGateCount (FPC-only gate breakdown)
  *  - Rename gateCounts to fullTrace to clarify it's the entire tx trace
- *  - Inject per-circuit witness generation timing (witgenMs) and proving time
+ *  - Inject per-circuit witness generation timing (witgenMs)
  *  - Print a human-readable console summary
  *
  * Environment:
@@ -43,6 +43,10 @@ import {
 import { ExecutionPayload } from '@aztec/stdlib/tx';
 import { Gas, GasFees, GasSettings } from '@aztec/stdlib/gas';
 import { deriveSigningKey } from '@aztec/stdlib/keys';
+import {
+  AVM_MAX_PROCESSABLE_L2_GAS,
+  MAX_PROCESSABLE_DA_GAS_PER_CHECKPOINT,
+} from '@aztec/constants';
 import { createPXE, getPXEConfig } from '@aztec/pxe/server';
 import {
   createWalletClient,
@@ -274,81 +278,81 @@ async function fundFpcWithFeeJuice(
   );
 }
 
-// ── Interaction wrapper ──────────────────────────────────────────────────────
-// The installed aztec-benchmark profiler calls f.request(), f.estimateGas(),
-// f.profile(), and f.send().wait() directly on each item returned by
-// getMethods(). It does NOT inject fee payment, sender, or additional scopes.
-// This wrapper proxies a ContractFunctionInteraction and injects the FPC fee
-// payment method + sender address + additional scopes into every call so the
-// profile captures the full trace including fee_entrypoint.
-// It also captures SDK timing data (per-circuit witgen, proving time) from the
-// profile result for teardown to inject into the JSON.
+// ── Action wrapper ───────────────────────────────────────────────────────────
+// The installed aztec-benchmark profiler expects each item from getMethods() to
+// be either a plain {caller, action} (ContractFunctionInteractionCallIntent) or
+// a {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
+//
+// The profiler already injects fee payment (from runContext.feePaymentMethod)
+// and the origin address (from caller), but it does NOT inject
+// additionalScopes.  This thin wrapper proxies the action and merges
+// additionalScopes into every SDK call.  It also captures SDK timing data
+// (per-circuit witgen, proving time) from the profile result so that
+// teardown can enrich the JSON.
 
-class FeeWrappedInteraction {
-  #action: any;
-  #feeOpts: any;
-  #from: any;
+class FPCActionWrapper {
+  #inner: any;
   #additionalScopes: any[];
   #gasSettings: any;
 
   /** Per-function timing data captured from profile().stats.timings. */
   timings?: { perFunction: any[]; proving?: number; total?: number };
 
-  constructor(
-    action: any,
-    feePaymentMethod: any,
-    gasSettings: any,
-    from: any,
-    additionalScopes: any[] = [],
-  ) {
-    this.#action = action;
-    this.#feeOpts = { paymentMethod: feePaymentMethod };
-    this.#from = from;
+  constructor(inner: any, additionalScopes: any[], gasSettings: any) {
+    this.#inner = inner;
     this.#additionalScopes = additionalScopes;
     this.#gasSettings = gasSettings;
   }
 
   request() {
-    return this.#action.request();
+    return this.#inner.request();
   }
 
-  async estimateGas() {
-    const gl = this.#gasSettings.gasLimits;
-    const tgl = this.#gasSettings.teardownGasLimits;
-    return {
-      gasLimits: { daGas: Number(gl.daGas), l2Gas: Number(gl.l2Gas) },
-      teardownGasLimits: {
-        daGas: Number(tgl?.daGas ?? 0),
-        l2Gas: Number(tgl?.l2Gas ?? 0),
-      },
-    };
+  async simulate(opts?: any) {
+    // The profiler calls simulate with fee.estimateGas = true to discover gas
+    // usage. Gas estimation changes the gasSettings, which changes the token
+    // charge the FPC computes, which changes the auth witness inner hash —
+    // breaking the auth witness created in setup(). Strip estimateGas so the
+    // SDK uses the fixed gasSettings from the payment method.
+    const { fee, ...rest } = opts ?? {};
+    const { estimateGas: _, estimatedGasPadding: __, ...feeRest } = fee ?? {};
+
+    const result = await this.#inner.simulate({
+      ...rest,
+      fee: Object.keys(feeRest).length ? feeRest : undefined,
+      additionalScopes: this.#additionalScopes,
+    });
+
+    // Provide estimatedGas from our known gas settings so the profiler's gas
+    // accounting still works.
+    if (!result.estimatedGas && this.#gasSettings) {
+      const gl = this.#gasSettings.gasLimits;
+      const tgl = this.#gasSettings.teardownGasLimits;
+      result.estimatedGas = {
+        gasLimits: { daGas: Number(gl.daGas), l2Gas: Number(gl.l2Gas) },
+        teardownGasLimits: {
+          daGas: Number(tgl?.daGas ?? 0),
+          l2Gas: Number(tgl?.l2Gas ?? 0),
+        },
+      };
+    }
+    return result;
   }
 
   async profile(opts?: any) {
-    const result = await this.#action.profile({
+    const result = await this.#inner.profile({
       ...opts,
-      from: this.#from,
-      fee: this.#feeOpts,
       additionalScopes: this.#additionalScopes,
-      skipProofGeneration: false,
     });
     this.timings = result.stats?.timings ?? undefined;
     return result;
   }
 
   send(opts?: any) {
-    const originalPromise = this.#action.send({
+    return this.#inner.send({
       ...opts,
-      from: this.#from,
-      fee: this.#feeOpts,
       additionalScopes: this.#additionalScopes,
     });
-    // The profiler calls f.send().wait(). In this Aztec version SentTx is
-    // directly awaitable but may not expose .wait(). Shim it so the
-    // profiler's `await f.send().wait()` resolves correctly.
-    const shimmed: any = originalPromise.then((sentTx: any) => sentTx);
-    shimmed.wait = () => shimmed;
-    return shimmed;
   }
 }
 
@@ -373,7 +377,7 @@ interface FPCBenchmarkContext {
 // file — the CLI already provides the runner.
 
 export default class FPCBenchmark {
-  #interactions: FeeWrappedInteraction[] = [];
+  #actions: FPCActionWrapper[] = [];
 
   async setup(): Promise<FPCBenchmarkContext> {
     console.log('=== FPC Benchmark Setup ===\n');
@@ -479,8 +483,8 @@ export default class FPCBenchmark {
     const PADDING = 1.5;
     const feeDa = BigInt(Math.ceil(Number(minFees.feePerDaGas) * PADDING));
     const feeL2 = BigInt(Math.ceil(Number(minFees.feePerL2Gas) * PADDING));
-    const DA_GAS = 786432n;
-    const L2_GAS = 2000000n; // must stay within AVM processing limit for real sends
+    const DA_GAS = BigInt(MAX_PROCESSABLE_DA_GAS_PER_CHECKPOINT);
+    const L2_GAS = BigInt(AVM_MAX_PROCESSABLE_L2_GAS);
     const maxGasCost = feeDa * DA_GAS + feeL2 * L2_GAS;
     const charge = feeJuiceToAsset(maxGasCost, RATE_NUM, RATE_DEN);
 
@@ -555,15 +559,16 @@ export default class FPCBenchmark {
   }
 
   getMethods(context: FPCBenchmarkContext) {
-    const interaction = new FeeWrappedInteraction(
+    const action = new FPCActionWrapper(
       context.noopAsUser.methods.noop(),
-      context.feePaymentMethod,
-      context.gasSettings,
-      context.userAddress,
       [context.operatorAddress],
+      context.gasSettings,
     );
-    this.#interactions = [interaction];
-    return [interaction];
+    this.#actions = [action];
+    return [{
+      interaction: { caller: context.userAddress, action },
+      name: 'fee_entrypoint',
+    }];
   }
 
   async teardown(context: FPCBenchmarkContext): Promise<void> {
@@ -574,7 +579,6 @@ export default class FPCBenchmark {
       .map((f: string) => join(__dirname, f))
       .sort((a: string, b: string) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 
-    const DISPLAY_NAME = 'fee_entrypoint';
     if (!jsonPath) {
       console.warn('No fpc*.benchmark.json found in', __dirname);
       return;
@@ -582,13 +586,16 @@ export default class FPCBenchmark {
     try {
       const report = JSON.parse(readFileSync(jsonPath, 'utf8'));
 
-      for (let i = 0; i < report.results.length && i < this.#interactions.length; i++) {
-        const ix = this.#interactions[i];
+      for (let i = 0; i < report.results.length && i < this.#actions.length; i++) {
+        const ix = this.#actions[i];
         const r = report.results[i];
 
-        // Inject proving time from SDK timings captured in our wrapper.
-        const provingTime = ix.timings?.proving ?? null;
-        r.provingTime = provingTime;
+        // Enrich provingTime from our wrapper's captured SDK timings (the
+        // profiler also writes provingTime but our wrapper gives us the
+        // canonical value from the same profile() call).
+        if (ix.timings?.proving != null) {
+          r.provingTime = ix.timings.proving;
+        }
 
         // Build a lookup of witgen timing by index from the SDK's perFunction.
         // perFunction and gateCounts share the same order (both derived from
@@ -628,19 +635,6 @@ export default class FPCBenchmark {
         r.fullTrace = r.gateCounts;
         delete r.gateCounts;
 
-        // Rename "noop" → "fee_entrypoint" (the installed profiler discovers
-        // the name from .request() which returns "noop").
-        const oldName = r.name;
-        r.name = DISPLAY_NAME;
-        if (report.summary?.[oldName] !== undefined) {
-          report.summary[DISPLAY_NAME] = report.summary[oldName];
-          delete report.summary[oldName];
-        }
-        if (report.gasSummary?.[oldName] !== undefined) {
-          report.gasSummary[DISPLAY_NAME] = report.gasSummary[oldName];
-          delete report.gasSummary[oldName];
-        }
-
         this.#printResultTable(r);
       }
 
@@ -652,18 +646,21 @@ export default class FPCBenchmark {
         report.provingTimeSummary[r.name] = r.provingTime ?? 0;
       }
 
+      if (report.systemInfo) {
+        const si = report.systemInfo;
+        console.log('System Info:');
+        console.log(`  CPU:    ${si.cpuModel} (${si.cpuCores} threads)`);
+        console.log(`  Memory: ${si.totalMemoryGiB} GiB`);
+        console.log(`  Arch:   ${si.arch}`);
+        console.log('');
+      }
+
       writeFileSync(jsonPath, JSON.stringify(report, null, 2));
     } catch (e: any) {
       console.warn('Could not post-process benchmark JSON:', e.message);
     }
 
-    console.log('Cleaning up benchmark environment...');
-    await context.pxe.stop?.();
     rmSync(PXE_DATA_DIR, { recursive: true, force: true });
-
-    // The PXE / node client leave open handles that prevent Node from exiting.
-    // Give the CLI a moment to print its final messages, then force exit.
-    setTimeout(() => process.exit(0), 500);
   }
 
   #printResultTable(r: any) {
