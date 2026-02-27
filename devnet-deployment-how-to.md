@@ -8,6 +8,13 @@ This is the current deployment flow for Aztec devnet using:
 - `scripts/contract/deploy-fpc-devnet.sh` (recommended)
 - `scripts/contract/deploy-fpc-devnet.ts` (advanced/manual)
 - `scripts/contract/verify-fpc-devnet-deployment.ts` (post-deploy verification)
+- `scripts/contract/devnet-postdeploy-smoke.ts` (post-deploy runtime smoke)
+
+Live deployment snapshot (from `deployments/devnet-manifest-v2.json`, generated at `2026-02-27T10:42:49.308Z`):
+
+- `contracts.accepted_asset=0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a`
+- `contracts.fpc=0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5`
+- `contracts.credit_fpc=0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3`
 
 ## 1. One Command Deploy
 
@@ -183,6 +190,14 @@ bun run render:config:devnet -- \
   --accepted-asset-name "humanUSDC"
 ```
 
+If your local `.env` stores the L1 key as `L1_ADDRESS_PK`, map it before running:
+
+```bash
+cd /home/ametel/source/aztec-fpc
+set -a; source .env; set +a
+export L1_OPERATOR_PRIVATE_KEY="$L1_ADDRESS_PK"
+```
+
 Build validation:
 
 ```bash
@@ -195,14 +210,39 @@ Notes:
 - Script default manifest is `./deployments/devnet-manifest-v2.json`.
 - Topup bridge addresses are intentionally not written; topup resolves them dynamically from `node_getNodeInfo`.
 
-## 11. Current Caveats
+## 11. Post-Deploy Runtime Smoke (Step 7)
+
+Run runtime validation against deployed contracts in the manifest:
+
+```bash
+cd /home/ametel/source/aztec-fpc
+set -a; source .env; set +a
+export L1_OPERATOR_PRIVATE_KEY="$L1_ADDRESS_PK"
+export FPC_DEVNET_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
+bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \
+  --manifest ./deployments/devnet-manifest-v2.json
+```
+
+What this validates:
+
+- one successful FPC fee path tx
+- one successful CreditFPC path tx (`pay_and_mint` and `pay_with_credit`)
+- L1 FeeJuice bridge/topup path to both FPC and CreditFPC
+
+Optional explicit operator override (only needed when manifest fallback is not usable):
+
+```bash
+export FPC_DEVNET_OPERATOR_SECRET_KEY="0x..."
+```
+
+## 12. Current Caveats
 
 - Full deploy currently needs `--operator-secret-key` (inline). `--operator-secret-key-ref` is only workable in preflight-only mode.
 - If you run with one-command defaults, local `aztec-wallet` alias state can change due to account import/creation.
 - Preflight-only mode does not deploy contracts.
 - Devnet can be transiently unstable (reorg/timeout class errors). The deploy script now retries wallet deploy calls by default.
 
-## 12. Retry/Debug Env Knobs
+## 13. Retry/Debug Env Knobs
 
 Deploy retry behavior:
 
@@ -225,7 +265,7 @@ Then run:
 bun run deploy:fpc:devnet
 ```
 
-## 13. Quick Verify Manifest
+## 14. Quick Verify Manifest
 
 ```bash
 jq . deployments/devnet-manifest-v2.json
