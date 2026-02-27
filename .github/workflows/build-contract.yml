@@ -60,4 +60,4 @@ jobs:
         run: aztec compile --workspace
 
       - name: Test contracts
-        run: aztec test --package fpc
+        run: aztec test --package backed_credit_fpc

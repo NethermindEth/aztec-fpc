@@ -3,13 +3,13 @@
 ## 0) Scope and snapshot
 - Project code reviewed:
   - `services/*`
-  - `contracts/fpc/*`
+  - `contracts/backed_credit_fpc/*`
 - Upstream source reviewed:
   - `/home/ametel/source/aztec-packages`
   - `https://github.com/AztecProtocol/aztec-packages`
 - Version coupling in this repo:
   - TypeScript deps in services: `4.0.0-devnet.2-patch.1`
-  - Noir deps in `contracts/fpc/Nargo.toml`: `v4.0.0-devnet.2-patch.1`
+  - Noir deps in `contracts/backed_credit_fpc/Nargo.toml`: `v4.0.0-devnet.2-patch.1`
 - Canonical migration constraints for this pinned version:
   - `docs/aztec-v4.0.0-devnet.2-patch.1-rules-constraints.md`
 
@@ -43,8 +43,8 @@ This document is a compact map of exactly which Aztec libraries are used, where 
 ### 1.2 Noir imports from aztec-packages
 | Dependency in `Nargo.toml` | Upstream directory | Used by local code | Example usage (this repo) |
 |---|---|---|---|
-| `aztec` | `https://github.com/AztecProtocol/aztec-packages/tree/v4.0.0-devnet.2-patch.1/noir-projects/aztec-nr/aztec` | `contracts/fpc/src/main.nr`, tests in `contracts/fpc/src/test/*` | `assert_inner_hash_valid_authwit(context, signer, inner_hash)` (`contracts/fpc/src/main.nr`)<br/>`let mut env = TestEnvironment::new()` (`contracts/fpc/src/test/utils.nr`) |
-| `token` | `https://github.com/AztecProtocol/aztec-packages/tree/v4.0.0-devnet.2-patch.1/noir-projects/noir-contracts/contracts/app/token_contract` | `contracts/fpc/src/main.nr`, `contracts/fpc/src/test/*` | `Token::at(accepted_asset).transfer_private_to_private(sender, operator, charge, authwit_nonce).call(self.context)` (`contracts/fpc/src/main.nr`) |
+| `aztec` | `https://github.com/AztecProtocol/aztec-packages/tree/v4.0.0-devnet.2-patch.1/noir-projects/aztec-nr/aztec` | `contracts/backed_credit_fpc/src/main.nr`, tests in `contracts/backed_credit_fpc/src/test/*` | `assert_inner_hash_valid_authwit(context, signer, inner_hash)` (`contracts/backed_credit_fpc/src/main.nr`)<br/>`let mut env = TestEnvironment::new()` (`contracts/backed_credit_fpc/src/test/utils.nr`) |
+| `token` | `https://github.com/AztecProtocol/aztec-packages/tree/v4.0.0-devnet.2-patch.1/noir-projects/noir-contracts/contracts/app/token_contract` | `contracts/backed_credit_fpc/src/main.nr`, `contracts/backed_credit_fpc/src/test/*` | `Token::at(accepted_asset).transfer_private_to_private(sender, operator, charge, authwit_nonce).call(self.context)` (`contracts/backed_credit_fpc/src/main.nr`) |
 
 ## 2) Critical compatibility invariants
 
@@ -71,7 +71,7 @@ Outer hash shape:
 - `hash([consumer, chain_id, version, inner_hash])`
 - `consumer` must be the FPC contract address.
 
-If order/types/domain separator diverge, quote authwits fail during `fee_entrypoint`.
+If order/types/domain separator diverge, quote authwits fail during `pay_and_mint`.
 
 ### 2.2 Fee Juice balance read path has two modes
 Implemented in `services/topup/src/monitor.ts`:
@@ -85,7 +85,7 @@ Important upstream note:
 - Local fallback is intentional resilience.
 
 ### 2.3 FPC fee-payer phase semantics come from `PrivateContext`
-`contracts/fpc/src/main.nr` calls:
+`contracts/backed_credit_fpc/src/main.nr` calls:
 - `context.set_as_fee_payer()`
 - `context.end_setup()` (only when not revertible phase)
 - `context.set_expiration_timestamp(valid_until)`
@@ -137,10 +137,10 @@ These may still be intentional for future work or transitive behavior; this sect
 ## 6) Upgrade and drift checklist
 When changing Aztec versions or refactoring these integrations, verify all of the following:
 1. Runtime is Node.js `>= 24.12.0` (required by Aztec `v4.0.0-devnet.2-patch.1`).
-2. `contracts/fpc/Nargo.toml` keeps `aztec` and `token` on the exact same release tag.
+2. `contracts/backed_credit_fpc/Nargo.toml` keeps `aztec` and `token` on the exact same release tag.
 3. Reconcile changes against `docs/aztec-v4.0.0-devnet.2-patch.1-rules-constraints.md` before merging.
 4. Quote hash preimage order and domain separator remain identical between:
-   - `contracts/fpc/src/main.nr`
+   - `contracts/backed_credit_fpc/src/main.nr`
    - `services/attestation/src/signer.ts`
 5. Authwit outer hash still binds `consumer=fpc_address`, `chainId`, and `version`.
 6. Fee Juice read path still works when `getFeeJuiceBalance` fails (fallback path test must pass).
@@ -155,8 +155,8 @@ When changing Aztec versions or refactoring these integrations, verify all of th
 - Local quote endpoint: `services/attestation/src/server.ts`
 - Local topup monitor/fallback: `services/topup/src/monitor.ts`
 - Local topup bridge loop: `services/topup/src/checker.ts`
-- FPC contract core: `contracts/fpc/src/main.nr`
-- FPC test wiring: `contracts/fpc/src/test/utils.nr`, `contracts/fpc/src/test/fee_entrypoint.nr`
+- BackedCreditFPC contract core: `contracts/backed_credit_fpc/src/main.nr`
+- BackedCreditFPC test wiring: `contracts/backed_credit_fpc/src/test/utils.nr`
 
 - Upstream authwit (Noir):
   - `https://github.com/AztecProtocol/aztec-packages/blob/v4.0.0-devnet.2-patch.1/noir-projects/aztec-nr/aztec/src/authwit/auth.nr`
