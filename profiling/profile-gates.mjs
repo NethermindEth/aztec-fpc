@@ -23,13 +23,10 @@ const QUOTE_DOMAIN_SEP = 0x465043n; // "FPC" as field
 // ── Imports ───────────────────────────────────────────────────────────────────
 import { createAztecNodeClient }       from '@aztec/aztec.js/node';
 import { Contract }                    from '@aztec/aztec.js/contracts';
-import { AccountManager }              from '@aztec/aztec.js/wallet';
-import { SchnorrAccountContract }      from '@aztec/accounts/schnorr';
 import { getInitialTestAccountsData }  from '@aztec/accounts/testing';
 import { Fr }                          from '@aztec/foundation/curves/bn254';
 import { Schnorr }                     from '@aztec/foundation/crypto/schnorr';
 import { AztecAddress }                from '@aztec/stdlib/aztec-address';
-import { computeInnerAuthWitHash }     from '@aztec/stdlib/auth-witness';
 import {
   FunctionCall, FunctionSelector, FunctionType, loadContractArtifact,
 } from '@aztec/stdlib/abi';
@@ -37,79 +34,10 @@ import { ExecutionPayload }            from '@aztec/stdlib/tx';
 import { Gas, GasFees, GasSettings }  from '@aztec/stdlib/gas';
 import { deriveSigningKey }            from '@aztec/stdlib/keys';
 import { createPXE, getPXEConfig }     from '@aztec/pxe/server';
-import { BaseWallet }                  from '@aztec/wallet-sdk/base-wallet';
-import { readFileSync, readdirSync, mkdirSync, rmSync } from 'fs';
-import { fileURLToPath }               from 'url';
-import { dirname, join }               from 'path';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const TARGET    = join(__dirname, '../target');
-
-function findArtifact(contractName) {
-  const suffix = `-${contractName}.json`;
-  const matches = readdirSync(TARGET).filter(f => f.endsWith(suffix));
-  if (matches.length === 0) {
-    throw new Error(`No artifact matching *${suffix} in ${TARGET}. Did you run 'aztec compile'?`);
-  }
-  if (matches.length > 1) {
-    throw new Error(`Multiple artifacts matching *${suffix} in ${TARGET}: ${matches.join(', ')}`);
-  }
-  return join(TARGET, matches[0]);
-}
-
-// ── fee_juice_to_asset: ceiling division (mirrors fee_math.nr) ────────────────
-function feeJuiceToAsset(feeJuice, rateNum, rateDen) {
-  if (feeJuice === 0n) return 0n;
-  const product = feeJuice * rateNum;
-  return (product + rateDen - 1n) / rateDen;
-}
-
-// ── Sign a quote with the operator's Schnorr key ──────────────────────────────
-async function signQuote(schnorr, operatorSigningKey, fpcAddress, tokenAddress, rateNum, rateDen, validUntil, userAddress) {
-  const quoteHash = await computeInnerAuthWitHash([
-    new Fr(QUOTE_DOMAIN_SEP),
-    fpcAddress.toField(),
-    tokenAddress.toField(),
-    new Fr(rateNum),
-    new Fr(rateDen),
-    new Fr(validUntil),
-    userAddress.toField(),
-  ]);
-  const sig = await schnorr.constructSignature(quoteHash.toBuffer(), operatorSigningKey);
-  return Array.from(sig.toBuffer()).map(b => new Fr(b));
-}
-
-// ── Minimal wallet backed by an embedded PXE ──────────────────────────────────
-class SimpleWallet extends BaseWallet {
-  #accounts = new Map();
-
-  constructor(pxe, node) {
-    super(pxe, node);
-  }
-
-  async addSchnorrAccount(secret, salt) {
-    const contract = new SchnorrAccountContract(deriveSigningKey(secret));
-    const manager = await AccountManager.create(this, secret, contract, new Fr(salt));
-    const instance = manager.getInstance();
-    const artifact = await contract.getContractArtifact();
-    await this.registerContract(instance, artifact, secret);
-    this.#accounts.set(manager.address.toString(), await manager.getAccount());
-    return manager.address;
-  }
-
-  async getAccountFromAddress(address) {
-    const key = address.toString();
-    if (!this.#accounts.has(key)) throw new Error(`Account not found: ${key}`);
-    return this.#accounts.get(key);
-  }
-
-  async getAccounts() {
-    return [...this.#accounts.keys()].map(addr => ({
-      alias: '',
-      item: AztecAddress.fromString(addr),
-    }));
-  }
-}
+import { readFileSync, mkdirSync, rmSync } from 'fs';
+import {
+  findArtifact, feeJuiceToAsset, SimpleWallet, signQuote, printFpcGateTable,
+} from './profile-utils.mjs';
 
 // ── Custom FeePaymentMethod for our FPC ───────────────────────────────────────
 class CustomFPCPaymentMethod {
@@ -203,14 +131,19 @@ async function main() {
   // ── Load & normalize artifacts ─────────────────────────────────────────────
   const tokenArtifactPath = findArtifact('Token');
   const fpcArtifactPath   = findArtifact('FPC');
+  const noopArtifactPath  = findArtifact('Noop');
   console.log('Token artifact:', tokenArtifactPath);
   console.log('FPC artifact:  ', fpcArtifactPath);
+  console.log('Noop artifact: ', noopArtifactPath);
 
   const tokenArtifact = loadContractArtifact(
     JSON.parse(readFileSync(tokenArtifactPath, 'utf8')),
   );
   const fpcArtifact = loadContractArtifact(
     JSON.parse(readFileSync(fpcArtifactPath, 'utf8')),
+  );
+  const noopArtifact = loadContractArtifact(
+    JSON.parse(readFileSync(noopArtifactPath, 'utf8')),
   );
 
   // ── Deploy Token ───────────────────────────────────────────────────────────
@@ -235,8 +168,15 @@ async function main() {
   const fpcAddress = fpcDeploy.address;
   console.log('FPC:  ', fpcAddress.toString());
 
-  // ── Contract wrapper for method calls ──────────────────────────────────────
-  const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
+  // ── Deploy Noop (minimal app tx placeholder for profiling) ────────────────
+  console.log('Deploying Noop...');
+  const noopDeploy = await Contract.deploy(wallet, noopArtifact, []).send({ from: userAddress });
+  const noopAddress = noopDeploy.address;
+  console.log('Noop: ', noopAddress.toString());
+
+  // ── Contract wrappers for method calls ────────────────────────────────────
+  const tokenAsUser  = Contract.at(tokenAddress, tokenArtifact, wallet);
+  const noopContract = Contract.at(noopAddress, noopArtifact, wallet);
 
   // ── Compute gas-dependent charge ───────────────────────────────────────────
   const minFees = await node.getCurrentMinFees();
@@ -262,7 +202,7 @@ async function main() {
   // ── Quote signature: operator signs quote hash (inline Schnorr verification in FPC) ─
   const quoteSigFields = await signQuote(
     schnorr, operatorSigningKey, fpcAddress, tokenAddress,
-    RATE_NUM, RATE_DEN, VALID_UNTIL, userAddress,
+    RATE_NUM, RATE_DEN, VALID_UNTIL, userAddress, QUOTE_DOMAIN_SEP,
   );
   console.log('Quote signature created.');
 
@@ -287,11 +227,9 @@ async function main() {
   );
 
   // ── Profile ────────────────────────────────────────────────────────────────
-  // Dummy app tx: Token.transfer_private_to_private(user→user, 1, nonce=0).
-  // When from == msg_sender the token contract requires nonce=0 (no authwit path).
   console.log('\nProfiling (this takes a few minutes)...');
-  const result = await tokenAsUser.methods
-    .transfer_private_to_private(userAddress, userAddress, 1n, 0n)
+  const result = await noopContract.methods
+    .noop()
     .profile({
       fee: { paymentMethod: feePayment, gasSettings },
       from: userAddress,
@@ -300,20 +238,8 @@ async function main() {
       skipProofGeneration: false,
     });
 
-  // ── Print results ──────────────────────────────────────────────────────────
-  console.log('\n=== Gate Count Profile ===\n');
-  const pad    = (s, n) => String(s).padEnd(n);
-  const numFmt = n => n.toLocaleString();
-  console.log(pad('Function', 60), pad('Own gates', 12), 'Subtotal');
-  console.log('─'.repeat(88));
-  let subtotal = 0;
-  for (const step of result.executionSteps) {
-    subtotal += step.gateCount ?? 0;
-    const name = step.functionName ?? '(unknown)';
-    console.log(pad(name, 60), pad(numFmt(step.gateCount ?? 0), 12), numFmt(subtotal));
-  }
-  console.log('─'.repeat(88));
-  console.log(pad('TOTAL', 60), '', numFmt(subtotal));
+  // ── Print FPC-only results ──────────────────────────────────────────────────
+  printFpcGateTable('fee_entrypoint', result.executionSteps, 'FPC');
 
   // ── Cleanup ────────────────────────────────────────────────────────────────
   await pxe.stop?.();

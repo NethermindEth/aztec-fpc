@@ -2,6 +2,7 @@
 members = [
     "contracts/fpc",
     "contracts/credit_fpc",
+    "contracts/noop",
     "vendor/aztec-standards/src/generic_proxy",
     "vendor/aztec-standards/src/token_contract",
 ]
