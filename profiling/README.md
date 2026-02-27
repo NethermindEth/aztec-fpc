@@ -1,15 +1,16 @@
-# FPC Gate Count Profiling
+# FPC Benchmarking
 
-This directory contains profiling scripts for two FPC (Fee Payment Contract) implementations:
+This directory benchmarks two FPC (Fee Payment Contract) implementations via
+[aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark):
 
-| Script | Contract | Entry point(s) |
+| Contract | Entry point(s) | Benchmark file |
 |---|---|---|
-| `run.sh` | `FPC` (standard authwit-based) | `fee_entrypoint` |
-| `run_credit_fpc.sh` | `CreditFPC` (Schnorr-quoted) | `pay_and_mint`, `pay_with_credit` |
+| `FPC` (standard authwit-based) | `fee_entrypoint` | `benchmarks/fpc.benchmark.ts` |
+| `CreditFPC` (Schnorr-quoted) | `pay_and_mint`, `pay_with_credit` | `benchmarks/credit_fpc.benchmark.ts` |
 
-`run.sh` runs [aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark)
-which produces structured JSON reports in `profiling/benchmarks/` and prints a
-human-readable console summary.
+`run.sh` invokes `aztec-benchmark` which discovers all `[benchmark]` entries in
+`Nargo.toml`, runs each one sequentially, and produces structured JSON reports
+in `profiling/benchmarks/` plus human-readable console summaries.
 
 ## Prerequisites
 
@@ -28,11 +29,8 @@ VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/
 # 1. One-time setup: install SDK packages + start local network
 ./profiling/setup.sh
 
-# 2a. Profile standard FPC (fee_entrypoint)
+# 2. Benchmark all FPC variants (FPC + CreditFPC)
 ./profiling/run.sh
-
-# 2b. Profile CreditFPC (pay_and_mint + pay_with_credit)
-./profiling/run_credit_fpc.sh
 
 # 3. Tear down when done
 ./profiling/teardown.sh
@@ -43,8 +41,7 @@ VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/
 | Script | When | What |
 |---|---|---|
 | `setup.sh` | Once | Installs `@aztec/*` npm packages + `aztec-benchmark` + `viem` (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
-| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), runs `aztec-benchmark` to deploy + profile `fee_entrypoint` (JSON + console output) |
-| `run_credit_fpc.sh` | Every iteration | Compiles contracts, deploys Token + CreditFPC, profiles `pay_and_mint` and `pay_with_credit`, prints gate counts for both |
+| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), runs `aztec-benchmark` to deploy + profile all benchmarks in `Nargo.toml` (FPC + CreditFPC, JSON + console output) |
 | `teardown.sh` | When done | Stops the network (if started by `setup.sh`), removes temp files |
 
 ### Environment variables
@@ -52,20 +49,17 @@ VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/
 | Variable | Default | Description |
 |---|---|---|
 | `AZTEC_NODE_URL` | `http://127.0.0.1:8080` | Aztec node endpoint (respected by all scripts) |
-| `L1_RPC_URL` | `http://127.0.0.1:8545` | L1 (anvil) endpoint — needed by `run.sh` (benchmark step) and `run_credit_fpc.sh` for Fee Juice bridging |
+| `L1_RPC_URL` | `http://127.0.0.1:8545` | L1 (anvil) endpoint — needed for Fee Juice bridging in both benchmarks |
 
 ## Iteration Workflow
 
 ```
-setup.sh                  ← run once
+setup.sh                          ← run once
   │
-  ├─► edit contracts/fpc  ─► run.sh              ← standard FPC
-  ├─► edit contracts/fpc  ─► run.sh
+  ├─► edit contracts/fpc          ─► run.sh   (benchmarks FPC + CreditFPC)
+  ├─► edit contracts/credit_fpc   ─► run.sh
   │
-  ├─► edit contracts/credit_fpc ─► run_credit_fpc.sh   ← CreditFPC
-  ├─► edit contracts/credit_fpc ─► run_credit_fpc.sh
-  │
-teardown.sh               ← run when done
+teardown.sh                       ← run when done
 ```
 
 ---
@@ -183,7 +177,7 @@ To switch to Wonderland's default runner for hardware parity, change
 
 ---
 
-## CreditFPC (`run_credit_fpc.sh`)
+## CreditFPC
 
 ### Profiled Flows
 
@@ -218,76 +212,51 @@ cheaper path for repeat transactions.
 
 ### Output
 
+The CreditFPC benchmark (`benchmarks/credit_fpc.benchmark.ts`) follows the same
+structure as the FPC benchmark. It produces two result entries in a single JSON
+report at `profiling/benchmarks/credit_fpc.benchmark.json`, one for each flow.
+
+Console output shows both tables:
+
 ```
-=== Flow 1: pay_and_mint (top-up + fee) ===
+=== CreditFPC Benchmark Results: pay_and_mint ===
 
-Function                                                     Own gates    Subtotal
-────────────────────────────────────────────────────────────────────────────────────────
-SchnorrAccount:entrypoint                                    54,352       54,352
-private_kernel_init                                          46,811       101,163
-CreditFPC:pay_and_mint                                          ...          ...
-private_kernel_inner                                         ...          ...
-SchnorrAccount:verify_private_authwit                        ...          ...
+CreditFPC-Only Gate Counts:
+Function                                           Own gates      Witgen (ms)    Subtotal
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+CreditFPC:pay_and_mint                             ...            ...            ...
 ...
-────────────────────────────────────────────────────────────────────────────────────────
-TOTAL                                                         xxx,xxx
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+CreditFPC TOTAL                                    xxx,xxx        ...
 
-=== Flow 2: pay_with_credit (balance-only) ===
+=== CreditFPC Benchmark Results: pay_with_credit ===
 
-Function                                                     Own gates    Subtotal
-────────────────────────────────────────────────────────────────────────────────────────
-SchnorrAccount:entrypoint                                    54,352       54,352
-private_kernel_init                                          46,811       101,163
-CreditFPC:pay_with_credit                                    ...          ...
+CreditFPC-Only Gate Counts:
+Function                                           Own gates      Witgen (ms)    Subtotal
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+CreditFPC:pay_with_credit                          ...            ...            ...
 ...
-────────────────────────────────────────────────────────────────────────────────────────
-TOTAL                                                         xxx,xxx
-
-=== Summary ===
-
-pay_and_mint total:      xxx,xxx gates
-pay_with_credit total:   xxx,xxx gates
+────────────────────────────────────────────────────────────────────────────────────────────────────────
+CreditFPC TOTAL                                    xxx,xxx        ...
 ```
 
-### How `profile-gates-credit-fpc.mjs` Works
+### How `credit_fpc.benchmark.ts` Works
 
-`profile-gates-credit-fpc.mjs` performs the deploy + profile flow in a single Node.js
-process. The execution order matters — see "Issues & Solutions" below for why.
+The benchmark class follows the `aztec-benchmark` format (setup / getMethods /
+teardown). The setup establishes a credit balance before profiling, which is
+critical for `pay_with_credit`. Key steps:
 
-1. Connects to the Aztec node and starts an **embedded PXE** (clean slate each
-   run via `createPXE(node, config)` from `@aztec/pxe/server`)
-2. Registers deterministic test accounts (user = test0, operator = test1) as
-   Schnorr accounts via `AccountManager`
-3. Loads raw nargo artifacts from `target/` and normalises them via
-   `loadContractArtifact()` so the SDK computes correct contract class IDs
-4. Deploys `Token` and `CreditFPC(operator, operatorPubKey.x, operatorPubKey.y, tokenAddress)`
-5. Registers both contracts as **senders** on the PXE
-   (`pxe.registerSender(fpcAddress)`) so the PXE knows to compute tags for
-   notes originating from these contracts
-6. **Bridges Fee Juice** from L1 (anvil) to the CreditFPC so it can pay protocol
-   fees when acting as fee payer on real transactions. Uses
-   `L1FeeJuicePortalManager.bridgeTokensPublic()` followed by
-   `FeeJuice.claim()` with a retry loop
-7. Computes the token charge from current node min fees
-   (`charge = ceil(creditMintAmount × rateNum / rateDen)`, 1:1 rate, 1.5× fee
-   padding)
-8. Mints tokens to the user's private balance
-9. Signs the quote with the operator's Schnorr key — produces a 64-byte
-   signature passed as args to `pay_and_mint`. The contract verifies the
-   signature inline and pushes a nullifier to prevent replay.
-10. **Sends a real `pay_and_mint` transaction** to establish the user's credit
-    balance on-chain (must happen before any `.profile()` calls — see
-    "Tag index pollution" below)
-11. Sends a **follow-up dummy transaction** to force the archiver to advance
-    past the `pay_and_mint` block (see "Archiver cache lag" below)
-12. Polls `balance_of().simulate()` until the PXE discovers the credit notes
-13. If credit is still not visible: falls back to `CreditFPC.dev_mint` which
-    delivers credit via `ONCHAIN_UNCONSTRAINED` (see "ONCHAIN_CONSTRAINED note
-    discovery" below)
-14. **Profiles `pay_and_mint`**: fresh quote sig + transfer authwit with a
-    distinct `valid_until` to avoid nullifier collision
-15. **Profiles `pay_with_credit`**: purely reads the existing credit balance
-16. Prints per-function gate-count tables for both flows plus a summary
+1. Deploys Token + CreditFPC + Noop, bridges Fee Juice, registers senders
+2. **Sends a real `pay_and_mint` tx** to establish credit (must happen before
+   profiling — see "Tag index pollution" below)
+3. Verifies the credit balance is visible, with a `dev_mint` fallback
+4. Prepares two `CreditFPCActionWrapper` instances (one per flow), each with
+   its own fee payment method
+5. `getMethods()` returns both as `NamedBenchmarkedInteraction` items
+
+Because the two flows use different fee payment methods, `feePaymentMethod` is
+NOT set on the context — each wrapper overrides the profiler's fee injection
+with its own payment method.
 
 ### Issues & Solutions (CreditFPC)
 
@@ -361,4 +330,4 @@ trigger L2 block production.
 | `Insufficient fee payer balance` | Fee Juice bridging failed. Check `fundFpcWithFeeJuice` completed and the CreditFPC has enough Fee Juice. |
 | `run.sh` says "no Aztec node" | Run `./profiling/setup.sh` first, or re-run if the network died. |
 | `quote expired 'anchor_ts <= valid_until'` | `VALID_UNTIL` is derived from the L2 block timestamp. Restart the sandbox if it has been running a long time. |
-| Gas limit errors | The script uses separate gas settings for profiling (high limits, simulation only) and real sends (lower AVM-compatible limits). |
+| Gas limit errors | Gas limits are imported from `@aztec/constants` (`AVM_MAX_PROCESSABLE_L2_GAS`, `MAX_PROCESSABLE_DA_GAS_PER_CHECKPOINT`) to stay in sync with the installed version. |

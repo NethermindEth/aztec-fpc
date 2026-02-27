@@ -9,3 +9,4 @@ members = [
 
 [benchmark]
 fpc = "profiling/benchmarks/fpc.benchmark.ts"
+credit_fpc = "profiling/benchmarks/credit_fpc.benchmark.ts"

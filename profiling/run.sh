@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Compile contracts and benchmark FPC.fee_entrypoint via aztec-benchmark.
+# Compile contracts and benchmark all FPC variants via aztec-benchmark.
 #
-# Produces both structured JSON (profiling/benchmarks/fpc.benchmark.json) and
-# a human-readable console summary (gate counts, gas, proving time).
+# Currently benchmarks:
+#   fpc         — FPC.fee_entrypoint
+#   credit_fpc  — CreditFPC.pay_and_mint + CreditFPC.pay_with_credit
 #
-# For CreditFPC profiling (pay_and_mint + pay_with_credit), use run_credit_fpc.sh.
+# Produces structured JSON (profiling/benchmarks/*.benchmark.json) and
+# human-readable console summaries (gate counts, gas, proving time).
 #
 # Run ./profiling/setup.sh once first, then re-run this after every contract change.
 #
@@ -44,14 +46,22 @@ fi
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# ── Step 2: Benchmark via aztec-benchmark (JSON + console output) ─────────────
-echo ""
-echo "[profile] Running FPC benchmark (aztec-benchmark)..."
-AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
-  npx --prefix "$SCRIPT_DIR" aztec-benchmark \
-    --config "$REPO_ROOT/Nargo.toml" \
-    --output-dir "$SCRIPT_DIR/benchmarks"
+# ── Step 2: Benchmark each variant in its own process ────────────────────────
+# Running benchmarks in separate processes avoids a bb.js socket corruption
+# issue: the CLI's post-benchmark cleanup destroys all active sockets, which
+# breaks the bb native backend for any subsequent benchmark in the same process.
+
+for contract in fpc credit_fpc; do
+  echo ""
+  echo "[profile] Running benchmark: $contract ..."
+  AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
+    npx --prefix "$SCRIPT_DIR" aztec-benchmark \
+      --config "$REPO_ROOT/Nargo.toml" \
+      --output-dir "$SCRIPT_DIR/benchmarks" \
+      --contracts "$contract"
+  echo "[profile] Finished benchmark: $contract"
+done
 
 echo ""
-echo "[profile] Benchmark JSON saved to profiling/benchmarks/"
+echo "[profile] Benchmark JSONs saved to profiling/benchmarks/"
 echo "[profile] Done!"
