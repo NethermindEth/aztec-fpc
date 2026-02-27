@@ -38,6 +38,7 @@
     "docker:build:contract": "docker buildx bake contract",
     "docker:build:all": "docker buildx bake",
     "deploy:fpc:local": "bash scripts/contract/deploy-fpc-local.sh",
+    "deploy:fpc:devnet": "bash scripts/contract/deploy-fpc-devnet.sh",
     "smoke:fee-entrypoint:devnet": "bash scripts/contract/fee-entrypoint-devnet-smoke.sh",
     "smoke:credit-fpc:devnet": "bash scripts/contract/credit-fpc-devnet-smoke.sh",
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-fpc-local-smoke.sh",
