@@ -55,6 +55,7 @@ jobs:
           REGISTRY="${DOCKER_REGISTRY}/" \
           TAG="${TAG}" \
           GIT_SHA="${GITHUB_SHA}" \
+          PLATFORMS='["linux/amd64", "linux/arm64"]' \
           docker buildx bake attestation --push
 
       - name: Summary
