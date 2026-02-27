@@ -31,9 +31,8 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
     let fpc = FPC::at(fpc_address);
     let token = Token::at(token_address);
 
-    let rate_num = 1 as u128;
-    let rate_den = 1 as u128;
-    let charge = utils::expected_charge(env, rate_num, rate_den);
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let charge = fj_fee_amount;
     let mint_amount = charge + (1000 as u128);
     env.call_private(operator, token.mint_to_private(user, mint_amount));
 
@@ -41,8 +40,8 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
     let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
-        rate_num,
-        rate_den,
+        fj_fee_amount,
+        charge,
         valid_until,
         user,
     );
@@ -56,7 +55,13 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
 
     env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(
+            TRANSFER_AUTHWIT_NONCE,
+            fj_fee_amount,
+            charge,
+            valid_until,
+            quote_sig,
+        ),
     );
 
     let user_balance_after = utils::private_balance(env, token_address, user);
@@ -66,27 +71,33 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
     assert_eq(operator_balance_after, operator_balance_before + charge);
 }
 
-#[test(should_fail_with = "rate_num must be > 0")]
-unconstrained fn fee_entrypoint_rejects_zero_rate_numerator() {
+#[test(should_fail_with = "quoted fee amount mismatch")]
+unconstrained fn fee_entrypoint_rejects_mismatched_fee_amount() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
     let fpc = FPC::at(fpc_address);
 
-    let rate_num = 0 as u128;
-    let rate_den = 1 as u128;
+    let quoted_fj_fee_amount = utils::max_gas_cost_no_teardown(env) + (1 as u128);
+    let quoted_aa_payment_amount = quoted_fj_fee_amount;
     let authwit_nonce = 44;
     let valid_until = env.last_block_timestamp() + 3600;
     let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
-        rate_num,
-        rate_den,
+        quoted_fj_fee_amount,
+        quoted_aa_payment_amount,
         valid_until,
         user,
     );
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(
+            authwit_nonce,
+            quoted_fj_fee_amount,
+            quoted_aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
     );
 }
 
@@ -96,9 +107,8 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
     let fpc = FPC::at(fpc_address);
     let token = Token::at(token_address);
 
-    let rate_num = 1 as u128;
-    let rate_den = 1 as u128;
-    let charge = utils::expected_charge(env, rate_num, rate_den);
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let charge = fj_fee_amount;
     let mint_amount = charge * (2 as u128) + (1000 as u128);
     env.call_private(operator, token.mint_to_private(user, mint_amount));
 
@@ -106,8 +116,8 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
     let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
-        rate_num,
-        rate_den,
+        fj_fee_amount,
+        charge,
         valid_until,
         user,
     );
@@ -118,7 +128,13 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
 
     env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(
+            TRANSFER_AUTHWIT_NONCE,
+            fj_fee_amount,
+            charge,
+            valid_until,
+            quote_sig,
+        ),
     );
 
     // Use a fresh quote window for the second attempt so this test fails on
@@ -127,15 +143,21 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
     let quote_sig_2 = utils::sign_quote(
         fpc_address,
         token_address,
-        rate_num,
-        rate_den,
+        fj_fee_amount,
+        charge,
         valid_until_2,
         user,
     );
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE_2, rate_num, rate_den, valid_until_2, quote_sig_2),
+        fpc.fee_entrypoint(
+            TRANSFER_AUTHWIT_NONCE_2,
+            fj_fee_amount,
+            charge,
+            valid_until_2,
+            quote_sig_2,
+        ),
     );
 }
 
@@ -144,16 +166,16 @@ unconstrained fn fee_entrypoint_rejects_expired_quote() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
     let fpc = FPC::at(fpc_address);
 
-    let rate_num = 1 as u128;
-    let rate_den = 1 as u128;
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let aa_payment_amount = fj_fee_amount;
     let authwit_nonce = 99;
 
     let valid_until = env.last_block_timestamp();
     let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
-        rate_num,
-        rate_den,
+        fj_fee_amount,
+        aa_payment_amount,
         valid_until,
         user,
     );
@@ -164,7 +186,13 @@ unconstrained fn fee_entrypoint_rejects_expired_quote() {
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(
+            authwit_nonce,
+            fj_fee_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
     );
 }
 
@@ -173,8 +201,8 @@ unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
     let fpc = FPC::at(fpc_address);
 
-    let rate_num = 1 as u128;
-    let rate_den = 1 as u128;
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let aa_payment_amount = fj_fee_amount;
     let authwit_nonce = 100;
 
     // Contract bound is 3600 seconds from anchor timestamp.
@@ -182,15 +210,21 @@ unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
     let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
-        rate_num,
-        rate_den,
+        fj_fee_amount,
+        aa_payment_amount,
         valid_until,
         user,
     );
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(
+            authwit_nonce,
+            fj_fee_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
     );
 }
 
@@ -201,11 +235,11 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     let token = Token::at(token_address);
     let other_user = env.create_contract_account();
 
-    let rate_num = 1 as u128;
-    let rate_den = 1 as u128;
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let aa_payment_amount = fj_fee_amount;
     let authwit_nonce = 7;
     let valid_until = env.last_block_timestamp() + 3600;
-    let charge = utils::expected_charge(env, rate_num, rate_den);
+    let charge = aa_payment_amount;
 
     env.call_private(operator, token.mint_to_private(other_user, charge + (100 as u128)));
     let transfer_call =
@@ -218,14 +252,20 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     let quote_sig = utils::sign_quote(
         fpc_address,
         token_address,
-        rate_num,
-        rate_den,
+        fj_fee_amount,
+        aa_payment_amount,
         valid_until,
         user,
     );
 
     let _ = env.call_private(
         other_user,
-        fpc.fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig),
+        fpc.fee_entrypoint(
+            authwit_nonce,
+            fj_fee_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
     );
 }

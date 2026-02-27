@@ -194,8 +194,8 @@ pub unconstrained fn expected_charge(env: TestEnvironment, rate_num: u128, rate_
 pub unconstrained fn sign_quote(
     fpc_address: AztecAddress,
     accepted_asset: AztecAddress,
-    rate_num: u128,
-    rate_den: u128,
+    fj_fee_amount: u128,
+    aa_payment_amount: u128,
     valid_until: u64,
     user_address: AztecAddress,
 ) -> [u8; 64] {
@@ -203,8 +203,8 @@ pub unconstrained fn sign_quote(
         QUOTE_DOMAIN_SEPARATOR,
         fpc_address.to_field(),
         accepted_asset.to_field(),
-        rate_num as Field,
-        rate_den as Field,
+        fj_fee_amount as Field,
+        aa_payment_amount as Field,
         valid_until as Field,
         user_address.to_field(),
     ]);
