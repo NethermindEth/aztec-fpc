@@ -45,8 +45,8 @@ services:
       retries: 24
       start_period: 30s
 
-  contract-deploy:
-    image: nethermind/aztec-fpc-contract-deploy:local
+  deploy:
+    image: nethermind/aztec-fpc-deploy:local
     configs:
       - source: fpc-config
         target: /app/fpc-config.yaml
@@ -73,7 +73,7 @@ services:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
     depends_on:
-      contract-deploy:
+      deploy:
         condition: service_completed_successfully
 
   topup:
@@ -89,7 +89,7 @@ services:
       L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
       TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
     depends_on:
-      contract-deploy:
+      deploy:
         condition: service_completed_successfully
 
   smoke-fee-entrypoint:
