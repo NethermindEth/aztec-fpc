@@ -155,6 +155,9 @@ if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   bun install
 fi
 
+echo "[deploy-smoke] Aligning aztec-standards version pins"
+bash "$REPO_ROOT/scripts/vendor/align-aztec-standards-version.sh"
+
 echo "[deploy-smoke] Compiling contracts workspace"
 aztec compile --workspace --force
 

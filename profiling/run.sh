@@ -37,6 +37,9 @@ if ! node_is_up; then
 fi
 
 # ── Step 1: Compile contracts ─────────────────────────────────────────────────
+echo "[profile] Aligning aztec-standards version pins..."
+(cd "$REPO_ROOT" && bash scripts/vendor/align-aztec-standards-version.sh)
+
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 

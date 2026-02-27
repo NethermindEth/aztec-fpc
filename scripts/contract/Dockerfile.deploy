@@ -21,11 +21,14 @@ FROM aztec AS compile
 
 WORKDIR /app
 
+COPY .aztecrc ./
 COPY Nargo.toml ./
 COPY contracts/ contracts/
 COPY vendor/ vendor/
+COPY scripts/vendor/align-aztec-standards-version.sh scripts/vendor/
 
-RUN aztec compile --workspace --force
+RUN bash scripts/vendor/align-aztec-standards-version.sh && \
+    aztec compile --workspace --force
 
 # ══════════════════════════════════════════════════════════════
 # Stage 3: runtime — common runtime image with JS dependencies

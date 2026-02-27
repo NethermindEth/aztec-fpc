@@ -188,6 +188,9 @@ if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   bun install
 fi
 
+echo "[full-lifecycle-e2e] Aligning aztec-standards version pins"
+bash "$REPO_ROOT/scripts/vendor/align-aztec-standards-version.sh"
+
 echo "[full-lifecycle-e2e] Compiling contracts workspace"
 aztec compile --workspace --force
 

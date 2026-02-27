@@ -25,6 +25,9 @@ if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   fi
 fi
 
+echo "[credit-smoke] Aligning aztec-standards version pins"
+bash "$REPO_ROOT/scripts/vendor/align-aztec-standards-version.sh"
+
 echo "[credit-smoke] Compiling contracts workspace"
 aztec compile --workspace --force
 

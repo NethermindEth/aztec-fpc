@@ -35,6 +35,8 @@ echo "[setup] Aztec version: $AZTEC_VERSION"
 # ── Step 1: Initialize git submodules (vendor/aztec-standards) ────────────────
 echo "[setup] Initializing git submodules..."
 (cd "$REPO_ROOT" && git submodule update --init)
+echo "[setup] Aligning aztec-standards version pins to $AZTEC_VERSION..."
+(cd "$REPO_ROOT" && bash scripts/vendor/align-aztec-standards-version.sh)
 
 # ── Step 2: Install profiling npm dependencies ────────────────────────────────
 AZTEC_PKGS=(

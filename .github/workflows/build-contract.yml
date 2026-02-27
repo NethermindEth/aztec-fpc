@@ -18,6 +18,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Align aztec-standards Aztec version tags
+        run: bash scripts/vendor/align-aztec-standards-version.sh
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:

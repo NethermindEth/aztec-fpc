@@ -38,6 +38,9 @@ fi
 
 cd "${REPO_ROOT}"
 
+echo "Aligning aztec-standards version pins..."
+bash "$REPO_ROOT/scripts/vendor/align-aztec-standards-version.sh"
+
 if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPC.json || ! -f target/credit_fpc-CreditFPC.json ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force
