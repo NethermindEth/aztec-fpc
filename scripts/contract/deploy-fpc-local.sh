@@ -19,3 +19,12 @@ bunx tsx scripts/contract/deploy-fpc-local.ts \
   --operator "${FPC_LOCAL_OPERATOR}" \
   --out "${FPC_LOCAL_OUT}" \
   "$@"
+
+# ── Optional: generate per-service configs from master config ─────────────────
+FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}"
+if [ -f "$FPC_MASTER_CONFIG" ]; then
+  FPC_LOCAL_OUT="$FPC_LOCAL_OUT" \
+  FPC_MASTER_CONFIG="$FPC_MASTER_CONFIG" \
+  FPC_CONFIGS_OUT="${FPC_CONFIGS_OUT:-./configs}" \
+    bash scripts/config/generate-service-configs.sh
+fi
