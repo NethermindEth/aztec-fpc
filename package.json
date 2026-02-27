@@ -33,11 +33,16 @@
     "docker:build": "docker buildx bake",
     "docker:build:attestation": "docker buildx bake attestation",
     "docker:build:topup": "docker buildx bake topup",
+    "docker:build:contract-compile": "docker buildx bake contract-compile",
+    "docker:build:contract-deploy": "docker buildx bake contract-deploy",
+    "docker:build:contract": "docker buildx bake contract",
+    "docker:build:all": "docker buildx bake",
     "deploy:fpc:local": "bash scripts/contract/deploy-fpc-local.sh",
     "smoke:fee-entrypoint:devnet": "bash scripts/contract/fee-entrypoint-devnet-smoke.sh",
     "smoke:credit-fpc:devnet": "bash scripts/contract/credit-fpc-devnet-smoke.sh",
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-fpc-local-smoke.sh",
     "smoke:services": "bash scripts/services/fpc-services-smoke.sh",
+    "e2e:full-lifecycle": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
     "test": "bun run test:contracts && bun run test:ts"
   },
   "workspaces": [

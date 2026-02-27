@@ -3,14 +3,30 @@ variable "REGISTRY" {
 }
 
 variable "TAG" {
-  default = "latest"
+  default = "local"
 }
 
 variable "GIT_SHA" {
   default = ""
 }
 
+variable "PLATFORMS" {
+  default = []
+}
+
+variable "PLATFORM_SUFFIX" {
+  default = ""
+}
+
 group "default" {
+  targets = ["attestation", "topup", "contract-compile", "contract-deploy"]
+}
+
+group "contract" {
+  targets = ["contract-compile", "contract-deploy"]
+}
+
+group "services" {
   targets = ["attestation", "topup"]
 }
 
@@ -26,6 +42,7 @@ target "attestation-base" {
   dockerfile = "services/Dockerfile.common"
   target     = "runtime"
   args       = { SERVICE = "attestation" }
+  platforms  = PLATFORMS
 }
 
 target "topup-base" {
@@ -33,6 +50,7 @@ target "topup-base" {
   dockerfile = "services/Dockerfile.common"
   target     = "runtime"
   args       = { SERVICE = "topup" }
+  platforms  = PLATFORMS
 }
 
 target "attestation" {
@@ -40,9 +58,10 @@ target "attestation" {
   context    = "."
   dockerfile = "services/attestation/Dockerfile"
   contexts   = { common = "target:attestation-base" }
+  platforms  = PLATFORMS
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-attestation:${TAG}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-attestation:${GIT_SHA}" : "",
+    "${REGISTRY}nethermind/aztec-fpc-attestation:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-attestation:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
 
@@ -51,8 +70,33 @@ target "topup" {
   context    = "."
   dockerfile = "services/topup/Dockerfile"
   contexts   = { common = "target:topup-base" }
+  platforms  = PLATFORMS
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-topup:${TAG}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-topup:${GIT_SHA}" : "",
+    "${REGISTRY}nethermind/aztec-fpc-topup:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-topup:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+  ])
+}
+
+target "contract-compile" {
+  inherits   = ["_labels"]
+  context    = "."
+  dockerfile = "scripts/contract/Dockerfile.deploy"
+  platforms  = PLATFORMS
+  target     = "compile"
+  tags = compact([
+    "${REGISTRY}nethermind/aztec-fpc-contract-compile:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-compile:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+  ])
+}
+
+target "contract-deploy" {
+  inherits   = ["_labels"]
+  context    = "."
+  dockerfile = "scripts/contract/Dockerfile.deploy"
+  platforms  = PLATFORMS
+  target     = "deploy"
+  tags = compact([
+    "${REGISTRY}nethermind/aztec-fpc-contract-deploy:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-deploy:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
