@@ -1,4 +1,4 @@
-name: "[Nethermind] Aztec FPC topup - Docker build and push"
+name: "[Nethermind] Aztec FPC services - Docker build and push"
 
 on:
   workflow_dispatch:
@@ -7,18 +7,19 @@ on:
     tags:
       - "v*"
     paths:
+      - "services/attestation/**"
       - "services/topup/**"
+      - "services/Dockerfile.common"
       - "package.json"
       - "bun.lock"
       - "tsconfig*.json"
 
 env:
   DOCKER_REGISTRY: docker.io
-  DOCKER_REPOSITORY: nethermind/aztec-fpc-topup
 
 jobs:
   build:
-    name: Build and push multi-arch image
+    name: Build and push multi-arch images
     runs-on: ubuntu-latest
     if: github.repository == 'NethermindEth/aztec-fpc'
 
@@ -51,17 +52,19 @@ jobs:
           fi
 
       - name: Build and push with bake
-        run: |
-          REGISTRY="${DOCKER_REGISTRY}/" \
-          TAG="${TAG}" \
-          GIT_SHA="${GITHUB_SHA}" \
-          PLATFORMS='["linux/amd64", "linux/arm64"]' \
-          docker buildx bake topup --push
+        env:
+          REGISTRY: ${{ env.DOCKER_REGISTRY }}/
+          TAG: ${{ env.TAG }}
+          GIT_SHA: ${{ github.sha }}
+          PLATFORMS: '["linux/amd64", "linux/arm64"]'
+        run: docker buildx bake services --push
 
       - name: Summary
         run: |
-          echo "## Aztec FPC topup Docker build completed ✅" >> $GITHUB_STEP_SUMMARY
-          echo "### Image pushed to Docker Hub" >> $GITHUB_STEP_SUMMARY
+          echo "## Aztec FPC services Docker build completed" >> $GITHUB_STEP_SUMMARY
+          echo "### Images pushed to Docker Hub" >> $GITHUB_STEP_SUMMARY
+          echo "- nethermind/aztec-fpc-attestation:${TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "- nethermind/aztec-fpc-attestation:${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
           echo "- nethermind/aztec-fpc-topup:${TAG}" >> $GITHUB_STEP_SUMMARY
           echo "- nethermind/aztec-fpc-topup:${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
           echo "### Platforms" >> $GITHUB_STEP_SUMMARY
