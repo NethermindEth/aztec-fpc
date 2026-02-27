@@ -148,6 +148,8 @@ const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const MAX_PORT = 65535;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DIAGNOSTIC_TAIL_LINES = 200;
+const managedProcessRegistry = new Set<ManagedProcess>();
+let shutdownInProgress = false;
 
 function printHelp(): void {
   console.log(`Usage: bun run e2e:full-lifecycle [--help]
@@ -354,6 +356,7 @@ function startManagedProcess(
   const processHandle = spawn(command, args, {
     cwd: options.cwd,
     env: options.env ?? process.env,
+    detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -368,27 +371,90 @@ function startManagedProcess(
     process.stderr.write(`[${name}] ${text}`);
   });
 
-  return {
+  const managed: ManagedProcess = {
     name,
     process: processHandle,
     getLogs: () => logs,
   };
+  managedProcessRegistry.add(managed);
+  processHandle.on("exit", () => {
+    managedProcessRegistry.delete(managed);
+  });
+  return managed;
 }
 
 async function stopManagedProcess(proc: ManagedProcess): Promise<void> {
   if (proc.process.exitCode !== null) {
+    managedProcessRegistry.delete(proc);
     return;
   }
 
-  proc.process.kill("SIGTERM");
+  const pid = proc.process.pid;
+  let signaled = false;
+  if (typeof pid === "number" && pid > 0) {
+    try {
+      process.kill(-pid, "SIGTERM");
+      signaled = true;
+    } catch {
+      signaled = false;
+    }
+  }
+  if (!signaled) {
+    try {
+      proc.process.kill("SIGTERM");
+    } catch {
+      managedProcessRegistry.delete(proc);
+      return;
+    }
+  }
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (proc.process.exitCode !== null) {
+      managedProcessRegistry.delete(proc);
       return;
     }
     await sleep(100);
   }
-  proc.process.kill("SIGKILL");
+  if (typeof pid === "number" && pid > 0) {
+    try {
+      process.kill(-pid, "SIGKILL");
+      managedProcessRegistry.delete(proc);
+      return;
+    } catch {
+      // Fallback to direct child kill if process groups are unavailable.
+    }
+  }
+  try {
+    proc.process.kill("SIGKILL");
+  } catch {
+    // Process may have already exited between checks.
+  }
+  managedProcessRegistry.delete(proc);
+}
+
+async function stopAllManagedProcesses(): Promise<void> {
+  for (const proc of Array.from(managedProcessRegistry).reverse()) {
+    await stopManagedProcess(proc);
+  }
+}
+
+function installManagedProcessSignalHandlers(): void {
+  const handleSignal = (signal: NodeJS.Signals) => {
+    if (shutdownInProgress) {
+      return;
+    }
+    shutdownInProgress = true;
+    void (async () => {
+      console.error(
+        `[full-lifecycle-e2e] Received ${signal}; stopping managed processes...`,
+      );
+      await stopAllManagedProcesses();
+      process.exit(signal === "SIGINT" ? 130 : 143);
+    })();
+  };
+
+  process.once("SIGINT", () => handleSignal("SIGINT"));
+  process.once("SIGTERM", () => handleSignal("SIGTERM"));
 }
 
 async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
@@ -2289,6 +2355,7 @@ function writeStep8Summary(summaryPath: string, runDir: string): void {
 }
 
 async function main(): Promise<void> {
+  installManagedProcessSignalHandlers();
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     printHelp();
     return;

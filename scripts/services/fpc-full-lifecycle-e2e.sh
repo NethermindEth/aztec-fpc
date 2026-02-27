@@ -4,6 +4,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fpc-full-lifecycle-e2e.XXXXXX")"
 AZTEC_PID=""
+AZTEC_PGID=""
+SCRIPT_PGID="$(ps -o pgid= "$$" 2>/dev/null | tr -d '[:space:]')"
+STARTED_LOCAL_NETWORK=0
 
 function usage() {
   cat <<'EOF'
@@ -23,15 +26,49 @@ Note: auto-start mode only supports the default endpoints above.
 EOF
 }
 
-function cleanup() {
-  if [[ -n "$AZTEC_PID" ]] && kill -0 "$AZTEC_PID" >/dev/null 2>&1; then
-    echo "[full-lifecycle-e2e] Stopping aztec local network (pid=$AZTEC_PID)"
+function wait_for_pid_exit() {
+  local pid="$1"
+  local timeout_seconds="$2"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  while kill -0 "$pid" >/dev/null 2>&1; do
+    if (( "$(date +%s)" - start_ts > timeout_seconds )); then
+      return 1
+    fi
+    sleep 1
+  done
+  return 0
+}
+
+function stop_aztec_local_network() {
+  if [[ -z "$AZTEC_PID" ]] || ! kill -0 "$AZTEC_PID" >/dev/null 2>&1; then
+    return
+  fi
+
+  echo "[full-lifecycle-e2e] Stopping aztec local network (pid=$AZTEC_PID)"
+  if [[ -n "$AZTEC_PGID" && "$AZTEC_PGID" != "$SCRIPT_PGID" ]]; then
+    kill -TERM -- "-$AZTEC_PGID" >/dev/null 2>&1 || true
+    if ! wait_for_pid_exit "$AZTEC_PID" 10; then
+      kill -KILL -- "-$AZTEC_PGID" >/dev/null 2>&1 || true
+    fi
+  else
     kill "$AZTEC_PID" >/dev/null 2>&1 || true
-    wait "$AZTEC_PID" >/dev/null 2>&1 || true
+    if ! wait_for_pid_exit "$AZTEC_PID" 10; then
+      kill -9 "$AZTEC_PID" >/dev/null 2>&1 || true
+    fi
+  fi
+  wait "$AZTEC_PID" >/dev/null 2>&1 || true
+}
+
+function cleanup() {
+  if [[ "$STARTED_LOCAL_NETWORK" -eq 1 ]]; then
+    stop_aztec_local_network
   fi
   rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 function has_port() {
   local host="$1"
@@ -105,8 +142,14 @@ if [[ "$START_LOCAL_NETWORK" == "1" ]]; then
       exit 1
     fi
     echo "[full-lifecycle-e2e] Starting aztec local network in background"
-    aztec start --local-network >"$TMP_DIR/aztec-local-network.log" 2>&1 &
+    if command -v setsid >/dev/null 2>&1; then
+      setsid aztec start --local-network >"$TMP_DIR/aztec-local-network.log" 2>&1 &
+    else
+      aztec start --local-network >"$TMP_DIR/aztec-local-network.log" 2>&1 &
+    fi
     AZTEC_PID=$!
+    AZTEC_PGID="$(ps -o pgid= "$AZTEC_PID" 2>/dev/null | tr -d '[:space:]')"
+    STARTED_LOCAL_NETWORK=1
 
     if ! wait_for_port "$NODE_HOST" "$NODE_PORT" 180; then
       echo "[full-lifecycle-e2e] ERROR: aztec node did not become reachable on $NODE_HOST:$NODE_PORT" >&2
