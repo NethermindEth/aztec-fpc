@@ -1,19 +1,23 @@
 /**
- * FPC benchmark using @defi-wonderland/aztec-benchmark.
+ * CreditFPC benchmark using @defi-wonderland/aztec-benchmark.
  *
- * Deploys Token + FPC + Noop on a running local network, bridges Fee Juice,
- * mints tokens, builds authwits, and benchmarks FPC.fee_entrypoint via a
- * minimal Noop app transaction (same approach as the custom profiler).
+ * Deploys Token + CreditFPC + Noop on a running local network, bridges Fee
+ * Juice, establishes credit balance via a real pay_and_mint tx, then
+ * benchmarks both flows:
+ *
+ *   pay_and_mint     — user tops up credit balance (token transfer + mint)
+ *   pay_with_credit  — user pays tx fee from existing credit (no transfer)
  *
  * The aztec-benchmark profiler expects getMethods() to return items of shape
  * {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
- * The profiler injects the fee payment method (from runContext.feePaymentMethod)
- * and origin address (from caller) into all SDK calls.  FPCActionWrapper adds
- * additionalScopes and captures SDK timing data (per-circuit witgen, proving
- * time) for teardown to enrich the JSON.
+ *
+ * Because the two flows use different fee payment methods, we do NOT set
+ * feePaymentMethod on the returned context (the profiler would inject a single
+ * one for all interactions).  Instead, each CreditFPCActionWrapper overrides
+ * the fee option with its own payment method.
  *
  * After profiling, teardown post-processes the JSON to:
- *  - Extract fpcGateCounts / fpcTotalGateCount (FPC-only gate breakdown)
+ *  - Extract fpcGateCounts / fpcTotalGateCount (CreditFPC-only gate breakdown)
  *  - Rename gateCounts to fullTrace to clarify it's the entire tx trace
  *  - Inject per-circuit witness generation timing (witgenMs)
  *  - Print a human-readable console summary
@@ -46,6 +50,8 @@ import { deriveSigningKey } from '@aztec/stdlib/keys';
 import {
   AVM_MAX_PROCESSABLE_L2_GAS,
   MAX_PROCESSABLE_DA_GAS_PER_CHECKPOINT,
+  DEFAULT_TEARDOWN_L2_GAS_LIMIT,
+  DEFAULT_TEARDOWN_DA_GAS_LIMIT,
 } from '@aztec/constants';
 import { createPXE, getPXEConfig } from '@aztec/pxe/server';
 import {
@@ -70,9 +76,8 @@ import {
 
 const NODE_URL = process.env.AZTEC_NODE_URL || 'http://127.0.0.1:8080';
 const L1_RPC_URL = process.env.L1_RPC_URL || 'http://127.0.0.1:8545';
-const PXE_DATA_DIR = '/tmp/benchmark-fpc-pxe';
+const PXE_DATA_DIR = '/tmp/benchmark-credit-fpc-pxe';
 
-// Anvil default account 0 — only used for bridging Fee Juice in local dev.
 const ANVIL_PRIVATE_KEY =
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 
@@ -83,9 +88,11 @@ const QUOTE_DOMAIN_SEP = 0x465043n; // "FPC" as field
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ── CustomFPCPaymentMethod ───────────────────────────────────────────────────
+// ── PayAndMintPaymentMethod ─────────────────────────────────────────────────
+// CreditFPC uses inline Schnorr verification: the operator's signature over
+// the quote hash is passed as 64 Field args (one per byte of the 64-byte sig).
 
-class CustomFPCPaymentMethod {
+class PayAndMintPaymentMethod {
   fpcAddress: any;
   transferAuthWit: any;
   quoteSigFields: any[];
@@ -93,6 +100,7 @@ class CustomFPCPaymentMethod {
   rateNum: bigint;
   rateDen: bigint;
   validUntil: bigint;
+  mintAmount: bigint;
   gasSettings: any;
 
   constructor(
@@ -103,6 +111,7 @@ class CustomFPCPaymentMethod {
     rateNum: bigint,
     rateDen: bigint,
     validUntil: bigint,
+    mintAmount: bigint,
     gasSettings: any,
   ) {
     this.fpcAddress = fpcAddress;
@@ -112,11 +121,12 @@ class CustomFPCPaymentMethod {
     this.rateNum = rateNum;
     this.rateDen = rateDen;
     this.validUntil = validUntil;
+    this.mintAmount = mintAmount;
     this.gasSettings = gasSettings;
   }
 
   getAsset(): Promise<any> {
-    throw new Error('Asset is not required for custom FPC.');
+    throw new Error('Asset is not required for CreditFPC.');
   }
   getFeePayer() {
     return Promise.resolve(this.fpcAddress);
@@ -127,11 +137,11 @@ class CustomFPCPaymentMethod {
 
   async getExecutionPayload() {
     const selector = await FunctionSelector.fromSignature(
-      'fee_entrypoint(Field,u128,u128,u64,[u8;64])',
+      'pay_and_mint(Field,u128,u128,u64,[u8;64],u128)',
     );
 
     const feeCall = FunctionCall.from({
-      name: 'fee_entrypoint',
+      name: 'pay_and_mint',
       to: this.fpcAddress,
       selector,
       type: FunctionType.PRIVATE,
@@ -143,6 +153,7 @@ class CustomFPCPaymentMethod {
         new Fr(this.rateDen),
         new Fr(this.validUntil),
         ...this.quoteSigFields,
+        new Fr(this.mintAmount),
       ],
       returnTypes: [],
     });
@@ -150,6 +161,51 @@ class CustomFPCPaymentMethod {
     return new ExecutionPayload(
       [feeCall],
       [this.transferAuthWit],
+      [],
+      [],
+      this.fpcAddress,
+    );
+  }
+}
+
+// ── PayWithCreditPaymentMethod ──────────────────────────────────────────────
+
+class PayWithCreditPaymentMethod {
+  fpcAddress: any;
+  gasSettings: any;
+
+  constructor(fpcAddress: any, gasSettings: any) {
+    this.fpcAddress = fpcAddress;
+    this.gasSettings = gasSettings;
+  }
+
+  getAsset(): Promise<any> {
+    throw new Error('Asset is not required for CreditFPC.');
+  }
+  getFeePayer() {
+    return Promise.resolve(this.fpcAddress);
+  }
+  getGasSettings() {
+    return this.gasSettings;
+  }
+
+  async getExecutionPayload() {
+    const selector = await FunctionSelector.fromSignature('pay_with_credit()');
+
+    const feeCall = FunctionCall.from({
+      name: 'pay_with_credit',
+      to: this.fpcAddress,
+      selector,
+      type: FunctionType.PRIVATE,
+      hideMsgSender: false,
+      isStatic: false,
+      args: [],
+      returnTypes: [],
+    });
+
+    return new ExecutionPayload(
+      [feeCall],
+      [],
       [],
       [],
       this.fpcAddress,
@@ -182,10 +238,6 @@ async function mineL1Blocks(l1Client: any, count: number) {
   }
 }
 
-/**
- * Bridge Fee Juice from L1 and claim on L2 so the FPC can act as fee payer.
- * Reuses the pattern from profile-gates-credit-fpc.mjs.
- */
 async function fundFpcWithFeeJuice(
   node: any,
   wallet: InstanceType<typeof SimpleWallet>,
@@ -202,7 +254,7 @@ async function fundFpcWithFeeJuice(
   );
 
   const MINT_AMOUNT = 10n ** 21n;
-  console.log(`Bridging ${MINT_AMOUNT} Fee Juice to FPC (L1 deposit)...`);
+  console.log(`Bridging ${MINT_AMOUNT} Fee Juice to CreditFPC (L1 deposit)...`);
   const claim = await portalManager.bridgeTokensPublic(
     fpcAddress,
     MINT_AMOUNT,
@@ -212,7 +264,6 @@ async function fundFpcWithFeeJuice(
     `L1 deposit confirmed (messageLeafIndex=${claim.messageLeafIndex})`,
   );
 
-  // Mine a small number of L1 blocks so the archiver discovers the deposit.
   await mineL1Blocks(l1Client, 5);
 
   const feeJuice = Contract.at(
@@ -279,27 +330,26 @@ async function fundFpcWithFeeJuice(
 }
 
 // ── Action wrapper ───────────────────────────────────────────────────────────
-// The installed aztec-benchmark profiler expects each item from getMethods() to
-// be either a plain {caller, action} (ContractFunctionInteractionCallIntent) or
-// a {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
-//
-// The profiler already injects fee payment (from runContext.feePaymentMethod)
-// and the origin address (from caller), but it does NOT inject
-// additionalScopes.  This thin wrapper proxies the action and merges
-// additionalScopes into every SDK call.  It also captures SDK timing data
-// (per-circuit witgen, proving time) from the profile result so that
-// teardown can enrich the JSON.
+// Each CreditFPC flow uses a different fee payment method. Because the profiler
+// injects a single feePaymentMethod from the context, we leave that field
+// unset and override fee in every SDK call ourselves.
 
-class FPCActionWrapper {
+class CreditFPCActionWrapper {
   #inner: any;
+  #feePaymentMethod: any;
   #additionalScopes: any[];
   #gasSettings: any;
 
-  /** Per-function timing data captured from profile().stats.timings. */
   timings?: { perFunction: any[]; proving?: number; total?: number };
 
-  constructor(inner: any, additionalScopes: any[], gasSettings: any) {
+  constructor(
+    inner: any,
+    feePaymentMethod: any,
+    additionalScopes: any[],
+    gasSettings: any,
+  ) {
     this.#inner = inner;
+    this.#feePaymentMethod = feePaymentMethod;
     this.#additionalScopes = additionalScopes;
     this.#gasSettings = gasSettings;
   }
@@ -309,22 +359,17 @@ class FPCActionWrapper {
   }
 
   async simulate(opts?: any) {
-    // The profiler calls simulate with fee.estimateGas = true to discover gas
-    // usage. Gas estimation changes the gasSettings, which changes the token
-    // charge the FPC computes, which changes the auth witness inner hash —
-    // breaking the auth witness created in setup(). Strip estimateGas so the
-    // SDK uses the fixed gasSettings from the payment method.
-    const { fee, ...rest } = opts ?? {};
-    const { estimateGas: _, estimatedGasPadding: __, ...feeRest } = fee ?? {};
+    // Strip estimateGas — gas estimation changes the gasSettings, which
+    // changes the token charge the FPC computes, breaking the auth witness.
+    // Override fee with our own payment method.
+    const { fee: _fee, ...rest } = opts ?? {};
 
     const result = await this.#inner.simulate({
       ...rest,
-      fee: Object.keys(feeRest).length ? feeRest : undefined,
+      fee: { paymentMethod: this.#feePaymentMethod },
       additionalScopes: this.#additionalScopes,
     });
 
-    // Provide estimatedGas from our known gas settings so the profiler's gas
-    // accounting still works.
     if (!result.estimatedGas && this.#gasSettings) {
       const gl = this.#gasSettings.gasLimits;
       const tgl = this.#gasSettings.teardownGasLimits;
@@ -340,8 +385,10 @@ class FPCActionWrapper {
   }
 
   async profile(opts?: any) {
+    const { fee: _fee, ...rest } = opts ?? {};
     const result = await this.#inner.profile({
-      ...opts,
+      ...rest,
+      fee: { paymentMethod: this.#feePaymentMethod },
       additionalScopes: this.#additionalScopes,
     });
     this.timings = result.stats?.timings ?? undefined;
@@ -349,8 +396,10 @@ class FPCActionWrapper {
   }
 
   send(opts?: any) {
+    const { fee: _fee, ...rest } = opts ?? {};
     return this.#inner.send({
-      ...opts,
+      ...rest,
+      fee: { paymentMethod: this.#feePaymentMethod },
       additionalScopes: this.#additionalScopes,
     });
   }
@@ -358,10 +407,9 @@ class FPCActionWrapper {
 
 // ── Benchmark context ────────────────────────────────────────────────────────
 
-interface FPCBenchmarkContext {
+interface CreditFPCBenchmarkContext {
   pxe: any;
   wallet?: any;
-  feePaymentMethod?: FeePaymentMethod;
   gasSettings: any;
   tokenAsUser: any;
   noopAsUser: any;
@@ -371,16 +419,14 @@ interface FPCBenchmarkContext {
 }
 
 // ── Benchmark class ──────────────────────────────────────────────────────────
-// The aztec-benchmark CLI duck-types this class (checks for getMethods/setup/
-// teardown methods). We don't extend BenchmarkBase to avoid a runtime import
-// of the @defi-wonderland/aztec-benchmark package from inside the benchmark
-// file — the CLI already provides the runner.
 
-export default class FPCBenchmark {
-  #actions: FPCActionWrapper[] = [];
+export default class CreditFPCBenchmark {
+  #actions: CreditFPCActionWrapper[] = [];
+  #payAndMintPayment?: PayAndMintPaymentMethod;
+  #payWithCreditPayment?: PayWithCreditPaymentMethod;
 
-  async setup(): Promise<FPCBenchmarkContext> {
-    console.log('=== FPC Benchmark Setup ===\n');
+  async setup(): Promise<CreditFPCBenchmarkContext> {
+    console.log('=== CreditFPC Benchmark Setup ===\n');
 
     // ── Connect to node ────────────────────────────────────────────────────
     const node = createAztecNodeClient(NODE_URL);
@@ -424,8 +470,8 @@ export default class FPCBenchmark {
     const tokenArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Token'), 'utf8')),
     );
-    const fpcArtifact = loadContractArtifact(
-      JSON.parse(readFileSync(findArtifact('FPC'), 'utf8')),
+    const creditFpcArtifact = loadContractArtifact(
+      JSON.parse(readFileSync(findArtifact('CreditFPC'), 'utf8')),
     );
     const noopArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Noop'), 'utf8')),
@@ -443,16 +489,16 @@ export default class FPCBenchmark {
     const tokenAddress = tokenDeploy.address;
     console.log('Token:', tokenAddress.toString());
 
-    // ── Deploy FPC ─────────────────────────────────────────────────────────
-    console.log('Deploying FPC...');
-    const fpcDeploy = await Contract.deploy(wallet, fpcArtifact, [
+    // ── Deploy CreditFPC ──────────────────────────────────────────────────
+    console.log('Deploying CreditFPC...');
+    const creditFpcDeploy = await Contract.deploy(wallet, creditFpcArtifact, [
       operatorAddress,
       operatorPubKey.x,
       operatorPubKey.y,
       tokenAddress,
     ]).send({ from: userAddress });
-    const fpcAddress = fpcDeploy.address;
-    console.log('FPC:  ', fpcAddress.toString());
+    const fpcAddress = creditFpcDeploy.address;
+    console.log('CreditFPC:', fpcAddress.toString());
 
     // ── Deploy Noop (minimal app tx placeholder for profiling) ────────────
     console.log('Deploying Noop...');
@@ -461,10 +507,14 @@ export default class FPCBenchmark {
     });
     console.log('Noop: ', noopDeploy.address.toString());
 
+    await pxe.registerSender(fpcAddress);
+    await pxe.registerSender(tokenAddress);
+    console.log('Registered CreditFPC + Token as senders for note discovery.');
+
     const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
     const noopAsUser = Contract.at(noopDeploy.address, noopArtifact, wallet);
 
-    // ── Bridge Fee Juice to FPC via L1 ─────────────────────────────────────
+    // ── Bridge Fee Juice to CreditFPC via L1 ─────────────────────────────
     const l1Client = await createL1Client(node);
     await fundFpcWithFeeJuice(
       node,
@@ -475,7 +525,7 @@ export default class FPCBenchmark {
       l1Client,
     );
 
-    // ── Compute gas-dependent charge ───────────────────────────────────────
+    // ── Compute gas-dependent amounts ────────────────────────────────────
     const minFees = await node.getCurrentMinFees();
     const PADDING = 1.5;
     const feeDa = BigInt(Math.ceil(Number(minFees.feePerDaGas) * PADDING));
@@ -483,27 +533,56 @@ export default class FPCBenchmark {
     const DA_GAS = BigInt(MAX_PROCESSABLE_DA_GAS_PER_CHECKPOINT);
     const L2_GAS = BigInt(AVM_MAX_PROCESSABLE_L2_GAS);
     const maxGasCost = feeDa * DA_GAS + feeL2 * L2_GAS;
-    const charge = feeJuiceToAsset(maxGasCost, RATE_NUM, RATE_DEN);
+
+    // Total cost including teardown (needed for credit balance checks).
+    const totalMaxCost =
+      maxGasCost +
+      feeDa * BigInt(DEFAULT_TEARDOWN_DA_GAS_LIMIT) +
+      feeL2 * BigInt(DEFAULT_TEARDOWN_L2_GAS_LIMIT);
+
+    // Credit amounts for the real send that establishes the balance:
+    // must cover the send's own fee + profiled pay_and_mint + profiled pay_with_credit.
+    const sendCreditMint = totalMaxCost * 4n;
+    const sendTokenCharge = feeJuiceToAsset(sendCreditMint, RATE_NUM, RATE_DEN);
+
+    // Credit amounts for the profiled pay_and_mint:
+    const profileCreditMint = totalMaxCost * 3n;
+    const profileTokenCharge = feeJuiceToAsset(profileCreditMint, RATE_NUM, RATE_DEN);
 
     console.log(`\nfeePerDaGas=${feeDa} feePerL2Gas=${feeL2}`);
-    console.log(`max gas cost: ${maxGasCost} | token charge: ${charge}`);
+    console.log(`max gas cost: ${maxGasCost} | total w/ teardown: ${totalMaxCost}`);
+    console.log(`send credit mint: ${sendCreditMint} | token charge: ${sendTokenCharge}`);
+    console.log(`profile credit mint: ${profileCreditMint} | token charge: ${profileTokenCharge}`);
 
-    // ── Mint tokens to user ────────────────────────────────────────────────
-    const mintAmount = charge + 1000n;
-    console.log(`\nMinting ${mintAmount} tokens to user...`);
+    // ── Mint tokens to user (enough for the real send) ───────────────────
+    const tokenMintAmount = sendTokenCharge + 10000n;
+    console.log(`\nMinting ${tokenMintAmount} tokens to user...`);
     await tokenAsUser.methods
-      .mint_to_private(userAddress, mintAmount)
+      .mint_to_private(userAddress, tokenMintAmount)
       .send({ from: userAddress });
     console.log('Minted.');
 
-    // ── Refresh L2 timestamp for quote (blocks mined during setup) ────────
+    // ── Gas settings ─────────────────────────────────────────────────────
+    const gasSettings = GasSettings.default({
+      gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
+      maxFeesPerGas: new GasFees(feeDa, feeL2),
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Establish credit balance via a real pay_and_mint transaction.
+    //  This MUST happen before any .profile() calls because profiling
+    //  advances the PXE's sender tag indices.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // Refresh L2 timestamp for quote (blocks mined during setup)
     const latestHeader = await node.getBlockHeader('latest');
     const l2Timestamp = latestHeader!.globalVariables.timestamp;
     const VALID_UNTIL = l2Timestamp + QUOTE_TTL_SECONDS;
     console.log(`L2 timestamp: ${l2Timestamp}, VALID_UNTIL: ${VALID_UNTIL}`);
 
-    // ── Quote signature ────────────────────────────────────────────────────
-    const quoteSigFields = await signQuote(
+    const SEND_NONCE = BigInt(Date.now());
+
+    const sendQuoteSigFields = await signQuote(
       schnorr,
       operatorSigningKey,
       fpcAddress,
@@ -514,76 +593,254 @@ export default class FPCBenchmark {
       userAddress,
       QUOTE_DOMAIN_SEP,
     );
-    console.log('Quote signature created.');
 
-    // ── Transfer authwit ───────────────────────────────────────────────────
-    const TX_NONCE = BigInt(Date.now());
-    const transferAuthWit = await wallet.createAuthWit(userAddress, {
+    const sendTransferAuthWit = await wallet.createAuthWit(userAddress, {
       caller: fpcAddress,
       action: tokenAsUser.methods.transfer_private_to_private(
         userAddress,
         operatorAddress,
-        charge,
-        TX_NONCE,
+        sendTokenCharge,
+        SEND_NONCE,
       ),
     });
-    console.log('Transfer authwit created.');
 
-    // ── Gas settings ───────────────────────────────────────────────────────
-    const gasSettings = GasSettings.default({
-      gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
-      maxFeesPerGas: new GasFees(feeDa, feeL2),
-    });
-
-    const feePaymentMethod = new CustomFPCPaymentMethod(
+    const sendPayAndMint = new PayAndMintPaymentMethod(
       fpcAddress,
-      transferAuthWit,
-      quoteSigFields,
-      TX_NONCE,
+      sendTransferAuthWit,
+      sendQuoteSigFields,
+      SEND_NONCE,
       RATE_NUM,
       RATE_DEN,
       VALID_UNTIL,
+      sendCreditMint,
       gasSettings,
     );
 
-    console.log('\n=== FPC Benchmark Setup Complete ===\n');
+    console.log('Establishing user credit balance (sending real pay_and_mint tx)...');
+    await noopAsUser.methods
+      .noop()
+      .send({
+        fee: { paymentMethod: sendPayAndMint, gasSettings },
+        from: userAddress,
+        additionalScopes: [operatorAddress],
+      });
+    console.log('Credit balance established (tx mined).');
+
+    // Follow-up tx to advance archiver past the pay_and_mint block.
+    console.log('Sending follow-up tx to advance archiver...');
+    await tokenAsUser.methods
+      .mint_to_private(userAddress, 1n)
+      .send({ from: userAddress });
+    console.log('Follow-up tx mined.');
+
+    // ── Verify credit balance ────────────────────────────────────────────
+    const creditFpcContract = Contract.at(fpcAddress, creditFpcArtifact, wallet);
+
+    let creditBalance = 0n;
+    for (let i = 0; i < 10; i++) {
+      creditBalance = await creditFpcContract.methods
+        .balance_of(userAddress)
+        .simulate({ from: userAddress });
+      console.log(`  [${i + 1}/10] Credit balance: ${creditBalance}`);
+      if (creditBalance >= totalMaxCost) break;
+      if (i < 9) {
+        try {
+          await tokenAsUser.methods
+            .mint_to_private(userAddress, 1n)
+            .send({ from: userAddress });
+        } catch (e: any) {
+          console.log(`  dummy tx failed (non-fatal): ${(e.message || '').substring(0, 80)}`);
+        }
+      }
+    }
+
+    // Fallback: use dev_mint with ONCHAIN_UNCONSTRAINED delivery.
+    if (creditBalance < totalMaxCost) {
+      console.log('\nCredit notes not yet visible. Trying dev_mint fallback...');
+
+      const DEV_NONCE = SEND_NONCE + 1n;
+      const devMintAmount = totalMaxCost * 3n;
+      const devTokenCharge = feeJuiceToAsset(devMintAmount, RATE_NUM, RATE_DEN);
+
+      await tokenAsUser.methods
+        .mint_to_private(userAddress, devTokenCharge + 10000n)
+        .send({ from: userAddress });
+
+      const devTransferAuthWit = await wallet.createAuthWit(userAddress, {
+        caller: fpcAddress,
+        action: tokenAsUser.methods.transfer_private_to_private(
+          userAddress,
+          operatorAddress,
+          devTokenCharge,
+          DEV_NONCE,
+        ),
+      });
+
+      const DEV_VALID_UNTIL = VALID_UNTIL + 5n;
+      const devQuoteSigFields = await signQuote(
+        schnorr,
+        operatorSigningKey,
+        fpcAddress,
+        tokenAddress,
+        RATE_NUM,
+        RATE_DEN,
+        DEV_VALID_UNTIL,
+        userAddress,
+        QUOTE_DOMAIN_SEP,
+      );
+
+      const devPayAndMint = new PayAndMintPaymentMethod(
+        fpcAddress,
+        devTransferAuthWit,
+        devQuoteSigFields,
+        DEV_NONCE,
+        RATE_NUM,
+        RATE_DEN,
+        DEV_VALID_UNTIL,
+        devMintAmount,
+        gasSettings,
+      );
+
+      await creditFpcContract.methods
+        .dev_mint(totalMaxCost * 2n)
+        .send({
+          fee: { paymentMethod: devPayAndMint, gasSettings },
+          from: userAddress,
+          additionalScopes: [operatorAddress],
+        });
+      console.log('dev_mint tx mined.');
+
+      await tokenAsUser.methods
+        .mint_to_private(userAddress, 1n)
+        .send({ from: userAddress });
+
+      for (let i = 0; i < 10; i++) {
+        creditBalance = await creditFpcContract.methods
+          .balance_of(userAddress)
+          .simulate({ from: userAddress });
+        console.log(`  [${i + 1}/10] Credit balance: ${creditBalance}`);
+        if (creditBalance >= totalMaxCost) break;
+        if (i < 9) {
+          try {
+            await tokenAsUser.methods
+              .mint_to_private(userAddress, 1n)
+              .send({ from: userAddress });
+          } catch (e: any) {
+            console.log(`  dummy tx failed (non-fatal): ${(e.message || '').substring(0, 80)}`);
+          }
+        }
+      }
+
+      if (creditBalance < totalMaxCost) {
+        throw new Error(
+          `Credit balance ${creditBalance} still below required ${totalMaxCost} after dev_mint fallback.`,
+        );
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  Prepare profiling payment methods
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // ── pay_and_mint profiling setup ─────────────────────────────────────
+    const PROFILE_NONCE = SEND_NONCE + 10n;
+    const PROFILE_VALID_UNTIL = VALID_UNTIL + 10n;
+
+    const profileQuoteSigFields = await signQuote(
+      schnorr,
+      operatorSigningKey,
+      fpcAddress,
+      tokenAddress,
+      RATE_NUM,
+      RATE_DEN,
+      PROFILE_VALID_UNTIL,
+      userAddress,
+      QUOTE_DOMAIN_SEP,
+    );
+
+    const profileTransferAuthWit = await wallet.createAuthWit(userAddress, {
+      caller: fpcAddress,
+      action: tokenAsUser.methods.transfer_private_to_private(
+        userAddress,
+        operatorAddress,
+        profileTokenCharge,
+        PROFILE_NONCE,
+      ),
+    });
+
+    this.#payAndMintPayment = new PayAndMintPaymentMethod(
+      fpcAddress,
+      profileTransferAuthWit,
+      profileQuoteSigFields,
+      PROFILE_NONCE,
+      RATE_NUM,
+      RATE_DEN,
+      PROFILE_VALID_UNTIL,
+      profileCreditMint,
+      gasSettings,
+    );
+
+    // Mint tokens for the profiled pay_and_mint send.
+    await tokenAsUser.methods
+      .mint_to_private(userAddress, profileTokenCharge + 10000n)
+      .send({ from: userAddress });
+
+    // ── pay_with_credit profiling setup ──────────────────────────────────
+    this.#payWithCreditPayment = new PayWithCreditPaymentMethod(
+      fpcAddress,
+      gasSettings,
+    );
+
+    console.log('\n=== CreditFPC Benchmark Setup Complete ===\n');
 
     return {
       pxe,
       wallet,
+      gasSettings,
       tokenAsUser,
       noopAsUser,
       userAddress,
       operatorAddress,
       fpcAddress,
-      feePaymentMethod,
-      gasSettings,
     };
   }
 
-  getMethods(context: FPCBenchmarkContext) {
-    const action = new FPCActionWrapper(
+  getMethods(context: CreditFPCBenchmarkContext) {
+    const payAndMintAction = new CreditFPCActionWrapper(
       context.noopAsUser.methods.noop(),
+      this.#payAndMintPayment,
       [context.operatorAddress],
       context.gasSettings,
     );
-    this.#actions = [action];
-    return [{
-      interaction: { caller: context.userAddress, action },
-      name: 'fee_entrypoint',
-    }];
+    const payWithCreditAction = new CreditFPCActionWrapper(
+      context.noopAsUser.methods.noop(),
+      this.#payWithCreditPayment,
+      [],
+      context.gasSettings,
+    );
+
+    this.#actions = [payAndMintAction, payWithCreditAction];
+
+    return [
+      {
+        interaction: { caller: context.userAddress, action: payAndMintAction },
+        name: 'pay_and_mint',
+      },
+      {
+        interaction: { caller: context.userAddress, action: payWithCreditAction },
+        name: 'pay_with_credit',
+      },
+    ];
   }
 
-  async teardown(context: FPCBenchmarkContext): Promise<void> {
-    // The CLI writes suffixed files (e.g. fpc_latest.benchmark.json) in CI,
-    // or fpc.benchmark.json locally. Find the most recently written match.
+  async teardown(context: CreditFPCBenchmarkContext): Promise<void> {
     const jsonPath = readdirSync(__dirname)
-      .filter((f: string) => f.startsWith('fpc') && f.endsWith('.benchmark.json'))
+      .filter((f: string) => f.startsWith('credit_fpc') && f.endsWith('.benchmark.json'))
       .map((f: string) => join(__dirname, f))
       .sort((a: string, b: string) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 
     if (!jsonPath) {
-      console.warn('No fpc*.benchmark.json found in', __dirname);
+      console.warn('No credit_fpc*.benchmark.json found in', __dirname);
       return;
     }
     try {
@@ -593,16 +850,10 @@ export default class FPCBenchmark {
         const ix = this.#actions[i];
         const r = report.results[i];
 
-        // Enrich provingTime from our wrapper's captured SDK timings (the
-        // profiler also writes provingTime but our wrapper gives us the
-        // canonical value from the same profile() call).
         if (ix.timings?.proving != null) {
           r.provingTime = ix.timings.proving;
         }
 
-        // Build a lookup of witgen timing by index from the SDK's perFunction.
-        // perFunction and gateCounts share the same order (both derived from
-        // executionSteps), so matching by index is safe.
         const perFunction: any[] = ix.timings?.perFunction ?? [];
         const witgenByIndex = new Map<number, number>();
         for (let j = 0; j < perFunction.length; j++) {
@@ -611,17 +862,15 @@ export default class FPCBenchmark {
           }
         }
 
-        // Annotate each gate count entry with witgenMs.
         const rawSteps = r.gateCounts ?? [];
         for (let j = 0; j < rawSteps.length; j++) {
           rawSteps[j].witgenMs = witgenByIndex.get(j) ?? null;
         }
 
-        // Extract FPC-only steps.
         const allSteps = rawSteps.map(
           (gc: any) => ({ functionName: gc.circuitName, gateCount: gc.gateCount, witgenMs: gc.witgenMs }),
         );
-        const fpcSteps = extractFpcSteps(allSteps, 'FPC');
+        const fpcSteps = extractFpcSteps(allSteps, 'CreditFPC');
         r.fpcGateCounts = fpcSteps.map((s: any) => ({
           circuitName: s.functionName,
           gateCount: s.gateCount,
@@ -634,14 +883,12 @@ export default class FPCBenchmark {
           (sum: number, s: any) => sum + (s.witgenMs ?? 0), 0,
         );
 
-        // Rename gateCounts → fullTrace for clarity.
         r.fullTrace = r.gateCounts;
         delete r.gateCounts;
 
         this.#printResultTable(r);
       }
 
-      // Add FPC-only and proving-time summaries.
       report.fpcSummary = {};
       report.provingTimeSummary = {};
       for (const r of report.results) {
@@ -672,11 +919,10 @@ export default class FPCBenchmark {
     const msFmt = (n: number | null) => n != null ? n.toFixed(1) : '-';
     const LINE = '\u2500'.repeat(100);
 
-    console.log(`\n=== FPC Benchmark Results: ${r.name} ===`);
+    console.log(`\n=== CreditFPC Benchmark Results: ${r.name} ===`);
 
-    // FPC-only gate counts.
     if (r.fpcGateCounts?.length) {
-      console.log('\nFPC-Only Gate Counts:');
+      console.log('\nCreditFPC-Only Gate Counts:');
       console.log(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
       console.log(LINE);
       let sub = 0;
@@ -691,14 +937,13 @@ export default class FPCBenchmark {
       }
       console.log(LINE);
       console.log(
-        pad('FPC TOTAL', 50),
+        pad('CreditFPC TOTAL', 50),
         pad(numFmt(r.fpcTotalGateCount), 14),
         pad(msFmt(r.fpcTotalWitgenMs), 14),
         '',
       );
     }
 
-    // Full transaction trace.
     if (r.fullTrace?.length) {
       console.log('\nFull Transaction Trace:');
       console.log(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
@@ -717,7 +962,6 @@ export default class FPCBenchmark {
       console.log(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
     }
 
-    // Proving time + gas summary.
     const provingStr = r.provingTime != null
       ? `${numFmt(Math.round(r.provingTime))}ms (hardware-dependent, full tx)`
       : 'N/A';
