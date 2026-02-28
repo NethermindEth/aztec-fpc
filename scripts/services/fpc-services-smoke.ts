@@ -324,7 +324,7 @@ function getConfig(): SmokeConfig {
     l2GasLimit: readEnvNumber("FPC_SERVICES_SMOKE_L2_GAS_LIMIT", 1_000_000),
     feeJuiceTopupSafetyMultiplier: readEnvBigInt(
       "FPC_SERVICES_SMOKE_TOPUP_SAFETY_MULTIPLIER",
-      5n,
+      2n,
     ),
     topupConfirmTimeoutMs: readEnvNumber(
       "FPC_SERVICES_SMOKE_TOPUP_CONFIRM_TIMEOUT_MS",

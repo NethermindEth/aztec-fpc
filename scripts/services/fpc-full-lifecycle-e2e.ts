@@ -169,7 +169,7 @@ Config env vars:
 - FPC_FULL_E2E_TOPUP_OPS_PORT (default: 3401)
 - FPC_FULL_E2E_DA_GAS_LIMIT (default: 1000000)
 - FPC_FULL_E2E_L2_GAS_LIMIT (default: 1000000)
-- FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER (default: 5)
+- FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER (default: 2)
 - FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS (default: 3600, max: 3600)
 - FPC_FULL_E2E_MARKET_RATE_NUM (default: 1)
 - FPC_FULL_E2E_MARKET_RATE_DEN (default: 1000)
@@ -1258,7 +1258,7 @@ function getConfig(): FullE2EConfig {
     l2GasLimit: readEnvPositiveInteger("FPC_FULL_E2E_L2_GAS_LIMIT", 1_000_000),
     feeJuiceTopupSafetyMultiplier: readEnvBigInt(
       "FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER",
-      5n,
+      2n,
     ),
     topupConfirmTimeoutMs,
     topupConfirmPollInitialMs,
