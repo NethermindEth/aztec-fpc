@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "@aztec/bb.js": "4.0.0-devnet.2-patch.2",
-    "pino": "^9.0.0",
+    "pino": "^10.3.1",
     "pino-pretty": "^13.1.3"
   }
 }
