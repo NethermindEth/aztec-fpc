@@ -142,6 +142,20 @@ if has_port "$L1_HOST" "$L1_PORT"; then
   L1_RUNNING=1
 fi
 
+RESET_LOCAL_STATE="${FPC_FULL_E2E_RESET_LOCAL_STATE:-}"
+if [[ -z "$RESET_LOCAL_STATE" ]]; then
+  RESET_LOCAL_STATE="1"
+fi
+if [[ "$RESET_LOCAL_STATE" != "0" && "$RESET_LOCAL_STATE" != "1" ]]; then
+  echo "[full-lifecycle-e2e] ERROR: FPC_FULL_E2E_RESET_LOCAL_STATE must be 0 or 1, got '$RESET_LOCAL_STATE'" >&2
+  exit 1
+fi
+if [[ "$RESET_LOCAL_STATE" == "1" ]]; then
+  echo "[full-lifecycle-e2e] Resetting wallet/PXE local state"
+  rm -rf "$REPO_ROOT"/wallet_data_* "$REPO_ROOT"/pxe_data_*
+  rm -rf "$REPO_ROOT"/services/attestation/wallet_data_* "$REPO_ROOT"/services/attestation/pxe_data_*
+fi
+
 if [[ "$START_LOCAL_NETWORK" == "1" ]]; then
   if [[ "$NODE_RUNNING" -ne "$L1_RUNNING" ]]; then
     echo "[full-lifecycle-e2e] ERROR: partial endpoint availability detected: node=$NODE_RUNNING ($NODE_HOST:$NODE_PORT), l1=$L1_RUNNING ($L1_HOST:$L1_PORT)" >&2
@@ -182,20 +196,6 @@ else
     echo "[full-lifecycle-e2e] ERROR: local network auto-start disabled, but $NODE_HOST:$NODE_PORT or $L1_HOST:$L1_PORT is not reachable" >&2
     exit 1
   fi
-fi
-
-RESET_LOCAL_STATE="${FPC_FULL_E2E_RESET_LOCAL_STATE:-}"
-if [[ -z "$RESET_LOCAL_STATE" ]]; then
-  RESET_LOCAL_STATE="1"
-fi
-if [[ "$RESET_LOCAL_STATE" != "0" && "$RESET_LOCAL_STATE" != "1" ]]; then
-  echo "[full-lifecycle-e2e] ERROR: FPC_FULL_E2E_RESET_LOCAL_STATE must be 0 or 1, got '$RESET_LOCAL_STATE'" >&2
-  exit 1
-fi
-if [[ "$RESET_LOCAL_STATE" == "1" ]]; then
-  echo "[full-lifecycle-e2e] Resetting wallet/PXE local state"
-  rm -rf "$REPO_ROOT"/wallet_data_* "$REPO_ROOT"/pxe_data_*
-  rm -rf "$REPO_ROOT"/services/attestation/wallet_data_* "$REPO_ROOT"/services/attestation/pxe_data_*
 fi
 
 if ! bun --cwd "$REPO_ROOT/scripts" -e "import('@aztec/accounts/testing')" >/dev/null 2>&1; then
