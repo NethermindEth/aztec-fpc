@@ -1,4 +1,3 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +8,7 @@ import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
-import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import {
   FeeJuiceContract,
   ProtocolContractAddress,
@@ -25,6 +24,17 @@ import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
+
+import {
+  installManagedProcessSignalHandlers,
+  type ManagedProcess,
+  sleep,
+  startManagedProcess,
+  stopManagedProcess,
+  waitForHealth,
+  waitForLog,
+  waitForNodeReady,
+} from "../common/managed-process.ts";
 
 type FullE2EMode = "fpc";
 
@@ -74,12 +84,6 @@ type DeploymentRuntimeResult = {
   feePerDaGas: bigint;
   feePerL2Gas: bigint;
   maxGasCostNoTeardown: bigint;
-};
-
-type ManagedProcess = {
-  name: string;
-  process: ChildProcessWithoutNullStreams;
-  getLogs: () => string;
 };
 
 type TopupBridgeSubmission = {
@@ -148,9 +152,6 @@ const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const MAX_PORT = 65535;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DIAGNOSTIC_TAIL_LINES = 200;
-const managedProcessRegistry = new Set<ManagedProcess>();
-let shutdownInProgress = false;
-
 function printHelp(): void {
   console.log(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
 
@@ -299,10 +300,6 @@ function assertPrivateKeyHex(value: string, fieldName: string): void {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
 }
@@ -323,178 +320,6 @@ function loadArtifact(artifactPath: string): ContractArtifact {
     }
     throw error;
   }
-}
-
-async function waitForNodeReady(
-  node: ReturnType<typeof createAztecNodeClient>,
-  timeoutMs: number,
-): Promise<void> {
-  await Promise.race([
-    waitForNode(node),
-    new Promise((_, reject) =>
-      setTimeout(
-        () =>
-          reject(
-            new Error(`Timed out waiting for Aztec node after ${timeoutMs}ms`),
-          ),
-        timeoutMs,
-      ),
-    ),
-  ]);
-}
-
-function startManagedProcess(
-  name: string,
-  command: string,
-  args: string[],
-  options: {
-    cwd: string;
-    env?: NodeJS.ProcessEnv;
-  },
-): ManagedProcess {
-  let logs = "";
-  const processHandle = spawn(command, args, {
-    cwd: options.cwd,
-    env: options.env ?? process.env,
-    detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  processHandle.stdout.on("data", (chunk: Buffer) => {
-    const text = chunk.toString();
-    logs += text;
-    process.stdout.write(`[${name}] ${text}`);
-  });
-  processHandle.stderr.on("data", (chunk: Buffer) => {
-    const text = chunk.toString();
-    logs += text;
-    process.stderr.write(`[${name}] ${text}`);
-  });
-
-  const managed: ManagedProcess = {
-    name,
-    process: processHandle,
-    getLogs: () => logs,
-  };
-  managedProcessRegistry.add(managed);
-  processHandle.on("exit", () => {
-    managedProcessRegistry.delete(managed);
-  });
-  return managed;
-}
-
-async function stopManagedProcess(proc: ManagedProcess): Promise<void> {
-  if (proc.process.exitCode !== null) {
-    managedProcessRegistry.delete(proc);
-    return;
-  }
-
-  const pid = proc.process.pid;
-  let signaled = false;
-  if (typeof pid === "number" && pid > 0) {
-    try {
-      process.kill(-pid, "SIGTERM");
-      signaled = true;
-    } catch {
-      signaled = false;
-    }
-  }
-  if (!signaled) {
-    try {
-      proc.process.kill("SIGTERM");
-    } catch {
-      managedProcessRegistry.delete(proc);
-      return;
-    }
-  }
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    if (proc.process.exitCode !== null) {
-      managedProcessRegistry.delete(proc);
-      return;
-    }
-    await sleep(100);
-  }
-  if (typeof pid === "number" && pid > 0) {
-    try {
-      process.kill(-pid, "SIGKILL");
-      managedProcessRegistry.delete(proc);
-      return;
-    } catch {
-      // Fallback to direct child kill if process groups are unavailable.
-    }
-  }
-  try {
-    proc.process.kill("SIGKILL");
-  } catch {
-    // Process may have already exited between checks.
-  }
-  managedProcessRegistry.delete(proc);
-}
-
-async function stopAllManagedProcesses(): Promise<void> {
-  for (const proc of Array.from(managedProcessRegistry).reverse()) {
-    await stopManagedProcess(proc);
-  }
-}
-
-function installManagedProcessSignalHandlers(): void {
-  const handleSignal = (signal: NodeJS.Signals) => {
-    if (shutdownInProgress) {
-      return;
-    }
-    shutdownInProgress = true;
-    void (async () => {
-      console.error(
-        `[full-lifecycle-e2e] Received ${signal}; stopping managed processes...`,
-      );
-      await stopAllManagedProcesses();
-      process.exit(signal === "SIGINT" ? 130 : 143);
-    })();
-  };
-
-  process.once("SIGINT", () => handleSignal("SIGINT"));
-  process.once("SIGTERM", () => handleSignal("SIGTERM"));
-}
-
-async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        return;
-      }
-    } catch {
-      // Keep retrying while the service boots.
-    }
-    await sleep(500);
-  }
-  throw new Error(`Timed out waiting for health endpoint: ${url}`);
-}
-
-async function waitForLog(
-  proc: ManagedProcess,
-  expected: string,
-  timeoutMs: number,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    if (proc.getLogs().includes(expected)) {
-      return;
-    }
-    if (proc.process.exitCode !== null) {
-      throw new Error(
-        `Process ${proc.name} exited before logging "${expected}" (exit=${proc.process.exitCode})`,
-      );
-    }
-    await sleep(250);
-  }
-  throw new Error(
-    `Timed out waiting for ${proc.name} log "${expected}". Recent logs:\n${proc
-      .getLogs()
-      .slice(-4000)}`,
-  );
 }
 
 function parseTopupBridgeSubmissions(logs: string): TopupBridgeSubmission[] {
@@ -2386,7 +2211,7 @@ function writeStep8Summary(summaryPath: string, runDir: string): void {
 }
 
 async function main(): Promise<void> {
-  installManagedProcessSignalHandlers();
+  installManagedProcessSignalHandlers("full-lifecycle-e2e");
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     printHelp();
     return;
