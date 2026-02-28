@@ -2001,7 +2001,7 @@ async function negativeMintedCreditTooLowRejected(
     fjAmount,
     aaPaymentAmount,
     latestTimestamp + 600n,
-    result.user,
+    result.otherUser,
   );
 
   await expectFailure(
@@ -2011,7 +2011,7 @@ async function negativeMintedCreditTooLowRejected(
       executeFeePaidTx(config, result, {
         token: result.token,
         fpc: result.fpc,
-        payer: result.user,
+        payer: result.otherUser,
         recipient: result.operator,
         transferAmount: 1n,
         quote: lowMintQuote,
@@ -2120,15 +2120,11 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   const bridgeStatePath = path.join(isolatedRunDir, "topup.bridge-state.json");
   const topupConfigPath = path.join(isolatedRunDir, "topup.config.yaml");
 
-  const minimumBudget = 1_000_000n;
-  const baselineSingleTxBudget =
-    estimatedSingleTxFeeJuice <= 0n
-      ? 1_000_000_000n
-      : estimatedSingleTxFeeJuice;
-  const txHeadroom = ceilDiv(baselineSingleTxBudget, 10n);
-  const budgetWei = baselineSingleTxBudget + txHeadroom + 1_000_000n;
+  const isolatedPrecheckBufferWei = 1_000_000n;
+  // The first tx must pass fee-payer prevalidation (requires >= max fee),
+  // but leave less than one full max-fee budget for the second tx.
   const effectiveBudgetWei =
-    budgetWei > minimumBudget ? budgetWei : minimumBudget;
+    result.maxGasCostNoTeardown + isolatedPrecheckBufferWei;
 
   writeFileSync(
     topupConfigPath,
@@ -2238,6 +2234,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     recipient: result.operator,
     transferAmount: 1n,
     quote: quote1,
+    enforceQuotedFjMatchesMax: false,
   });
 
   await expectFailure(
