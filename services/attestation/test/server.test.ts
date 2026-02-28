@@ -8,6 +8,16 @@ import { computeQuoteHash } from "../src/signer.js";
 
 const VALID_USER =
   "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
+const VALID_FJ_AMOUNT = "1000000";
+const U128_MAX = "340282366920938463463374607431768211455";
+const U128_MAX_PLUS_ONE = "340282366920938463463374607431768211456";
+
+function quoteUrl(
+  user: string = VALID_USER,
+  fjAmount: string = VALID_FJ_AMOUNT,
+): string {
+  return `/quote?user=${user}&fj_amount=${fjAmount}`;
+}
 
 const TEST_CONFIG: Config = {
   runtime_profile: "development",
@@ -113,7 +123,7 @@ describe("server", () => {
     try {
       const success = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       assert.equal(success.statusCode, 200);
 
@@ -173,21 +183,21 @@ describe("server", () => {
       const nowBefore = Math.floor(Date.now() / 1000);
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       const nowAfter = Math.floor(Date.now() / 1000);
       assert.equal(response.statusCode, 200);
 
       const body = response.json() as {
         accepted_asset: string;
-        rate_num: string;
-        rate_den: string;
+        fj_amount: string;
+        aa_payment_amount: string;
         valid_until: string;
         signature: string;
       };
       assert.equal(body.accepted_asset, TEST_CONFIG.accepted_asset_address);
-      assert.equal(body.rate_num, "10200");
-      assert.equal(body.rate_den, "10000000");
+      assert.equal(body.fj_amount, VALID_FJ_AMOUNT);
+      assert.equal(body.aa_payment_amount, "1020");
       assert.equal(body.signature, "0xabc123");
 
       const validUntil = BigInt(body.valid_until);
@@ -205,8 +215,8 @@ describe("server", () => {
         acceptedAsset: AztecAddress.fromString(
           TEST_CONFIG.accepted_asset_address,
         ),
-        rateNum: 10200n,
-        rateDen: 10000000n,
+        fjFeeAmount: BigInt(VALID_FJ_AMOUNT),
+        aaPaymentAmount: 1020n,
         validUntil,
         userAddress: AztecAddress.fromString(VALID_USER),
       });
@@ -239,7 +249,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: "/quote?user=not_an_address",
+        url: "/quote?user=not_an_address&fj_amount=1",
       });
       assert.equal(response.statusCode, 400);
       assert.deepEqual(response.json(), {
@@ -253,13 +263,81 @@ describe("server", () => {
     }
   });
 
+  it("returns 400 for missing fj_amount", async () => {
+    const app = buildServer(TEST_CONFIG, mockSigner());
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}`,
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Missing or invalid query param: fj_amount",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 400 for fj_amount above u128 range", async () => {
+    const app = buildServer(TEST_CONFIG, mockSigner());
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: quoteUrl(VALID_USER, U128_MAX_PLUS_ONE),
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Missing or invalid query param: fj_amount",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 400 when computed aa_payment_amount exceeds u128 range", async () => {
+    const app = buildServer(
+      {
+        ...TEST_CONFIG,
+        market_rate_num: 2,
+        market_rate_den: 1,
+        fee_bips: 0,
+      },
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: quoteUrl(VALID_USER, U128_MAX),
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Computed aa_payment_amount does not fit in u128",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns 500 when quote signer fails", async () => {
     const app = buildServer(TEST_CONFIG, failingSigner());
 
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       assert.equal(response.statusCode, 500);
       assert.deepEqual(response.json(), {
@@ -285,7 +363,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       assert.equal(response.statusCode, 401);
       assert.deepEqual(response.json(), {
@@ -311,7 +389,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "super-secret",
         },
@@ -334,7 +412,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "wrong-secret",
         },
@@ -364,7 +442,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-internal-attestation": "allow",
         },
@@ -389,7 +467,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-internal-attestation": "allow",
         },
@@ -414,7 +492,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "super-secret",
         },
@@ -445,7 +523,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "super-secret",
           "x-internal-attestation": "allow",
@@ -474,15 +552,15 @@ describe("server", () => {
     try {
       const r1 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       const r2 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       const r3 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
 
       assert.equal(r1.statusCode, 200);
@@ -518,11 +596,11 @@ describe("server", () => {
     try {
       const r1 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       const r2 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
 
       assert.equal(r1.statusCode, 200);
@@ -549,16 +627,16 @@ describe("server", () => {
     try {
       const r1 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       const r2 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       nowUnix += 60n;
       const r3 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
 
       assert.equal(r1.statusCode, 200);
@@ -591,21 +669,21 @@ describe("server", () => {
     try {
       const goodKeyFirst = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "good-key",
         },
       });
       const badKeyResponse = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "bad-key",
         },
       });
       const goodKeySecond = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "good-key",
         },
@@ -641,14 +719,14 @@ describe("server", () => {
     try {
       const badKeyFirst = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "bad-key-1",
         },
       });
       const badKeySecond = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "bad-key-2",
         },
@@ -683,11 +761,11 @@ describe("server", () => {
     try {
       const r1 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
       });
       const r2 = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: quoteUrl(),
         headers: {
           "x-api-key": "attempt-bypass",
         },

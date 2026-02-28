@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/deploy-fpc-local-smoke.XXXXXX")"
+source "$REPO_ROOT/scripts/common/test-cleanup.sh"
 AZTEC_PID=""
 AZTEC_PGID=""
 SCRIPT_PGID="$(ps -o pgid= "$$" 2>/dev/null | tr -d '[:space:]')"
@@ -44,9 +45,23 @@ function stop_aztec_local_network() {
 }
 
 function cleanup() {
+  local node_port="${NODE_PORT:-${FPC_DEPLOY_SMOKE_NODE_PORT:-8080}}"
+  local l1_port="${L1_PORT:-${FPC_DEPLOY_SMOKE_L1_PORT:-8545}}"
+  local attestation_port="${FPC_SERVICES_SMOKE_ATTESTATION_PORT:-3300}"
+  local topup_ops_port="${FPC_SERVICES_SMOKE_TOPUP_OPS_PORT:-3401}"
+
   if [[ "$STARTED_LOCAL_NETWORK" -eq 1 ]]; then
     stop_aztec_local_network
   fi
+  test_cleanup_kill_listener_ports \
+    "[deploy-smoke]" \
+    "$node_port" \
+    "$l1_port" \
+    "$attestation_port" \
+    "$topup_ops_port" \
+    3000 \
+    3001
+  test_cleanup_reset_state "[deploy-smoke]" "$REPO_ROOT"
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -100,6 +115,29 @@ if has_port "$L1_HOST" "$L1_PORT"; then
   L1_RUNNING=1
 fi
 
+WILL_START_LOCAL_NETWORK=0
+if [[ "$START_LOCAL_NETWORK" == "1" && ! ( "$NODE_RUNNING" -eq 1 && "$L1_RUNNING" -eq 1 ) ]]; then
+  WILL_START_LOCAL_NETWORK=1
+fi
+
+RESET_LOCAL_STATE="${FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE:-}"
+if [[ -z "$RESET_LOCAL_STATE" ]]; then
+  if [[ "$WILL_START_LOCAL_NETWORK" -eq 1 ]]; then
+    RESET_LOCAL_STATE=1
+  else
+    RESET_LOCAL_STATE=0
+  fi
+fi
+if [[ "$RESET_LOCAL_STATE" != "0" && "$RESET_LOCAL_STATE" != "1" ]]; then
+  echo "[deploy-smoke] ERROR: FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE must be 0 or 1, got '$RESET_LOCAL_STATE'" >&2
+  exit 1
+fi
+if [[ "$RESET_LOCAL_STATE" == "1" ]]; then
+  echo "[deploy-smoke] Resetting wallet/PXE local state"
+  rm -rf "$REPO_ROOT"/wallet_data_* "$REPO_ROOT"/pxe_data_*
+  rm -rf "$REPO_ROOT"/services/attestation/wallet_data_* "$REPO_ROOT"/services/attestation/pxe_data_*
+fi
+
 if [[ "$START_LOCAL_NETWORK" == "1" ]]; then
   if [[ "$NODE_RUNNING" -eq 1 && "$L1_RUNNING" -eq 1 ]]; then
     echo "[deploy-smoke] Reusing existing local aztec devnet ($NODE_HOST:$NODE_PORT) and anvil ($L1_HOST:$L1_PORT)"
@@ -130,24 +168,6 @@ else
     echo "[deploy-smoke] ERROR: local network auto-start disabled, but $NODE_HOST:$NODE_PORT or $L1_HOST:$L1_PORT is not reachable" >&2
     exit 1
   fi
-fi
-
-RESET_LOCAL_STATE="${FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE:-}"
-if [[ -z "$RESET_LOCAL_STATE" ]]; then
-  if [[ "$STARTED_LOCAL_NETWORK" -eq 1 ]]; then
-    RESET_LOCAL_STATE=1
-  else
-    RESET_LOCAL_STATE=0
-  fi
-fi
-if [[ "$RESET_LOCAL_STATE" != "0" && "$RESET_LOCAL_STATE" != "1" ]]; then
-  echo "[deploy-smoke] ERROR: FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE must be 0 or 1, got '$RESET_LOCAL_STATE'" >&2
-  exit 1
-fi
-if [[ "$RESET_LOCAL_STATE" == "1" ]]; then
-  echo "[deploy-smoke] Resetting wallet/PXE local state"
-  rm -rf "$REPO_ROOT"/wallet_data_* "$REPO_ROOT"/pxe_data_*
-  rm -rf "$REPO_ROOT"/services/attestation/wallet_data_* "$REPO_ROOT"/services/attestation/pxe_data_*
 fi
 
 if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then

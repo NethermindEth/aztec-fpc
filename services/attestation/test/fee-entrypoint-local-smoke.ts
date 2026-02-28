@@ -61,8 +61,6 @@ type SmokeConfig = {
   feePerDaGasOverride: bigint | null;
   feePerL2GasOverride: bigint | null;
   relayAdvanceBlocks: number;
-  mintMultiplier: bigint;
-  mintBuffer: bigint;
 };
 
 function readEnvBigInt(name: string, fallback: bigint): bigint {
@@ -80,7 +78,7 @@ function readEnvNumber(name: string, fallback: number): number {
   const value = process.env[name];
   if (!value) return fallback;
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+  if (!Number.isFinite(parsed) || parsed < 0) {
     throw new Error(`Invalid numeric env var ${name}=${value}`);
   }
   return parsed;
@@ -123,61 +121,35 @@ function loadArtifact(artifactPath: string): ContractArtifact {
 
 function getConfig(): SmokeConfig {
   const nodeUrl = process.env.AZTEC_NODE_URL ?? "http://localhost:8080";
-  const nodeTimeoutMs = readEnvNumber(
-    "CREDIT_FPC_SMOKE_NODE_TIMEOUT_MS",
-    30_000,
-  );
-  const l1RpcUrl =
-    process.env.CREDIT_FPC_SMOKE_L1_RPC_URL ?? "http://localhost:8545";
-  const l1PrivateKey = (process.env.CREDIT_FPC_SMOKE_L1_PRIVATE_KEY ??
+  const nodeTimeoutMs = readEnvNumber("FPC_SMOKE_NODE_TIMEOUT_MS", 30_000);
+  const l1RpcUrl = process.env.FPC_SMOKE_L1_RPC_URL ?? "http://localhost:8545";
+  const l1PrivateKey = (process.env.FPC_SMOKE_L1_PRIVATE_KEY ??
     DEFAULT_LOCAL_L1_PRIVATE_KEY) as Hex;
   const feeJuiceTopupWei = readOptionalEnvBigInt(
-    "CREDIT_FPC_SMOKE_FEE_JUICE_TOPUP_WEI",
+    "FPC_SMOKE_FEE_JUICE_TOPUP_WEI",
   );
   const feeJuiceWaitTimeoutMs = readEnvNumber(
-    "CREDIT_FPC_SMOKE_FEE_JUICE_WAIT_TIMEOUT_MS",
+    "FPC_SMOKE_FEE_JUICE_WAIT_TIMEOUT_MS",
     120_000,
   );
-  const rateNum = readEnvBigInt("CREDIT_FPC_SMOKE_RATE_NUM", 1n);
-  const rateDen = readEnvBigInt("CREDIT_FPC_SMOKE_RATE_DEN", 1n);
-  const quoteTtlSeconds = readEnvBigInt(
-    "CREDIT_FPC_SMOKE_QUOTE_TTL_SECONDS",
-    3600n,
-  );
-  const daGasLimit = readEnvNumber("CREDIT_FPC_SMOKE_DA_GAS_LIMIT", 1_000_000);
-  const l2GasLimit = readEnvNumber("CREDIT_FPC_SMOKE_L2_GAS_LIMIT", 1_000_000);
-  const feePerDaGasOverride = readOptionalEnvBigInt(
-    "CREDIT_FPC_SMOKE_FEE_PER_DA_GAS",
-  );
-  const feePerL2GasOverride = readOptionalEnvBigInt(
-    "CREDIT_FPC_SMOKE_FEE_PER_L2_GAS",
-  );
-  const relayAdvanceBlocks = readEnvNumber(
-    "CREDIT_FPC_SMOKE_RELAY_ADVANCE_BLOCKS",
-    2,
-  );
-  const mintMultiplier = readEnvBigInt("CREDIT_FPC_SMOKE_MINT_MULTIPLIER", 5n);
-  const mintBuffer = readEnvBigInt("CREDIT_FPC_SMOKE_MINT_BUFFER", 1_000_000n);
+  // Match default attestation config effective rate:
+  // market_rate_num=1, market_rate_den=1000, fee_bips=200
+  // => rate_num=10200, rate_den=10000000
+  const rateNum = readEnvBigInt("FPC_SMOKE_RATE_NUM", 10_200n);
+  const rateDen = readEnvBigInt("FPC_SMOKE_RATE_DEN", 10_000_000n);
+  const quoteTtlSeconds = readEnvBigInt("FPC_SMOKE_QUOTE_TTL_SECONDS", 3600n);
+  const daGasLimit = readEnvNumber("FPC_SMOKE_DA_GAS_LIMIT", 1_000_000);
+  const l2GasLimit = readEnvNumber("FPC_SMOKE_L2_GAS_LIMIT", 1_000_000);
+  const feePerDaGasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_DA_GAS");
+  const feePerL2GasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_L2_GAS");
+  const relayAdvanceBlocks = readEnvNumber("FPC_SMOKE_RELAY_ADVANCE_BLOCKS", 2);
 
   if (rateDen === 0n) {
-    throw new Error("CREDIT_FPC_SMOKE_RATE_DEN must be non-zero");
+    throw new Error("FPC_SMOKE_RATE_DEN must be non-zero");
   }
   if (rateNum <= 0n) {
-    throw new Error("CREDIT_FPC_SMOKE_RATE_NUM must be > 0");
-  }
-  if (relayAdvanceBlocks < 2) {
     throw new Error(
-      `CREDIT_FPC_SMOKE_RELAY_ADVANCE_BLOCKS must be >= 2, got ${relayAdvanceBlocks}`,
-    );
-  }
-  if (mintMultiplier <= 1n) {
-    throw new Error(
-      `CREDIT_FPC_SMOKE_MINT_MULTIPLIER must be > 1, got ${mintMultiplier}`,
-    );
-  }
-  if (mintBuffer <= 0n) {
-    throw new Error(
-      `CREDIT_FPC_SMOKE_MINT_BUFFER must be > 0, got ${mintBuffer}`,
+      "FPC_SMOKE_RATE_NUM must be > 0 for meaningful fee smoke coverage",
     );
   }
 
@@ -196,8 +168,6 @@ function getConfig(): SmokeConfig {
     feePerDaGasOverride,
     feePerL2GasOverride,
     relayAdvanceBlocks,
-    mintMultiplier,
-    mintBuffer,
   };
 }
 
@@ -216,18 +186,18 @@ async function advanceL2Blocks(
       from: operator,
       wait: { timeout: 180 },
     });
-    console.log(`[credit-smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`);
+    console.log(`[smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`);
   }
 }
 
-async function topUpContractFeeJuice(
+async function topUpFpcFeeJuice(
   config: SmokeConfig,
   node: ReturnType<typeof createAztecNodeClient>,
   wallet: EmbeddedWallet,
   operator: AztecAddress,
   token: Contract,
   user: AztecAddress,
-  feePayerAddress: string,
+  fpcAddress: string,
   topupWei: bigint,
 ): Promise<bigint> {
   const nodeInfo = await node.getNodeInfo();
@@ -247,7 +217,7 @@ async function topUpContractFeeJuice(
     "feeJuicePortalAddress",
   );
   const recipientBytes32 =
-    `0x${feePayerAddress.replace("0x", "").padStart(64, "0")}` as Hex;
+    `0x${fpcAddress.replace("0x", "").padStart(64, "0")}` as Hex;
 
   const account = privateKeyToAccount(config.l1PrivateKey);
   const walletClient = createWalletClient({
@@ -268,7 +238,7 @@ async function topUpContractFeeJuice(
     args: [portalAddress, topupWei],
   });
   await publicClient.waitForTransactionReceipt({ hash: approveHash });
-  console.log(`[credit-smoke] l1_fee_juice_approve_tx=${approveHash}`);
+  console.log(`[smoke] l1_fee_juice_approve_tx=${approveHash}`);
 
   const hash = await walletClient.writeContract({
     address: portalAddress,
@@ -277,7 +247,7 @@ async function topUpContractFeeJuice(
     args: [recipientBytes32, topupWei, claimSecretHash.toString() as Hex],
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  console.log(`[credit-smoke] l1_fee_juice_bridge_tx=${hash}`);
+  console.log(`[smoke] l1_fee_juice_bridge_tx=${hash}`);
 
   let messageLeafIndex: bigint | undefined;
   let l1ToL2MessageHash: Fr | undefined;
@@ -307,6 +277,8 @@ async function topUpContractFeeJuice(
     );
   }
 
+  // Local network requires additional L2 blocks before an L1->L2 message can
+  // be consumed. Force block production with lightweight mock txs.
   await advanceL2Blocks(token, operator, user, config.relayAdvanceBlocks);
 
   await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
@@ -317,7 +289,7 @@ async function topUpContractFeeJuice(
   const feeJuice = FeeJuiceContract.at(wallet);
   await feeJuice.methods
     .claim(
-      AztecAddress.fromString(feePayerAddress),
+      AztecAddress.fromString(fpcAddress),
       topupWei,
       claimSecret,
       new Fr(messageLeafIndex),
@@ -327,7 +299,7 @@ async function topUpContractFeeJuice(
   const deadline = Date.now() + config.feeJuiceWaitTimeoutMs;
   while (Date.now() < deadline) {
     const balance = await getFeeJuiceBalance(
-      AztecAddress.fromString(feePayerAddress),
+      AztecAddress.fromString(fpcAddress),
       node,
     );
     if (balance > 0n) {
@@ -335,9 +307,7 @@ async function topUpContractFeeJuice(
     }
     await sleep(2_000);
   }
-  throw new Error(
-    `Timed out waiting for Fee Juice credit on ${feePayerAddress}`,
-  );
+  throw new Error(`Timed out waiting for Fee Juice credit on ${fpcAddress}`);
 }
 
 async function main() {
@@ -348,14 +318,10 @@ async function main() {
     "target",
     "token_contract-Token.json",
   );
-  const creditFpcArtifactPath = path.join(
-    repoRoot,
-    "target",
-    "credit_fpc-CreditFPC.json",
-  );
+  const fpcArtifactPath = path.join(repoRoot, "target", "fpc-FPC.json");
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
-  const creditFpcArtifact = loadArtifact(creditFpcArtifactPath);
+  const fpcArtifact = loadArtifact(fpcArtifactPath);
 
   const node = createAztecNodeClient(config.nodeUrl);
   await Promise.race([
@@ -378,14 +344,14 @@ async function main() {
     BigInt(config.daGasLimit) * feePerDaGas +
     BigInt(config.l2GasLimit) * feePerL2Gas;
   const minimumTopupWei =
-    maxGasCostNoTeardown * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER * 2n + 1_000_000n;
+    maxGasCostNoTeardown * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER + 1_000_000n;
   const feeJuiceTopupWei = config.feeJuiceTopupWei ?? minimumTopupWei;
   if (
     config.feeJuiceTopupWei !== null &&
     config.feeJuiceTopupWei < minimumTopupWei
   ) {
     throw new Error(
-      `CREDIT_FPC_SMOKE_FEE_JUICE_TOPUP_WEI=${config.feeJuiceTopupWei} is below required minimum ${minimumTopupWei} for current gas settings`,
+      `FPC_SMOKE_FEE_JUICE_TOPUP_WEI=${config.feeJuiceTopupWei} is below required minimum ${minimumTopupWei} for current gas settings`,
     );
   }
 
@@ -402,9 +368,10 @@ async function main() {
     }),
   );
 
-  console.log(`[credit-smoke] operator=${operator.toString()}`);
-  console.log(`[credit-smoke] user=${user.toString()}`);
+  console.log(`[smoke] operator=${operator.toString()}`);
+  console.log(`[smoke] user=${user.toString()}`);
 
+  // Derive operator signing key and public key for inline Schnorr verification.
   const schnorr = new Schnorr();
   const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
   const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
@@ -412,43 +379,52 @@ async function main() {
   const token = await Contract.deploy(
     wallet,
     tokenArtifact,
-    ["CreditSmokeToken", "CSMK", 18, operator, operator],
+    ["SmokeToken", "SMK", 18, operator, operator],
     "constructor_with_minter",
   ).send({ from: operator });
-  console.log(`[credit-smoke] token=${token.address.toString()}`);
+  console.log(`[smoke] token=${token.address.toString()}`);
 
-  const creditFpc = await Contract.deploy(wallet, creditFpcArtifact, [
+  const fpc = await Contract.deploy(wallet, fpcArtifact, [
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
     token.address,
   ]).send({ from: operator });
-  console.log(`[credit-smoke] credit_fpc=${creditFpc.address.toString()}`);
+  console.log(`[smoke] fpc=${fpc.address.toString()}`);
 
-  console.log(`[credit-smoke] fee_per_da_gas=${feePerDaGas}`);
-  console.log(`[credit-smoke] fee_per_l2_gas=${feePerL2Gas}`);
-  console.log(`[credit-smoke] fee_juice_topup_wei=${feeJuiceTopupWei}`);
+  console.log(`[smoke] fee_per_da_gas=${feePerDaGas}`);
+  console.log(`[smoke] fee_per_l2_gas=${feePerL2Gas}`);
+  console.log(`[smoke] fee_juice_topup_wei=${feeJuiceTopupWei}`);
 
-  const feeJuiceBalance = await topUpContractFeeJuice(
-    config,
-    node,
-    wallet,
-    operator,
-    token,
-    user,
-    creditFpc.address.toString(),
-    feeJuiceTopupWei,
+  if (feeJuiceTopupWei > 0n) {
+    const feeJuiceBalance = await topUpFpcFeeJuice(
+      config,
+      node,
+      wallet,
+      operator,
+      token,
+      user,
+      fpc.address.toString(),
+      feeJuiceTopupWei,
+    );
+    console.log(`[smoke] fpc_fee_juice_balance=${feeJuiceBalance}`);
+  } else {
+    console.log(
+      "[smoke] skipping fee-juice top-up (FPC_SMOKE_FEE_JUICE_TOPUP_WEI=0)",
+    );
+  }
+
+  const expectedCharge = ceilDiv(
+    maxGasCostNoTeardown * config.rateNum,
+    config.rateDen,
   );
-  console.log(`[credit-smoke] credit_fpc_fee_juice_balance=${feeJuiceBalance}`);
-
-  const mintAmount =
-    maxGasCostNoTeardown * config.mintMultiplier + config.mintBuffer;
-  const expectedCharge = ceilDiv(mintAmount * config.rateNum, config.rateDen);
-  console.log(`[credit-smoke] mint_amount=${mintAmount}`);
-  console.log(`[credit-smoke] expected_charge=${expectedCharge}`);
+  const fjFeeAmount = maxGasCostNoTeardown;
+  const aaPaymentAmount = expectedCharge;
+  const mintAmount = expectedCharge + 1_000_000n;
+  console.log(`[smoke] expected_charge=${expectedCharge}`);
 
   await token.methods
-    .mint_to_private(user, expectedCharge + 1_000_000n)
+    .mint_to_private(user, mintAmount)
     .send({ from: operator });
   await token.methods.mint_to_public(user, 2n).send({ from: operator });
 
@@ -461,10 +437,10 @@ async function main() {
   const validUntil = latestBlock.timestamp + config.quoteTtlSeconds;
   const quoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
-    creditFpc.address.toField(),
+    fpc.address.toField(),
     token.address.toField(),
-    new Fr(config.rateNum),
-    new Fr(config.rateDen),
+    new Fr(fjFeeAmount),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     user.toField(),
   ]);
@@ -478,20 +454,20 @@ async function main() {
   const transferCall = token.methods.transfer_private_to_private(
     user,
     operator,
-    expectedCharge,
+    aaPaymentAmount,
     transferAuthwitNonce,
   );
   const transferAuthwit = await wallet.createAuthWit(user, {
-    caller: creditFpc.address,
+    caller: fpc.address,
     action: transferCall,
   });
 
-  const userTokenBefore = BigInt(
+  const userBefore = BigInt(
     (
       await token.methods.balance_of_private(user).simulate({ from: user })
     ).toString(),
   );
-  const operatorTokenBefore = BigInt(
+  const operatorBefore = BigInt(
     (
       await token.methods
         .balance_of_private(operator)
@@ -499,36 +475,36 @@ async function main() {
     ).toString(),
   );
 
-  const payAndMintCall = await creditFpc.methods
-    .pay_and_mint(
+  const feeEntrypointCall = await fpc.methods
+    .fee_entrypoint(
       transferAuthwitNonce,
-      config.rateNum,
-      config.rateDen,
+      fjFeeAmount,
+      aaPaymentAmount,
       validUntil,
       quoteSigBytes,
-      mintAmount,
     )
     .getFunctionCall();
-  const payAndMintPaymentMethod = {
+  const fpcPaymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
       new ExecutionPayload(
-        [payAndMintCall],
+        [feeEntrypointCall],
         [transferAuthwit],
         [],
         [],
-        creditFpc.address,
+        fpc.address,
       ),
-    getFeePayer: async () => creditFpc.address,
+    getFeePayer: async () => fpc.address,
     getGasSettings: () => undefined,
   };
 
-  const payAndMintReceipt = await token.methods
+  // Execute a normal user action while paying fees through FPC.
+  const receipt = await token.methods
     .transfer_public_to_public(user, user, 1n, Fr.random())
     .send({
       from: user,
       fee: {
-        paymentMethod: payAndMintPaymentMethod,
+        paymentMethod: fpcPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
@@ -537,121 +513,45 @@ async function main() {
       wait: { timeout: 180 },
     });
 
-  const userTokenAfterPayAndMint = BigInt(
+  const userAfter = BigInt(
     (
       await token.methods.balance_of_private(user).simulate({ from: user })
     ).toString(),
   );
-  const operatorTokenAfterPayAndMint = BigInt(
+  const operatorAfter = BigInt(
     (
       await token.methods
         .balance_of_private(operator)
         .simulate({ from: operator })
     ).toString(),
   );
-  const userDebited = userTokenBefore - userTokenAfterPayAndMint;
-  const operatorCredited = operatorTokenAfterPayAndMint - operatorTokenBefore;
-  const creditAfterPayAndMint = BigInt(
-    (
-      await creditFpc.methods.balance_of(user).simulate({ from: user })
-    ).toString(),
-  );
-  const expectedCreditAfterPayAndMint = mintAmount - maxGasCostNoTeardown;
 
-  console.log(
-    `[credit-smoke] pay_and_mint_tx_fee_juice=${payAndMintReceipt.transactionFee}`,
-  );
-  console.log(`[credit-smoke] user_debited=${userDebited}`);
-  console.log(`[credit-smoke] operator_credited=${operatorCredited}`);
-  console.log(
-    `[credit-smoke] credit_after_pay_and_mint=${creditAfterPayAndMint}`,
-  );
+  const userDebited = userBefore - userAfter;
+  const operatorCredited = operatorAfter - operatorBefore;
+
+  console.log(`[smoke] expected_charge=${expectedCharge}`);
+  console.log(`[smoke] user_debited=${userDebited}`);
+  console.log(`[smoke] operator_credited=${operatorCredited}`);
+  console.log(`[smoke] operator_balance_after=${operatorAfter}`);
+  console.log(`[smoke] tx_fee_juice=${receipt.transactionFee}`);
 
   if (userDebited !== expectedCharge) {
     throw new Error(
-      `User debit mismatch after pay_and_mint. expected=${expectedCharge} got=${userDebited}`,
+      `User debit mismatch. expected=${expectedCharge} got=${userDebited}`,
     );
   }
   if (operatorCredited !== expectedCharge) {
     throw new Error(
-      `Operator credit mismatch after pay_and_mint. expected=${expectedCharge} got=${operatorCredited}`,
-    );
-  }
-  if (creditAfterPayAndMint !== expectedCreditAfterPayAndMint) {
-    throw new Error(
-      `Credit balance mismatch after pay_and_mint. expected=${expectedCreditAfterPayAndMint} got=${creditAfterPayAndMint}`,
+      `Operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
     );
   }
 
-  const creditBeforePayWithCredit = creditAfterPayAndMint;
-  const operatorTokenBeforePayWithCredit = operatorTokenAfterPayAndMint;
-  const payWithCreditCall = await creditFpc.methods
-    .pay_with_credit()
-    .getFunctionCall();
-  const payWithCreditPaymentMethod = {
-    getAsset: async () => ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new ExecutionPayload([payWithCreditCall], [], [], [], creditFpc.address),
-    getFeePayer: async () => creditFpc.address,
-    getGasSettings: () => undefined,
-  };
-
-  const payWithCreditReceipt = await token.methods
-    .transfer_public_to_public(user, user, 1n, Fr.random())
-    .send({
-      from: user,
-      fee: {
-        paymentMethod: payWithCreditPaymentMethod,
-        gasSettings: {
-          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-        },
-      },
-      wait: { timeout: 180 },
-    });
-
-  const creditAfterPayWithCredit = BigInt(
-    (
-      await creditFpc.methods.balance_of(user).simulate({ from: user })
-    ).toString(),
-  );
-  const operatorTokenAfterPayWithCredit = BigInt(
-    (
-      await token.methods
-        .balance_of_private(operator)
-        .simulate({ from: operator })
-    ).toString(),
-  );
-
-  console.log(
-    `[credit-smoke] pay_with_credit_tx_fee_juice=${payWithCreditReceipt.transactionFee}`,
-  );
-  console.log(
-    `[credit-smoke] credit_before_pay_with_credit=${creditBeforePayWithCredit}`,
-  );
-  console.log(
-    `[credit-smoke] credit_after_pay_with_credit=${creditAfterPayWithCredit}`,
-  );
-
-  if (creditAfterPayWithCredit >= creditBeforePayWithCredit) {
-    throw new Error(
-      `Credit should decrease after pay_with_credit. before=${creditBeforePayWithCredit} after=${creditAfterPayWithCredit}`,
-    );
-  }
-  if (operatorTokenAfterPayWithCredit !== operatorTokenBeforePayWithCredit) {
-    throw new Error(
-      `Operator token balance changed during pay_with_credit-only tx. before=${operatorTokenBeforePayWithCredit} after=${operatorTokenAfterPayWithCredit}`,
-    );
-  }
-
-  console.log(
-    "[credit-smoke] PASS: credit_fpc pay_and_mint + pay_with_credit flow succeeded",
-  );
+  console.log("[smoke] PASS: fee_entrypoint end-to-end flow succeeded");
 }
 
 try {
   await main();
 } catch (error) {
-  console.error(`[credit-smoke] FAIL: ${(error as Error).message}`);
+  console.error(`[smoke] FAIL: ${(error as Error).message}`);
   process.exit(1);
 }

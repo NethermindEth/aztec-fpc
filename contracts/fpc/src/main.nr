@@ -14,13 +14,13 @@ use ::aztec::macros::aztec;
 /// 1. User requests a confidential quote from the attestation service, providing
 ///    their Aztec address.
 /// 2. Attestation service returns a quote signed by the operator's Schnorr key,
-///    binding the rate and the user's address.
+///    binding exact fee/payment amounts and the user's address.
 /// 3. User creates one authwit:
 ///    - Token transfer authwit -- authorises FPC to call
 ///      `transfer_private_to_private(user -> operator, charge, nonce)`
 /// 4. User submits their tx with `fee_entrypoint` as the fee payment:
 ///    - Quote signature is verified inline against the operator's public key
-///    - Charge is computed from gas settings
+///    - Quoted FeeJuice amount is checked against current gas settings
 ///    - Token transfers private: user -> operator
 ///    - FPC declares itself fee payer
 ///    - Setup completes; protocol deducts Fee Juice from FPC's balance
@@ -33,7 +33,6 @@ use ::aztec::macros::aztec;
 ///                                                  accepted asset.
 #[aztec]
 pub contract FPC {
-    use crate::fee_math::fee_juice_to_asset;
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
@@ -107,14 +106,13 @@ pub contract FPC {
     #[allow_phase_change]
     fn fee_entrypoint(
         authwit_nonce: Field,
-        rate_num: u128,
-        rate_den: u128,
+        fj_fee_amount: u128,
+        aa_payment_amount: u128,
         valid_until: u64,
         quote_sig: [u8; 64],
     ) {
         let config = self.storage.config.read();
         let sender = self.msg_sender();
-        assert(rate_num > (0 as u128), "rate_num must be > 0");
 
         assert_valid_quote(
             self.context,
@@ -124,21 +122,18 @@ pub contract FPC {
                 is_infinite: false,
             },
             config.accepted_asset,
-            rate_num,
-            rate_den,
+            fj_fee_amount,
+            aa_payment_amount,
             valid_until,
             sender,
             quote_sig,
         );
 
-        let charge = fee_juice_to_asset(
-            get_max_gas_cost_no_teardown(self.context),
-            rate_num,
-            rate_den,
-        );
+        let expected_fj_fee_amount = get_max_gas_cost_no_teardown(self.context);
+        assert(expected_fj_fee_amount == fj_fee_amount, "quoted fee amount mismatch");
 
         Token::at(config.accepted_asset)
-            .transfer_private_to_private(sender, config.operator, charge, authwit_nonce)
+            .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
         self.context.set_as_fee_payer();
@@ -155,15 +150,15 @@ pub contract FPC {
     /// inline. Pushes a nullifier to prevent replay.
     ///
     /// Quote preimage (hashed with compute_inner_authwit_hash for compatibility):
-    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, rate_num, rate_den,
-    ///              valid_until, user_address])
+    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, fj_fee_amount,
+    ///              aa_payment_amount, valid_until, user_address])
     #[contract_library_method]
     fn assert_valid_quote(
         context: &mut PrivateContext,
         operator_pubkey: EmbeddedCurvePoint,
         accepted_asset: AztecAddress,
-        rate_num: u128,
-        rate_den: u128,
+        fj_fee_amount: u128,
+        aa_payment_amount: u128,
         valid_until: u64,
         user_address: AztecAddress,
         quote_sig: [u8; 64],
@@ -172,8 +167,8 @@ pub contract FPC {
             QUOTE_DOMAIN_SEPARATOR,
             context.this_address().to_field(),
             accepted_asset.to_field(),
-            rate_num as Field,
-            rate_den as Field,
+            fj_fee_amount as Field,
+            aa_payment_amount as Field,
             valid_until as Field,
             user_address.to_field(),
         ]);
@@ -188,7 +183,7 @@ pub contract FPC {
         let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
         assert(!quote_already_used, "quote already used");
 
-        // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
+        // Prevent replay: the quote hash is unique per (fpc, asset, amounts, expiry, user).
         context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;

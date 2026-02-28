@@ -26,7 +26,7 @@ import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 
-type FullE2EMode = "fpc";
+type FullE2EMode = "credit";
 
 type FullE2EConfig = {
   mode: FullE2EMode;
@@ -48,6 +48,8 @@ type FullE2EConfig = {
   marketRateNum: number;
   marketRateDen: number;
   feeBips: number;
+  creditMintMultiplier: bigint;
+  creditMintBuffer: bigint;
   daGasLimit: number;
   l2GasLimit: number;
   feeJuiceTopupSafetyMultiplier: bigint;
@@ -114,8 +116,8 @@ type QuoteInput = {
 type NegativeScenarioResult = {
   quoteReplayRejected: boolean;
   expiredQuoteRejected: boolean;
-  overlongTtlRejected: boolean;
   senderBindingRejected: boolean;
+  mintedCreditTooLowRejected: boolean;
   insufficientFeeJuiceRejected: boolean;
   insufficientFeeJuiceBudgetWei: bigint;
 };
@@ -146,53 +148,56 @@ const UINT_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const MAX_PORT = 65535;
+const CREDIT_EXPECTED_PAID_TX_COUNT = 2n;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DIAGNOSTIC_TAIL_LINES = 200;
 const managedProcessRegistry = new Set<ManagedProcess>();
 let shutdownInProgress = false;
 
 function printHelp(): void {
-  console.log(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
+  console.log(`Usage: bun run e2e:full-lifecycle:credit:local [--help]
 
 Config env vars:
-- FPC_FULL_E2E_MODE=fpc
-- FPC_FULL_E2E_RELAY_ADVANCE_BLOCKS (default: 2, must be >=2)
-- FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES (default: 2, allowed: 1|2)
-- FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS (default: 2000)
-- FPC_FULL_E2E_TOPUP_WEI (optional bigint > 0)
-- FPC_FULL_E2E_THRESHOLD_WEI (optional bigint > 0)
-- FPC_FULL_E2E_NODE_TIMEOUT_MS (default: 45000)
-- FPC_FULL_E2E_HTTP_TIMEOUT_MS (default: 30000)
-- FPC_FULL_E2E_TOPUP_WAIT_TIMEOUT_MS (default: 240000)
-- FPC_FULL_E2E_TOPUP_POLL_MS (default: 2000)
-- FPC_FULL_E2E_ATTESTATION_PORT (default: 3300)
-- FPC_FULL_E2E_TOPUP_OPS_PORT (default: 3401)
-- FPC_FULL_E2E_DA_GAS_LIMIT (default: 1000000)
-- FPC_FULL_E2E_L2_GAS_LIMIT (default: 1000000)
-- FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER (default: 2)
-- FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS (default: 3600, max: 3600)
-- FPC_FULL_E2E_MARKET_RATE_NUM (default: 1)
-- FPC_FULL_E2E_MARKET_RATE_DEN (default: 1000)
-- FPC_FULL_E2E_FEE_BIPS (default: 200)
-- FPC_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS (default: 180000)
-- FPC_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS (default: 1000)
-- FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS (default: 15000)
-- FPC_FULL_E2E_NODE_HOST/FPC_FULL_E2E_NODE_PORT (default: 127.0.0.1:8080)
-- FPC_FULL_E2E_L1_HOST/FPC_FULL_E2E_L1_PORT (default: 127.0.0.1:8545)
-- FPC_FULL_E2E_L1_PRIVATE_KEY (default: local anvil key)
-- FPC_FULL_E2E_ARTIFACTS_DIR (default: <repo>/tmp)
-- AZTEC_NODE_URL or FPC_FULL_E2E_NODE_URL overrides node host/port
-- FPC_FULL_E2E_L1_RPC_URL overrides l1 host/port
+- FPC_CREDIT_FULL_E2E_MODE=credit
+- FPC_CREDIT_FULL_E2E_RELAY_ADVANCE_BLOCKS (default: 2, must be >=2)
+- FPC_CREDIT_FULL_E2E_REQUIRED_TOPUP_CYCLES (default: 2, allowed: 1|2)
+- FPC_CREDIT_FULL_E2E_TOPUP_CHECK_INTERVAL_MS (default: 2000)
+- FPC_CREDIT_FULL_E2E_TOPUP_WEI (optional bigint > 0)
+- FPC_CREDIT_FULL_E2E_THRESHOLD_WEI (optional bigint > 0)
+- FPC_CREDIT_FULL_E2E_NODE_TIMEOUT_MS (default: 45000)
+- FPC_CREDIT_FULL_E2E_HTTP_TIMEOUT_MS (default: 30000)
+- FPC_CREDIT_FULL_E2E_TOPUP_WAIT_TIMEOUT_MS (default: 240000)
+- FPC_CREDIT_FULL_E2E_TOPUP_POLL_MS (default: 2000)
+- FPC_CREDIT_FULL_E2E_ATTESTATION_PORT (default: 3300)
+- FPC_CREDIT_FULL_E2E_TOPUP_OPS_PORT (default: 3401)
+- FPC_CREDIT_FULL_E2E_DA_GAS_LIMIT (default: 1000000)
+- FPC_CREDIT_FULL_E2E_L2_GAS_LIMIT (default: 1000000)
+- FPC_CREDIT_FULL_E2E_TOPUP_SAFETY_MULTIPLIER (default: 2)
+- FPC_CREDIT_FULL_E2E_QUOTE_VALIDITY_SECONDS (default: 3600, max: 3600)
+- FPC_CREDIT_FULL_E2E_MARKET_RATE_NUM (default: 1)
+- FPC_CREDIT_FULL_E2E_MARKET_RATE_DEN (default: 1000)
+- FPC_CREDIT_FULL_E2E_FEE_BIPS (default: 200)
+- FPC_CREDIT_FULL_E2E_CREDIT_MINT_MULTIPLIER (default: 5, must be > 1)
+- FPC_CREDIT_FULL_E2E_CREDIT_MINT_BUFFER (default: 1000000)
+- FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS (default: 180000)
+- FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS (default: 1000)
+- FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS (default: 15000)
+- FPC_CREDIT_FULL_E2E_NODE_HOST/FPC_CREDIT_FULL_E2E_NODE_PORT (default: 127.0.0.1:8080)
+- FPC_CREDIT_FULL_E2E_L1_HOST/FPC_CREDIT_FULL_E2E_L1_PORT (default: 127.0.0.1:8545)
+- FPC_CREDIT_FULL_E2E_L1_PRIVATE_KEY (default: local anvil key)
+- FPC_CREDIT_FULL_E2E_ARTIFACTS_DIR (default: <repo>/tmp)
+- AZTEC_NODE_URL or FPC_CREDIT_FULL_E2E_NODE_URL overrides node host/port
+- FPC_CREDIT_FULL_E2E_L1_RPC_URL overrides l1 host/port
 `);
 }
 
 function parseMode(value: string | undefined): FullE2EMode {
-  const normalized = (value ?? "fpc").trim().toLowerCase();
-  if (normalized === "fpc") {
-    return "fpc";
+  const normalized = (value ?? "credit").trim().toLowerCase();
+  if (normalized === "credit") {
+    return "credit";
   }
   throw new Error(
-    `Invalid FPC_FULL_E2E_MODE=${value}. This runner is FPC-only and accepts: fpc`,
+    `Invalid FPC_CREDIT_FULL_E2E_MODE=${value}. This runner is CreditFPC-only and accepts: credit`,
   );
 }
 
@@ -446,7 +451,7 @@ function installManagedProcessSignalHandlers(): void {
     shutdownInProgress = true;
     void (async () => {
       console.error(
-        `[full-lifecycle-e2e] Received ${signal}; stopping managed processes...`,
+        `[credit-full-lifecycle-e2e] Received ${signal}; stopping managed processes...`,
       );
       await stopAllManagedProcesses();
       process.exit(signal === "SIGINT" ? 130 : 143);
@@ -635,7 +640,9 @@ async function advanceL2Blocks(
       from: operator,
       wait: { timeout: 180 },
     });
-    console.log(`[full-lifecycle-e2e] relay_block_advanced=${i + 1}/${blocks}`);
+    console.log(
+      `[credit-full-lifecycle-e2e] relay_block_advanced=${i + 1}/${blocks}`,
+    );
   }
 }
 
@@ -752,6 +759,30 @@ async function claimTopupBridgeSubmission(
       feePayerAddress: result.fpc.address,
       topupAmountWei: result.topupAmountWei,
     },
+    submission,
+    relayAdvanceBlocks,
+    timeoutMs,
+    pollMs,
+  );
+}
+
+async function tryClaimTopupBridgeSubmission(
+  node: ReturnType<typeof createAztecNodeClient>,
+  result: DeploymentRuntimeResult,
+  submission: TopupBridgeSubmission,
+  relayAdvanceBlocks: number,
+  timeoutMs: number,
+  pollMs: number,
+): Promise<bigint | null> {
+  if (!submission.claimSecret) {
+    console.log(
+      `[credit-full-lifecycle-e2e] bridge message ${submission.messageHash} has no claim_secret in logs; skipping explicit claim and waiting for balance update`,
+    );
+    return null;
+  }
+  return claimTopupBridgeSubmission(
+    node,
+    result,
     submission,
     relayAdvanceBlocks,
     timeoutMs,
@@ -900,6 +931,7 @@ type FeePaidTxParams = {
   recipient: AztecAddress;
   transferAmount: bigint;
   quote: QuoteInput;
+  enforceQuotedFjMatchesMax?: boolean;
 };
 
 async function executeFeePaidTx(
@@ -919,7 +951,10 @@ async function executeFeePaidTx(
     );
   }
 
-  if (params.quote.fjAmount !== result.maxGasCostNoTeardown) {
+  if (
+    (params.enforceQuotedFjMatchesMax ?? true) &&
+    params.quote.fjAmount !== result.maxGasCostNoTeardown
+  ) {
     throw new Error(
       `quoted fj_amount mismatch. expected=${result.maxGasCostNoTeardown} got=${params.quote.fjAmount}`,
     );
@@ -946,8 +981,8 @@ async function executeFeePaidTx(
     action: transferCall,
   });
 
-  const feeEntrypointCall = await params.fpc.methods
-    .fee_entrypoint(
+  const payAndMintCall = await params.fpc.methods
+    .pay_and_mint(
       transferAuthwitNonce,
       params.quote.fjAmount,
       params.quote.aaPaymentAmount,
@@ -960,7 +995,7 @@ async function executeFeePaidTx(
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
       new ExecutionPayload(
-        [feeEntrypointCall],
+        [payAndMintCall],
         [transferAuthwit],
         [],
         [],
@@ -993,6 +1028,59 @@ async function executeFeePaidTx(
     });
 
   return { expectedCharge, receipt };
+}
+
+type PayWithCreditTxParams = {
+  token: Contract;
+  fpc: Contract;
+  payer: AztecAddress;
+  recipient: AztecAddress;
+  transferAmount: bigint;
+};
+
+async function executePayWithCreditTx(
+  config: FullE2EConfig,
+  result: DeploymentRuntimeResult,
+  params: PayWithCreditTxParams,
+): Promise<{ receipt: { transactionFee: unknown } }> {
+  await params.token.methods
+    .mint_to_public(params.payer, params.transferAmount)
+    .send({ from: result.operator });
+
+  const payWithCreditCall = await params.fpc.methods
+    .pay_with_credit()
+    .getFunctionCall();
+  const paymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload([payWithCreditCall], [], [], [], params.fpc.address),
+    getFeePayer: async () => params.fpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  const receipt = await params.token.methods
+    .transfer_public_to_public(
+      params.payer,
+      params.recipient,
+      params.transferAmount,
+      Fr.random(),
+    )
+    .send({
+      from: params.payer,
+      fee: {
+        paymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          maxFeesPerGas: {
+            feePerDaGas: result.feePerDaGas,
+            feePerL2Gas: result.feePerL2Gas,
+          },
+        },
+      },
+      wait: { timeout: 180 },
+    });
+
+  return { receipt };
 }
 
 function errorMessage(error: unknown): string {
@@ -1065,7 +1153,7 @@ function sanitizeLogName(value: string): string {
 }
 
 function getArtifactsRootDir(repoRoot: string): string {
-  const configured = readOptionalEnvString("FPC_FULL_E2E_ARTIFACTS_DIR");
+  const configured = readOptionalEnvString("FPC_CREDIT_FULL_E2E_ARTIFACTS_DIR");
   const resolved =
     configured === null ? path.join(repoRoot, "tmp") : path.resolve(configured);
   mkdirSync(resolved, { recursive: true });
@@ -1118,6 +1206,46 @@ function persistFailureDiagnostics(
   return { diagnosticsPath, logTailPaths };
 }
 
+function extractDiagnosticsPathFromError(error: unknown): string | null {
+  const match = errorMessage(error).match(/\(diagnostics=([^)]+)\)/);
+  return match?.[1] ?? null;
+}
+
+function persistBootstrapDiagnostics(
+  repoRoot: string,
+  phase: string,
+  error: unknown,
+): string {
+  const diagnosticsDir = path.join(
+    repoRoot,
+    "tmp",
+    "credit-fpc-full-lifecycle-e2e-bootstrap",
+    "diagnostics",
+  );
+  mkdirSync(diagnosticsDir, { recursive: true });
+
+  const diagnosticsPath = path.join(
+    diagnosticsDir,
+    `failure-${Date.now()}.json`,
+  );
+  writeFileSync(
+    diagnosticsPath,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        phase,
+        error: errorMessage(error),
+        tailLines: DIAGNOSTIC_TAIL_LINES,
+        logTailPaths: {},
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  return diagnosticsPath;
+}
+
 async function expectFailure(
   scenario: string,
   expectedSubstrings: string[],
@@ -1132,90 +1260,111 @@ async function expectFailure(
         message.includes(fragment.toLowerCase()),
       )
     ) {
-      console.log(`[full-lifecycle-e2e] PASS: ${scenario}`);
+      console.log(`[credit-full-lifecycle-e2e] PASS: ${scenario}`);
       return;
     }
     throw new Error(
-      `[full-lifecycle-e2e] ${scenario} failed with unexpected error: ${errorMessage(
+      `[credit-full-lifecycle-e2e] ${scenario} failed with unexpected error: ${errorMessage(
         error,
       )}`,
     );
   }
-  throw new Error(`[full-lifecycle-e2e] ${scenario} unexpectedly succeeded`);
+  throw new Error(
+    `[credit-full-lifecycle-e2e] ${scenario} unexpectedly succeeded`,
+  );
 }
 
 function getConfig(): FullE2EConfig {
-  const mode = parseMode(process.env.FPC_FULL_E2E_MODE);
+  const mode = parseMode(process.env.FPC_CREDIT_FULL_E2E_MODE);
   const relayAdvanceBlocks = readEnvPositiveInteger(
-    "FPC_FULL_E2E_RELAY_ADVANCE_BLOCKS",
+    "FPC_CREDIT_FULL_E2E_RELAY_ADVANCE_BLOCKS",
     2,
   );
   const requiredTopupCyclesRaw = readEnvPositiveInteger(
-    "FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES",
+    "FPC_CREDIT_FULL_E2E_REQUIRED_TOPUP_CYCLES",
     2,
   );
   const quoteValiditySeconds = readEnvPositiveInteger(
-    "FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS",
+    "FPC_CREDIT_FULL_E2E_QUOTE_VALIDITY_SECONDS",
     3600,
   );
-  const nodeHost = readEnvString("FPC_FULL_E2E_NODE_HOST", "127.0.0.1");
-  const nodePort = readEnvPort("FPC_FULL_E2E_NODE_PORT", 8080);
-  const l1Host = readEnvString("FPC_FULL_E2E_L1_HOST", "127.0.0.1");
-  const l1Port = readEnvPort("FPC_FULL_E2E_L1_PORT", 8545);
+  const nodeHost = readEnvString("FPC_CREDIT_FULL_E2E_NODE_HOST", "127.0.0.1");
+  const nodePort = readEnvPort("FPC_CREDIT_FULL_E2E_NODE_PORT", 8080);
+  const l1Host = readEnvString("FPC_CREDIT_FULL_E2E_L1_HOST", "127.0.0.1");
+  const l1Port = readEnvPort("FPC_CREDIT_FULL_E2E_L1_PORT", 8545);
   const nodeUrlFromAztecEnv = readOptionalEnvUrl("AZTEC_NODE_URL");
-  const nodeUrlFromFpcEnv = readOptionalEnvUrl("FPC_FULL_E2E_NODE_URL");
-  const l1RpcUrlOverride = readOptionalEnvUrl("FPC_FULL_E2E_L1_RPC_URL");
+  const nodeUrlFromFpcEnv = readOptionalEnvUrl("FPC_CREDIT_FULL_E2E_NODE_URL");
+  const l1RpcUrlOverride = readOptionalEnvUrl("FPC_CREDIT_FULL_E2E_L1_RPC_URL");
   const topupConfirmTimeoutMs = readEnvPositiveInteger(
-    "FPC_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS",
+    "FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS",
     180_000,
   );
   const topupConfirmPollInitialMs = readEnvPositiveInteger(
-    "FPC_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS",
+    "FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS",
     1_000,
   );
   const topupConfirmPollMaxMs = readEnvPositiveInteger(
-    "FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS",
+    "FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS",
     15_000,
   );
-  const attestationPort = readEnvPort("FPC_FULL_E2E_ATTESTATION_PORT", 3300);
-  const topupOpsPort = readEnvPort("FPC_FULL_E2E_TOPUP_OPS_PORT", 3401);
-  const feeBips = readEnvPositiveInteger("FPC_FULL_E2E_FEE_BIPS", 200);
+  const attestationPort = readEnvPort(
+    "FPC_CREDIT_FULL_E2E_ATTESTATION_PORT",
+    3300,
+  );
+  const topupOpsPort = readEnvPort("FPC_CREDIT_FULL_E2E_TOPUP_OPS_PORT", 3401);
+  const feeBips = readEnvPositiveInteger("FPC_CREDIT_FULL_E2E_FEE_BIPS", 200);
+  const creditMintMultiplier = readEnvBigInt(
+    "FPC_CREDIT_FULL_E2E_CREDIT_MINT_MULTIPLIER",
+    5n,
+  );
+  const creditMintBuffer = readEnvBigInt(
+    "FPC_CREDIT_FULL_E2E_CREDIT_MINT_BUFFER",
+    1_000_000n,
+  );
   if (feeBips > 10_000) {
-    throw new Error(`FPC_FULL_E2E_FEE_BIPS must be <= 10000, got ${feeBips}`);
+    throw new Error(
+      `FPC_CREDIT_FULL_E2E_FEE_BIPS must be <= 10000, got ${feeBips}`,
+    );
   }
 
   const l1PrivateKey =
-    process.env.FPC_FULL_E2E_L1_PRIVATE_KEY ?? DEFAULT_LOCAL_L1_PRIVATE_KEY;
-  assertPrivateKeyHex(l1PrivateKey, "FPC_FULL_E2E_L1_PRIVATE_KEY");
+    process.env.FPC_CREDIT_FULL_E2E_L1_PRIVATE_KEY ??
+    DEFAULT_LOCAL_L1_PRIVATE_KEY;
+  assertPrivateKeyHex(l1PrivateKey, "FPC_CREDIT_FULL_E2E_L1_PRIVATE_KEY");
 
   if (relayAdvanceBlocks < 2) {
     throw new Error(
-      `FPC_FULL_E2E_RELAY_ADVANCE_BLOCKS must be an integer >= 2, got ${relayAdvanceBlocks}`,
+      `FPC_CREDIT_FULL_E2E_RELAY_ADVANCE_BLOCKS must be an integer >= 2, got ${relayAdvanceBlocks}`,
     );
   }
   if (requiredTopupCyclesRaw !== 1 && requiredTopupCyclesRaw !== 2) {
     throw new Error(
-      `FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES must be 1 or 2, got ${requiredTopupCyclesRaw}`,
+      `FPC_CREDIT_FULL_E2E_REQUIRED_TOPUP_CYCLES must be 1 or 2, got ${requiredTopupCyclesRaw}`,
     );
   }
   if (quoteValiditySeconds > MAX_QUOTE_VALIDITY_SECONDS) {
     throw new Error(
-      `FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS must be <= ${MAX_QUOTE_VALIDITY_SECONDS}, got ${quoteValiditySeconds}`,
+      `FPC_CREDIT_FULL_E2E_QUOTE_VALIDITY_SECONDS must be <= ${MAX_QUOTE_VALIDITY_SECONDS}, got ${quoteValiditySeconds}`,
     );
   }
   if (topupConfirmPollInitialMs > topupConfirmPollMaxMs) {
     throw new Error(
-      `FPC_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS must be <= FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS`,
+      `FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS must be <= FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS`,
     );
   }
   if (topupConfirmPollMaxMs > topupConfirmTimeoutMs) {
     throw new Error(
-      `FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS must be <= FPC_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS`,
+      `FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS must be <= FPC_CREDIT_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS`,
     );
   }
   if (attestationPort === topupOpsPort) {
     throw new Error(
-      "FPC_FULL_E2E_ATTESTATION_PORT must differ from FPC_FULL_E2E_TOPUP_OPS_PORT",
+      "FPC_CREDIT_FULL_E2E_ATTESTATION_PORT must differ from FPC_CREDIT_FULL_E2E_TOPUP_OPS_PORT",
+    );
+  }
+  if (creditMintMultiplier <= 1n) {
+    throw new Error(
+      `FPC_CREDIT_FULL_E2E_CREDIT_MINT_MULTIPLIER must be > 1, got ${creditMintMultiplier}`,
     );
   }
 
@@ -1230,34 +1379,51 @@ function getConfig(): FullE2EConfig {
     relayAdvanceBlocks,
     requiredTopupCycles: requiredTopupCyclesRaw,
     topupCheckIntervalMs: readEnvPositiveInteger(
-      "FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS",
+      "FPC_CREDIT_FULL_E2E_TOPUP_CHECK_INTERVAL_MS",
       2_000,
     ),
-    topupWei: readOptionalEnvBigInt("FPC_FULL_E2E_TOPUP_WEI"),
-    thresholdWei: readOptionalEnvBigInt("FPC_FULL_E2E_THRESHOLD_WEI"),
+    topupWei: readOptionalEnvBigInt("FPC_CREDIT_FULL_E2E_TOPUP_WEI"),
+    thresholdWei: readOptionalEnvBigInt("FPC_CREDIT_FULL_E2E_THRESHOLD_WEI"),
     nodeTimeoutMs: readEnvPositiveInteger(
-      "FPC_FULL_E2E_NODE_TIMEOUT_MS",
+      "FPC_CREDIT_FULL_E2E_NODE_TIMEOUT_MS",
       45_000,
     ),
     httpTimeoutMs: readEnvPositiveInteger(
-      "FPC_FULL_E2E_HTTP_TIMEOUT_MS",
+      "FPC_CREDIT_FULL_E2E_HTTP_TIMEOUT_MS",
       30_000,
     ),
     topupWaitTimeoutMs: readEnvPositiveInteger(
-      "FPC_FULL_E2E_TOPUP_WAIT_TIMEOUT_MS",
+      "FPC_CREDIT_FULL_E2E_TOPUP_WAIT_TIMEOUT_MS",
       240_000,
     ),
-    topupPollMs: readEnvPositiveInteger("FPC_FULL_E2E_TOPUP_POLL_MS", 2_000),
+    topupPollMs: readEnvPositiveInteger(
+      "FPC_CREDIT_FULL_E2E_TOPUP_POLL_MS",
+      2_000,
+    ),
     attestationPort,
     topupOpsPort,
     quoteValiditySeconds,
-    marketRateNum: readEnvPositiveInteger("FPC_FULL_E2E_MARKET_RATE_NUM", 1),
-    marketRateDen: readEnvPositiveInteger("FPC_FULL_E2E_MARKET_RATE_DEN", 1000),
+    marketRateNum: readEnvPositiveInteger(
+      "FPC_CREDIT_FULL_E2E_MARKET_RATE_NUM",
+      1,
+    ),
+    marketRateDen: readEnvPositiveInteger(
+      "FPC_CREDIT_FULL_E2E_MARKET_RATE_DEN",
+      1000,
+    ),
     feeBips,
-    daGasLimit: readEnvPositiveInteger("FPC_FULL_E2E_DA_GAS_LIMIT", 1_000_000),
-    l2GasLimit: readEnvPositiveInteger("FPC_FULL_E2E_L2_GAS_LIMIT", 1_000_000),
+    creditMintMultiplier,
+    creditMintBuffer,
+    daGasLimit: readEnvPositiveInteger(
+      "FPC_CREDIT_FULL_E2E_DA_GAS_LIMIT",
+      1_000_000,
+    ),
+    l2GasLimit: readEnvPositiveInteger(
+      "FPC_CREDIT_FULL_E2E_L2_GAS_LIMIT",
+      1_000_000,
+    ),
     feeJuiceTopupSafetyMultiplier: readEnvBigInt(
-      "FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER",
+      "FPC_CREDIT_FULL_E2E_TOPUP_SAFETY_MULTIPLIER",
       2n,
     ),
     topupConfirmTimeoutMs,
@@ -1268,7 +1434,7 @@ function getConfig(): FullE2EConfig {
 
 function printConfigSummary(config: FullE2EConfig): void {
   console.log(
-    `[full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, l1RpcUrl=${config.l1RpcUrl}, relayAdvanceBlocks=${config.relayAdvanceBlocks}, requiredTopupCycles=${config.requiredTopupCycles}`,
+    `[credit-full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, l1RpcUrl=${config.l1RpcUrl}, relayAdvanceBlocks=${config.relayAdvanceBlocks}, requiredTopupCycles=${config.requiredTopupCycles}, creditMintMultiplier=${config.creditMintMultiplier}, creditMintBuffer=${config.creditMintBuffer}`,
   );
 }
 
@@ -1282,17 +1448,21 @@ async function deployContractsAndWriteRuntimeConfig(
   const repoRoot = path.resolve(scriptDir, "..", "..");
   const artifactsRootDir = getArtifactsRootDir(repoRoot);
   const runDir = mkdtempSync(
-    path.join(artifactsRootDir, "fpc-full-lifecycle-e2e-"),
+    path.join(artifactsRootDir, "credit-fpc-full-lifecycle-e2e-"),
   );
   const tokenArtifactPath = path.join(
     repoRoot,
     "target",
     "token_contract-Token.json",
   );
-  const fpcArtifactPath = path.join(repoRoot, "target", "fpc-FPC.json");
+  const creditFpcArtifactPath = path.join(
+    repoRoot,
+    "target",
+    "credit_fpc-CreditFPC.json",
+  );
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
-  const fpcArtifact = loadArtifact(fpcArtifactPath);
+  const creditFpcArtifact = loadArtifact(creditFpcArtifactPath);
 
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNodeReady(node, config.nodeTimeoutMs);
@@ -1341,7 +1511,7 @@ async function deployContractsAndWriteRuntimeConfig(
     operatorData.signingKey ?? deriveSigningKey(operatorData.secret);
   const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-  const fpc = await Contract.deploy(wallet, fpcArtifact, [
+  const fpc = await Contract.deploy(wallet, creditFpcArtifact, [
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
@@ -1358,12 +1528,12 @@ async function deployContractsAndWriteRuntimeConfig(
   const minimumTopupWei =
     maxGasCostNoTeardown *
       config.feeJuiceTopupSafetyMultiplier *
-      BigInt(config.requiredTopupCycles) +
+      CREDIT_EXPECTED_PAID_TX_COUNT +
     1_000_000n;
   const topupAmountWei = config.topupWei ?? minimumTopupWei;
   if (topupAmountWei < minimumTopupWei) {
     throw new Error(
-      `FPC_FULL_E2E_TOPUP_WEI=${topupAmountWei} is below required minimum ${minimumTopupWei}`,
+      `FPC_CREDIT_FULL_E2E_TOPUP_WEI=${topupAmountWei} is below required minimum ${minimumTopupWei} (computed for ${CREDIT_EXPECTED_PAID_TX_COUNT} paid txs)`,
     );
   }
   const topupThresholdWei = config.thresholdWei ?? topupAmountWei;
@@ -1430,11 +1600,17 @@ async function deployContractsAndWriteRuntimeConfig(
         operator: operator.toString(),
         user: user.toString(),
         otherUser: otherUser.toString(),
+        contracts: {
+          token: token.address.toString(),
+          credit_fpc: fpc.address.toString(),
+        },
         tokenAddress: token.address.toString(),
         fpcAddress: fpc.address.toString(),
+        creditFpcAddress: fpc.address.toString(),
         attestationConfigPath,
         topupConfigPath,
         topupBridgeStatePath,
+        expectedPaidTxCount: CREDIT_EXPECTED_PAID_TX_COUNT.toString(),
         topupThresholdWei: topupThresholdWei.toString(),
         topupAmountWei: topupAmountWei.toString(),
       },
@@ -1472,51 +1648,92 @@ async function runFeePaidTargetTxAndAssert(
   txLabel: "tx1" | "tx2",
   targetTransferAmount: bigint,
 ): Promise<bigint> {
-  const requestedFjAmount = result.maxGasCostNoTeardown;
-  const quote = await fetchQuote(
-    `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
-    config.httpTimeoutMs,
-  );
-  const quoteSigBytes = Array.from(
-    Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
-  );
-  const fjAmount = BigInt(quote.fj_amount);
-  const aaPaymentAmount = BigInt(quote.aa_payment_amount);
-  const validUntil = BigInt(quote.valid_until);
+  let expectedCharge = 0n;
+  let tx1Quote: QuoteInput | undefined;
+  let paymentMethod: {
+    getAsset: () => Promise<AztecAddress>;
+    getExecutionPayload: () => Promise<ExecutionPayload>;
+    getFeePayer: () => Promise<AztecAddress>;
+    getGasSettings: () => undefined;
+  };
 
-  if (quoteSigBytes.length !== 64) {
-    throw new Error(
-      `Quote signature length must be 64 bytes, got ${quoteSigBytes.length}`,
+  if (txLabel === "tx1") {
+    const requestedFjAmount =
+      result.maxGasCostNoTeardown * config.creditMintMultiplier +
+      config.creditMintBuffer;
+    const quote = parseQuoteResponse(
+      await fetchQuote(
+        `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
+        config.httpTimeoutMs,
+      ),
+      result.token.address,
     );
-  }
-  if (fjAmount <= 0n) {
-    throw new Error("Attestation quote returned non-positive fj_amount");
-  }
-  if (aaPaymentAmount <= 0n) {
-    throw new Error(
-      "Attestation quote returned non-positive aa_payment_amount",
+    tx1Quote = quote;
+    if (quote.fjAmount !== requestedFjAmount) {
+      throw new Error(
+        `Attestation quote fj_amount mismatch. expected=${requestedFjAmount} got=${quote.fjAmount}`,
+      );
+    }
+    expectedCharge = quote.aaPaymentAmount;
+
+    await result.token.methods
+      .mint_to_private(result.user, expectedCharge + 1_000_000n)
+      .send({ from: result.operator });
+
+    const transferAuthwitNonce = Fr.random();
+    const transferCall = result.token.methods.transfer_private_to_private(
+      result.user,
+      result.operator,
+      quote.aaPaymentAmount,
+      transferAuthwitNonce,
     );
-  }
-  if (fjAmount !== requestedFjAmount) {
-    throw new Error(
-      `Attestation quote fj_amount mismatch. expected=${requestedFjAmount} got=${fjAmount}`,
-    );
-  }
-  if (
-    quote.accepted_asset.toLowerCase() !==
-    result.token.address.toString().toLowerCase()
-  ) {
-    throw new Error(
-      `Quote accepted_asset mismatch. expected=${result.token.address.toString()} got=${quote.accepted_asset}`,
-    );
+    const transferAuthwit = await result.wallet.createAuthWit(result.user, {
+      caller: result.fpc.address,
+      action: transferCall,
+    });
+    const payAndMintCall = await result.fpc.methods
+      .pay_and_mint(
+        transferAuthwitNonce,
+        quote.fjAmount,
+        quote.aaPaymentAmount,
+        quote.validUntil,
+        quote.quoteSigBytes,
+      )
+      .getFunctionCall();
+
+    paymentMethod = {
+      getAsset: async () => ProtocolContractAddress.FeeJuice,
+      getExecutionPayload: async () =>
+        new ExecutionPayload(
+          [payAndMintCall],
+          [transferAuthwit],
+          [],
+          [],
+          result.fpc.address,
+        ),
+      getFeePayer: async () => result.fpc.address,
+      getGasSettings: () => undefined,
+    };
+  } else {
+    const payWithCreditCall = await result.fpc.methods
+      .pay_with_credit()
+      .getFunctionCall();
+    paymentMethod = {
+      getAsset: async () => ProtocolContractAddress.FeeJuice,
+      getExecutionPayload: async () =>
+        new ExecutionPayload(
+          [payWithCreditCall],
+          [],
+          [],
+          [],
+          result.fpc.address,
+        ),
+      getFeePayer: async () => result.fpc.address,
+      getGasSettings: () => undefined,
+    };
   }
 
-  const expectedCharge = aaPaymentAmount;
-  const mintAmount = expectedCharge + 1_000_000n;
-  await result.token.methods
-    .mint_to_private(result.user, mintAmount)
-    .send({ from: result.operator });
-
+  // Capture pre-tx balances after tx setup (quote fetch, prefunding, authwit prep).
   const userPrivateBefore = BigInt(
     (
       await result.token.methods
@@ -1545,42 +1762,13 @@ async function runFeePaidTargetTxAndAssert(
         .simulate({ from: result.operator })
     ).toString(),
   );
-
-  const transferAuthwitNonce = Fr.random();
-  const transferCall = result.token.methods.transfer_private_to_private(
-    result.user,
-    result.operator,
-    aaPaymentAmount,
-    transferAuthwitNonce,
+  const creditBefore = BigInt(
+    (
+      await result.fpc.methods
+        .balance_of(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
   );
-  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
-    caller: result.fpc.address,
-    action: transferCall,
-  });
-
-  const feeEntrypointCall = await result.fpc.methods
-    .fee_entrypoint(
-      transferAuthwitNonce,
-      fjAmount,
-      aaPaymentAmount,
-      validUntil,
-      quoteSigBytes,
-    )
-    .getFunctionCall();
-
-  const paymentMethod = {
-    getAsset: async () => ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [transferAuthwit],
-        [],
-        [],
-        result.fpc.address,
-      ),
-    getFeePayer: async () => result.fpc.address,
-    getGasSettings: () => undefined,
-  };
 
   const receipt = await result.token.methods
     .transfer_public_to_public(
@@ -1632,35 +1820,89 @@ async function runFeePaidTargetTxAndAssert(
         .simulate({ from: result.operator })
     ).toString(),
   );
+  const creditAfter = BigInt(
+    (
+      await result.fpc.methods
+        .balance_of(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
 
   const userDebited = userPrivateBefore - userPrivateAfter;
   const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
-  if (userDebited !== expectedCharge) {
-    throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} user debit mismatch. expected=${expectedCharge} got=${userDebited}`,
-    );
-  }
-  if (operatorCredited !== expectedCharge) {
-    throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
-    );
-  }
-
   const userPublicDelta = userPublicAfter - userPublicBefore;
   const operatorPublicDelta = operatorPublicAfter - operatorPublicBefore;
   if (userPublicDelta !== -targetTransferAmount) {
     throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} target call user public delta mismatch. expected=${-targetTransferAmount} got=${userPublicDelta}`,
+      `[credit-full-lifecycle-e2e] ${txLabel} target call user public delta mismatch. expected=${-targetTransferAmount} got=${userPublicDelta}`,
     );
   }
   if (operatorPublicDelta !== targetTransferAmount) {
     throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} target call operator public delta mismatch. expected=${targetTransferAmount} got=${operatorPublicDelta}`,
+      `[credit-full-lifecycle-e2e] ${txLabel} target call operator public delta mismatch. expected=${targetTransferAmount} got=${operatorPublicDelta}`,
+    );
+  }
+
+  if (txLabel === "tx1") {
+    if (!tx1Quote) {
+      throw new Error("tx1 quote missing after pay_and_mint execution");
+    }
+    if (userDebited !== expectedCharge) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx1 user debit mismatch after pay_and_mint. expected=${expectedCharge} got=${userDebited}`,
+      );
+    }
+    if (operatorCredited !== expectedCharge) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx1 operator credit mismatch after pay_and_mint. expected=${expectedCharge} got=${operatorCredited}`,
+      );
+    }
+    const expectedCreditAfterPayAndMint =
+      creditBefore + tx1Quote.fjAmount - result.maxGasCostNoTeardown;
+    if (creditAfter !== expectedCreditAfterPayAndMint) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx1 credit balance mismatch after pay_and_mint. expected=${expectedCreditAfterPayAndMint} got=${creditAfter}`,
+      );
+    }
+    const quoteUsed = await result.fpc.methods
+      .quote_used(
+        tx1Quote.fjAmount,
+        tx1Quote.aaPaymentAmount,
+        tx1Quote.validUntil,
+        result.user,
+      )
+      .simulate({ from: result.user });
+    if (!quoteUsed) {
+      throw new Error(
+        "[credit-full-lifecycle-e2e] tx1 quote_used returned false after successful pay_and_mint",
+      );
+    }
+    console.log(
+      `[credit-full-lifecycle-e2e] PASS: tx1 pay_and_mint invariants (user_debited=${userDebited}, operator_credited=${operatorCredited}, credit_after_pay_and_mint=${creditAfter}, quote_used=${quoteUsed})`,
+    );
+  } else {
+    if (userDebited !== 0n) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx2 user private balance changed during pay_with_credit. expected=0 got=${userDebited}`,
+      );
+    }
+    if (operatorCredited !== 0n) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx2 operator private balance changed during pay_with_credit. expected=0 got=${operatorCredited}`,
+      );
+    }
+    if (creditAfter >= creditBefore) {
+      throw new Error(
+        `[credit-full-lifecycle-e2e] tx2 credit should decrease after pay_with_credit. before=${creditBefore} after=${creditAfter}`,
+      );
+    }
+    console.log(
+      `[credit-full-lifecycle-e2e] PASS: tx2 pay_with_credit credit consumption (credit_before=${creditBefore}, credit_after=${creditAfter}, operator_private_unchanged=true)`,
     );
   }
 
   console.log(
-    `[full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_debited=${userDebited}, operator_credited=${operatorCredited}, user_public_delta=${userPublicDelta}, operator_public_delta=${operatorPublicDelta})`,
+    `[credit-full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_public_delta=${userPublicDelta}, operator_public_delta=${operatorPublicDelta})`,
   );
   return expectedCharge;
 }
@@ -1738,38 +1980,42 @@ async function negativeExpiredQuoteRejected(
   );
 }
 
-async function negativeOverlongTtlRejected(
+async function negativeMintedCreditTooLowRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
   node: ReturnType<typeof createAztecNodeClient>,
 ): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
+  if (result.maxGasCostNoTeardown <= 1n) {
+    throw new Error(
+      "Cannot build minted-credit-too-low quote: maxGasCostNoTeardown must be > 1",
+    );
+  }
+
+  const fjAmount = result.maxGasCostNoTeardown - 1n;
   const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const latestTimestamp = await getLatestL2Timestamp(node);
-  const ttlSafetyBufferSeconds = 600n;
-  const ttlTooLargeQuote = await signQuoteForUser(
+  const lowMintQuote = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
     fjAmount,
     aaPaymentAmount,
-    latestTimestamp +
-      BigInt(MAX_QUOTE_VALIDITY_SECONDS) +
-      ttlSafetyBufferSeconds,
-    result.user,
+    latestTimestamp + 600n,
+    result.otherUser,
   );
 
   await expectFailure(
-    "negative overlong quote ttl rejected",
-    ["quote ttl too large"],
+    "negative minted credit too low rejected",
+    ["minted credit too low for max fee"],
     () =>
       executeFeePaidTx(config, result, {
         token: result.token,
         fpc: result.fpc,
-        payer: result.user,
+        payer: result.otherUser,
         recipient: result.operator,
         transferAmount: 1n,
-        quote: ttlTooLargeQuote,
+        quote: lowMintQuote,
+        enforceQuotedFjMatchesMax: false,
       }),
   );
 }
@@ -1833,14 +2079,18 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
   node: ReturnType<typeof createAztecNodeClient>,
-  estimatedSingleTxFeeJuice: bigint,
+  _estimatedSingleTxFeeJuice: bigint,
 ): Promise<bigint> {
   const tokenArtifactPath = path.join(
     result.repoRoot,
     "target",
     "token_contract-Token.json",
   );
-  const fpcArtifactPath = path.join(result.repoRoot, "target", "fpc-FPC.json");
+  const fpcArtifactPath = path.join(
+    result.repoRoot,
+    "target",
+    "credit_fpc-CreditFPC.json",
+  );
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
 
@@ -1865,19 +2115,16 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   const isolatedCasesRoot = path.join(result.runDir, "insufficient");
   mkdirSync(isolatedCasesRoot, { recursive: true });
   const isolatedRunDir = mkdtempSync(
-    path.join(isolatedCasesRoot, "fpc-full-lifecycle-e2e-insufficient-"),
+    path.join(isolatedCasesRoot, "credit-fpc-full-lifecycle-e2e-insufficient-"),
   );
   const bridgeStatePath = path.join(isolatedRunDir, "topup.bridge-state.json");
   const topupConfigPath = path.join(isolatedRunDir, "topup.config.yaml");
 
-  const minimumBudget = 1_000_000n;
-  const txHeadroom =
-    estimatedSingleTxFeeJuice <= 0n
-      ? 1_000_000_000n
-      : ceilDiv(estimatedSingleTxFeeJuice, 2n);
-  const budgetWei = result.maxGasCostNoTeardown + txHeadroom + 1_000_000n;
+  const isolatedPrecheckBufferWei = 1_000_000n;
+  // The first tx must pass fee-payer prevalidation (requires >= max fee),
+  // but leave less than one full max-fee budget for the second tx.
   const effectiveBudgetWei =
-    budgetWei > minimumBudget ? budgetWei : minimumBudget;
+    result.maxGasCostNoTeardown + isolatedPrecheckBufferWei;
 
   writeFileSync(
     topupConfigPath,
@@ -1965,7 +2212,9 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     await stopManagedProcess(isolatedTopup);
   }
 
-  const fjAmount = result.maxGasCostNoTeardown;
+  const fjAmount =
+    result.maxGasCostNoTeardown * config.creditMintMultiplier +
+    config.creditMintBuffer;
   const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const quoteAnchor = await getLatestL2Timestamp(node);
   const quote1 = await signQuoteForUser(
@@ -1977,15 +2226,6 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     quoteAnchor + 600n,
     result.user,
   );
-  const quote2 = await signQuoteForUser(
-    result,
-    isolatedFpc.address,
-    isolatedToken.address,
-    fjAmount,
-    aaPaymentAmount,
-    quoteAnchor + 601n,
-    result.user,
-  );
 
   await executeFeePaidTx(config, result, {
     token: isolatedToken,
@@ -1994,6 +2234,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     recipient: result.operator,
     transferAmount: 1n,
     quote: quote1,
+    enforceQuotedFjMatchesMax: false,
   });
 
   await expectFailure(
@@ -2005,13 +2246,12 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
       "not enough fee",
     ],
     () =>
-      executeFeePaidTx(config, result, {
+      executePayWithCreditTx(config, result, {
         token: isolatedToken,
         fpc: isolatedFpc,
         payer: result.user,
         recipient: result.operator,
         transferAmount: 1n,
-        quote: quote2,
       }),
   );
 
@@ -2028,12 +2268,12 @@ async function runStep7NegativeScenarios(
 ): Promise<NegativeScenarioResult> {
   await negativeQuoteReplayRejected(config, result, attestationBaseUrl);
   await negativeExpiredQuoteRejected(config, result, node);
-  await negativeOverlongTtlRejected(config, result, node);
   await negativeSenderBindingRejected(config, result, node);
+  await negativeMintedCreditTooLowRejected(config, result, node);
 
   await stopManagedProcess(topup);
   console.log(
-    "[full-lifecycle-e2e] topup stopped before insufficient Fee Juice negative scenario",
+    "[credit-full-lifecycle-e2e] topup stopped before insufficient Fee Juice negative scenario",
   );
 
   const insufficientFeeJuiceBudgetWei =
@@ -2047,8 +2287,8 @@ async function runStep7NegativeScenarios(
   return {
     quoteReplayRejected: true,
     expiredQuoteRejected: true,
-    overlongTtlRejected: true,
     senderBindingRejected: true,
+    mintedCreditTooLowRejected: true,
     insufficientFeeJuiceRejected: true,
     insufficientFeeJuiceBudgetWei,
   };
@@ -2061,6 +2301,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
   const managed: ManagedProcess[] = [];
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNodeReady(node, config.nodeTimeoutMs);
+  const creditFpcAddress = result.fpc.address;
 
   const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
   const topupOpsBaseUrl = `http://127.0.0.1:${config.topupOpsPort}`;
@@ -2095,7 +2336,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
 
     phase = "step5.attestation_health";
     await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
-    console.log("[full-lifecycle-e2e] PASS: attestation /health");
+    console.log("[credit-full-lifecycle-e2e] PASS: attestation /health");
 
     topup = startManagedProcess(
       "full-e2e-topup",
@@ -2121,7 +2362,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
     await waitForHealth(`${topupOpsBaseUrl}/health`, config.httpTimeoutMs);
     await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
     await waitForHealth(`${topupOpsBaseUrl}/ready`, config.topupWaitTimeoutMs);
-    console.log("[full-lifecycle-e2e] PASS: topup /health and /ready");
+    console.log("[credit-full-lifecycle-e2e] PASS: topup /health and /ready");
 
     phase = "step5.bridge_cycle_1";
     let topupCounters = getTopupLogCountersFromProcess(topup);
@@ -2143,7 +2384,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
         submissionCount: existingSubmissions.length,
       };
       console.log(
-        `[full-lifecycle-e2e] using existing bridge submission for cycle #1 (message_hash=${latestSubmission.messageHash})`,
+        `[credit-full-lifecycle-e2e] using existing bridge submission for cycle #1 (message_hash=${latestSubmission.messageHash})`,
       );
     } else {
       cycle1Submission = await waitForNextBridgeSubmission(
@@ -2170,15 +2411,12 @@ async function orchestrateServicesAndAssertBridgeCycles(
     topupCounters.timeoutCount = cycle1Outcome.timeoutCount;
     topupCounters.failedCount = cycle1Outcome.failedCount;
 
-    let feeJuiceAfterCycle1 = await getFeeJuiceBalance(
-      result.fpc.address,
-      node,
-    );
+    let feeJuiceAfterCycle1 = await getFeeJuiceBalance(creditFpcAddress, node);
     if (feeJuiceAfterCycle1 === 0n) {
       console.log(
-        `[full-lifecycle-e2e] bridge cycle #1 confirmed but Fee Juice is still zero; claiming bridge message ${cycle1Submission.submission.messageHash}`,
+        `[credit-full-lifecycle-e2e] bridge cycle #1 confirmed but Fee Juice is still zero; claiming bridge message ${cycle1Submission.submission.messageHash}`,
       );
-      feeJuiceAfterCycle1 = await claimTopupBridgeSubmission(
+      const claimedBalance = await tryClaimTopupBridgeSubmission(
         node,
         result,
         cycle1Submission.submission,
@@ -2186,10 +2424,18 @@ async function orchestrateServicesAndAssertBridgeCycles(
         config.topupWaitTimeoutMs,
         config.topupPollMs,
       );
+      feeJuiceAfterCycle1 =
+        claimedBalance ??
+        (await waitForPositiveFeeJuiceBalance(
+          node,
+          creditFpcAddress,
+          config.topupWaitTimeoutMs,
+          config.topupPollMs,
+        ));
     }
     topupCounters = getTopupLogCountersFromProcess(topup);
     console.log(
-      `[full-lifecycle-e2e] PASS: bridge cycle #1 confirmed before tx1 (message_hash=${cycle1Submission.submission.messageHash}, leaf_index=${cycle1Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle1})`,
+      `[credit-full-lifecycle-e2e] PASS: bridge cycle #1 confirmed before tx1 (message_hash=${cycle1Submission.submission.messageHash}, leaf_index=${cycle1Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle1})`,
     );
 
     await result.token.methods
@@ -2205,8 +2451,10 @@ async function orchestrateServicesAndAssertBridgeCycles(
       "tx1",
       1n,
     );
-    const feeJuiceAfterTx1 = await getFeeJuiceBalance(result.fpc.address, node);
-    console.log(`[full-lifecycle-e2e] fee_juice_after_tx1=${feeJuiceAfterTx1}`);
+    const feeJuiceAfterTx1 = await getFeeJuiceBalance(creditFpcAddress, node);
+    console.log(
+      `[credit-full-lifecycle-e2e] fee_juice_after_tx1=${feeJuiceAfterTx1}`,
+    );
 
     let feeJuiceAfterCycle2: bigint | null = null;
     if (config.requiredTopupCycles === 2) {
@@ -2234,12 +2482,12 @@ async function orchestrateServicesAndAssertBridgeCycles(
       topupCounters.timeoutCount = cycle2Outcome.timeoutCount;
       topupCounters.failedCount = cycle2Outcome.failedCount;
 
-      feeJuiceAfterCycle2 = await getFeeJuiceBalance(result.fpc.address, node);
+      feeJuiceAfterCycle2 = await getFeeJuiceBalance(creditFpcAddress, node);
       if (feeJuiceAfterCycle2 <= feeJuiceAfterTx1) {
         console.log(
-          `[full-lifecycle-e2e] bridge cycle #2 confirmed but Fee Juice did not increase; claiming bridge message ${cycle2Submission.submission.messageHash}`,
+          `[credit-full-lifecycle-e2e] bridge cycle #2 confirmed but Fee Juice did not increase; claiming bridge message ${cycle2Submission.submission.messageHash}`,
         );
-        await claimTopupBridgeSubmission(
+        await tryClaimTopupBridgeSubmission(
           node,
           result,
           cycle2Submission.submission,
@@ -2249,7 +2497,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
         );
         feeJuiceAfterCycle2 = await waitForFeeJuiceBalanceAboveBaseline(
           node,
-          result.fpc.address,
+          creditFpcAddress,
           feeJuiceAfterTx1,
           config.topupWaitTimeoutMs,
           config.topupPollMs,
@@ -2257,11 +2505,11 @@ async function orchestrateServicesAndAssertBridgeCycles(
       }
       topupCounters = getTopupLogCountersFromProcess(topup);
       console.log(
-        `[full-lifecycle-e2e] PASS: bridge cycle #2 confirmed after tx1 and before tx2 (message_hash=${cycle2Submission.submission.messageHash}, leaf_index=${cycle2Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle2})`,
+        `[credit-full-lifecycle-e2e] PASS: bridge cycle #2 confirmed after tx1 and before tx2 (message_hash=${cycle2Submission.submission.messageHash}, leaf_index=${cycle2Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle2})`,
       );
     } else {
       console.log(
-        "[full-lifecycle-e2e] PASS: second bridge cycle requirement skipped (FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES=1)",
+        "[credit-full-lifecycle-e2e] PASS: second bridge cycle requirement skipped (FPC_CREDIT_FULL_E2E_REQUIRED_TOPUP_CYCLES=1)",
       );
     }
 
@@ -2273,8 +2521,10 @@ async function orchestrateServicesAndAssertBridgeCycles(
       "tx2",
       1n,
     );
-    const feeJuiceAfterTx2 = await getFeeJuiceBalance(result.fpc.address, node);
-    console.log(`[full-lifecycle-e2e] fee_juice_after_tx2=${feeJuiceAfterTx2}`);
+    const feeJuiceAfterTx2 = await getFeeJuiceBalance(creditFpcAddress, node);
+    console.log(
+      `[credit-full-lifecycle-e2e] fee_juice_after_tx2=${feeJuiceAfterTx2}`,
+    );
 
     const estimatedSingleTxFeeJuice =
       feeJuiceAfterTx1 > feeJuiceAfterTx2
@@ -2354,8 +2604,8 @@ function writeStep5Summary(
     completedAt: new Date().toISOString(),
     quoteReplayRejected: orchestration.step7.quoteReplayRejected,
     expiredQuoteRejected: orchestration.step7.expiredQuoteRejected,
-    overlongTtlRejected: orchestration.step7.overlongTtlRejected,
     senderBindingRejected: orchestration.step7.senderBindingRejected,
+    mintedCreditTooLowRejected: orchestration.step7.mintedCreditTooLowRejected,
     insufficientFeeJuiceRejected:
       orchestration.step7.insufficientFeeJuiceRejected,
     insufficientFeeJuiceBudgetWei:
@@ -2392,41 +2642,57 @@ async function main(): Promise<void> {
     return;
   }
 
-  const config = getConfig();
-  printConfigSummary(config);
-  let phase = "step4.deploy_runtime_wiring";
+  const scriptDir =
+    typeof __dirname === "string"
+      ? __dirname
+      : path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(scriptDir, "..", "..");
+  let phase = "step0.config";
   let result: DeploymentRuntimeResult | null = null;
 
   try {
+    const config = getConfig();
+    printConfigSummary(config);
+    phase = "step4.deploy_runtime_wiring";
+
     result = await deployContractsAndWriteRuntimeConfig(config);
-    console.log(`[full-lifecycle-e2e] operator=${result.operator.toString()}`);
-    console.log(`[full-lifecycle-e2e] user=${result.user.toString()}`);
     console.log(
-      `[full-lifecycle-e2e] other_user=${result.otherUser.toString()}`,
+      `[credit-full-lifecycle-e2e] operator=${result.operator.toString()}`,
+    );
+    console.log(`[credit-full-lifecycle-e2e] user=${result.user.toString()}`);
+    console.log(
+      `[credit-full-lifecycle-e2e] other_user=${result.otherUser.toString()}`,
     );
     console.log(
-      `[full-lifecycle-e2e] token=${result.token.address.toString()}`,
-    );
-    console.log(`[full-lifecycle-e2e] fpc=${result.fpc.address.toString()}`);
-    console.log(
-      `[full-lifecycle-e2e] topup_threshold_wei=${result.topupThresholdWei}`,
+      `[credit-full-lifecycle-e2e] token=${result.token.address.toString()}`,
     );
     console.log(
-      `[full-lifecycle-e2e] topup_amount_wei=${result.topupAmountWei}`,
+      `[credit-full-lifecycle-e2e] credit_fpc=${result.fpc.address.toString()}`,
     );
     console.log(
-      `[full-lifecycle-e2e] attestation_config=${result.attestationConfigPath}`,
+      `[credit-full-lifecycle-e2e] topup_threshold_wei=${result.topupThresholdWei}`,
     );
-    console.log(`[full-lifecycle-e2e] topup_config=${result.topupConfigPath}`);
-    console.log(`[full-lifecycle-e2e] run_summary=${result.summaryPath}`);
+    console.log(
+      `[credit-full-lifecycle-e2e] topup_amount_wei=${result.topupAmountWei}`,
+    );
+    console.log(
+      `[credit-full-lifecycle-e2e] attestation_config=${result.attestationConfigPath}`,
+    );
+    console.log(
+      `[credit-full-lifecycle-e2e] topup_config=${result.topupConfigPath}`,
+    );
+    console.log(
+      `[credit-full-lifecycle-e2e] run_summary=${result.summaryPath}`,
+    );
 
     recordPhaseResult(result.summaryPath, "step4", "PASS", {
       runDir: result.runDir,
+      credit_fpc: result.fpc.address.toString(),
       attestationConfigPath: result.attestationConfigPath,
       topupConfigPath: result.topupConfigPath,
     });
     console.log(
-      "[full-lifecycle-e2e] PASS: step4 deployment and runtime wiring complete",
+      "[credit-full-lifecycle-e2e] PASS: step4 deployment and runtime wiring complete",
     );
 
     phase = "step5_to_step7.orchestration";
@@ -2437,43 +2703,45 @@ async function main(): Promise<void> {
     writeStep5Summary(result.summaryPath, orchestration);
 
     console.log(
-      `[full-lifecycle-e2e] PASS: step5 service orchestration and bridge-cycle assertions passed (confirmed_cycles=${orchestration.observedBridgeConfirmed})`,
+      `[credit-full-lifecycle-e2e] PASS: step5 service orchestration and bridge-cycle assertions passed (confirmed_cycles=${orchestration.observedBridgeConfirmed})`,
     );
     console.log(
-      `[full-lifecycle-e2e] PASS: step6 tx invariants and target state deltas passed (tx1_expected_charge=${orchestration.tx1ExpectedCharge}, tx2_expected_charge=${orchestration.tx2ExpectedCharge})`,
+      `[credit-full-lifecycle-e2e] PASS: step6 tx invariants and target state deltas passed (tx1_expected_charge=${orchestration.tx1ExpectedCharge}, tx2_expected_charge=${orchestration.tx2ExpectedCharge})`,
     );
     console.log(
-      `[full-lifecycle-e2e] PASS: step7 negative scenarios passed (insufficient_fee_juice_budget_wei=${orchestration.step7.insufficientFeeJuiceBudgetWei})`,
+      `[credit-full-lifecycle-e2e] PASS: step7 negative scenarios passed (insufficient_fee_juice_budget_wei=${orchestration.step7.insufficientFeeJuiceBudgetWei})`,
     );
 
     phase = "step8.diagnostics_and_artifacts";
     writeStep8Summary(result.summaryPath, result.runDir);
     console.log(
-      "[full-lifecycle-e2e] PASS: step8 diagnostics and artifacts are persisted",
+      "[credit-full-lifecycle-e2e] PASS: step8 diagnostics and artifacts are persisted",
     );
-    console.log("[full-lifecycle-e2e] PASS: full lifecycle e2e succeeded");
+    console.log(
+      "[credit-full-lifecycle-e2e] PASS: full lifecycle e2e succeeded",
+    );
   } catch (error) {
-    if (result !== null) {
-      const summary = readSummary(result.summaryPath);
-      if (summary.failure === undefined) {
-        const diagnostics = persistFailureDiagnostics(
-          result.runDir,
-          result.summaryPath,
-          phase,
-          error,
-          [],
-        );
-        throw new Error(
-          `[phase=${phase}] ${errorMessage(error)} (diagnostics=${diagnostics.diagnosticsPath})`,
-        );
-      }
+    let diagnosticsPath = extractDiagnosticsPathFromError(error);
+    if (diagnosticsPath === null) {
+      diagnosticsPath =
+        result !== null
+          ? persistFailureDiagnostics(
+              result.runDir,
+              result.summaryPath,
+              phase,
+              error,
+              [],
+            ).diagnosticsPath
+          : persistBootstrapDiagnostics(repoRoot, phase, error);
     }
-    throw error;
+    throw new Error(
+      `[phase=${phase}] ${errorMessage(error)} (diagnostics=${diagnosticsPath})`,
+    );
   }
 }
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`[full-lifecycle-e2e] FAIL: ${message}`);
+  console.error(`[credit-full-lifecycle-e2e] FAIL: ${message}`);
   process.exitCode = 1;
 });
