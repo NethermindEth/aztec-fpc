@@ -55,13 +55,7 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
 
     env.call_private(
         user,
-        fpc.fee_entrypoint(
-            TRANSFER_AUTHWIT_NONCE,
-            fj_fee_amount,
-            charge,
-            valid_until,
-            quote_sig,
-        ),
+        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, fj_fee_amount, charge, valid_until, quote_sig),
     );
 
     let user_balance_after = utils::private_balance(env, token_address, user);
@@ -239,13 +233,7 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
 
     env.call_private(
         user,
-        fpc.fee_entrypoint(
-            TRANSFER_AUTHWIT_NONCE,
-            fj_fee_amount,
-            charge,
-            valid_until,
-            quote_sig,
-        ),
+        fpc.fee_entrypoint(TRANSFER_AUTHWIT_NONCE, fj_fee_amount, charge, valid_until, quote_sig),
     );
 
     // Use a fresh quote window for the second attempt so this test fails on
@@ -297,13 +285,7 @@ unconstrained fn fee_entrypoint_rejects_expired_quote() {
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(
-            authwit_nonce,
-            fj_fee_amount,
-            aa_payment_amount,
-            valid_until,
-            quote_sig,
-        ),
+        fpc.fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig),
     );
 }
 
@@ -329,13 +311,7 @@ unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
 
     let _ = env.call_private(
         user,
-        fpc.fee_entrypoint(
-            authwit_nonce,
-            fj_fee_amount,
-            aa_payment_amount,
-            valid_until,
-            quote_sig,
-        ),
+        fpc.fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig),
     );
 }
 
@@ -371,12 +347,6 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
 
     let _ = env.call_private(
         other_user,
-        fpc.fee_entrypoint(
-            authwit_nonce,
-            fj_fee_amount,
-            aa_payment_amount,
-            valid_until,
-            quote_sig,
-        ),
+        fpc.fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig),
     );
 }

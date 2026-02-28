@@ -44,13 +44,7 @@ unconstrained fn pay_and_mint_happy_path_transfers_charge_and_mints_credit() {
 
     env.call_private(
         user,
-        credit_fpc.pay_and_mint(
-            TRANSFER_AUTHWIT_NONCE,
-            mint_amount,
-            charge,
-            valid_until,
-            quote_sig,
-        ),
+        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
     );
 
     let user_token_after = utils::private_balance(env, token_address, user);
@@ -146,13 +140,7 @@ unconstrained fn pay_and_mint_rejects_expired_quote() {
 
     let _ = env.call_private(
         user,
-        credit_fpc.pay_and_mint(
-            TRANSFER_AUTHWIT_NONCE,
-            mint_amount,
-            charge,
-            valid_until,
-            quote_sig,
-        ),
+        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
     );
 }
 
@@ -189,13 +177,7 @@ unconstrained fn pay_and_mint_rejects_quote_bound_to_another_user() {
 
     let _ = env.call_private(
         other_user,
-        credit_fpc.pay_and_mint(
-            TRANSFER_AUTHWIT_NONCE,
-            mint_amount,
-            charge,
-            valid_until,
-            quote_sig,
-        ),
+        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
     );
 }
 
@@ -215,10 +197,7 @@ unconstrained fn pay_and_mint_rejects_tampered_fj_credit_amount() {
     let tampered_fj_credit_amount = quoted_fj_credit_amount + (1 as u128);
     let valid_until = env.last_block_timestamp() + 3600;
 
-    env.call_private(
-        operator,
-        token.mint_to_private(user, quoted_aa_payment_amount + (100 as u128)),
-    );
+    env.call_private(operator, token.mint_to_private(user, quoted_aa_payment_amount + (100 as u128)));
 
     let quote_sig = utils::sign_quote(
         credit_fpc_address,
@@ -332,13 +311,7 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
 
     env.call_private(
         user,
-        credit_fpc.pay_and_mint(
-            TRANSFER_AUTHWIT_NONCE,
-            mint_amount,
-            charge,
-            valid_until,
-            quote_sig,
-        ),
+        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
     );
 
     // Second call: fresh quote sig (different valid_until avoids quote replay),
@@ -404,13 +377,7 @@ unconstrained fn pay_and_mint_credit_equals_mint_amount_minus_max_gas_cost() {
 
     env.call_private(
         user,
-        credit_fpc.pay_and_mint(
-            TRANSFER_AUTHWIT_NONCE,
-            mint_amount,
-            charge,
-            valid_until,
-            quote_sig,
-        ),
+        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
     );
 
     // Verify the change note is exactly mint_amount - max_gas_cost = 500.
@@ -451,13 +418,7 @@ unconstrained fn pay_and_mint_prevents_quote_replay() {
 
     env.call_private(
         user,
-        credit_fpc.pay_and_mint(
-            TRANSFER_AUTHWIT_NONCE,
-            mint_amount,
-            charge,
-            valid_until,
-            quote_sig,
-        ),
+        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
     );
 
     // Replay protection is implemented by emitting quote_hash as a nullifier.
