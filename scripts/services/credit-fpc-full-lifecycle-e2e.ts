@@ -1648,42 +1648,6 @@ async function runFeePaidTargetTxAndAssert(
   txLabel: "tx1" | "tx2",
   targetTransferAmount: bigint,
 ): Promise<bigint> {
-  const userPrivateBefore = BigInt(
-    (
-      await result.token.methods
-        .balance_of_private(result.user)
-        .simulate({ from: result.user })
-    ).toString(),
-  );
-  const operatorPrivateBefore = BigInt(
-    (
-      await result.token.methods
-        .balance_of_private(result.operator)
-        .simulate({ from: result.operator })
-    ).toString(),
-  );
-  const userPublicBefore = BigInt(
-    (
-      await result.token.methods
-        .balance_of_public(result.user)
-        .simulate({ from: result.user })
-    ).toString(),
-  );
-  const operatorPublicBefore = BigInt(
-    (
-      await result.token.methods
-        .balance_of_public(result.operator)
-        .simulate({ from: result.operator })
-    ).toString(),
-  );
-  const creditBefore = BigInt(
-    (
-      await result.fpc.methods
-        .balance_of(result.user)
-        .simulate({ from: result.user })
-    ).toString(),
-  );
-
   let expectedCharge = 0n;
   let tx1Quote: QuoteInput | undefined;
   let paymentMethod: {
@@ -1768,6 +1732,43 @@ async function runFeePaidTargetTxAndAssert(
       getGasSettings: () => undefined,
     };
   }
+
+  // Capture pre-tx balances after tx setup (quote fetch, prefunding, authwit prep).
+  const userPrivateBefore = BigInt(
+    (
+      await result.token.methods
+        .balance_of_private(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
+  const operatorPrivateBefore = BigInt(
+    (
+      await result.token.methods
+        .balance_of_private(result.operator)
+        .simulate({ from: result.operator })
+    ).toString(),
+  );
+  const userPublicBefore = BigInt(
+    (
+      await result.token.methods
+        .balance_of_public(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
+  const operatorPublicBefore = BigInt(
+    (
+      await result.token.methods
+        .balance_of_public(result.operator)
+        .simulate({ from: result.operator })
+    ).toString(),
+  );
+  const creditBefore = BigInt(
+    (
+      await result.fpc.methods
+        .balance_of(result.user)
+        .simulate({ from: result.user })
+    ).toString(),
+  );
 
   const receipt = await result.token.methods
     .transfer_public_to_public(
