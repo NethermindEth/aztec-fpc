@@ -28,7 +28,7 @@ bun install
 This single flow compiles contracts, deploys contracts, starts services, and validates both FPC modes (`fpc` + `credit`):
 
 ```bash
-FPC_SERVICES_SMOKE_MODE=both bun run smoke:services
+FPC_SERVICES_SMOKE_MODE=both bun run smoke:services:local
 ```
 
 Expected success signal: script exits `0` and prints service-smoke completion logs without errors.
@@ -130,4 +130,4 @@ Then run separate attestation/top-up instances per stack with:
 
 - `deploy-fpc-local` output file exists and has non-zero addresses.
 - attestation and top-up processes are healthy.
-- `bun run smoke:services` passes in `both` mode.
+- `bun run smoke:services:local` passes in `both` mode.

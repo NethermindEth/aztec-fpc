@@ -144,13 +144,13 @@ Default local-network endpoints:
 - Anvil L1 RPC (spawned by `aztec start --local-network`): `http://127.0.0.1:8545`
 
 ```bash
-bun run smoke:fee-entrypoint:devnet
+bun run smoke:fee-entrypoint:local
 # or:
-bash scripts/contract/fee-entrypoint-devnet-smoke.sh
+bash scripts/contract/fee-entrypoint-local-smoke.sh
 ```
 
 Smoke implementation file:
-`services/attestation/test/fee-entrypoint-devnet-smoke.ts`
+`services/attestation/test/fee-entrypoint-local-smoke.ts`
 
 Optional overrides:
 
@@ -177,13 +177,13 @@ This runs a full CreditFPC flow outside TXE tests:
 6. execute `pay_with_credit`.
 
 ```bash
-bun run smoke:credit-fpc:devnet
+bun run smoke:credit-fpc:local
 # or:
-bash scripts/contract/credit-fpc-devnet-smoke.sh
+bash scripts/contract/credit-fpc-local-smoke.sh
 ```
 
 Smoke implementation file:
-`services/attestation/test/credit-fpc-devnet-smoke.ts`
+`services/attestation/test/credit-fpc-local-smoke.ts`
 
 Useful overrides:
 
@@ -209,7 +209,7 @@ This script implements Step 8 from the services plan:
 6. confirms topup behavior and successful fee flows.
 
 ```bash
-bun run smoke:services
+bun run smoke:services:local
 # or:
 bash scripts/services/fpc-services-smoke.sh
 ```

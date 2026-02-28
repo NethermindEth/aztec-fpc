@@ -12,7 +12,7 @@ This document defines a single end-to-end test for the CreditFPC lifecycle only.
 No other smoke/deploy/test flows are part of this definition.
 
 ## Test Entry Point
-- Command: `bun run e2e:full-lifecycle:credit`
+- Command: `bun run e2e:full-lifecycle:credit:local`
 - Script: `scripts/services/credit-fpc-full-lifecycle-e2e.sh`
 - Runner: `scripts/services/credit-fpc-full-lifecycle-e2e.ts`
 

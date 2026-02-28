@@ -97,8 +97,8 @@ services:
     profiles: ["smoke"]
     command:
       - "scripts/services/fpc-services-smoke.ts"
-      - "services/attestation/test/fee-entrypoint-devnet-smoke.ts"
-      - "services/attestation/test/credit-fpc-devnet-smoke.ts"
+      - "services/attestation/test/fee-entrypoint-local-smoke.ts"
+      - "services/attestation/test/credit-fpc-local-smoke.ts"
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"

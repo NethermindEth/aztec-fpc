@@ -14,7 +14,7 @@ No other smoke/deploy/test flows are part of this definition.
 CreditFPC has a separate lifecycle and requirement set documented in `docs/e2e-test-spec-credit.md`.
 
 ## Test Entry Point
-- Command: `bun run e2e:full-lifecycle`
+- Command: `bun run e2e:full-lifecycle:local`
 - Script: `scripts/services/fpc-full-lifecycle-e2e.sh`
 - Runner: `scripts/services/fpc-full-lifecycle-e2e.ts`
 
@@ -80,7 +80,7 @@ Address source of truth is always `node_getNodeInfo`; nothing is hardcoded.
 ## Coverage Findings And Test Tiering
 Current script coverage in this repository is intentionally split:
 - `scripts/contract/deploy-fpc-local.ts` and `scripts/contract/deploy-fpc-local-smoke.ts` are deployment/relay usability checks, not quote-security or negative-behavior tests.
-- `services/attestation/test/fee-entrypoint-devnet-smoke.ts` and `scripts/services/fpc-services-smoke.ts` are primarily happy-path smoke checks, plus basic malformed-request validation.
+- `services/attestation/test/fee-entrypoint-local-smoke.ts` and `scripts/services/fpc-services-smoke.ts` are primarily happy-path smoke checks, plus basic malformed-request validation.
 
 This document is the source of truth for full FPC e2e behavior requirements, including negative scenarios that are not required in lightweight smoke scripts.
 

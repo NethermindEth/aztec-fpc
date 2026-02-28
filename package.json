@@ -42,12 +42,12 @@
     "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
     "render:config:devnet": "bunx tsx scripts/services/render-config-from-manifest.ts --manifest ./deployments/devnet-manifest-v2.json",
-    "smoke:fee-entrypoint:devnet": "bash scripts/contract/fee-entrypoint-devnet-smoke.sh",
-    "smoke:credit-fpc:devnet": "bash scripts/contract/credit-fpc-devnet-smoke.sh",
+    "smoke:fee-entrypoint:local": "bash scripts/contract/fee-entrypoint-local-smoke.sh",
+    "smoke:credit-fpc:local": "bash scripts/contract/credit-fpc-local-smoke.sh",
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-fpc-local-smoke.sh",
-    "smoke:services": "bash scripts/services/fpc-services-smoke.sh",
-    "e2e:full-lifecycle": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
-    "e2e:full-lifecycle:credit": "bash scripts/services/credit-fpc-full-lifecycle-e2e.sh",
+    "smoke:services:local": "bash scripts/services/fpc-services-smoke.sh",
+    "e2e:full-lifecycle:local": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
+    "e2e:full-lifecycle:credit:local": "bash scripts/services/credit-fpc-full-lifecycle-e2e.sh",
     "test": "bun run test:contracts && bun run test:ts"
   },
   "workspaces": [

@@ -96,4 +96,4 @@ jobs:
             sleep 1
           done
 
-          bun run smoke:fee-entrypoint:devnet
+          bun run smoke:fee-entrypoint:local

@@ -155,7 +155,7 @@ const managedProcessRegistry = new Set<ManagedProcess>();
 let shutdownInProgress = false;
 
 function printHelp(): void {
-  console.log(`Usage: bun run e2e:full-lifecycle:credit [--help]
+  console.log(`Usage: bun run e2e:full-lifecycle:credit:local [--help]
 
 Config env vars:
 - FPC_CREDIT_FULL_E2E_MODE=credit
