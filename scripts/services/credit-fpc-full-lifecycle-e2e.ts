@@ -2079,7 +2079,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
   node: ReturnType<typeof createAztecNodeClient>,
-  estimatedSingleTxFeeJuice: bigint,
+  _estimatedSingleTxFeeJuice: bigint,
 ): Promise<bigint> {
   const tokenArtifactPath = path.join(
     result.repoRoot,
