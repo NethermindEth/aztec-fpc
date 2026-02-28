@@ -1,0 +1,71 @@
+# Dependencies — rebuilt inside Docker via bun install
+node_modules/
+
+# Compiled artifacts — produced by multi-stage builds
+target/
+**/dist/
+
+# Version control
+.git/
+.gitignore
+.gitmodules
+
+# CI/CD
+.github/
+
+# IDE / editor
+.claude/
+.vscode/
+.vscode-test/
+
+# Linting / formatting config
+biome.json
+
+# Documentation
+docs/
+local-docs/
+README.md
+ATTRIBUTION.md
+devnet-deployment-how-to.md
+LICENSE
+
+# Local runtime data
+wallet_data*/
+pxe_data*/
+tmp/
+configs/
+.topup-bridge-state.json
+
+# Benchmarks / profiling
+profiling/
+
+# Deployment records
+deployments/
+
+# Docker infrastructure files (never COPY'd by any Dockerfile)
+docker-bake.hcl
+docker-compose.yaml
+Dockerfile.smoke
+services/Dockerfile.common
+services/attestation/Dockerfile
+services/topup/Dockerfile
+scripts/contract/Dockerfile.deploy
+
+# Environment files
+.env
+.env.*
+
+# Unused lock files
+package-lock.json
+
+# Root-level config (only services/*/config.example.yaml is COPY'd)
+fpc-config.yaml
+fpc-config.example.yaml
+
+# Logs, coverage, caches
+logs/
+*.log
+coverage/
+*.lcov
+.nyc_output/
+*.tsbuildinfo
