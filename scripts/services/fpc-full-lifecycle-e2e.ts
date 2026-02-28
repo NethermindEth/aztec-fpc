@@ -152,7 +152,7 @@ const managedProcessRegistry = new Set<ManagedProcess>();
 let shutdownInProgress = false;
 
 function printHelp(): void {
-  console.log(`Usage: bun run e2e:full-lifecycle:local [--help]
+  console.log(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
 
 Config env vars:
 - FPC_FULL_E2E_MODE=fpc

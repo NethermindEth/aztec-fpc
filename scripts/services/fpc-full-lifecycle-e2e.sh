@@ -11,7 +11,7 @@ STARTED_LOCAL_NETWORK=0
 
 function usage() {
   cat <<'EOF'
-Usage: bun run e2e:full-lifecycle:local [--help]
+Usage: bun run e2e:full-lifecycle:fpc:local [--help]
 
 Runs the full-lifecycle E2E bootstrap wrapper for Issue #85.
 

@@ -14,7 +14,7 @@ No other smoke/deploy/test flows are part of this definition.
 CreditFPC has a separate lifecycle and requirement set documented in `docs/e2e-test-spec-credit.md`.
 
 ## Test Entry Point
-- Command: `bun run e2e:full-lifecycle:local`
+- Command: `bun run e2e:full-lifecycle:fpc:local`
 - Script: `scripts/services/fpc-full-lifecycle-e2e.sh`
 - Runner: `scripts/services/fpc-full-lifecycle-e2e.ts`
 
