@@ -113,9 +113,10 @@ pub contract CreditFPC {
         assert(subtracted >= max_gas_cost, "minted credit too low for max fee");
         balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
-        assert(!self.context.in_revertible_phase(), "fee entrypoint must run in setup phase");
         self.context.set_as_fee_payer();
-        self.context.end_setup();
+        if !self.context.in_revertible_phase() {
+            self.context.end_setup();
+        }
     }
 
     #[external("private")]
@@ -129,9 +130,10 @@ pub contract CreditFPC {
         assert(subtracted >= max_gas_cost, "Balance too low or note insufficient");
         balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
-        assert(!self.context.in_revertible_phase(), "fee entrypoint must run in setup phase");
         self.context.set_as_fee_payer();
-        self.context.end_setup();
+        if !self.context.in_revertible_phase() {
+            self.context.end_setup();
+        }
     }
 
     #[external("public")]
