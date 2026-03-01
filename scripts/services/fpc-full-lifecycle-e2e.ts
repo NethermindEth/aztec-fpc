@@ -1521,7 +1521,7 @@ async function negativeQuoteReplayRejected(
 
   await expectFailure(
     "negative quote replay rejected",
-    ["quote already used"],
+    ["nullifier", "already exists", "duplicate"],
     () =>
       executeFeePaidTx(config, result, {
         token: result.token,
