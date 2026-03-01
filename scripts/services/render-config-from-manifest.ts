@@ -776,7 +776,7 @@ function main(argv: string[]): void {
     `[render-config-from-manifest] wrote topup config: ${args.topupOutPath}`,
   );
   console.log(
-    `[render-config-from-manifest] contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} credit_fpc=${manifest.contracts.credit_fpc}`,
+    `[render-config-from-manifest] contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc}`,
   );
 }
 

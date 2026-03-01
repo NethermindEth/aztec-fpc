@@ -55,7 +55,6 @@ export type DevnetDeployManifest = {
   contracts: {
     accepted_asset: string;
     fpc: string;
-    credit_fpc: string;
   };
   operator: {
     address: string;
@@ -65,7 +64,6 @@ export type DevnetDeployManifest = {
   tx_hashes: {
     accepted_asset_deploy: string | null;
     fpc_deploy: string | null;
-    credit_fpc_deploy: string | null;
   };
   payment_mode?: string;
 };
@@ -76,7 +74,6 @@ export type LegacyDeployOutputCompat = {
   operator_address: string;
   accepted_asset: string;
   fpc_address: string;
-  credit_fpc_address: string;
   node_contracts: {
     fee_juice_portal_address: string;
     fee_juice_address: string;
@@ -87,10 +84,6 @@ export type LegacyDeployOutputCompat = {
       source: "deployed" | "provided" | "reused";
     };
     fpc: {
-      address: string;
-      source: "deployed" | "reused";
-    };
-    credit_fpc: {
       address: string;
       source: "deployed" | "reused";
     };
@@ -494,10 +487,6 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       requireString(contractsRaw, "fpc", "manifest.contracts"),
       "manifest.contracts.fpc",
     ),
-    credit_fpc: parseAztecAddress(
-      requireString(contractsRaw, "credit_fpc", "manifest.contracts"),
-      "manifest.contracts.credit_fpc",
-    ),
   };
 
   const operatorRaw = requireObject(input, "operator", "manifest");
@@ -525,10 +514,6 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     fpc_deploy: parseTxHashOrNull(
       txHashesRaw.fpc_deploy,
       "manifest.tx_hashes.fpc_deploy",
-    ),
-    credit_fpc_deploy: parseTxHashOrNull(
-      txHashesRaw.credit_fpc_deploy,
-      "manifest.tx_hashes.credit_fpc_deploy",
     ),
   };
 
@@ -589,7 +574,6 @@ export function withLegacyDeployCompat(
     operator_address: manifest.operator.address,
     accepted_asset: manifest.contracts.accepted_asset,
     fpc_address: manifest.contracts.fpc,
-    credit_fpc_address: manifest.contracts.credit_fpc,
     node_contracts: {
       fee_juice_portal_address:
         manifest.aztec_required_addresses.l1_contract_addresses
@@ -605,10 +589,6 @@ export function withLegacyDeployCompat(
       fpc: {
         address: manifest.contracts.fpc,
         source: inferContractDeploySource(manifest.tx_hashes.fpc_deploy),
-      },
-      credit_fpc: {
-        address: manifest.contracts.credit_fpc,
-        source: inferContractDeploySource(manifest.tx_hashes.credit_fpc_deploy),
       },
     },
   };
@@ -685,8 +665,6 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
       accepted_asset:
         "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       fpc: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      credit_fpc:
-        "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     },
     operator: {
       address:
@@ -699,8 +677,6 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
         "0x1111111111111111111111111111111111111111111111111111111111111111",
       fpc_deploy:
         "0x2222222222222222222222222222222222222222222222222222222222222222",
-      credit_fpc_deploy:
-        "0x3333333333333333333333333333333333333333333333333333333333333333",
     },
     payment_mode: "fpc-sponsored",
   };

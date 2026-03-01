@@ -36,9 +36,11 @@ if [[ -z "${OPERATOR_SECRET_KEY}" && -z "${OPERATOR_SECRET_KEY_REF}" ]]; then
   echo "WARN: No operator key provided. Using deployer key as operator key for devnet." >&2
 fi
 
+FPC_ARTIFACT="${FPC_DEVNET_FPC_ARTIFACT:-target/fpc-FPC.json}"
+
 cd "${REPO_ROOT}"
 
-if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPC.json || ! -f target/credit_fpc-CreditFPC.json ]]; then
+if [[ ! -f target/token_contract-Token.json || ! -f "${FPC_ARTIFACT}" ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force
 fi
@@ -48,6 +50,7 @@ cmd=(
   --node-url "${NODE_URL}"
   --sponsored-fpc-address "${SPONSORED_FPC_ADDRESS}"
   --deployer-alias "${DEPLOYER_ALIAS}"
+  --fpc-artifact "${FPC_ARTIFACT}"
   --out "${OUT_PATH}"
 )
 

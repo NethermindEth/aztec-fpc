@@ -16,6 +16,7 @@ type CliArgs = {
   operatorSecretKey: string | null;
   operatorSecretKeyRef: string | null;
   acceptedAsset: string | null;
+  fpcArtifact: string;
   out: string;
   preflightOnly: boolean;
 };
@@ -121,10 +122,9 @@ const WALLET_SPONSORED_FPC_ALIAS = "sponsoredfpc";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
+const DEFAULT_FPC_ARTIFACT = path.join(REPO_ROOT, "target", "fpc-FPC.json");
 const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
-  fpc: path.join(REPO_ROOT, "target", "fpc-FPC.json"),
-  creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
 } as const;
 
 class CliError extends Error {
@@ -147,13 +147,15 @@ function usage(): string {
     "    [--l1-rpc-url <url>] \\",
     "    [--validate-topup-path] \\",
     "    [--accepted-asset <aztec_address>] \\",
+    "    [--fpc-artifact <path>] \\",
     "    [--preflight-only]",
     "",
     "Notes:",
     "  - --l1-rpc-url is optional for deployment-only preflight.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
     "  - In preflight mode, the script may register missing wallet aliases but sends no contract deploy txs.",
-    "  - Without --preflight-only, the script deploys Token (unless --accepted-asset is provided), FPC, and CreditFPC and writes a validated manifest.",
+    "  - --fpc-artifact selects the compiled FPC artifact to deploy (default: target/fpc-FPC.json).",
+    "  - Without --preflight-only, the script deploys Token (unless --accepted-asset is provided) and the FPC contract, then writes a validated manifest.",
   ].join("\n");
 }
 
@@ -248,6 +250,8 @@ function parseCliArgs(argv: string[]): CliParseResult {
     process.env.FPC_DEVNET_OPERATOR_SECRET_KEY_REF ?? null;
   let acceptedAsset: string | null =
     process.env.FPC_DEVNET_ACCEPTED_ASSET ?? null;
+  let fpcArtifact: string =
+    process.env.FPC_DEVNET_FPC_ARTIFACT ?? DEFAULT_FPC_ARTIFACT;
   let out: string | null = process.env.FPC_DEVNET_OUT ?? null;
   let preflightOnly = false;
 
@@ -291,6 +295,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--accepted-asset":
         acceptedAsset = nextArg(argv, i, arg);
+        i += 1;
+        break;
+      case "--fpc-artifact":
+        fpcArtifact = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--out":
@@ -366,6 +374,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
       acceptedAsset: acceptedAsset
         ? parseAztecAddress(acceptedAsset, "--accepted-asset")
         : null,
+      fpcArtifact: path.resolve(fpcArtifact),
       out,
       preflightOnly,
     },
@@ -1332,16 +1341,13 @@ async function assertL1RpcReachable(l1RpcUrl: string): Promise<number> {
   }
 }
 
-function assertRequiredArtifactsExist(): void {
+function assertRequiredArtifactsExist(fpcArtifact: string): void {
   const missing: string[] = [];
   if (!existsSync(REQUIRED_ARTIFACTS.token)) {
     missing.push(REQUIRED_ARTIFACTS.token);
   }
-  if (!existsSync(REQUIRED_ARTIFACTS.fpc)) {
-    missing.push(REQUIRED_ARTIFACTS.fpc);
-  }
-  if (!existsSync(REQUIRED_ARTIFACTS.creditFpc)) {
-    missing.push(REQUIRED_ARTIFACTS.creditFpc);
+  if (!existsSync(fpcArtifact)) {
+    missing.push(fpcArtifact);
   }
   if (missing.length > 0) {
     const formatted = missing.map((entry) => `  - ${entry}`).join("\n");
@@ -1374,7 +1380,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`,
   );
 
-  assertRequiredArtifactsExist();
+  assertRequiredArtifactsExist(args.fpcArtifact);
   console.log("[deploy-fpc-devnet] artifact preflight passed");
 
   const nodeState = await assertAztecNodePreflight(args.nodeUrl);
@@ -1478,7 +1484,7 @@ async function main(): Promise<void> {
     nodeUrl: args.nodeUrl,
     fromAlias: deployer.walletAlias,
     sponsoredFpcAddress: args.sponsoredFpcAddress,
-    artifactPath: REQUIRED_ARTIFACTS.fpc,
+    artifactPath: args.fpcArtifact,
     alias: `devnet-fpc-${aliasSuffix}`,
     constructorArgs: [
       operatorIdentity.address,
@@ -1490,25 +1496,6 @@ async function main(): Promise<void> {
   });
   console.log(
     `[deploy-fpc-devnet] fpc deployed. address=${fpcDeploy.address} tx_hash=${fpcDeploy.txHash}`,
-  );
-
-  console.log("[deploy-fpc-devnet] deploying CreditFPC contract");
-  const creditFpcDeploy = await deployContractWithAztecWallet({
-    nodeUrl: args.nodeUrl,
-    fromAlias: deployer.walletAlias,
-    sponsoredFpcAddress: args.sponsoredFpcAddress,
-    artifactPath: REQUIRED_ARTIFACTS.creditFpc,
-    alias: `devnet-credit-fpc-${aliasSuffix}`,
-    constructorArgs: [
-      operatorIdentity.address,
-      operatorIdentity.pubkeyX,
-      operatorIdentity.pubkeyY,
-      acceptedAssetAddress,
-    ],
-    context: "CreditFPC",
-  });
-  console.log(
-    `[deploy-fpc-devnet] credit_fpc deployed. address=${creditFpcDeploy.address} tx_hash=${creditFpcDeploy.txHash}`,
   );
 
   const manifest = writeDevnetDeployManifest(args.out, {
@@ -1553,7 +1540,6 @@ async function main(): Promise<void> {
     contracts: {
       accepted_asset: acceptedAssetAddress,
       fpc: fpcDeploy.address,
-      credit_fpc: creditFpcDeploy.address,
     },
     operator: {
       address: operatorIdentity.address,
@@ -1563,7 +1549,6 @@ async function main(): Promise<void> {
     tx_hashes: {
       accepted_asset_deploy: acceptedAssetDeployTxHash,
       fpc_deploy: fpcDeploy.txHash,
-      credit_fpc_deploy: creditFpcDeploy.txHash,
     },
     payment_mode: paymentMode,
   });
@@ -1572,7 +1557,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
   console.log(
-    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} credit_fpc=${manifest.contracts.credit_fpc}`,
+    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc}`,
   );
 }
 
