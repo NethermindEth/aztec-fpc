@@ -24,7 +24,7 @@ It supports two private flows:
 4. Transfers exactly `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
 5. Mints exactly `fj_credit_amount` private credit for the caller.
 6. Deducts `get_max_gas_cost_no_teardown(...)` from the minted credit for the current tx setup gas.
-7. Requires setup-phase execution (`!in_revertible_phase`), marks contract as fee payer (`set_as_fee_payer`), then ends setup.
+7. Marks contract as fee payer (`set_as_fee_payer`) and ends setup when still in setup phase (`!in_revertible_phase`).
 
 ### `pay_with_credit` flow
 
@@ -32,7 +32,7 @@ It supports two private flows:
 
 1. Computes `get_max_gas_cost(...)` including teardown gas limits.
 2. Deducts that amount from caller credit balance.
-3. Requires setup-phase execution (`!in_revertible_phase`), marks contract as fee payer, then ends setup.
+3. Marks contract as fee payer and ends setup when still in setup phase (`!in_revertible_phase`).
 
 No quote and no token transfer are used in this path.
 
