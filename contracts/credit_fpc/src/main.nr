@@ -211,11 +211,6 @@ pub contract CreditFPC {
             "invalid quote signature",
         );
 
-        // Safety: this is only used as a best-effort pre-check for a clearer
-        // replay error before the canonical duplicate-nullifier protection.
-        let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
-        assert(!quote_already_used, "quote already used");
-
         // Prevent replay: the quote hash is unique per (fpc, asset, amounts, expiry, user).
         context.push_nullifier(quote_hash);
 
