@@ -107,9 +107,7 @@ async function expectFailure(
       console.log(`[smoke] PASS: ${scenario}`);
       return;
     }
-    throw new Error(
-      `${scenario} failed with unexpected error: ${message}`,
-    );
+    throw new Error(`${scenario} failed with unexpected error: ${message}`);
   }
   throw new Error(`${scenario} unexpectedly succeeded`);
 }
@@ -579,7 +577,8 @@ async function main() {
       "Could not read latest L2 block while building teardown-gas negative quote",
     );
   }
-  const negativeValidUntil = latestBlockForNegative.timestamp + config.quoteTtlSeconds;
+  const negativeValidUntil =
+    latestBlockForNegative.timestamp + config.quoteTtlSeconds;
   const negativeQuoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
@@ -632,18 +631,20 @@ async function main() {
     "teardown gas rejected for no-teardown fee path",
     ["teardown da gas must be zero", "teardown l2 gas must be zero"],
     () =>
-      token.methods.transfer_public_to_public(user, user, 1n, Fr.random()).send({
-        from: user,
-        fee: {
-          paymentMethod: negativePaymentMethod,
-          gasSettings: {
-            gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-            teardownGasLimits: { daGas: 1, l2Gas: 1 },
-            maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+      token.methods
+        .transfer_public_to_public(user, user, 1n, Fr.random())
+        .send({
+          from: user,
+          fee: {
+            paymentMethod: negativePaymentMethod,
+            gasSettings: {
+              gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+              teardownGasLimits: { daGas: 1, l2Gas: 1 },
+              maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+            },
           },
-        },
-        wait: { timeout: 180 },
-      }),
+          wait: { timeout: 180 },
+        }),
   );
 
   console.log("[smoke] PASS: fee_entrypoint end-to-end flow succeeded");
