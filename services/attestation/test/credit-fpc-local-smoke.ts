@@ -90,6 +90,32 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
 }
 
+async function expectFailure(
+  scenario: string,
+  expectedSubstrings: string[],
+  action: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : JSON.stringify(error);
+    const normalized = message.toLowerCase();
+    if (
+      expectedSubstrings.some((needle) =>
+        normalized.includes(needle.toLowerCase()),
+      )
+    ) {
+      console.log(`[credit-smoke] PASS: ${scenario}`);
+      return;
+    }
+    throw new Error(
+      `${scenario} failed with unexpected error: ${message}`,
+    );
+  }
+  throw new Error(`${scenario} unexpectedly succeeded`);
+}
+
 function normalizeHexAddress(value: unknown, fieldName: string): Hex {
   if (typeof value === "string") {
     return value as Hex;
@@ -532,6 +558,7 @@ async function main() {
         paymentMethod: payAndMintPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 0, l2Gas: 0 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
@@ -583,6 +610,81 @@ async function main() {
       `Credit balance mismatch after pay_and_mint. expected=${expectedCreditAfterPayAndMint} got=${creditAfterPayAndMint}`,
     );
   }
+
+  await token.methods.mint_to_public(user, 1n).send({ from: operator });
+
+  const latestBlockForNegative = await node.getBlock("latest");
+  if (!latestBlockForNegative) {
+    throw new Error(
+      "Could not read latest L2 block while building pay_and_mint teardown-gas negative quote",
+    );
+  }
+  const negativeValidUntil = latestBlockForNegative.timestamp + config.quoteTtlSeconds;
+  const negativeQuoteHash = await computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    creditFpc.address.toField(),
+    token.address.toField(),
+    new Fr(fjCreditAmount),
+    new Fr(aaPaymentAmount),
+    new Fr(negativeValidUntil),
+    user.toField(),
+  ]);
+  const negativeQuoteSig = await schnorr.constructSignature(
+    negativeQuoteHash.toBuffer(),
+    operatorSigningKey,
+  );
+  const negativeQuoteSigBytes = Array.from(negativeQuoteSig.toBuffer());
+  const negativeTransferAuthwitNonce = Fr.random();
+  const negativeTransferCall = token.methods.transfer_private_to_private(
+    user,
+    operator,
+    aaPaymentAmount,
+    negativeTransferAuthwitNonce,
+  );
+  const negativeTransferAuthwit = await wallet.createAuthWit(user, {
+    caller: creditFpc.address,
+    action: negativeTransferCall,
+  });
+  const negativePayAndMintCall = await creditFpc.methods
+    .pay_and_mint(
+      negativeTransferAuthwitNonce,
+      fjCreditAmount,
+      aaPaymentAmount,
+      negativeValidUntil,
+      negativeQuoteSigBytes,
+    )
+    .getFunctionCall();
+  const negativePayAndMintPaymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload(
+        [negativePayAndMintCall],
+        [negativeTransferAuthwit],
+        [],
+        [],
+        creditFpc.address,
+      ),
+    getFeePayer: async () => creditFpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  await expectFailure(
+    "teardown gas rejected for pay_and_mint no-teardown fee path",
+    ["teardown da gas must be zero", "teardown l2 gas must be zero"],
+    () =>
+      token.methods.transfer_public_to_public(user, user, 1n, Fr.random()).send({
+        from: user,
+        fee: {
+          paymentMethod: negativePayAndMintPaymentMethod,
+          gasSettings: {
+            gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+            teardownGasLimits: { daGas: 1, l2Gas: 1 },
+            maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+          },
+        },
+        wait: { timeout: 180 },
+      }),
+  );
 
   const creditBeforePayWithCredit = creditAfterPayAndMint;
   const operatorTokenBeforePayWithCredit = operatorTokenAfterPayAndMint;
