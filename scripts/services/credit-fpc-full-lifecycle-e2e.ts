@@ -1929,6 +1929,70 @@ async function negativeTeardownGasRejected(
   );
 }
 
+async function negativeDirectPayAndMintCallRejected(
+  config: FullE2EConfig,
+  result: DeploymentRuntimeResult,
+  node: ReturnType<typeof createAztecNodeClient>,
+): Promise<void> {
+  const fjAmount = result.maxGasCostNoTeardown;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const latestTimestamp = await getLatestL2Timestamp(node);
+  const quote = await signQuoteForUser(
+    result,
+    result.fpc.address,
+    result.token.address,
+    fjAmount,
+    aaPaymentAmount,
+    latestTimestamp + 600n,
+    result.user,
+  );
+
+  const transferAuthwitNonce = Fr.random();
+  const transferCall = result.token.methods.transfer_private_to_private(
+    result.user,
+    result.operator,
+    aaPaymentAmount,
+    transferAuthwitNonce,
+  );
+  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
+    caller: result.fpc.address,
+    action: transferCall,
+  });
+
+  await expectFailure(
+    "negative direct pay_and_mint call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      result.fpc.methods
+        .pay_and_mint(
+          transferAuthwitNonce,
+          quote.fjAmount,
+          quote.aaPaymentAmount,
+          quote.validUntil,
+          quote.quoteSigBytes,
+        )
+        .send({
+          from: result.user,
+          authWitnesses: [transferAuthwit],
+          wait: { timeout: 180 },
+        }),
+  );
+}
+
+async function negativeDirectPayWithCreditCallRejected(
+  result: DeploymentRuntimeResult,
+): Promise<void> {
+  await expectFailure(
+    "negative direct pay_with_credit call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      result.fpc.methods.pay_with_credit().send({
+        from: result.user,
+        wait: { timeout: 180 },
+      }),
+  );
+}
+
 function buildTopupConfigYaml(
   config: FullE2EConfig,
   fpcAddress: AztecAddress,
@@ -2147,6 +2211,8 @@ async function runStep7NegativeScenarios(
   await negativeSenderBindingRejected(config, result, node);
   await negativeMintedCreditTooLowRejected(config, result, node);
   await negativeTeardownGasRejected(config, result, node);
+  await negativeDirectPayAndMintCallRejected(config, result, node);
+  await negativeDirectPayWithCreditCallRejected(result);
 
   await stopManagedProcess(topup);
   console.log(

@@ -1672,6 +1672,56 @@ async function negativeTeardownGasRejected(
   );
 }
 
+async function negativeDirectEntrypointCallRejected(
+  config: FullE2EConfig,
+  result: DeploymentRuntimeResult,
+  node: ReturnType<typeof createAztecNodeClient>,
+): Promise<void> {
+  const fjAmount = result.maxGasCostNoTeardown;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const latestTimestamp = await getLatestL2Timestamp(node);
+  const quote = await signQuoteForUser(
+    result,
+    result.fpc.address,
+    result.token.address,
+    fjAmount,
+    aaPaymentAmount,
+    latestTimestamp + 600n,
+    result.user,
+  );
+
+  const transferAuthwitNonce = Fr.random();
+  const transferCall = result.token.methods.transfer_private_to_private(
+    result.user,
+    result.operator,
+    aaPaymentAmount,
+    transferAuthwitNonce,
+  );
+  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
+    caller: result.fpc.address,
+    action: transferCall,
+  });
+
+  await expectFailure(
+    "negative direct fee_entrypoint call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      result.fpc.methods
+        .fee_entrypoint(
+          transferAuthwitNonce,
+          quote.fjAmount,
+          quote.aaPaymentAmount,
+          quote.validUntil,
+          quote.quoteSigBytes,
+        )
+        .send({
+          from: result.user,
+          authWitnesses: [transferAuthwit],
+          wait: { timeout: 180 },
+        }),
+  );
+}
+
 function buildTopupConfigYaml(
   config: FullE2EConfig,
   fpcAddress: AztecAddress,
@@ -1896,6 +1946,7 @@ async function runStep7NegativeScenarios(
   await negativeOverlongTtlRejected(config, result, node);
   await negativeSenderBindingRejected(config, result, node);
   await negativeTeardownGasRejected(config, result, node);
+  await negativeDirectEntrypointCallRejected(config, result, node);
 
   await stopManagedProcess(topup);
   console.log(

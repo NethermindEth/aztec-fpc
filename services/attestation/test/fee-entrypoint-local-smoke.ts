@@ -647,6 +647,25 @@ async function main() {
         }),
   );
 
+  await expectFailure(
+    "direct fee_entrypoint call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      fpc.methods
+        .fee_entrypoint(
+          negativeTransferAuthwitNonce,
+          fjFeeAmount,
+          aaPaymentAmount,
+          negativeValidUntil,
+          negativeQuoteSigBytes,
+        )
+        .send({
+          from: user,
+          authWitnesses: [negativeTransferAuthwit],
+          wait: { timeout: 180 },
+        }),
+  );
+
   console.log("[smoke] PASS: fee_entrypoint end-to-end flow succeeded");
 }
 

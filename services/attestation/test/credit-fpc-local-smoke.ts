@@ -687,6 +687,35 @@ async function main() {
         }),
   );
 
+  await expectFailure(
+    "direct pay_and_mint call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      creditFpc.methods
+        .pay_and_mint(
+          negativeTransferAuthwitNonce,
+          fjCreditAmount,
+          aaPaymentAmount,
+          negativeValidUntil,
+          negativeQuoteSigBytes,
+        )
+        .send({
+          from: user,
+          authWitnesses: [negativeTransferAuthwit],
+          wait: { timeout: 180 },
+        }),
+  );
+
+  await expectFailure(
+    "direct pay_with_credit call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      creditFpc.methods.pay_with_credit().send({
+        from: user,
+        wait: { timeout: 180 },
+      }),
+  );
+
   const creditBeforePayWithCredit = creditAfterPayAndMint;
   const operatorTokenBeforePayWithCredit = operatorTokenAfterPayAndMint;
   const payWithCreditCall = await creditFpc.methods
