@@ -21,7 +21,7 @@ Unlike `CreditFPC`, it does not maintain a user credit ledger.
 3. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
 4. Enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)`.
 5. Transfers exactly `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
-6. Marks contract as fee payer (`set_as_fee_payer`) and ends setup (outside revertible phase).
+6. Requires setup-phase execution (`!in_revertible_phase`), marks contract as fee payer (`set_as_fee_payer`), then ends setup (`end_setup`).
 
 ## How It Differs From `/contracts/credit_fpc`
 
