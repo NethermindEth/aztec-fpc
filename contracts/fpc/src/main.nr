@@ -110,6 +110,12 @@ pub contract FPC {
         valid_until: u64,
         quote_sig: [u8; 64],
     ) {
+        let max_fees = self.context.gas_settings().max_fees_per_gas;
+        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
+        if enforce_setup_phase {
+            assert(!self.context.in_revertible_phase(), "fee_entrypoint must run in setup phase");
+        }
+
         let config = self.storage.config.read();
         let sender = self.msg_sender();
 
@@ -137,7 +143,7 @@ pub contract FPC {
             .call(self.context);
 
         self.context.set_as_fee_payer();
-        if !self.context.in_revertible_phase() {
+        if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
     }
