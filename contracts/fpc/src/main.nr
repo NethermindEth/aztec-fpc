@@ -136,10 +136,9 @@ pub contract FPC {
             .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
+        assert(!self.context.in_revertible_phase(), "fee entrypoint must run in setup phase");
         self.context.set_as_fee_payer();
-        if !self.context.in_revertible_phase() {
-            self.context.end_setup();
-        }
+        self.context.end_setup();
     }
 
     // =========================================================================
