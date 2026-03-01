@@ -108,6 +108,7 @@ pub contract CreditFPC {
         let balance_set = self.storage.balances.at(sender);
         balance_set.add(fj_credit_amount).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
+        assert_no_teardown_gas(self.context);
         let max_gas_cost = get_max_gas_cost_no_teardown(self.context);
         let subtracted = balance_set.try_sub(max_gas_cost, 1);
         assert(subtracted >= max_gas_cost, "minted credit too low for max fee");
@@ -221,6 +222,18 @@ pub contract CreditFPC {
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");
         context.set_expiration_timestamp(valid_until);
+    }
+
+    #[contract_library_method]
+    fn assert_no_teardown_gas(context: &mut PrivateContext) {
+        let gas_settings = context.gas_settings();
+        let teardown_gas_limits = gas_settings.teardown_gas_limits;
+        if gas_settings.max_fees_per_gas.fee_per_da_gas > 0 {
+            assert(teardown_gas_limits.da_gas == 0, "teardown da gas must be zero");
+        }
+        if gas_settings.max_fees_per_gas.fee_per_l2_gas > 0 {
+            assert(teardown_gas_limits.l2_gas == 0, "teardown l2 gas must be zero");
+        }
     }
 
     #[contract_library_method]

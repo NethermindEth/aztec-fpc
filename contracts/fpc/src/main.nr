@@ -129,6 +129,7 @@ pub contract FPC {
             quote_sig,
         );
 
+        assert_no_teardown_gas(self.context);
         let expected_fj_fee_amount = get_max_gas_cost_no_teardown(self.context);
         assert(expected_fj_fee_amount == fj_fee_amount, "quoted fee amount mismatch");
 
@@ -191,6 +192,19 @@ pub contract FPC {
         let quote_ttl = valid_until - anchor_ts;
         assert(quote_ttl <= MAX_QUOTE_TTL_SECONDS, "quote ttl too large");
         context.set_expiration_timestamp(valid_until);
+    }
+
+    /// Maximum possible fee for this tx excluding teardown gas.
+    #[contract_library_method]
+    fn assert_no_teardown_gas(context: &mut PrivateContext) {
+        let gas_settings = context.gas_settings();
+        let teardown_gas_limits = gas_settings.teardown_gas_limits;
+        if gas_settings.max_fees_per_gas.fee_per_da_gas > 0 {
+            assert(teardown_gas_limits.da_gas == 0, "teardown da gas must be zero");
+        }
+        if gas_settings.max_fees_per_gas.fee_per_l2_gas > 0 {
+            assert(teardown_gas_limits.l2_gas == 0, "teardown l2 gas must be zero");
+        }
     }
 
     /// Maximum possible fee for this tx excluding teardown gas.
