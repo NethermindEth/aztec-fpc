@@ -131,6 +131,7 @@ bun run ci
 - `spec-credit-fpc-smoke.yml`: local-devnet smoke for `CreditFPC.pay_and_mint` + `pay_with_credit`
 - `spec-deploy-smoke.yml`: local deploy smoke for `deploy-fpc-local` output validation
 - `spec-services-smoke.yml`: service-integrated local-network smoke (`FPC_SERVICES_SMOKE_MODE=fpc|credit|both`) covering quote + topup + contract fee flow
+- `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suites for `FPC` and `CreditFPC`, with uploaded diagnostics artifacts
 
 ### 5. Run local-devnet FPC fee-entrypoint smoke test
 
@@ -421,6 +422,8 @@ The compose stack (`docker-compose.yaml`) includes:
 | `aztec-node` | Aztec sandbox node | 8080 |
 | `attestation` | FPC attestation service | 3000 |
 | `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
+| `e2e-fpc` (profile `e2e-fpc`) | Compose-backed `FPC` full lifecycle runner | — |
+| `e2e-credit` (profile `e2e-credit`) | Compose-backed `CreditFPC` full lifecycle runner | — |
 
 Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
 
@@ -433,6 +436,26 @@ Start the stack:
 
 ```bash
 docker compose up
+```
+
+Run compose-backed full lifecycle suites:
+
+```bash
+# FPC only
+bun run e2e:full-lifecycle:fpc:compose
+
+# CreditFPC only
+bun run e2e:full-lifecycle:credit:compose
+
+# both suites sequentially
+bun run e2e:full-lifecycle:compose
+```
+
+Compose full-lifecycle artifacts are persisted under:
+
+```text
+artifacts/compose-e2e/fpc
+artifacts/compose-e2e/credit
 ```
 
 #### Environment variable overrides
