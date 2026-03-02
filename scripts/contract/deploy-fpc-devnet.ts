@@ -107,9 +107,17 @@ type LocalLegacyDeployOutput = {
   accepted_asset?: unknown;
   fpc_address?: unknown;
   credit_fpc_address?: unknown;
+  faucet_address?: unknown;
   deployer?: {
     wallet_alias?: unknown;
     address?: unknown;
+  };
+  deploy?: {
+    faucet?: {
+      drip_amount?: unknown;
+      cooldown_seconds?: unknown;
+      initial_supply?: unknown;
+    };
   };
 };
 
@@ -149,6 +157,7 @@ const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   fpc: path.join(REPO_ROOT, "target", "fpc-FPC.json"),
   creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
+  faucet: path.join(REPO_ROOT, "target", "faucet-Faucet.json"),
   localModeScript: path.join(
     REPO_ROOT,
     "scripts",
@@ -487,6 +496,188 @@ function parseEnvPositiveNumber(name: string, fallback: number): number {
     );
   }
   return parsed;
+}
+
+function parseEnvPositiveBigInt(name: string, fallback: bigint): bigint {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+  const trimmed = raw.trim();
+  if (!DECIMAL_UINT_PATTERN.test(trimmed) && !HEX_FIELD_PATTERN.test(trimmed)) {
+    throw new CliError(
+      `Invalid ${name}=${raw}. Expected a positive integer value.`,
+    );
+  }
+  const parsed = BigInt(trimmed);
+  if (parsed <= 0n) {
+    throw new CliError(`Invalid ${name}=${raw}. Must be positive.`);
+  }
+  return parsed;
+}
+
+function readFaucetEnvConfig(): {
+  dripAmount: bigint;
+  cooldownSeconds: number;
+  initialSupply: bigint;
+} {
+  const dripAmount = parseEnvPositiveBigInt(
+    "FPC_FAUCET_DRIP_AMOUNT",
+    1_000_000_000_000_000_000n, // 1 token (18 decimals)
+  );
+
+  const cooldownRaw = process.env.FPC_FAUCET_COOLDOWN_SECONDS;
+  const cooldownSeconds = cooldownRaw
+    ? ((): number => {
+        const parsed = Number(cooldownRaw.trim());
+        if (!Number.isInteger(parsed) || parsed < 0) {
+          throw new CliError(
+            `FPC_FAUCET_COOLDOWN_SECONDS must be a non-negative integer, got ${cooldownRaw}`,
+          );
+        }
+        return parsed;
+      })()
+    : 0;
+
+  const initialSupply = process.env.FPC_FAUCET_INITIAL_SUPPLY
+    ? parseEnvPositiveBigInt("FPC_FAUCET_INITIAL_SUPPLY", 0n)
+    : dripAmount * 100n; // fund for 100 drips by default
+
+  return { dripAmount, cooldownSeconds, initialSupply };
+}
+
+async function callContractSendWithAztecWallet(params: {
+  nodeUrl: string;
+  fromAlias: string;
+  sponsoredFpcAddress: string;
+  contractAddress: string;
+  artifactPath: string;
+  method: string;
+  methodArgs: string[];
+  context: string;
+}): Promise<void> {
+  const commandArgs = [
+    "send",
+    params.method,
+    "--from",
+    params.fromAlias,
+    "--contract-address",
+    params.contractAddress,
+    "--contract-artifact",
+    params.artifactPath,
+    "--payment",
+    `method=fpc-sponsored,fpc=${params.sponsoredFpcAddress}`,
+    "--args",
+    ...params.methodArgs,
+  ];
+
+  const maxAttempts = parseEnvPositiveNumber("FPC_WALLET_SEND_RETRIES", 3);
+  const retryBackoffMs = parseEnvPositiveNumber(
+    "FPC_WALLET_SEND_RETRY_BACKOFF_MS",
+    2_000,
+  );
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      runAztecWalletCommand(
+        params.nodeUrl,
+        commandArgs,
+        `send ${params.context}`,
+      );
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof CliError) ||
+        !isRetryableWalletDeployError(error.message) ||
+        attempt >= maxAttempts
+      ) {
+        throw error;
+      }
+      const delayMs = retryBackoffMs * attempt;
+      console.warn(
+        `[deploy-fpc-devnet] retrying ${params.context} send after transient wallet error (attempt ${attempt + 1}/${maxAttempts}) in ${delayMs}ms`,
+      );
+      await sleep(delayMs);
+    }
+  }
+
+  throw new CliError(
+    `Failed to send ${params.context}: exhausted retry attempts.`,
+  );
+}
+
+function ensureOperatorAccountInWallet(
+  nodeUrl: string,
+  operatorSecretKey: string,
+  sponsoredFpcAddress: string,
+  expectedAddress: string,
+): string {
+  const alias = "devnet-operator";
+  const walletAlias = `${WALLET_ACCOUNT_PREFIX}${alias}`;
+
+  const existing = tryGetWalletAliasAddress(nodeUrl, walletAlias);
+  if (existing) {
+    if (existing.toLowerCase() !== expectedAddress.toLowerCase()) {
+      throw new CliError(
+        `Wallet alias ${walletAlias} points to ${existing}, but operator address is ${expectedAddress}. Reconcile wallet state before continuing.`,
+      );
+    }
+    console.log(
+      `[deploy-fpc-devnet] operator account already registered in wallet as ${walletAlias}`,
+    );
+    return walletAlias;
+  }
+
+  try {
+    runAztecWalletCommand(
+      nodeUrl,
+      [
+        "create-account",
+        "--alias",
+        alias,
+        "--secret-key",
+        operatorSecretKey,
+        "--payment",
+        `method=fpc-sponsored,fpc=${sponsoredFpcAddress}`,
+      ],
+      `create operator account alias ${walletAlias} with sponsored payment`,
+    );
+  } catch (error) {
+    if (
+      !(error instanceof CliError) ||
+      !isCreateAccountConflict(error.message)
+    ) {
+      throw error;
+    }
+    runAztecWalletCommand(
+      nodeUrl,
+      [
+        "create-account",
+        "--register-only",
+        "--alias",
+        alias,
+        "--secret-key",
+        operatorSecretKey,
+      ],
+      `import existing operator account alias ${walletAlias} after create-account conflict`,
+    );
+  }
+
+  const resolved = tryGetWalletAliasAddress(nodeUrl, walletAlias);
+  if (!resolved) {
+    throw new CliError(
+      `Operator account alias resolution failed: ${walletAlias} is unresolved after account bootstrap.`,
+    );
+  }
+  if (resolved.toLowerCase() !== expectedAddress.toLowerCase()) {
+    throw new CliError(
+      `Operator account alias mismatch: ${walletAlias} resolved to ${resolved}, expected ${expectedAddress}.`,
+    );
+  }
+  console.log(
+    `[deploy-fpc-devnet] operator account registered in wallet as ${walletAlias} address=${resolved}`,
+  );
+  return walletAlias;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1499,6 +1690,9 @@ function assertRequiredArtifactsExistForDevnet(
   if (!existsSync(selection.artifactPath)) {
     missing.push(selection.artifactPath);
   }
+  if (!existsSync(REQUIRED_ARTIFACTS.faucet)) {
+    missing.push(REQUIRED_ARTIFACTS.faucet);
+  }
   if (missing.length > 0) {
     const formatted = missing.map((entry) => `  - ${entry}`).join("\n");
     throw new CliError(
@@ -1629,6 +1823,28 @@ function runLocalModeDeploy(
         ? localOutput.deployer.address
         : operatorAddress;
 
+    const faucetAddressRaw = localOutput.faucet_address;
+    const faucetAddress =
+      typeof faucetAddressRaw === "string" &&
+      AZTEC_ADDRESS_PATTERN.test(faucetAddressRaw) &&
+      !ZERO_AZTEC_ADDRESS_PATTERN.test(faucetAddressRaw)
+        ? faucetAddressRaw
+        : null;
+
+    const localFaucetDeploy = localOutput.deploy?.faucet;
+    const faucetDripAmountRaw = localFaucetDeploy?.drip_amount;
+    const faucetCooldownRaw = localFaucetDeploy?.cooldown_seconds;
+    const faucetInitialSupplyRaw = localFaucetDeploy?.initial_supply;
+    const hasFaucetConfig =
+      faucetAddress !== null &&
+      typeof faucetDripAmountRaw === "string" &&
+      DECIMAL_UINT_PATTERN.test(faucetDripAmountRaw) &&
+      typeof faucetCooldownRaw === "number" &&
+      Number.isInteger(faucetCooldownRaw) &&
+      faucetCooldownRaw >= 0 &&
+      typeof faucetInitialSupplyRaw === "string" &&
+      DECIMAL_UINT_PATTERN.test(faucetInitialSupplyRaw);
+
     writeDevnetDeployManifest(args.out, {
       status: "deploy_ok",
       generated_at: new Date().toISOString(),
@@ -1670,6 +1886,7 @@ function runLocalModeDeploy(
       contracts: {
         accepted_asset: acceptedAssetAddress,
         fpc: selectedFpcAddress,
+        ...(faucetAddress !== null ? { faucet: faucetAddress } : {}),
       },
       fpc_artifact: {
         name: fpcSelection.name,
@@ -1683,14 +1900,24 @@ function runLocalModeDeploy(
       tx_hashes: {
         accepted_asset_deploy: null,
         fpc_deploy: null,
+        ...(faucetAddress !== null ? { faucet_deploy: null } : {}),
       },
+      ...(hasFaucetConfig
+        ? {
+            faucet_config: {
+              drip_amount: faucetDripAmountRaw as string,
+              cooldown_seconds: faucetCooldownRaw as number,
+              initial_supply: faucetInitialSupplyRaw as string,
+            },
+          }
+        : {}),
       payment_mode: "fee_juice",
     });
     console.log(
       `[deploy-fpc-devnet] local-mode deployment completed. wrote manifest to ${path.resolve(args.out)}`,
     );
     console.log(
-      `[deploy-fpc-devnet] output contracts: accepted_asset=${acceptedAssetAddress} fpc=${selectedFpcAddress} variant=${fpcSelection.name}`,
+      `[deploy-fpc-devnet] output contracts: accepted_asset=${acceptedAssetAddress} fpc=${selectedFpcAddress} variant=${fpcSelection.name}${faucetAddress !== null ? ` faucet=${faucetAddress}` : ""}`,
     );
   })();
 }
@@ -1865,6 +2092,57 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] fpc deployed. address=${fpcDeploy.address} tx_hash=${fpcDeploy.txHash}`,
   );
 
+  const faucetConfig = readFaucetEnvConfig();
+  console.log(
+    `[deploy-fpc-devnet] deploying Faucet token=${acceptedAssetAddress} admin=${operatorIdentity.address} drip_amount=${faucetConfig.dripAmount} cooldown_seconds=${faucetConfig.cooldownSeconds}`,
+  );
+  const faucetDeploy = await deployContractWithAztecWallet({
+    nodeUrl: args.nodeUrl,
+    fromAlias: deployer.walletAlias,
+    sponsoredFpcAddress: args.sponsoredFpcAddress,
+    artifactPath: REQUIRED_ARTIFACTS.faucet,
+    alias: `devnet-faucet-${aliasSuffix}`,
+    constructorArgs: [
+      acceptedAssetAddress,
+      operatorIdentity.address,
+      faucetConfig.dripAmount.toString(),
+      faucetConfig.cooldownSeconds.toString(),
+    ],
+    context: "Faucet",
+  });
+  console.log(
+    `[deploy-fpc-devnet] faucet deployed. address=${faucetDeploy.address} tx_hash=${faucetDeploy.txHash}`,
+  );
+
+  const operatorWalletAlias = ensureOperatorAccountInWallet(
+    args.nodeUrl,
+    args.operatorSecretKey,
+    args.sponsoredFpcAddress,
+    operatorIdentity.address,
+  );
+  console.log(
+    `[deploy-fpc-devnet] funding faucet: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorWalletAlias}`,
+  );
+  try {
+    await callContractSendWithAztecWallet({
+      nodeUrl: args.nodeUrl,
+      fromAlias: operatorWalletAlias,
+      sponsoredFpcAddress: args.sponsoredFpcAddress,
+      contractAddress: acceptedAssetAddress,
+      artifactPath: REQUIRED_ARTIFACTS.token,
+      method: "mint_to_public",
+      methodArgs: [faucetDeploy.address, faucetConfig.initialSupply.toString()],
+      context: "Token.mint_to_public for Faucet funding",
+    });
+  } catch (error) {
+    throw new CliError(
+      `Faucet funding failed: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorIdentity.address} failed. Ensure the operator is the token minter. Underlying error: ${String(error)}`,
+    );
+  }
+  console.log(
+    `[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`,
+  );
+
   const manifest = writeDevnetDeployManifest(args.out, {
     status: "deploy_ok",
     generated_at: new Date().toISOString(),
@@ -1908,6 +2186,7 @@ async function main(): Promise<void> {
     contracts: {
       accepted_asset: acceptedAssetAddress,
       fpc: fpcDeploy.address,
+      faucet: faucetDeploy.address,
     },
     fpc_artifact: {
       name: fpcSelection.name,
@@ -1921,6 +2200,12 @@ async function main(): Promise<void> {
     tx_hashes: {
       accepted_asset_deploy: acceptedAssetDeployTxHash,
       fpc_deploy: fpcDeploy.txHash,
+      faucet_deploy: faucetDeploy.txHash,
+    },
+    faucet_config: {
+      drip_amount: faucetConfig.dripAmount.toString(),
+      cooldown_seconds: faucetConfig.cooldownSeconds,
+      initial_supply: faucetConfig.initialSupply.toString(),
     },
     payment_mode: paymentMode,
   });
@@ -1929,7 +2214,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
   console.log(
-    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${fpcSelection.name}`,
+    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} variant=${fpcSelection.name}`,
   );
 }
 
