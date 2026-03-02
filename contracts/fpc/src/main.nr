@@ -117,11 +117,7 @@ pub contract FPCMultiAsset {
             quote_sig,
         );
 
-        let charge = fee_juice_to_asset(
-            get_max_gas_cost(self.context),
-            rate_num,
-            rate_den,
-        );
+        let charge = fee_juice_to_asset(get_max_gas_cost(self.context), rate_num, rate_den);
 
         Token::at(accepted_asset)
             .transfer_private_to_private(sender, config.operator, charge, authwit_nonce)

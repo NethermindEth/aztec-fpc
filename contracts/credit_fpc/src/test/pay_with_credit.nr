@@ -5,8 +5,7 @@ use token::Token;
 
 global TRANSFER_AUTHWIT_NONCE: Field = 4242;
 
-unconstrained fn setup_with_credit(
-) -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress, u128, u128, u128) {
+unconstrained fn setup_with_credit() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress, u128, u128, u128) {
     let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
     let credit_fpc = BackedCreditFPC::at(credit_fpc_address);
     let token = Token::at(token_address);
@@ -25,8 +24,12 @@ unconstrained fn setup_with_credit(
     );
 
     env.call_private(operator, token.mint_to_private(user, aa_payment_amount + (100 as u128)));
-    let transfer_call =
-        token.transfer_private_to_private(user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
     add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     env.call_private(
@@ -42,29 +45,15 @@ unconstrained fn setup_with_credit(
     );
 
     (
-        env,
-        credit_fpc_address,
-        token_address,
-        operator,
-        user,
-        fj_credit_amount,
-        max_gas_cost_no_teardown,
-        utils::max_gas_cost(env),
+        env, credit_fpc_address, token_address, operator, user, fj_credit_amount,
+        max_gas_cost_no_teardown, utils::max_gas_cost(env),
     )
 }
 
 #[test]
 unconstrained fn pay_with_credit_decrements_credit_balance_and_totals() {
-    let (
-        mut env,
-        credit_fpc_address,
-        _token_address,
-        _operator,
-        user,
-        fj_credit_amount,
-        max_gas_cost_no_teardown,
-        max_gas_cost,
-    ) = setup_with_credit();
+    let (mut env, credit_fpc_address, _token_address, _operator, user, fj_credit_amount, max_gas_cost_no_teardown, max_gas_cost) =
+        setup_with_credit();
     let credit_fpc = BackedCreditFPC::at(credit_fpc_address);
 
     let credit_before = utils::credit_balance(env, credit_fpc_address, user);

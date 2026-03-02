@@ -70,11 +70,7 @@ pub contract BackedCreditFPC {
 
     #[external("public")]
     #[initializer]
-    fn constructor(
-        operator: AztecAddress,
-        operator_pubkey_x: Field,
-        operator_pubkey_y: Field,
-    ) {
+    fn constructor(operator: AztecAddress, operator_pubkey_x: Field, operator_pubkey_y: Field) {
         assert(!operator.is_zero(), "invalid operator");
         // Basic on-curve check: y^2 = x^3 - 17 (Grumpkin)
         assert(
@@ -158,9 +154,7 @@ pub contract BackedCreditFPC {
     #[only_self]
     fn _finalize_mint(mint_amount: u128, net_credit: u128, partial_note: PartialUintNote) {
         let unspent = self.storage.unspent_credits.read();
-        let fj_balance = self.view(
-            FeeJuice::at(FEE_JUICE_ADDRESS).balance_of_public(self.address),
-        );
+        let fj_balance = self.view(FeeJuice::at(FEE_JUICE_ADDRESS).balance_of_public(self.address));
 
         assert(mint_amount <= MAX_U128_VALUE - unspent, "credits overflow");
         assert(fj_balance >= unspent + mint_amount, "insufficient FeeJuice backing");

@@ -46,8 +46,12 @@ unconstrained fn pay_and_mint_happy_path_transfers_charge_mints_credit_and_updat
         user,
     );
 
-    let transfer_call =
-        token.transfer_private_to_private(user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
     add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     let user_token_before = utils::private_balance(env, token_address, user);
@@ -100,8 +104,12 @@ unconstrained fn pay_and_mint_supports_different_credit_and_payment_amounts() {
         user,
     );
 
-    let transfer_call =
-        token.transfer_private_to_private(user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
     add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     let user_token_before = utils::private_balance(env, token_address, user);
@@ -174,8 +182,12 @@ unconstrained fn pay_and_mint_rejects_quote_bound_to_another_user() {
     let valid_until = env.last_block_timestamp() + 3600;
 
     env.call_private(operator, token.mint_to_private(other_user, aa_payment_amount + (100 as u128)));
-    let transfer_call =
-        token.transfer_private_to_private(other_user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call = token.transfer_private_to_private(
+        other_user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
     add_private_authwit_from_call(env, other_user, credit_fpc_address, transfer_call);
 
     let quote_sig = quote_signature(
@@ -296,7 +308,10 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
     let fj_credit_amount = max_gas_cost + (1000 as u128);
     let aa_payment_amount = fj_credit_amount;
 
-    env.call_private(operator, token.mint_to_private(user, aa_payment_amount * (2 as u128) + (100 as u128)));
+    env.call_private(
+        operator,
+        token.mint_to_private(user, aa_payment_amount * (2 as u128) + (100 as u128)),
+    );
 
     let valid_until = env.last_block_timestamp() + 3600;
     let quote_sig = quote_signature(
@@ -308,8 +323,12 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
         user,
     );
 
-    let transfer_call =
-        token.transfer_private_to_private(user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
     add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     env.call_private(
@@ -403,8 +422,12 @@ unconstrained fn pay_and_mint_credit_equals_fj_credit_amount_minus_max_gas_cost(
     let valid_until = env.last_block_timestamp() + 3600;
 
     env.call_private(operator, token.mint_to_private(user, aa_payment_amount + (100 as u128)));
-    let transfer_call =
-        token.transfer_private_to_private(user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
     add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     let quote_sig = quote_signature(
@@ -453,8 +476,12 @@ unconstrained fn pay_and_mint_prevents_quote_replay() {
         user,
     );
 
-    let transfer_call =
-        token.transfer_private_to_private(user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
     add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
 
     env.call_private(
