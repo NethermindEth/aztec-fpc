@@ -37,9 +37,6 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createPublicClient, http, type Hex } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -57,6 +54,8 @@ import {
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { createPublicClient, type Hex, http } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 import {
   installManagedProcessSignalHandlers,
