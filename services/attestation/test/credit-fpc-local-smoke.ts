@@ -644,6 +644,12 @@ async function main() {
 
   await token.methods.mint_to_public(user, 1n).send({ from: operator });
 
+  // Fund a second private transfer so the negative pay_and_mint path reaches
+  // the teardown-gas assertion instead of failing early on token balance.
+  await token.methods
+    .mint_to_private(user, aaPaymentAmount + 1_000_000n)
+    .send({ from: operator });
+
   const latestBlockForNegative = await node.getBlock("latest");
   if (!latestBlockForNegative) {
     throw new Error(
