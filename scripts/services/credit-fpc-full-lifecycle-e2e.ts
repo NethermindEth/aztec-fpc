@@ -113,8 +113,6 @@ type QuoteResponse = {
 type QuoteInput = {
   fjAmount: bigint;
   aaPaymentAmount: bigint;
-  rateNum: bigint;
-  rateDen: bigint;
   validUntil: bigint;
   quoteSigBytes: number[];
 };
@@ -682,8 +680,6 @@ function parseQuoteResponse(
   const parsed: QuoteInput = {
     fjAmount: BigInt(quote.fj_amount),
     aaPaymentAmount: BigInt(quote.aa_payment_amount),
-    rateNum,
-    rateDen,
     validUntil: BigInt(quote.valid_until),
     quoteSigBytes,
   };
@@ -733,8 +729,7 @@ async function signQuoteForUser(
   fpcAddress: AztecAddress,
   acceptedAsset: AztecAddress,
   fjAmount: bigint,
-  rateNum: bigint,
-  rateDen: bigint,
+  aaPaymentAmount: bigint,
   validUntil: bigint,
   userAddress: AztecAddress,
 ): Promise<QuoteInput> {
@@ -746,8 +741,7 @@ async function signQuoteForUser(
     fpcAddress.toField(),
     acceptedAsset.toField(),
     new Fr(fjAmount),
-    new Fr(rateNum),
-    new Fr(rateDen),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     userAddress.toField(),
   ]);
@@ -757,9 +751,7 @@ async function signQuoteForUser(
   );
   return {
     fjAmount,
-    aaPaymentAmount: ceilDiv(fjAmount * rateNum, rateDen),
-    rateNum,
-    rateDen,
+    aaPaymentAmount,
     validUntil,
     quoteSigBytes: Array.from(signature.toBuffer()),
   };
@@ -827,11 +819,10 @@ async function executeFeePaidTx(
     .pay_and_mint(
       params.token.address,
       transferAuthwitNonce,
-      params.quote.rateNum,
-      params.quote.rateDen,
+      params.quote.fjAmount,
+      params.quote.aaPaymentAmount,
       params.quote.validUntil,
       params.quote.quoteSigBytes,
-      params.quote.fjAmount,
     )
     .getFunctionCall();
 
@@ -849,31 +840,39 @@ async function executeFeePaidTx(
     getGasSettings: () => undefined,
   };
 
-  const receipt = await params.token.methods
-    .transfer_public_to_public(
-      params.payer,
-      params.recipient,
-      params.transferAmount,
-      Fr.random(),
-    )
-    .send({
-      from: params.payer,
-      fee: {
-        paymentMethod,
-        gasSettings: {
-          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: params.teardownGasLimits ?? {
-            daGas: 0,
-            l2Gas: 0,
-          },
-          maxFeesPerGas: {
-            feePerDaGas: result.feePerDaGas,
-            feePerL2Gas: result.feePerL2Gas,
-          },
-        },
+  const transferPublicNonce = Fr.random();
+  const transferPublicCall = params.token.methods.transfer_public_to_public(
+    params.payer,
+    params.recipient,
+    params.transferAmount,
+    transferPublicNonce,
+  );
+  const feeConfig = {
+    paymentMethod,
+    gasSettings: {
+      gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+      teardownGasLimits: params.teardownGasLimits ?? {
+        daGas: 0,
+        l2Gas: 0,
       },
-      wait: { timeout: 180 },
-    });
+      maxFeesPerGas: {
+        feePerDaGas: result.feePerDaGas,
+        feePerL2Gas: result.feePerL2Gas,
+      },
+    },
+  };
+
+  // Surface circuit-level revert reasons in negative scenarios before send() can squash them.
+  await transferPublicCall.simulate({
+    from: params.payer,
+    fee: feeConfig,
+  });
+
+  const receipt = await transferPublicCall.send({
+    from: params.payer,
+    fee: feeConfig,
+    wait: { timeout: 180 },
+  });
 
   return { expectedCharge, receipt };
 }
@@ -1373,15 +1372,22 @@ async function deployContractsAndWriteRuntimeConfig(
     BigInt(config.daGasLimit) * feePerDaGas +
     BigInt(config.l2GasLimit) * feePerL2Gas;
 
-  const minimumTopupWei =
+  const minimumTopupForPaidTxsWei =
     maxGasCostNoTeardown *
       config.feeJuiceTopupSafetyMultiplier *
       CREDIT_EXPECTED_PAID_TX_COUNT +
     1_000_000n;
+  const minimumTopupForTx1MintWei =
+    maxGasCostNoTeardown * config.creditMintMultiplier +
+    config.creditMintBuffer;
+  const minimumTopupWei =
+    minimumTopupForPaidTxsWei > minimumTopupForTx1MintWei
+      ? minimumTopupForPaidTxsWei
+      : minimumTopupForTx1MintWei;
   const topupAmountWei = config.topupWei ?? minimumTopupWei;
   if (topupAmountWei < minimumTopupWei) {
     throw new Error(
-      `FPC_CREDIT_FULL_E2E_TOPUP_WEI=${topupAmountWei} is below required minimum ${minimumTopupWei} (computed for ${CREDIT_EXPECTED_PAID_TX_COUNT} paid txs)`,
+      `FPC_CREDIT_FULL_E2E_TOPUP_WEI=${topupAmountWei} is below required minimum ${minimumTopupWei} (paid_txs_floor=${minimumTopupForPaidTxsWei}, tx1_mint_floor=${minimumTopupForTx1MintWei})`,
     );
   }
   const topupThresholdWei = config.thresholdWei ?? topupAmountWei;
@@ -1544,11 +1550,10 @@ async function runFeePaidTargetTxAndAssert(
       .pay_and_mint(
         result.token.address,
         transferAuthwitNonce,
-        quote.rateNum,
-        quote.rateDen,
+        quote.fjAmount,
+        quote.aaPaymentAmount,
         quote.validUntil,
         quote.quoteSigBytes,
-        quote.fjAmount,
       )
       .getFunctionCall();
 
@@ -1731,8 +1736,7 @@ async function runFeePaidTargetTxAndAssert(
       .quote_used(
         result.token.address,
         tx1Quote.fjAmount,
-        tx1Quote.rateNum,
-        tx1Quote.rateDen,
+        tx1Quote.aaPaymentAmount,
         tx1Quote.validUntil,
         result.user,
       )
@@ -1777,7 +1781,7 @@ async function negativeQuoteReplayRejected(
   result: DeploymentRuntimeResult,
   attestationBaseUrl: string,
 ): Promise<void> {
-  const requestedFjAmount = result.maxGasCostNoTeardown;
+  const requestedFjAmount = result.maxGasCostNoTeardown + 1n;
   const quote = parseQuoteResponse(
     await fetchQuote(
       `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
@@ -1794,6 +1798,7 @@ async function negativeQuoteReplayRejected(
     recipient: result.operator,
     transferAmount: 1n,
     quote,
+    enforceQuotedFjMatchesMax: false,
   });
 
   await expectFailure(
@@ -1807,6 +1812,7 @@ async function negativeQuoteReplayRejected(
         recipient: result.operator,
         transferAmount: 1n,
         quote,
+        enforceQuotedFjMatchesMax: false,
       }),
   );
 }
@@ -1818,13 +1824,13 @@ async function negativeExpiredQuoteRejected(
 ): Promise<void> {
   const fjAmount = result.maxGasCostNoTeardown;
   const latestTimestamp = await getLatestL2Timestamp(node);
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const expiredQuote = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
     fjAmount,
-    getFinalRate(config).rateNum,
-    getFinalRate(config).rateDen,
+    aaPaymentAmount,
     latestTimestamp,
     result.user,
   );
@@ -1859,13 +1865,13 @@ async function negativeMintedCreditTooLowRejected(
 
   const fjAmount = result.maxGasCostNoTeardown - 1n;
   const latestTimestamp = await getLatestL2Timestamp(node);
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const lowMintQuote = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
     fjAmount,
-    getFinalRate(config).rateNum,
-    getFinalRate(config).rateDen,
+    aaPaymentAmount,
     latestTimestamp + 600n,
     result.otherUser,
   );
@@ -1893,13 +1899,13 @@ async function negativeSenderBindingRejected(
 ): Promise<void> {
   const fjAmount = result.maxGasCostNoTeardown;
   const latestTimestamp = await getLatestL2Timestamp(node);
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const quoteSignedForUser = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
     fjAmount,
-    getFinalRate(config).rateNum,
-    getFinalRate(config).rateDen,
+    aaPaymentAmount,
     latestTimestamp + 600n,
     result.user,
   );
@@ -1932,8 +1938,7 @@ async function negativeDirectPayAndMintCallRejected(
     result.fpc.address,
     result.token.address,
     fjAmount,
-    getFinalRate(config).rateNum,
-    getFinalRate(config).rateDen,
+    aaPaymentAmount,
     latestTimestamp + 600n,
     result.user,
   );
@@ -1958,11 +1963,10 @@ async function negativeDirectPayAndMintCallRejected(
         .pay_and_mint(
           result.token.address,
           transferAuthwitNonce,
-          quote.rateNum,
-          quote.rateDen,
+          quote.fjAmount,
+          quote.aaPaymentAmount,
           quote.validUntil,
           quote.quoteSigBytes,
-          quote.fjAmount,
         )
         .send({
           from: result.user,
@@ -2145,17 +2149,15 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     await stopManagedProcess(isolatedTopup);
   }
 
-  const fjAmount =
-    result.maxGasCostNoTeardown * config.creditMintMultiplier +
-    config.creditMintBuffer;
+  const fjAmount = effectiveBudgetWei;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
   const quoteAnchor = await getLatestL2Timestamp(node);
   const quote1 = await signQuoteForUser(
     result,
     isolatedFpc.address,
     isolatedToken.address,
     fjAmount,
-    getFinalRate(config).rateNum,
-    getFinalRate(config).rateDen,
+    aaPaymentAmount,
     quoteAnchor + 600n,
     result.user,
   );
@@ -2177,6 +2179,8 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
       "fee payer balance",
       "insufficient fee payer",
       "not enough fee",
+      "balance too low or note insufficient",
+      "subtracted >= max_gas_cost",
     ],
     () =>
       executePayWithCreditTx(config, result, {
