@@ -235,6 +235,7 @@ Wallet and SDK clients must resolve attestation metadata from `/.well-known/fpc.
 | `check_interval_ms` | Polling interval |
 
 `l1_chain_id` and Fee Juice L1 contract addresses are derived from `nodeInfo` and the service validates that the configured `l1_rpc_url` matches the node's L1 chain id.
+For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned by local-network and must be discovered from node info; do not add a manual custom L1 FeeJuice deployment step.
 
 ### 5.3 Bridge Mechanics
 
@@ -242,6 +243,23 @@ Wallet and SDK clients must resolve attestation metadata from `/.well-known/fpc.
 2. Manager performs Fee Juice token approval and portal deposit, returning L1→L2 message metadata
 3. Service waits for L1→L2 message readiness (`waitForL1ToL2MessageReady`) using the returned message hash
 4. Service still polls FPC Fee Juice balance and treats positive balance delta as the final fallback/confirmation signal
+
+### 5.4 Local-Network Troubleshooting
+
+1. Stale hardcoded addresses
+- Symptom: quote/address mismatch or topup failures after local-network restart.
+- Check: compare configured addresses with fresh `nodeInfo`.
+- Fix: remove hardcoded FeeJuice addresses and regenerate runtime config from current deploy/node output.
+
+2. L1 chain-id mismatch
+- Symptom: topup startup or bridge submit fails with chain mismatch errors.
+- Check: confirm `l1_rpc_url` chain id matches node-reported L1 chain id.
+- Fix: point `l1_rpc_url` to the L1 RPC associated with the active local-network instance.
+
+3. FeeJuice portal/address mismatch
+- Symptom: bridge submission succeeds on L1 but no expected FeeJuice balance increase on L2.
+- Check: verify FeeJuice token/portal addresses against node-reported L1 contract addresses.
+- Fix: use node-derived FeeJuice addresses; avoid manual overrides for local-network.
 
 ---
 
