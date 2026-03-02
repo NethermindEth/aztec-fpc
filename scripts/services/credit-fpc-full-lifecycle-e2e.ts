@@ -809,6 +809,7 @@ async function executeFeePaidTx(
 
   const payAndMintCall = await params.fpc.methods
     .pay_and_mint(
+      params.token.address,
       transferAuthwitNonce,
       params.quote.fjAmount,
       params.quote.aaPaymentAmount,
@@ -1523,6 +1524,7 @@ async function runFeePaidTargetTxAndAssert(
     });
     const payAndMintCall = await result.fpc.methods
       .pay_and_mint(
+        result.token.address,
         transferAuthwitNonce,
         quote.fjAmount,
         quote.aaPaymentAmount,
@@ -1708,6 +1710,7 @@ async function runFeePaidTargetTxAndAssert(
     }
     const quoteUsed = await result.fpc.methods
       .quote_used(
+        result.token.address,
         tx1Quote.fjAmount,
         tx1Quote.aaPaymentAmount,
         tx1Quote.validUntil,
@@ -1965,6 +1968,7 @@ async function negativeDirectPayAndMintCallRejected(
     () =>
       result.fpc.methods
         .pay_and_mint(
+          result.token.address,
           transferAuthwitNonce,
           quote.fjAmount,
           quote.aaPaymentAmount,

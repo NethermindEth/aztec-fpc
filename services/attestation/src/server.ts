@@ -5,7 +5,7 @@ import type { Config } from "./config.js";
 import { computeFinalRate } from "./config.js";
 import { AttestationMetrics, type QuoteOutcome } from "./metrics.js";
 import type { QuoteSchnorrSigner } from "./signer.js";
-import { signQuote } from "./signer.js";
+import { signQuote, signRateQuote } from "./signer.js";
 
 function badRequest(message: string) {
   return { error: { code: "BAD_REQUEST", message } };
@@ -363,14 +363,24 @@ export function buildServer(
             );
         }
 
-        const signature = await signQuote(quoteSigner, {
-          fpcAddress,
-          acceptedAsset,
-          fjFeeAmount,
-          aaPaymentAmount,
-          validUntil: expiry,
-          userAddress: parsedUserAddress,
-        });
+        const signature =
+          config.quote_format === "rate_quote"
+            ? await signRateQuote(quoteSigner, {
+                fpcAddress,
+                acceptedAsset,
+                rateNum: rate_num,
+                rateDen: rate_den,
+                validUntil: expiry,
+                userAddress: parsedUserAddress,
+              })
+            : await signQuote(quoteSigner, {
+                fpcAddress,
+                acceptedAsset,
+                fjFeeAmount,
+                aaPaymentAmount,
+                validUntil: expiry,
+                userAddress: parsedUserAddress,
+              });
 
         req.log.info(
           {
@@ -379,6 +389,9 @@ export function buildServer(
             valid_until: expiry.toString(),
             fj_amount: fjFeeAmount.toString(),
             aa_payment_amount: aaPaymentAmount.toString(),
+            rate_num: rate_num.toString(),
+            rate_den: rate_den.toString(),
+            quote_format: config.quote_format,
           },
           "Quote issued",
         );
@@ -388,6 +401,8 @@ export function buildServer(
           accepted_asset: config.accepted_asset_address,
           fj_amount: fjFeeAmount.toString(),
           aa_payment_amount: aaPaymentAmount.toString(),
+          rate_num: rate_num.toString(),
+          rate_den: rate_den.toString(),
           valid_until: expiry.toString(),
           signature,
         };

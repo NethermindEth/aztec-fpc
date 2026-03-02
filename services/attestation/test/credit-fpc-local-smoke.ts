@@ -560,6 +560,7 @@ async function main() {
 
   const payAndMintCall = await creditFpc.methods
     .pay_and_mint(
+      token.address,
       transferAuthwitNonce,
       fjCreditAmount,
       aaPaymentAmount,
@@ -685,6 +686,7 @@ async function main() {
   });
   const negativePayAndMintCall = await creditFpc.methods
     .pay_and_mint(
+      token.address,
       negativeTransferAuthwitNonce,
       fjCreditAmount,
       aaPaymentAmount,
@@ -732,6 +734,7 @@ async function main() {
     () =>
       creditFpc.methods
         .pay_and_mint(
+          token.address,
           negativeTransferAuthwitNonce,
           fjCreditAmount,
           aaPaymentAmount,

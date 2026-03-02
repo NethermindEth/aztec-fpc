@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +69,10 @@ const FEE_JUICE_PORTAL_ABI = parseAbi([
   "event DepositToAztecPublic(bytes32 indexed to, uint256 amount, bytes32 secretHash, bytes32 key, uint256 index)",
 ]);
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
+const FPC_ARTIFACT_FILE_CANDIDATES = [
+  "fpc-FPCMultiAsset.json",
+  "fpc-FPC.json",
+] as const;
 
 type TopupBridgeOutcome = "confirmed" | "timeout" | "failed";
 type TopupBridgeSubmission = {
@@ -118,6 +128,8 @@ type AssetResponse = {
 type ServiceFlowResult = {
   fjAmount: bigint;
   aaPaymentAmount: bigint;
+  rateNum: bigint;
+  rateDen: bigint;
   validUntil: bigint;
   quoteSigBytes: number[];
 };
@@ -180,6 +192,28 @@ function loadArtifact(artifactPath: string): ContractArtifact {
     }
     throw err;
   }
+}
+
+function resolveFpcArtifactPath(repoRoot: string): string {
+  const explicitPath =
+    process.env.FPC_SERVICES_SMOKE_FPC_ARTIFACT ?? process.env.FPC_FPC_ARTIFACT;
+  if (explicitPath && explicitPath.trim().length > 0) {
+    return path.resolve(explicitPath);
+  }
+
+  for (const artifactFile of FPC_ARTIFACT_FILE_CANDIDATES) {
+    const candidatePath = path.join(repoRoot, "target", artifactFile);
+    if (existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  const searched = FPC_ARTIFACT_FILE_CANDIDATES.map((entry) =>
+    path.join(repoRoot, "target", entry),
+  ).join(", ");
+  throw new Error(
+    `FPC artifact not found. Looked for ${searched}. Set FPC_SERVICES_SMOKE_FPC_ARTIFACT or FPC_FPC_ARTIFACT to override.`,
+  );
 }
 
 function normalizeHexAddress(value: unknown, fieldName: string): Hex {
@@ -813,7 +847,7 @@ function getScenarioKinds(mode: SmokeMode): ScenarioKind[] {
   }
 }
 
-async function verifyAttestationQuoteSignature(
+async function verifyAttestationAmountQuoteSignature(
   schnorr: Schnorr,
   operatorPubKey: SchnorrPoint,
   feePayerAddress: AztecAddress,
@@ -843,6 +877,40 @@ async function verifyAttestationQuoteSignature(
   if (!isValid) {
     throw new Error(
       `${scenarioPrefix} quote signature failed Schnorr verification for quoted amount preimage`,
+    );
+  }
+}
+
+async function verifyAttestationRateQuoteSignature(
+  schnorr: Schnorr,
+  operatorPubKey: SchnorrPoint,
+  feePayerAddress: AztecAddress,
+  tokenAddress: AztecAddress,
+  user: AztecAddress,
+  rateNum: bigint,
+  rateDen: bigint,
+  validUntil: bigint,
+  quoteSigBytes: number[],
+  scenarioPrefix: string,
+): Promise<void> {
+  const quoteHash = await computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    feePayerAddress.toField(),
+    tokenAddress.toField(),
+    new Fr(rateNum),
+    new Fr(rateDen),
+    new Fr(validUntil),
+    user.toField(),
+  ]);
+  const signature = SchnorrSignature.fromBuffer(Buffer.from(quoteSigBytes));
+  const isValid = await schnorr.verifySignature(
+    quoteHash.toBuffer(),
+    operatorPubKey,
+    signature,
+  );
+  if (!isValid) {
+    throw new Error(
+      `${scenarioPrefix} quote signature failed Schnorr verification for quoted rate preimage`,
     );
   }
 }
@@ -888,6 +956,7 @@ async function runServiceScenario(
         `market_rate_num: ${config.marketRateNum}`,
         `market_rate_den: ${config.marketRateDen}`,
         `fee_bips: ${config.feeBips}`,
+        `quote_format: "${scenario === "fpc" ? "rate_quote" : "amount_quote"}"`,
       ].join("\n")}\n`,
       "utf8",
     );
@@ -1135,18 +1204,33 @@ async function runServiceScenario(
         `${scenarioPrefix} quote fj amount mismatch. expected=${quoteFjAmount} got=${fjAmount}`,
       );
     }
-    await verifyAttestationQuoteSignature(
-      schnorr,
-      operatorPubKey,
-      feePayerAddress,
-      token.address,
-      user,
-      fjAmount,
-      aaPaymentAmount,
-      validUntil,
-      quoteSigBytes,
-      scenarioPrefix,
-    );
+    if (scenario === "fpc") {
+      await verifyAttestationRateQuoteSignature(
+        schnorr,
+        operatorPubKey,
+        feePayerAddress,
+        token.address,
+        user,
+        expectedRateNum,
+        expectedRateDen,
+        validUntil,
+        quoteSigBytes,
+        scenarioPrefix,
+      );
+    } else {
+      await verifyAttestationAmountQuoteSignature(
+        schnorr,
+        operatorPubKey,
+        feePayerAddress,
+        token.address,
+        user,
+        fjAmount,
+        aaPaymentAmount,
+        validUntil,
+        quoteSigBytes,
+        scenarioPrefix,
+      );
+    }
     console.log(`${scenarioPrefix} PASS: quote signature verification`);
 
     const chainNowMin =
@@ -1246,6 +1330,8 @@ async function runServiceScenario(
     return {
       fjAmount,
       aaPaymentAmount,
+      rateNum: expectedRateNum,
+      rateDen: expectedRateDen,
       validUntil,
       quoteSigBytes,
     };
@@ -1319,9 +1405,10 @@ async function runFpcFeeEntrypointScenario(
 
   const feeEntrypointCall = await fpc.methods
     .fee_entrypoint(
+      token.address,
       transferAuthwitNonce,
-      quote.fjAmount,
-      quote.aaPaymentAmount,
+      quote.rateNum,
+      quote.rateDen,
       quote.validUntil,
       quote.quoteSigBytes,
     )
@@ -1448,6 +1535,7 @@ async function runCreditFeeScenario(
 
   const payAndMintCall = await creditFpc.methods
     .pay_and_mint(
+      token.address,
       transferAuthwitNonce,
       fjCreditAmount,
       aaPaymentAmount,
@@ -1531,7 +1619,13 @@ async function runCreditFeeScenario(
   }
 
   const quoteUsed = await creditFpc.methods
-    .quote_used(quote.fjAmount, quote.aaPaymentAmount, quote.validUntil, user)
+    .quote_used(
+      token.address,
+      quote.fjAmount,
+      quote.aaPaymentAmount,
+      quote.validUntil,
+      user,
+    )
     .simulate({ from: user });
   if (!quoteUsed) {
     throw new Error(
@@ -1624,7 +1718,7 @@ async function main() {
       "target",
       "token_contract-Token.json",
     );
-    const fpcArtifactPath = path.join(repoRoot, "target", "fpc-FPC.json");
+    const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
     const creditFpcArtifactPath = path.join(
       repoRoot,
       "target",
