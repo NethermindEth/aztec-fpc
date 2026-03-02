@@ -532,6 +532,7 @@ export default class FPCBenchmark {
     // ── Gas settings ───────────────────────────────────────────────────────
     const gasSettings = GasSettings.default({
       gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
+      teardownGasLimits: new Gas(0, 0),
       maxFeesPerGas: new GasFees(feeDa, feeL2),
     });
 
