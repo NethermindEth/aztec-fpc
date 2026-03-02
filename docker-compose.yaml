@@ -53,8 +53,12 @@ services:
     volumes:
       - ./configs:/app/configs
     environment:
+      FPC_DEPLOY_ENV: "local"
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
+      FPC_LOCAL_DEPLOY_START_LOCAL_NETWORK: "0"
+      FPC_LOCAL_DEPLOY_NODE_HOST: "aztec-node"
+      FPC_LOCAL_DEPLOY_L1_HOST: "anvil"
       FPC_LOCAL_OPERATOR: "${FPC_LOCAL_OPERATOR:-0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72}"
       FPC_MASTER_CONFIG: "/app/fpc-config.yaml"
       FPC_CONFIGS_OUT: "/app/configs"
