@@ -78,6 +78,31 @@ Each attestation instance is bound to one contract address (`fpc_address`) and o
 
 ## Endpoints
 
+### `GET /.well-known/fpc.json`
+
+Returns wallet discovery metadata for this attestation instance.
+`supported_assets` is sourced from `supported_assets` config when provided; otherwise the service emits a single-item array from `accepted_asset_*`.
+
+Response:
+
+```json
+{
+  "discovery_version": "1.0",
+  "attestation_api_version": "1.0",
+  "network_id": "aztec-alpha-local",
+  "fpc_address": "0x...",
+  "contract_variant": "fpc-v1",
+  "quote_base_url": "https://attestation.example",
+  "endpoints": {
+    "discovery": "/.well-known/fpc.json",
+    "health": "/health",
+    "asset": "/asset",
+    "quote": "/quote"
+  },
+  "supported_assets": [{ "address": "0x...", "name": "humanUSDC" }]
+}
+```
+
 ### `GET /health`
 
 Liveness probe.
@@ -158,6 +183,7 @@ OPERATOR_SECRET_KEY=0x... bun run start -- --config config.yaml
 Example checks:
 
 ```bash
+curl http://localhost:3000/.well-known/fpc.json
 curl http://localhost:3000/health
 curl http://localhost:3000/asset
 curl "http://localhost:3000/quote?user=<aztec_address>&fj_amount=1000000"

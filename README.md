@@ -6,6 +6,8 @@ Operator-run fee payment contracts for Aztec L2:
 
 Full protocol specification: [docs/spec.md](docs/spec.md)
 
+Wallet discovery contract (`GET /.well-known/fpc.json`): [docs/wallet-discovery-spec.md](docs/wallet-discovery-spec.md)
+
 Operational probes and metrics: [docs/operational-metrics.md](docs/operational-metrics.md)
 
 Alpha asset model decision: [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md)

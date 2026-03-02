@@ -70,9 +70,19 @@ A background service that keeps the FPC funded with Fee Juice.
 
 ---
 
-## Open Question: Wallet Discovery
+## Wallet Discovery (Resolved for Alpha)
 
-How does the wallet (via wallet-sdk) know which attestation server to ask for a price quote? This is unresolved. The FPC builder will need to coordinate with the Azguard / wallet-sdk team on a discovery mechanism. This could be as simple as a registry contract, a well-known URL convention, or something the wallet hardcodes initially.
+Wallet discovery for attestation endpoints is standardized via:
+
+- `GET /.well-known/fpc.json` on candidate attestation hosts
+- lookup key tuple: `(network_id, asset_address, fpc_address)`
+- required metadata: `quote_base_url`, endpoint paths (`discovery`, `health`, `asset`, `quote`), and version fields (`discovery_version`, `attestation_api_version`)
+
+Resolution order and fallback are now defined (exact key match first; deterministic candidate order; fail-closed if no valid match) in:
+
+- [`docs/wallet-discovery-spec.md`](../docs/wallet-discovery-spec.md)
+
+This closes the previous PRD discovery ambiguity and provides an implementation-ready contract for wallet-sdk integration.
 
 ---
 

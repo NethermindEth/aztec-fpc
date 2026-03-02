@@ -21,6 +21,8 @@ function rateLimited() {
   };
 }
 
+const DISCOVERY_VERSION = "1.0";
+const ATTESTATION_API_VERSION = "1.0";
 const U128_MAX = (1n << 128n) - 1n;
 
 function isU128(value: bigint): boolean {
@@ -121,6 +123,43 @@ function firstHeaderValue(
     return value[0];
   }
   return undefined;
+}
+
+function trimTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/u, "");
+}
+
+function firstCommaSeparatedValue(
+  value: string | undefined,
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const first = value.split(",", 1)[0]?.trim();
+  return first && first.length > 0 ? first : undefined;
+}
+
+function resolveQuoteBaseUrl(
+  config: Config,
+  headers: Record<string, string | string[] | undefined>,
+  fallbackProtocol: string,
+): string {
+  if (config.quote_base_url) {
+    return trimTrailingSlashes(config.quote_base_url);
+  }
+
+  const forwardedProto = firstCommaSeparatedValue(
+    firstHeaderValue(headers["x-forwarded-proto"]),
+  );
+  const protocol = forwardedProto ?? fallbackProtocol ?? "http";
+  const host =
+    firstCommaSeparatedValue(firstHeaderValue(headers["x-forwarded-host"])) ??
+    firstHeaderValue(headers.host);
+  if (!host) {
+    return `http://127.0.0.1:${config.port}`;
+  }
+
+  return `${protocol}://${host}`;
 }
 
 interface QuoteRateLimitIdentity {
@@ -234,6 +273,12 @@ export function buildServer(
   const metrics = new AttestationMetrics();
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const acceptedAsset = AztecAddress.fromString(config.accepted_asset_address);
+  const supportedAssets = config.supported_assets ?? [
+    {
+      address: config.accepted_asset_address,
+      name: config.accepted_asset_name,
+    },
+  ];
 
   const nowUnixSeconds =
     clock.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000)));
@@ -250,6 +295,22 @@ export function buildServer(
   }
 
   // ── GET /health ─────────────────────────────────────────────────────────────
+
+  app.get("/.well-known/fpc.json", async (req) => ({
+    discovery_version: DISCOVERY_VERSION,
+    attestation_api_version: ATTESTATION_API_VERSION,
+    network_id: config.network_id,
+    fpc_address: config.fpc_address,
+    contract_variant: config.contract_variant,
+    quote_base_url: resolveQuoteBaseUrl(config, req.headers, req.protocol),
+    endpoints: {
+      discovery: "/.well-known/fpc.json",
+      health: "/health",
+      asset: "/asset",
+      quote: "/quote",
+    },
+    supported_assets: supportedAssets,
+  }));
 
   app.get("/health", async () => ({ status: "ok" }));
 
