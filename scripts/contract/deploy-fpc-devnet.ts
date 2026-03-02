@@ -1608,13 +1608,13 @@ function runLocalModeDeploy(
       String(localOutput.fpc_address ?? ""),
       "local deploy output fpc_address",
     );
-    const creditFpcAddress = parseAztecAddress(
-      String(localOutput.credit_fpc_address ?? ""),
-      "local deploy output credit_fpc_address",
-    );
-
     const selectedFpcAddress =
-      fpcSelection.name === "FPC" ? fpcAddress : creditFpcAddress;
+      fpcSelection.name === "FPC"
+        ? fpcAddress
+        : parseAztecAddress(
+            String(localOutput.credit_fpc_address ?? ""),
+            "local deploy output credit_fpc_address",
+          );
 
     const deployerAlias =
       localOutput.deployer &&
