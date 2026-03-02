@@ -132,12 +132,13 @@ pub contract BackedCreditFPC {
             sender,
             self.address,
         );
-        self.enqueue_self._finalize_mint(fj_credit_amount, net_credit, partial_note);
 
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
+
+        self.enqueue_self._finalize_mint(fj_credit_amount, net_credit, partial_note);
     }
 
     /// Runs during the public (setup) phase of pay_and_mint, BEFORE this tx's fee is
@@ -190,12 +191,12 @@ pub contract BackedCreditFPC {
         assert(subtracted >= max_gas_cost, "Balance too low or note insufficient");
         balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
-        self.enqueue_self._deduct_credits(max_gas_cost);
-
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
+
+        self.enqueue_self._deduct_credits(max_gas_cost);
     }
 
     /// Deducts max_gas_cost from unspent_credits. The protocol then deducts actual_fee
