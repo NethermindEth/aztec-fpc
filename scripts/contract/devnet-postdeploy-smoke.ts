@@ -66,6 +66,7 @@ type WalletLike = {
     authorizer: AztecAddressLike,
     intent: unknown,
   ) => Promise<unknown>;
+  registerContract: (instance: unknown, artifact?: unknown) => Promise<unknown>;
 };
 
 type NodeLike = {
@@ -75,6 +76,7 @@ type NodeLike = {
     feePerL2Gas: bigint;
   }>;
   getBlock: (blockTag: string) => Promise<{ timestamp: bigint } | null>;
+  getContract: (address: AztecAddressLike) => Promise<unknown | undefined>;
 };
 
 type L1PublicClientLike = {
@@ -1133,16 +1135,31 @@ async function runSmoke(args: CliArgs): Promise<void> {
   );
   const selectedFpcArtifact = loadArtifact(deps, fpcSelection.path);
 
-  const token = deps.Contract.at(
-    deps.AztecAddress.fromString(manifest.contracts.accepted_asset),
-    tokenArtifact,
-    wallet,
+  const tokenAddress = deps.AztecAddress.fromString(
+    manifest.contracts.accepted_asset,
   );
-  const fpc = deps.Contract.at(
-    deps.AztecAddress.fromString(manifest.contracts.fpc),
-    selectedFpcArtifact,
-    wallet,
-  );
+  const fpcAddress = deps.AztecAddress.fromString(manifest.contracts.fpc);
+
+  // Contract.at() no longer auto-registers with PXE (SDK breaking change).
+  // Fetch on-chain instances and register explicitly before use.
+  const tokenInstance = await node.getContract(tokenAddress);
+  if (!tokenInstance) {
+    throw new CliError(
+      `Token contract not found on node at ${manifest.contracts.accepted_asset}`,
+    );
+  }
+  await wallet.registerContract(tokenInstance, tokenArtifact);
+
+  const fpcInstance = await node.getContract(fpcAddress);
+  if (!fpcInstance) {
+    throw new CliError(
+      `FPC contract not found on node at ${manifest.contracts.fpc}`,
+    );
+  }
+  await wallet.registerContract(fpcInstance, selectedFpcArtifact);
+
+  const token = deps.Contract.at(tokenAddress, tokenArtifact, wallet);
+  const fpc = deps.Contract.at(fpcAddress, selectedFpcArtifact, wallet);
 
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas as bigint;
@@ -1279,6 +1296,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
           paymentMethod: fpcPaymentMethod,
           gasSettings: {
             gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            teardownGasLimits: { daGas: 0, l2Gas: 0 },
             maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           },
         },
@@ -1371,6 +1389,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
           paymentMethod: creditPayAndMintMethod,
           gasSettings: {
             gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            teardownGasLimits: { daGas: 0, l2Gas: 0 },
             maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           },
         },
@@ -1410,6 +1429,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
           paymentMethod: creditPayWithCreditMethod,
           gasSettings: {
             gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            teardownGasLimits: { daGas: 0, l2Gas: 0 },
             maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           },
         },

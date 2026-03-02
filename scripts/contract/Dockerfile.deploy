@@ -60,7 +60,6 @@ COPY --from=mikefarah/yq:4.45.4 /usr/bin/yq /usr/local/bin/yq
 
 COPY scripts/contract/deploy-fpc-devnet.ts scripts/contract/
 COPY scripts/contract/deploy-fpc-devnet.sh scripts/contract/
-COPY scripts/contract/deploy-fpc-local-mode.ts scripts/contract/
 COPY scripts/contract/devnet-manifest.ts scripts/contract/
 COPY scripts/common/ scripts/common/
 COPY scripts/config/ scripts/config/
