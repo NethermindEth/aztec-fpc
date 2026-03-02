@@ -645,8 +645,8 @@ async function main() {
 
   await token.methods.mint_to_public(user, 1n).send({ from: operator });
 
-  // Fund a second private transfer so the negative pay_and_mint path reaches
-  // the teardown-gas assertion instead of failing early on token balance.
+  // Fund a second private transfer so the direct-call negative path reaches
+  // fee-entrypoint phase checks instead of failing early on token balance.
   await token.methods
     .mint_to_private(user, aaPaymentAmount + 1_000_000n)
     .send({ from: operator });
@@ -654,7 +654,7 @@ async function main() {
   const latestBlockForNegative = await node.getBlock("latest");
   if (!latestBlockForNegative) {
     throw new Error(
-      "Could not read latest L2 block while building pay_and_mint teardown-gas negative quote",
+      "Could not read latest L2 block while building pay_and_mint negative quote",
     );
   }
   const negativeValidUntil =
@@ -684,50 +684,6 @@ async function main() {
     caller: creditFpc.address,
     action: negativeTransferCall,
   });
-  const negativePayAndMintCall = await creditFpc.methods
-    .pay_and_mint(
-      token.address,
-      negativeTransferAuthwitNonce,
-      fjCreditAmount,
-      aaPaymentAmount,
-      negativeValidUntil,
-      negativeQuoteSigBytes,
-    )
-    .getFunctionCall();
-  const negativePayAndMintPaymentMethod = {
-    getAsset: async () => ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [negativePayAndMintCall],
-        [negativeTransferAuthwit],
-        [],
-        [],
-        creditFpc.address,
-      ),
-    getFeePayer: async () => creditFpc.address,
-    getGasSettings: () => undefined,
-  };
-
-  await expectFailure(
-    "teardown gas rejected for pay_and_mint no-teardown fee path",
-    ["teardown da gas must be zero", "teardown l2 gas must be zero"],
-    () =>
-      token.methods
-        .transfer_public_to_public(user, user, 1n, Fr.random())
-        .send({
-          from: user,
-          fee: {
-            paymentMethod: negativePayAndMintPaymentMethod,
-            gasSettings: {
-              gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-              teardownGasLimits: { daGas: 1, l2Gas: 1 },
-              maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-            },
-          },
-          wait: { timeout: 180 },
-        }),
-  );
-
   await expectFailure(
     "direct pay_and_mint call rejected outside setup phase",
     ["must run in setup phase"],

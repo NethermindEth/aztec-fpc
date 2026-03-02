@@ -619,7 +619,7 @@ async function main() {
   const latestBlockForNegative = await node.getBlock("latest");
   if (!latestBlockForNegative) {
     throw new Error(
-      "Could not read latest L2 block while building teardown-gas negative quote",
+      "Could not read latest L2 block while building direct-call negative quote",
     );
   }
   // Ensure negative-path tx can reach fee validation checks instead of failing

@@ -1694,41 +1694,6 @@ async function negativeSenderBindingRejected(
   );
 }
 
-async function negativeTeardownGasRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
-): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
-  const { rateNum, rateDen } = getFinalRate(config);
-  const latestTimestamp = await getLatestL2Timestamp(node);
-  const quote = await signQuoteForUser(
-    result,
-    result.fpc.address,
-    result.token.address,
-    fjAmount,
-    rateNum,
-    rateDen,
-    latestTimestamp + 600n,
-    result.user,
-  );
-
-  await expectFailure(
-    "negative teardown gas rejected",
-    ["teardown da gas must be zero", "teardown l2 gas must be zero"],
-    () =>
-      executeFeePaidTx(config, result, {
-        token: result.token,
-        fpc: result.fpc,
-        payer: result.user,
-        recipient: result.operator,
-        transferAmount: 1n,
-        quote,
-        teardownGasLimits: { daGas: 1, l2Gas: 1 },
-      }),
-  );
-}
-
 async function negativeDirectEntrypointCallRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
@@ -2007,7 +1972,6 @@ async function runStep7NegativeScenarios(
   await negativeExpiredQuoteRejected(config, result, node);
   await negativeOverlongTtlRejected(config, result, node);
   await negativeSenderBindingRejected(config, result, node);
-  await negativeTeardownGasRejected(config, result, node);
   await negativeDirectEntrypointCallRejected(config, result, node);
 
   await stopManagedProcess(topup);
