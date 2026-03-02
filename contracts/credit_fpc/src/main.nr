@@ -55,11 +55,7 @@ pub contract CreditFPC {
 
     #[external("public")]
     #[initializer]
-    fn constructor(
-        operator: AztecAddress,
-        operator_pubkey_x: Field,
-        operator_pubkey_y: Field,
-    ) {
+    fn constructor(operator: AztecAddress, operator_pubkey_x: Field, operator_pubkey_y: Field) {
         assert(!operator.is_zero(), "invalid operator");
         // Basic on-curve check: y^2 = x^3 - 17 (Grumpkin)
         assert(
@@ -67,9 +63,7 @@ pub contract CreditFPC {
                 == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
             "operator pubkey not on curve",
         );
-        self.storage.config.initialize(
-            Config { operator, operator_pubkey_x, operator_pubkey_y },
-        );
+        self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y });
     }
 
     #[external("private")]
