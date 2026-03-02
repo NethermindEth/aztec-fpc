@@ -123,9 +123,10 @@ if [[ ! -f "$DEPLOY_OUTPUT" ]]; then
 fi
 
 echo "[deploy-smoke] Running relay-aware local smoke checks"
-AZTEC_NODE_URL="$AZTEC_NODE_URL" \
-FPC_DEPLOY_SMOKE_L1_RPC_URL="$L1_RPC_URL" \
-FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT="$DEPLOY_OUTPUT" \
-  bun run "$REPO_ROOT/scripts/contract/deploy-fpc-local-smoke-mode.ts"
+bunx tsx "$REPO_ROOT/scripts/contract/devnet-postdeploy-smoke.ts" \
+  --manifest "$DEPLOY_OUTPUT" \
+  --l1-rpc-url "$L1_RPC_URL" \
+  --operator-secret-key "$OPERATOR_SECRET_KEY" \
+  --l1-operator-private-key "${FPC_DEPLOY_SMOKE_L1_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
 
 echo "[deploy-smoke] PASS: full local deploy smoke flow succeeded"
