@@ -156,6 +156,7 @@ Optional overrides:
 
 - `AZTEC_NODE_URL` (default `http://localhost:8080`)
 - `FPC_SMOKE_L1_RPC_URL` (default `http://127.0.0.1:8545`)
+- `FPC_SMOKE_START_LOCAL_NETWORK` (default `1`; auto-starts `aztec start --local-network` when `8080/8545` are unavailable)
 - `FPC_SMOKE_NODE_TIMEOUT_MS` (default `30000`)
 - `FPC_SMOKE_RATE_NUM`, `FPC_SMOKE_RATE_DEN` (defaults: `10200` / `10000000`)
 - `FPC_SMOKE_DA_GAS_LIMIT`, `FPC_SMOKE_L2_GAS_LIMIT`
@@ -189,6 +190,7 @@ Useful overrides:
 
 - `AZTEC_NODE_URL` (default `http://localhost:8080`)
 - `CREDIT_FPC_SMOKE_L1_RPC_URL` (default `http://localhost:8545`)
+- `CREDIT_FPC_SMOKE_START_LOCAL_NETWORK` (default `1`; auto-starts `aztec start --local-network` when `8080/8545` are unavailable)
 - `CREDIT_FPC_SMOKE_NODE_TIMEOUT_MS` (default `30000`)
 - `CREDIT_FPC_SMOKE_RATE_NUM`, `CREDIT_FPC_SMOKE_RATE_DEN` (defaults: `1` / `1`)
 - `CREDIT_FPC_SMOKE_QUOTE_TTL_SECONDS` (default `3600`)
