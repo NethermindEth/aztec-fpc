@@ -306,7 +306,11 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
     "target",
     "token_contract-Token.json",
   );
-  const fpcArtifactPath = path.join(config.repoRoot, "target", "fpc-FPC.json");
+  const fpcArtifactPath = path.join(
+    config.repoRoot,
+    "target",
+    "fpc-FPCMultiAsset.json",
+  );
 
   if (!existsSync(tokenArtifactPath) || !existsSync(fpcArtifactPath)) {
     throw new Error(
@@ -361,7 +365,6 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
-    token.address,
   ]).send({ from: operator });
   console.log(`[chaos-local] FPC deployed at ${fpc.address.toString()}`);
 

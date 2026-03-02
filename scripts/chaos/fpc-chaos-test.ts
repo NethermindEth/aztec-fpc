@@ -616,7 +616,11 @@ async function buildOnchainContext(
     "target",
     "token_contract-Token.json",
   );
-  const fpcArtifactPath = path.join(config.repoRoot, "target", "fpc-FPC.json");
+  const fpcArtifactPath = path.join(
+    config.repoRoot,
+    "target",
+    "fpc-FPCMultiAsset.json",
+  );
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
@@ -747,7 +751,14 @@ async function submitFeePaidTx(
   });
 
   const feeEntrypointCall = await ctx.fpc.methods
-    .fee_entrypoint(nonce, fjAmount, aaPaymentAmount, validUntil, quoteSigBytes)
+    .fee_entrypoint(
+      ctx.acceptedAsset,
+      nonce,
+      fjAmount,
+      aaPaymentAmount,
+      validUntil,
+      quoteSigBytes,
+    )
     .getFunctionCall();
 
   const paymentMethod = {
@@ -840,6 +851,7 @@ async function submitFeePaidTxWithOptions(
 
   const feeEntrypointCall = await ctx.fpc.methods
     .fee_entrypoint(
+      ctx.acceptedAsset,
       entrypointNonce,
       fjAmount,
       aaPaymentAmount,
@@ -1838,7 +1850,14 @@ async function runOnchainTests(
         action: transferCall,
       });
       const feeEntrypointCall = await ctx.fpc.methods
-        .fee_entrypoint(nonce, fjAmount, aaPaymentAmount, validUntil, sigBytes)
+        .fee_entrypoint(
+          ctx.acceptedAsset,
+          nonce,
+          fjAmount,
+          aaPaymentAmount,
+          validUntil,
+          sigBytes,
+        )
         .getFunctionCall();
 
       const paymentMethod = {
