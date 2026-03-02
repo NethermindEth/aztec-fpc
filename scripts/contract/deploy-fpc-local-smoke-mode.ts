@@ -46,19 +46,19 @@ const FEE_JUICE_PORTAL_ABI = parseAbi([
 ]);
 
 type DeployOutput = {
-  operator: string;
-  accepted_asset: string;
-  fpc_address: string;
-  credit_fpc_address: string;
-  l1_chain_id: number;
-  l2_chain_id: number;
-  deployer?: {
-    account_index?: number;
-    address?: string;
+  operator: {
+    address: string;
   };
-  deploy?: {
-    token?: {
-      source?: string;
+  contracts: {
+    accepted_asset: string;
+    fpc: string;
+  };
+  network: {
+    l1_chain_id: number;
+  };
+  deployment_accounts?: {
+    l2_deployer?: {
+      address?: string;
     };
   };
 };
@@ -212,33 +212,49 @@ function loadDeployOutput(deployOutputPath: string): DeployOutput {
     );
   }
 
-  let parsed: Partial<DeployOutput>;
+  let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(raw) as Partial<DeployOutput>;
+    parsed = JSON.parse(raw) as Record<string, unknown>;
   } catch (error) {
     throw new Error(
       `Deploy output at ${deployOutputPath} is not valid JSON: ${String(error)}`,
     );
   }
 
+  const operatorObj = parsed.operator as Record<string, unknown> | undefined;
+  const contractsObj = parsed.contracts as Record<string, unknown> | undefined;
+  const networkObj = parsed.network as Record<string, unknown> | undefined;
+
+  if (!operatorObj || typeof operatorObj !== "object") {
+    throw new Error("Deploy output missing operator object");
+  }
+  if (!contractsObj || typeof contractsObj !== "object") {
+    throw new Error("Deploy output missing contracts object");
+  }
+  if (!networkObj || typeof networkObj !== "object") {
+    throw new Error("Deploy output missing network object");
+  }
+
   return {
-    operator: parseAddress(parsed.operator, "operator"),
-    accepted_asset: parseAddress(parsed.accepted_asset, "accepted_asset"),
-    fpc_address: parseAddress(parsed.fpc_address, "fpc_address"),
-    credit_fpc_address: parseAddress(
-      parsed.credit_fpc_address,
-      "credit_fpc_address",
-    ),
-    l1_chain_id: parsePositiveChainId(
-      parsed.l1_chain_id,
-      "deploy output l1_chain_id",
-    ),
-    l2_chain_id: parsePositiveChainId(
-      parsed.l2_chain_id,
-      "deploy output l2_chain_id",
-    ),
-    deployer: parsed.deployer,
-    deploy: parsed.deploy,
+    operator: {
+      address: parseAddress(operatorObj.address, "operator.address"),
+    },
+    contracts: {
+      accepted_asset: parseAddress(
+        contractsObj.accepted_asset,
+        "contracts.accepted_asset",
+      ),
+      fpc: parseAddress(contractsObj.fpc, "contracts.fpc"),
+    },
+    network: {
+      l1_chain_id: parsePositiveChainId(
+        networkObj.l1_chain_id,
+        "network.l1_chain_id",
+      ),
+    },
+    deployment_accounts: parsed.deployment_accounts as
+      | DeployOutput["deployment_accounts"]
+      | undefined,
   };
 }
 
@@ -316,15 +332,15 @@ async function main() {
   console.log(`[deploy-smoke] deploy_output=${config.deployOutputPath}`);
 
   const deployed = loadDeployOutput(config.deployOutputPath);
-  const operatorAddress = AztecAddress.fromString(deployed.operator);
-  const tokenAddress = AztecAddress.fromString(deployed.accepted_asset);
-  const fpcAddress = AztecAddress.fromString(deployed.fpc_address);
-  const creditFpcAddress = AztecAddress.fromString(deployed.credit_fpc_address);
+  const operatorAddress = AztecAddress.fromString(deployed.operator.address);
+  const tokenAddress = AztecAddress.fromString(
+    deployed.contracts.accepted_asset,
+  );
+  const fpcAddress = AztecAddress.fromString(deployed.contracts.fpc);
 
   console.log(`[deploy-smoke] operator=${operatorAddress.toString()}`);
   console.log(`[deploy-smoke] token=${tokenAddress.toString()}`);
   console.log(`[deploy-smoke] fpc=${fpcAddress.toString()}`);
-  console.log(`[deploy-smoke] credit_fpc=${creditFpcAddress.toString()}`);
 
   const node = createAztecNodeClient(config.nodeUrl);
   await Promise.race([
@@ -344,9 +360,9 @@ async function main() {
     transport: http(config.l1RpcUrl),
   });
   const l1RpcChainId = await publicClient.getChainId();
-  if (l1RpcChainId !== deployed.l1_chain_id) {
+  if (l1RpcChainId !== deployed.network.l1_chain_id) {
     throw new Error(
-      `L1 chain-id mismatch between deploy output (${deployed.l1_chain_id}) and L1 RPC (${l1RpcChainId})`,
+      `L1 chain-id mismatch between deploy output (${deployed.network.l1_chain_id}) and L1 RPC (${l1RpcChainId})`,
     );
   }
 
@@ -355,18 +371,9 @@ async function main() {
     (nodeInfo as { l1ChainId?: unknown }).l1ChainId,
     "node info l1ChainId",
   );
-  if (nodeL1ChainId !== deployed.l1_chain_id) {
+  if (nodeL1ChainId !== deployed.network.l1_chain_id) {
     throw new Error(
-      `L1 chain-id mismatch between deploy output (${deployed.l1_chain_id}) and node (${nodeL1ChainId})`,
-    );
-  }
-  const nodeL2ChainId = parsePositiveChainId(
-    await node.getChainId(),
-    "node_getChainId",
-  );
-  if (nodeL2ChainId !== deployed.l2_chain_id) {
-    throw new Error(
-      `L2 chain-id mismatch between deploy output (${deployed.l2_chain_id}) and node (${nodeL2ChainId})`,
+      `L1 chain-id mismatch between deploy output (${deployed.network.l1_chain_id}) and node (${nodeL1ChainId})`,
     );
   }
 
@@ -408,16 +415,6 @@ async function main() {
     path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   );
   const token = Contract.at(tokenAddress, tokenArtifact, wallet);
-  const creditFpcArtifact = loadArtifact(
-    path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
-  );
-  const creditFpc = Contract.at(creditFpcAddress, creditFpcArtifact, wallet);
-  const creditBalance = await creditFpc.methods
-    .balance_of(operatorAddress)
-    .simulate({ from: operatorAccount.address });
-  console.log(
-    `[deploy-smoke] credit_fpc_balance_of_operator=${String(creditBalance)}`,
-  );
 
   const l1Addresses = nodeInfo.l1ContractAddresses as Record<string, unknown>;
   const feeJuiceAddressRaw =

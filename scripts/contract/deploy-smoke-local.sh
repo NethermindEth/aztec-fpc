@@ -96,21 +96,24 @@ aztec compile --workspace --force
 DEPLOY_OUTPUT="${FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT:-$TMP_DIR/deploy-fpc-local.json}"
 AZTEC_NODE_URL="http://${NODE_HOST}:${NODE_PORT}"
 L1_RPC_URL="http://${L1_HOST}:${L1_PORT}"
-OPERATOR="${FPC_LOCAL_OPERATOR:-0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72}"
+OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+DEPLOYER_PRIVATE_KEY="${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
 
 echo "[deploy-smoke] Running local deploy command (variant-specific FPC)"
 cmd=(
-  bunx tsx "$REPO_ROOT/scripts/contract/deploy-fpc-local-mode.ts"
-  --aztec-node-url "$AZTEC_NODE_URL"
+  bunx tsx "$REPO_ROOT/scripts/contract/deploy-fpc-devnet.ts"
+  --environment local
+  --node-url "$AZTEC_NODE_URL"
   --l1-rpc-url "$L1_RPC_URL"
-  --operator "$OPERATOR"
+  --deployer-alias "$DEPLOYER_ALIAS"
+  --deployer-private-key "$DEPLOYER_PRIVATE_KEY"
+  --operator-secret-key "$OPERATOR_SECRET_KEY"
+  --fpc-artifact "${FPC_FPC_ARTIFACT:-$REPO_ROOT/target/fpc-FPC.json}"
   --out "$DEPLOY_OUTPUT"
 )
 if [[ -n "${FPC_LOCAL_ACCEPTED_ASSET:-}" ]]; then
   cmd+=(--accepted-asset "${FPC_LOCAL_ACCEPTED_ASSET}")
-fi
-if [[ "${FPC_LOCAL_REUSE:-0}" == "1" ]]; then
-  cmd+=(--reuse)
 fi
 "${cmd[@]}"
 
