@@ -86,8 +86,9 @@ Important upstream note:
 
 ### 2.3 FPC fee-payer phase semantics come from `PrivateContext`
 `contracts/fpc/src/main.nr` calls:
+- for fee-paying txs (any non-zero `max_fees_per_gas` lane), `assert(!context.in_revertible_phase(), "...must run in setup phase")`
 - `context.set_as_fee_payer()`
-- `context.end_setup()` (only when not revertible phase)
+- `context.end_setup()` (unconditional after setup-phase assertion)
 - `context.set_expiration_timestamp(valid_until)`
 
 These behaviors are defined in:

@@ -406,7 +406,8 @@ class CreditFPCActionWrapper {
 interface CreditFPCBenchmarkContext {
   pxe: any;
   wallet?: any;
-  gasSettings: any;
+  payAndMintGasSettings: any;
+  payWithCreditGasSettings: any;
   tokenAsUser: any;
   noopAsUser: any;
   userAddress: any;
@@ -559,7 +560,12 @@ export default class CreditFPCBenchmark {
     console.log('Minted.');
 
     // ── Gas settings ─────────────────────────────────────────────────────
-    const gasSettings = GasSettings.default({
+    const payAndMintGasSettings = GasSettings.default({
+      gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
+      teardownGasLimits: new Gas(0, 0),
+      maxFeesPerGas: new GasFees(feeDa, feeL2),
+    });
+    const payWithCreditGasSettings = GasSettings.default({
       gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
       maxFeesPerGas: new GasFees(feeDa, feeL2),
     });
@@ -608,14 +614,14 @@ export default class CreditFPCBenchmark {
       sendCreditMint,
       sendTokenCharge,
       VALID_UNTIL,
-      gasSettings,
+      payAndMintGasSettings,
     );
 
     console.log('Establishing user credit balance (sending real pay_and_mint tx)...');
     await noopAsUser.methods
       .noop()
       .send({
-        fee: { paymentMethod: sendPayAndMint, gasSettings },
+        fee: { paymentMethod: sendPayAndMint, gasSettings: payAndMintGasSettings },
         from: userAddress,
         additionalScopes: [operatorAddress],
       });
@@ -692,13 +698,13 @@ export default class CreditFPCBenchmark {
         devMintAmount,
         devTokenCharge,
         DEV_VALID_UNTIL,
-        gasSettings,
+        payAndMintGasSettings,
       );
 
       await creditFpcContract.methods
         .dev_mint(totalMaxCost * 2n)
         .send({
-          fee: { paymentMethod: devPayAndMint, gasSettings },
+          fee: { paymentMethod: devPayAndMint, gasSettings: payAndMintGasSettings },
           from: userAddress,
           additionalScopes: [operatorAddress],
         });
@@ -770,7 +776,7 @@ export default class CreditFPCBenchmark {
       profileCreditMint,
       profileTokenCharge,
       PROFILE_VALID_UNTIL,
-      gasSettings,
+      payAndMintGasSettings,
     );
 
     // Mint tokens for the profiled pay_and_mint send.
@@ -781,7 +787,7 @@ export default class CreditFPCBenchmark {
     // ── pay_with_credit profiling setup ──────────────────────────────────
     this.#payWithCreditPayment = new PayWithCreditPaymentMethod(
       fpcAddress,
-      gasSettings,
+      payWithCreditGasSettings,
     );
 
     console.log('\n=== CreditFPC Benchmark Setup Complete ===\n');
@@ -789,7 +795,8 @@ export default class CreditFPCBenchmark {
     return {
       pxe,
       wallet,
-      gasSettings,
+      payAndMintGasSettings,
+      payWithCreditGasSettings,
       tokenAsUser,
       noopAsUser,
       userAddress,
@@ -803,13 +810,13 @@ export default class CreditFPCBenchmark {
       context.noopAsUser.methods.noop(),
       this.#payAndMintPayment,
       [context.operatorAddress],
-      context.gasSettings,
+      context.payAndMintGasSettings,
     );
     const payWithCreditAction = new CreditFPCActionWrapper(
       context.noopAsUser.methods.noop(),
       this.#payWithCreditPayment,
       [],
-      context.gasSettings,
+      context.payWithCreditGasSettings,
     );
 
     this.#actions = [payAndMintAction, payWithCreditAction];

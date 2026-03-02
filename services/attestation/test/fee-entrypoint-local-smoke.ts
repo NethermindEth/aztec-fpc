@@ -88,6 +88,30 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
 }
 
+async function expectFailure(
+  scenario: string,
+  expectedSubstrings: string[],
+  action: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : JSON.stringify(error);
+    const normalized = message.toLowerCase();
+    if (
+      expectedSubstrings.some((needle) =>
+        normalized.includes(needle.toLowerCase()),
+      )
+    ) {
+      console.log(`[smoke] PASS: ${scenario}`);
+      return;
+    }
+    throw new Error(`${scenario} failed with unexpected error: ${message}`);
+  }
+  throw new Error(`${scenario} unexpectedly succeeded`);
+}
+
 function normalizeHexAddress(value: unknown, fieldName: string): Hex {
   if (typeof value === "string") {
     return value as Hex;
@@ -507,6 +531,7 @@ async function main() {
         paymentMethod: fpcPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 0, l2Gas: 0 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
@@ -545,6 +570,101 @@ async function main() {
       `Operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
     );
   }
+
+  const latestBlockForNegative = await node.getBlock("latest");
+  if (!latestBlockForNegative) {
+    throw new Error(
+      "Could not read latest L2 block while building teardown-gas negative quote",
+    );
+  }
+  const negativeValidUntil =
+    latestBlockForNegative.timestamp + config.quoteTtlSeconds;
+  const negativeQuoteHash = await computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    fpc.address.toField(),
+    token.address.toField(),
+    new Fr(fjFeeAmount),
+    new Fr(aaPaymentAmount),
+    new Fr(negativeValidUntil),
+    user.toField(),
+  ]);
+  const negativeQuoteSig = await schnorr.constructSignature(
+    negativeQuoteHash.toBuffer(),
+    operatorSigningKey,
+  );
+  const negativeQuoteSigBytes = Array.from(negativeQuoteSig.toBuffer());
+  const negativeTransferAuthwitNonce = Fr.random();
+  const negativeTransferCall = token.methods.transfer_private_to_private(
+    user,
+    operator,
+    aaPaymentAmount,
+    negativeTransferAuthwitNonce,
+  );
+  const negativeTransferAuthwit = await wallet.createAuthWit(user, {
+    caller: fpc.address,
+    action: negativeTransferCall,
+  });
+  const negativeFeeEntrypointCall = await fpc.methods
+    .fee_entrypoint(
+      negativeTransferAuthwitNonce,
+      fjFeeAmount,
+      aaPaymentAmount,
+      negativeValidUntil,
+      negativeQuoteSigBytes,
+    )
+    .getFunctionCall();
+  const negativePaymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload(
+        [negativeFeeEntrypointCall],
+        [negativeTransferAuthwit],
+        [],
+        [],
+        fpc.address,
+      ),
+    getFeePayer: async () => fpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  await expectFailure(
+    "teardown gas rejected for no-teardown fee path",
+    ["teardown da gas must be zero", "teardown l2 gas must be zero"],
+    () =>
+      token.methods
+        .transfer_public_to_public(user, user, 1n, Fr.random())
+        .send({
+          from: user,
+          fee: {
+            paymentMethod: negativePaymentMethod,
+            gasSettings: {
+              gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+              teardownGasLimits: { daGas: 1, l2Gas: 1 },
+              maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+            },
+          },
+          wait: { timeout: 180 },
+        }),
+  );
+
+  await expectFailure(
+    "direct fee_entrypoint call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      fpc.methods
+        .fee_entrypoint(
+          negativeTransferAuthwitNonce,
+          fjFeeAmount,
+          aaPaymentAmount,
+          negativeValidUntil,
+          negativeQuoteSigBytes,
+        )
+        .send({
+          from: user,
+          authWitnesses: [negativeTransferAuthwit],
+          wait: { timeout: 180 },
+        }),
+  );
 
   console.log("[smoke] PASS: fee_entrypoint end-to-end flow succeeded");
 }

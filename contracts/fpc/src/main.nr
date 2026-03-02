@@ -37,7 +37,6 @@ pub contract FPC {
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
         macros::{functions::{allow_phase_change, external, initializer}, storage::storage},
-        oracle::nullifiers::check_nullifier_exists,
         protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
         state_vars::PublicImmutable,
     };
@@ -111,6 +110,12 @@ pub contract FPC {
         valid_until: u64,
         quote_sig: [u8; 64],
     ) {
+        let max_fees = self.context.gas_settings().max_fees_per_gas;
+        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
+        if enforce_setup_phase {
+            assert(!self.context.in_revertible_phase(), "fee_entrypoint must run in setup phase");
+        }
+
         let config = self.storage.config.read();
         let sender = self.msg_sender();
 
@@ -129,6 +134,7 @@ pub contract FPC {
             quote_sig,
         );
 
+        assert_no_teardown_gas(self.context);
         let expected_fj_fee_amount = get_max_gas_cost_no_teardown(self.context);
         assert(expected_fj_fee_amount == fj_fee_amount, "quoted fee amount mismatch");
 
@@ -137,7 +143,7 @@ pub contract FPC {
             .call(self.context);
 
         self.context.set_as_fee_payer();
-        if !self.context.in_revertible_phase() {
+        if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
     }
@@ -178,11 +184,6 @@ pub contract FPC {
             "invalid quote signature",
         );
 
-        // Safety: this is only used as a best-effort pre-check for a clearer
-        // replay error before the canonical duplicate-nullifier protection.
-        let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
-        assert(!quote_already_used, "quote already used");
-
         // Prevent replay: the quote hash is unique per (fpc, asset, amounts, expiry, user).
         context.push_nullifier(quote_hash);
 
@@ -191,6 +192,19 @@ pub contract FPC {
         let quote_ttl = valid_until - anchor_ts;
         assert(quote_ttl <= MAX_QUOTE_TTL_SECONDS, "quote ttl too large");
         context.set_expiration_timestamp(valid_until);
+    }
+
+    /// Maximum possible fee for this tx excluding teardown gas.
+    #[contract_library_method]
+    fn assert_no_teardown_gas(context: &mut PrivateContext) {
+        let gas_settings = context.gas_settings();
+        let teardown_gas_limits = gas_settings.teardown_gas_limits;
+        if gas_settings.max_fees_per_gas.fee_per_da_gas > 0 {
+            assert(teardown_gas_limits.da_gas == 0, "teardown da gas must be zero");
+        }
+        if gas_settings.max_fees_per_gas.fee_per_l2_gas > 0 {
+            assert(teardown_gas_limits.l2_gas == 0, "teardown l2 gas must be zero");
+        }
     }
 
     /// Maximum possible fee for this tx excluding teardown gas.

@@ -83,6 +83,12 @@ pub contract CreditFPC {
         valid_until: u64,
         quote_sig: [u8; 64],
     ) {
+        let max_fees = self.context.gas_settings().max_fees_per_gas;
+        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
+        if enforce_setup_phase {
+            assert(!self.context.in_revertible_phase(), "pay_and_mint must run in setup phase");
+        }
+
         let config = self.storage.config.read();
         let sender = self.msg_sender();
 
@@ -108,13 +114,14 @@ pub contract CreditFPC {
         let balance_set = self.storage.balances.at(sender);
         balance_set.add(fj_credit_amount).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
+        assert_no_teardown_gas(self.context);
         let max_gas_cost = get_max_gas_cost_no_teardown(self.context);
         let subtracted = balance_set.try_sub(max_gas_cost, 1);
         assert(subtracted >= max_gas_cost, "minted credit too low for max fee");
         balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
         self.context.set_as_fee_payer();
-        if !self.context.in_revertible_phase() {
+        if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
     }
@@ -122,6 +129,12 @@ pub contract CreditFPC {
     #[external("private")]
     #[allow_phase_change]
     fn pay_with_credit() {
+        let max_fees = self.context.gas_settings().max_fees_per_gas;
+        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
+        if enforce_setup_phase {
+            assert(!self.context.in_revertible_phase(), "pay_with_credit must run in setup phase");
+        }
+
         let sender = self.msg_sender();
         let max_gas_cost = get_max_gas_cost(self.context);
 
@@ -131,7 +144,9 @@ pub contract CreditFPC {
         balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
         self.context.set_as_fee_payer();
-        self.context.end_setup();
+        if enforce_setup_phase | !self.context.in_revertible_phase() {
+            self.context.end_setup();
+        }
     }
 
     #[external("public")]
@@ -208,17 +223,24 @@ pub contract CreditFPC {
             "invalid quote signature",
         );
 
-        // Safety: this is only used as a best-effort pre-check for a clearer
-        // replay error before the canonical duplicate-nullifier protection.
-        let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
-        assert(!quote_already_used, "quote already used");
-
         // Prevent replay: the quote hash is unique per (fpc, asset, amounts, expiry, user).
         context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");
         context.set_expiration_timestamp(valid_until);
+    }
+
+    #[contract_library_method]
+    fn assert_no_teardown_gas(context: &mut PrivateContext) {
+        let gas_settings = context.gas_settings();
+        let teardown_gas_limits = gas_settings.teardown_gas_limits;
+        if gas_settings.max_fees_per_gas.fee_per_da_gas > 0 {
+            assert(teardown_gas_limits.da_gas == 0, "teardown da gas must be zero");
+        }
+        if gas_settings.max_fees_per_gas.fee_per_l2_gas > 0 {
+            assert(teardown_gas_limits.l2_gas == 0, "teardown l2 gas must be zero");
+        }
     }
 
     #[contract_library_method]

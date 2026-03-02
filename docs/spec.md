@@ -109,12 +109,12 @@ User private balance →[transfer_private_to_private]→ Operator private balanc
 1. Reads packed `config` from storage (`operator`, signing pubkey, `accepted_asset`)
 2. Asserts `rate_num > 0`
 3. Verifies Schnorr quote signature and binds `user_address = msg_sender`
-4. Asserts quote nullifier does not exist, then pushes it (replay protection)
+4. Pushes quote nullifier (replay protection; duplicates fail via nullifier conflict)
 5. Asserts `anchor_block_timestamp ≤ valid_until`
 6. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
 7. Computes `charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)` (`rate_den != 0` enforced in fee math)
 8. Calls `Token::at(accepted_asset).transfer_private_to_private(sender → operator, charge, nonce)`
-9. Calls `set_as_fee_payer()` + `end_setup()`
+9. For fee-paying txs (any non-zero `maxFeesPerGas` lane), asserts setup-phase execution (`!in_revertible_phase`), then calls `set_as_fee_payer()` + `end_setup()`
 
 The token transfer is a private function call that executes in the setup phase, before `end_setup()`. It is irrevocably committed. If the user's app logic subsequently reverts, the fee has still been paid — this is unavoidable in the Aztec FPC model.
 

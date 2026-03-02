@@ -725,6 +725,7 @@ type FeePaidTxParams = {
   recipient: AztecAddress;
   transferAmount: bigint;
   quote: QuoteInput;
+  teardownGasLimits?: { daGas: number; l2Gas: number };
 };
 
 async function executeFeePaidTx(
@@ -808,6 +809,10 @@ async function executeFeePaidTx(
         paymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: params.teardownGasLimits ?? {
+            daGas: 0,
+            l2Gas: 0,
+          },
           maxFeesPerGas: {
             feePerDaGas: result.feePerDaGas,
             feePerL2Gas: result.feePerL2Gas,
@@ -1420,6 +1425,7 @@ async function runFeePaidTargetTxAndAssert(
         paymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 0, l2Gas: 0 },
           maxFeesPerGas: {
             feePerDaGas: result.feePerDaGas,
             feePerL2Gas: result.feePerL2Gas,
@@ -1515,7 +1521,7 @@ async function negativeQuoteReplayRejected(
 
   await expectFailure(
     "negative quote replay rejected",
-    ["quote already used"],
+    ["nullifier", "already exists", "duplicate"],
     () =>
       executeFeePaidTx(config, result, {
         token: result.token,
@@ -1629,6 +1635,90 @@ async function negativeSenderBindingRejected(
         transferAmount: 1n,
         quote: quoteSignedForUser,
       }),
+  );
+}
+
+async function negativeTeardownGasRejected(
+  config: FullE2EConfig,
+  result: DeploymentRuntimeResult,
+  node: ReturnType<typeof createAztecNodeClient>,
+): Promise<void> {
+  const fjAmount = result.maxGasCostNoTeardown;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const latestTimestamp = await getLatestL2Timestamp(node);
+  const quote = await signQuoteForUser(
+    result,
+    result.fpc.address,
+    result.token.address,
+    fjAmount,
+    aaPaymentAmount,
+    latestTimestamp + 600n,
+    result.user,
+  );
+
+  await expectFailure(
+    "negative teardown gas rejected",
+    ["teardown da gas must be zero", "teardown l2 gas must be zero"],
+    () =>
+      executeFeePaidTx(config, result, {
+        token: result.token,
+        fpc: result.fpc,
+        payer: result.user,
+        recipient: result.operator,
+        transferAmount: 1n,
+        quote,
+        teardownGasLimits: { daGas: 1, l2Gas: 1 },
+      }),
+  );
+}
+
+async function negativeDirectEntrypointCallRejected(
+  config: FullE2EConfig,
+  result: DeploymentRuntimeResult,
+  node: ReturnType<typeof createAztecNodeClient>,
+): Promise<void> {
+  const fjAmount = result.maxGasCostNoTeardown;
+  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const latestTimestamp = await getLatestL2Timestamp(node);
+  const quote = await signQuoteForUser(
+    result,
+    result.fpc.address,
+    result.token.address,
+    fjAmount,
+    aaPaymentAmount,
+    latestTimestamp + 600n,
+    result.user,
+  );
+
+  const transferAuthwitNonce = Fr.random();
+  const transferCall = result.token.methods.transfer_private_to_private(
+    result.user,
+    result.operator,
+    aaPaymentAmount,
+    transferAuthwitNonce,
+  );
+  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
+    caller: result.fpc.address,
+    action: transferCall,
+  });
+
+  await expectFailure(
+    "negative direct fee_entrypoint call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      result.fpc.methods
+        .fee_entrypoint(
+          transferAuthwitNonce,
+          quote.fjAmount,
+          quote.aaPaymentAmount,
+          quote.validUntil,
+          quote.quoteSigBytes,
+        )
+        .send({
+          from: result.user,
+          authWitnesses: [transferAuthwit],
+          wait: { timeout: 180 },
+        }),
   );
 }
 
@@ -1855,6 +1945,8 @@ async function runStep7NegativeScenarios(
   await negativeExpiredQuoteRejected(config, result, node);
   await negativeOverlongTtlRejected(config, result, node);
   await negativeSenderBindingRejected(config, result, node);
+  await negativeTeardownGasRejected(config, result, node);
+  await negativeDirectEntrypointCallRejected(config, result, node);
 
   await stopManagedProcess(topup);
   console.log(
