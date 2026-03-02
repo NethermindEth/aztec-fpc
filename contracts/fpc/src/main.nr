@@ -118,7 +118,7 @@ pub contract FPCMultiAsset {
         );
 
         let charge = fee_juice_to_asset(
-            get_max_gas_cost_no_teardown(self.context),
+            get_max_gas_cost(self.context),
             rate_num,
             rate_den,
         );
@@ -169,7 +169,6 @@ pub contract FPCMultiAsset {
             "invalid quote signature",
         );
 
-        // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
         context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
@@ -181,7 +180,7 @@ pub contract FPCMultiAsset {
 
     /// Maximum possible fee for this tx excluding teardown gas.
     #[contract_library_method]
-    fn get_max_gas_cost_no_teardown(context: &mut PrivateContext) -> u128 {
+    fn get_max_gas_cost(context: &mut PrivateContext) -> u128 {
         let s = context.gas_settings();
         s.max_fees_per_gas.fee_per_da_gas * (s.gas_limits.da_gas as u128)
             + s.max_fees_per_gas.fee_per_l2_gas * (s.gas_limits.l2_gas as u128)
