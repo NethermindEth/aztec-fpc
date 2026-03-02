@@ -435,7 +435,7 @@ export default class CreditFPCBenchmark {
       JSON.parse(readFileSync(findArtifact('Token'), 'utf8')),
     );
     const creditFpcArtifact = loadContractArtifact(
-      JSON.parse(readFileSync(findArtifact('CreditFPC'), 'utf8')),
+      JSON.parse(readFileSync(findArtifact('BackedCreditFPC'), 'utf8')),
     );
     const payAndMintMode = detectPayAndMintMode(creditFpcArtifact);
     console.log(`Detected pay_and_mint mode: ${payAndMintMode}`);
@@ -898,7 +898,7 @@ export default class CreditFPCBenchmark {
         const allSteps = rawSteps.map(
           (gc: any) => ({ functionName: gc.circuitName, gateCount: gc.gateCount, witgenMs: gc.witgenMs }),
         );
-        const fpcSteps = extractFpcSteps(allSteps, 'CreditFPC');
+        const fpcSteps = extractFpcSteps(allSteps, ['CreditFPC', 'BackedCreditFPC']);
         r.fpcGateCounts = fpcSteps.map((s: any) => ({
           circuitName: s.functionName,
           gateCount: s.gateCount,
