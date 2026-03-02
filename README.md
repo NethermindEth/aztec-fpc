@@ -6,6 +6,8 @@ Operator-run fee payment contracts for Aztec L2:
 
 Full protocol specification: [docs/spec.md](docs/spec.md)
 
+Wallet discovery contract (`GET /.well-known/fpc.json`): [docs/wallet-discovery-spec.md](docs/wallet-discovery-spec.md)
+
 Operational probes and metrics: [docs/operational-metrics.md](docs/operational-metrics.md)
 
 Alpha asset model decision: [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md)
@@ -36,6 +38,7 @@ aztec-fpc/
 │   │   └── test/               ← Contract + service smoke harnesses
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
 ├── scripts/
+│   ├── chaos/                  ← FPC chaos / adversarial test suite (see scripts/chaos/README.md)
 │   ├── contract/               ← Deploy + contract smoke wrappers (FPC and CreditFPC)
 │   └── services/               ← Service-integrated smoke wrapper (fpc|credit|both)
 ├── vendor/

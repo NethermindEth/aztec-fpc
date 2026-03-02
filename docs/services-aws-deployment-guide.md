@@ -106,7 +106,7 @@ Optional debug only (do not enable in prod):
 
 ## 5. AWS Runtime Settings (Repo-Specific)
 
-- Expose attestation on container port `3000` (`/health`, `/metrics`, `/quote`, `/asset`).
+- Expose attestation on container port `3000` (`/.well-known/fpc.json`, `/health`, `/metrics`, `/quote`, `/asset`).
 - Expose topup ops on `TOPUP_OPS_PORT` (default `3001`) (`/health`, `/ready`, `/metrics`).
 - Add writable storage for topup bridge state path (`TOPUP_BRIDGE_STATE_PATH`).
 - Run topup as a singleton (`replicas=1`) unless you add external leader election.
@@ -119,6 +119,7 @@ Attestation:
 ```bash
 curl -fsS "https://<attestation-host>/health"
 curl -fsS "https://<attestation-host>/asset"
+curl -fsS "https://<attestation-host>/.well-known/fpc.json"
 ```
 
 Topup:

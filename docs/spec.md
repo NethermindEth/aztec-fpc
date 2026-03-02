@@ -143,8 +143,33 @@ The FPC itself holds no token balance. Its only balance is Fee Juice (protocol-l
 - Hold the `operator` private key
 - Compute final exchange rates (market rate + operator bips)
 - Sign user-specific quotes on demand
+- Publish machine-readable discovery metadata for wallet endpoint resolution
 
 ### 4.2 API Reference
+
+#### `GET /.well-known/fpc.json`
+Returns wallet discovery metadata for this attestation instance.
+
+```json
+{
+  "discovery_version": "1.0",
+  "attestation_api_version": "1.0",
+  "network_id": "aztec-alpha-local",
+  "fpc_address": "0x...",
+  "contract_variant": "fpc-v1",
+  "quote_base_url": "https://attestation.operator.example",
+  "endpoints": {
+    "discovery": "/.well-known/fpc.json",
+    "health": "/health",
+    "asset": "/asset",
+    "quote": "/quote"
+  },
+  "supported_assets": [{ "address": "0x...", "name": "humanUSDC" }]
+}
+```
+
+Wallet resolution key is `(network_id, asset_address, fpc_address)`. Resolution order and fallback behavior are specified in [`wallet-discovery-spec.md`](./wallet-discovery-spec.md).
+Use HTTPS for `quote_base_url` in production; HTTP is acceptable for local development.
 
 #### `GET /health`
 Returns `{ status: "ok" }`. Use for liveness probes.
@@ -174,6 +199,10 @@ The user passes `(fj_amount, aa_payment_amount, valid_until, signature)` to `fee
 ### 4.3 Quote Signing Internals
 
 The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) to compute the same quote hash as `assert_valid_quote`, then signs the 32-byte hash payload with the operator Schnorr key and returns a 64-byte hex signature.
+
+### 4.4 Wallet Discovery Contract
+
+Wallet and SDK clients must resolve attestation metadata from `/.well-known/fpc.json` using `(network_id, asset_address, fpc_address)`. For Alpha, this contract is fixed in [`wallet-discovery-spec.md`](./wallet-discovery-spec.md) and is treated as normative for integration behavior.
 
 ---
 
@@ -241,6 +270,7 @@ Record the deployed contract address — you'll need it in both service configs.
 cd services/attestation
 cp config.example.yaml config.yaml
 # Edit config.yaml: set fpc_address, accepted_asset_*, rates
+# Optionally set discovery identity fields (network_id, contract_variant, quote_base_url)
 # Provide operator key via OPERATOR_SECRET_KEY (recommended) or config.operator_secret_key
 bun install
 bun run build
@@ -266,6 +296,9 @@ bun run start
 # Check attestation service health
 curl http://localhost:3000/health
 
+# Check wallet discovery metadata
+curl http://localhost:3000/.well-known/fpc.json
+
 # Get accepted asset info
 curl http://localhost:3000/asset
 
@@ -278,11 +311,20 @@ curl "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
 ## 7. Integrating from a Wallet / SDK
 
 ```typescript
+// 0. Resolve attestation endpoint using (network_id, asset_address, fpc_address)
+const discovery = await resolveFpcDiscovery({
+  networkId: NETWORK_ID,
+  assetAddress: ACCEPTED_ASSET,
+  fpcAddress: FPC_ADDRESS,
+});
+const quotePath = discovery.endpoints.quote;
+const quoteUrl = new URL(quotePath, discovery.quote_base_url).toString();
+
 // 1. Choose fj_amount for your gas settings and fetch a user-specific quote.
 // For FPC this must match max_gas_cost_no_teardown for the tx being built.
 const fjAmount = "1000000";
 const quote = await fetch(
-  `${ATTESTATION_URL}/quote?user=${wallet.getAddress()}&fj_amount=${fjAmount}`
+  `${quoteUrl}?user=${wallet.getAddress()}&fj_amount=${fjAmount}`
 )
   .then(r => r.json());
 const quoteSigBytes = Array.from(

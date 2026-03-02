@@ -21,8 +21,11 @@ function quoteUrl(
 
 const TEST_CONFIG: Config = {
   runtime_profile: "development",
+  network_id: "aztec-alpha-local",
   fpc_address:
     "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
+  contract_variant: "fpc-v1",
+  quote_base_url: undefined,
   aztec_node_url: "http://localhost:8080",
   quote_validity_seconds: 300,
   port: 3000,
@@ -97,6 +100,89 @@ describe("server", () => {
       const response = await app.inject({ method: "GET", url: "/health" });
       assert.equal(response.statusCode, 200);
       assert.deepEqual(response.json(), { status: "ok" });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns wallet discovery metadata", async () => {
+    const app = buildServer(TEST_CONFIG, mockSigner());
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/.well-known/fpc.json",
+        headers: {
+          host: "attestation.local:3000",
+        },
+      });
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json(), {
+        discovery_version: "1.0",
+        attestation_api_version: "1.0",
+        network_id: TEST_CONFIG.network_id,
+        fpc_address: TEST_CONFIG.fpc_address,
+        contract_variant: TEST_CONFIG.contract_variant,
+        quote_base_url: "http://attestation.local:3000",
+        endpoints: {
+          discovery: "/.well-known/fpc.json",
+          health: "/health",
+          asset: "/asset",
+          quote: "/quote",
+        },
+        supported_assets: [
+          {
+            address: TEST_CONFIG.accepted_asset_address,
+            name: TEST_CONFIG.accepted_asset_name,
+          },
+        ],
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns configured multi-asset discovery metadata", async () => {
+    const app = buildServer(
+      {
+        ...TEST_CONFIG,
+        supported_assets: [
+          {
+            address:
+              "0x0000000000000000000000000000000000000000000000000000000000000002",
+            name: "humanUSDC",
+          },
+          {
+            address:
+              "0x0000000000000000000000000000000000000000000000000000000000000003",
+            name: "ravenETH",
+          },
+        ],
+      },
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/.well-known/fpc.json",
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json() as {
+        supported_assets: Array<{ address: string; name: string }>;
+      };
+      assert.deepEqual(body.supported_assets, [
+        {
+          address:
+            "0x0000000000000000000000000000000000000000000000000000000000000002",
+          name: "humanUSDC",
+        },
+        {
+          address:
+            "0x0000000000000000000000000000000000000000000000000000000000000003",
+          name: "ravenETH",
+        },
+      ]);
     } finally {
       await app.close();
     }

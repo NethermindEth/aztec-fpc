@@ -6,8 +6,18 @@
 # - production: plaintext config secrets are rejected at startup
 runtime_profile: "development"
 
+# Aztec network identifier exposed in discovery metadata
+network_id: "aztec-alpha-local"
+
 # The deployed FPC contract address on Aztec L2
 fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac"
+
+# Contract flavor exposed in discovery metadata (for example: fpc-v1, credit-fpc-v1)
+contract_variant: "fpc-v1"
+
+# Optional public base URL override used in discovery responses.
+# If unset, the service derives a base URL from request host/protocol headers.
+# quote_base_url: "https://attestation.example"
 
 # Aztec node PXE URL
 aztec_node_url: "http://localhost:8080"
@@ -69,6 +79,15 @@ quote_rate_limit_max_tracked_keys: 10000
 # deployed contract — the contract enforces this on every call.
 accepted_asset_name: "humanUSDC"
 accepted_asset_address: "0x0000000000000000000000000000000000000000000000000000000000000002"
+
+# Optional discovery-only multi-asset metadata.
+# Use this when publishing wallet discovery entries for a target multi-asset deployment.
+# If omitted, discovery falls back to [{ accepted_asset_address, accepted_asset_name }].
+# supported_assets:
+#   - address: "0x0000000000000000000000000000000000000000000000000000000000000002"
+#     name: "humanUSDC"
+#   - address: "0x0000000000000000000000000000000000000000000000000000000000000003"
+#     name: "ravenETH"
 
 # ─── Exchange rate ────────────────────────────────────────────────────────────
 # market_rate_num / market_rate_den = base rate (accepted_asset per 1 FeeJuice)

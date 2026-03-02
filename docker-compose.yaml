@@ -46,7 +46,7 @@ services:
       start_period: 30s
 
   deploy:
-    image: nethermind/aztec-fpc-deploy:local
+    image: nethermind/aztec-fpc-contract-deployment:local
     configs:
       - source: fpc-config
         target: /app/fpc-config.yaml
@@ -54,11 +54,9 @@ services:
       - ./configs:/app/configs
     environment:
       FPC_DEPLOY_ENV: "local"
+      FPC_VARIANT: "${FPC_VARIANT:-fpc}"
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
-      FPC_LOCAL_DEPLOY_START_LOCAL_NETWORK: "0"
-      FPC_LOCAL_DEPLOY_NODE_HOST: "aztec-node"
-      FPC_LOCAL_DEPLOY_L1_HOST: "anvil"
       FPC_LOCAL_DEPLOYER_ALIAS: "${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
       FPC_LOCAL_DEPLOYER_PRIVATE_KEY: "${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       FPC_LOCAL_OPERATOR_SECRET_KEY: "${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
@@ -107,6 +105,7 @@ services:
     volumes:
       - ./configs:/app/configs:ro
     environment:
+      FPC_VARIANT: "${FPC_VARIANT:-fpc}"
       FPC_DEVNET_SMOKE_MANIFEST: "/app/configs/deploy-manifest.json"
       L1_RPC_URL: "http://anvil:8545"
       FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
