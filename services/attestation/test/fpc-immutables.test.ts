@@ -136,7 +136,8 @@ describe("fpc immutable startup verification", () => {
           return false;
         }
         assert.equal(error.reason, "IMMUTABLE_MISMATCH");
-        assert.match(error.message, /accepted_asset=/);
+        assert.match(error.message, /expected_v2=/);
+        assert.match(error.message, /expected_legacy=/);
         assert.match(error.message, /operator=/);
         assert.match(error.message, /initialization_hash/);
         assert.match(error.message, /current_class_id=/);
