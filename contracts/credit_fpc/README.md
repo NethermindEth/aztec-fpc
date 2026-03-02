@@ -41,7 +41,7 @@ No quote and no token transfer are used in this path.
 Both contracts verify user-bound, operator-signed amount quotes and both call `set_as_fee_payer()`, but their payment models are different.
 
 1. Payment mode:
-- `FPC`: pay token every transaction via `fee_entrypoint(...)` (single immutable asset).
+- `FPC`: pay token every transaction via `fee_entrypoint(...)` (asset selected per quote).
 - `CreditFPC`: prepay token via `pay_and_mint(...)`, then reuse credit via `pay_with_credit()` (asset selected per quote).
 
 2. State model:
