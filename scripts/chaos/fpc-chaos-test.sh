@@ -9,7 +9,7 @@
 # API-only against devnet services (safe for production):
 #   FPC_CHAOS_ATTESTATION_URL=https://<host> \
 #   FPC_CHAOS_MANIFEST=./deployments/devnet-manifest-v2.json \
-#   bash scripts/services/fpc-chaos-test.sh
+#   bash scripts/chaos/fpc-chaos-test.sh
 #
 # Full suite against a running local network (mode defaults to api; set full for onchain+stress):
 #   FPC_CHAOS_MODE=full \
@@ -18,10 +18,10 @@
 #   FPC_CHAOS_NODE_URL=http://localhost:8080 \
 #   FPC_CHAOS_MANIFEST=./deployments/devnet-manifest-v2.json \
 #   FPC_CHAOS_OPERATOR_SECRET_KEY=0x<hex> \
-#   bash scripts/services/fpc-chaos-test.sh
+#   bash scripts/chaos/fpc-chaos-test.sh
 #
 # Optional: start a local network automatically before running:
-#   FPC_CHAOS_START_LOCAL_NETWORK=1 FPC_CHAOS_MODE=full ... bash scripts/services/fpc-chaos-test.sh
+#   FPC_CHAOS_START_LOCAL_NETWORK=1 FPC_CHAOS_MODE=full ... bash scripts/chaos/fpc-chaos-test.sh
 
 set -euo pipefail
 
@@ -36,7 +36,7 @@ SCRIPT_PGID="$(ps -o pgid= "$$" 2>/dev/null | tr -d '[:space:]')"
 
 function usage() {
   cat <<'EOF'
-Usage: bash scripts/services/fpc-chaos-test.sh [--help]
+Usage: bash scripts/chaos/fpc-chaos-test.sh [--help]
 
 Runs the FPC chaos / adversarial test suite.
 
@@ -59,7 +59,7 @@ Network bootstrap (optional):
   FPC_CHAOS_L1_HOST              L1 hostname (default: 127.0.0.1)
   FPC_CHAOS_L1_PORT              L1 port (default: 8545)
 
-Full env var reference: see scripts/services/fpc-chaos-test.ts
+Full env var reference: see scripts/chaos/fpc-chaos-test.ts
 EOF
 }
 
@@ -209,6 +209,6 @@ cd "$REPO_ROOT"
 
 echo "[fpc-chaos] Running chaos test suite (mode=$CHAOS_MODE)"
 (
-  cd "$REPO_ROOT/scripts"
-  bun run "./services/fpc-chaos-test.ts" "$@"
+  cd "$REPO_ROOT/scripts/chaos"
+  bun run "./fpc-chaos-test.ts" "$@"
 )

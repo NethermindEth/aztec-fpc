@@ -36,6 +36,7 @@ aztec-fpc/
 │   │   └── test/               ← Contract + service smoke harnesses
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
 ├── scripts/
+│   ├── chaos/                  ← FPC chaos / adversarial test suite (see scripts/chaos/README.md)
 │   ├── contract/               ← Deploy + contract smoke wrappers (FPC and CreditFPC)
 │   └── services/               ← Service-integrated smoke wrapper (fpc|credit|both)
 ├── vendor/
