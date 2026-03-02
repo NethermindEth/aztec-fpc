@@ -56,6 +56,7 @@ export type DevnetDeployManifest = {
     accepted_asset: string;
     fpc: string;
     credit_fpc: string;
+    faucet?: string;
   };
   operator: {
     address: string;
@@ -66,6 +67,12 @@ export type DevnetDeployManifest = {
     accepted_asset_deploy: string | null;
     fpc_deploy: string | null;
     credit_fpc_deploy: string | null;
+    faucet_deploy?: string | null;
+  };
+  faucet_config?: {
+    drip_amount: string;
+    cooldown_seconds: number;
+    initial_supply: string;
   };
   payment_mode?: string;
 };
@@ -485,6 +492,9 @@ function parseManifest(input: unknown): DevnetDeployManifest {
   }
 
   const contractsRaw = requireObject(input, "contracts", "manifest");
+  const faucetAddressRaw = hasOwn(contractsRaw, "faucet")
+    ? requireString(contractsRaw, "faucet", "manifest.contracts")
+    : undefined;
   const contracts = {
     accepted_asset: parseAztecAddress(
       requireString(contractsRaw, "accepted_asset", "manifest.contracts"),
@@ -498,6 +508,14 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       requireString(contractsRaw, "credit_fpc", "manifest.contracts"),
       "manifest.contracts.credit_fpc",
     ),
+    ...(faucetAddressRaw !== undefined
+      ? {
+          faucet: parseAztecAddress(
+            faucetAddressRaw,
+            "manifest.contracts.faucet",
+          ),
+        }
+      : {}),
   };
 
   const operatorRaw = requireObject(input, "operator", "manifest");
@@ -530,7 +548,56 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       txHashesRaw.credit_fpc_deploy,
       "manifest.tx_hashes.credit_fpc_deploy",
     ),
+    ...(hasOwn(txHashesRaw, "faucet_deploy")
+      ? {
+          faucet_deploy: parseTxHashOrNull(
+            txHashesRaw.faucet_deploy,
+            "manifest.tx_hashes.faucet_deploy",
+          ),
+        }
+      : {}),
   };
+
+  let faucetConfig: DevnetDeployManifest["faucet_config"];
+  if (hasOwn(input, "faucet_config")) {
+    const rawFc = requireObject(input, "faucet_config", "manifest");
+    const dripAmount = requireString(
+      rawFc,
+      "drip_amount",
+      "manifest.faucet_config",
+    );
+    const cooldownSecondsRaw = rawFc.cooldown_seconds;
+    const initialSupply = requireString(
+      rawFc,
+      "initial_supply",
+      "manifest.faucet_config",
+    );
+    if (!DECIMAL_UINT_PATTERN.test(dripAmount)) {
+      throw new ManifestValidationError(
+        "Invalid manifest.faucet_config.drip_amount: expected non-negative decimal integer",
+      );
+    }
+    if (
+      typeof cooldownSecondsRaw !== "number" ||
+      !Number.isInteger(cooldownSecondsRaw) ||
+      cooldownSecondsRaw < 0 ||
+      !Number.isSafeInteger(cooldownSecondsRaw)
+    ) {
+      throw new ManifestValidationError(
+        "Invalid manifest.faucet_config.cooldown_seconds: expected non-negative safe integer",
+      );
+    }
+    if (!DECIMAL_UINT_PATTERN.test(initialSupply)) {
+      throw new ManifestValidationError(
+        "Invalid manifest.faucet_config.initial_supply: expected non-negative decimal integer",
+      );
+    }
+    faucetConfig = {
+      drip_amount: dripAmount,
+      cooldown_seconds: cooldownSecondsRaw,
+      initial_supply: initialSupply,
+    };
+  }
 
   const paymentMode = optionalString(input, "payment_mode", "manifest");
 
@@ -557,6 +624,7 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     contracts,
     operator,
     tx_hashes: txHashes,
+    ...(faucetConfig ? { faucet_config: faucetConfig } : {}),
     ...(paymentMode ? { payment_mode: paymentMode } : {}),
   };
 }
