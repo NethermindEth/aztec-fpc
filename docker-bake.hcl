@@ -24,7 +24,7 @@ group "default" {
 }
 
 group "services" {
-  targets = ["attestation", "topup"]
+  targets = ["attestation", "topup", "deploy"]
 }
 
 target "_labels" {
@@ -89,8 +89,8 @@ target "deploy" {
   platforms  = PLATFORMS
   target     = "deploy"
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-deploy:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-deploy:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+    "${REGISTRY}nethermind/aztec-fpc-contract-deployment:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-deployment:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
 
