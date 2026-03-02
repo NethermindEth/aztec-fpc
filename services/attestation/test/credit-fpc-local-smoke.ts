@@ -478,7 +478,6 @@ async function main() {
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
-    token.address,
   ]).send({ from: operator });
   console.log(`[credit-smoke] credit_fpc=${creditFpc.address.toString()}`);
 
@@ -523,8 +522,7 @@ async function main() {
     creditFpc.address.toField(),
     token.address.toField(),
     new Fr(fjCreditAmount),
-    new Fr(config.rateNum),
-    new Fr(config.rateDen),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     user.toField(),
   ]);
@@ -563,11 +561,10 @@ async function main() {
     .pay_and_mint(
       token.address,
       transferAuthwitNonce,
-      config.rateNum,
-      config.rateDen,
+      fjCreditAmount,
+      aaPaymentAmount,
       validUntil,
       quoteSigBytes,
-      fjCreditAmount,
     )
     .getFunctionCall();
   const payAndMintPaymentMethod = {
@@ -666,8 +663,7 @@ async function main() {
     creditFpc.address.toField(),
     token.address.toField(),
     new Fr(fjCreditAmount),
-    new Fr(config.rateNum),
-    new Fr(config.rateDen),
+    new Fr(aaPaymentAmount),
     new Fr(negativeValidUntil),
     user.toField(),
   ]);
@@ -695,11 +691,10 @@ async function main() {
         .pay_and_mint(
           token.address,
           negativeTransferAuthwitNonce,
-          config.rateNum,
-          config.rateDen,
+          fjCreditAmount,
+          aaPaymentAmount,
           negativeValidUntil,
           negativeQuoteSigBytes,
-          fjCreditAmount,
         )
         .send({
           from: user,
@@ -787,6 +782,10 @@ async function main() {
 try {
   await main();
 } catch (error) {
-  console.error(`[credit-smoke] FAIL: ${(error as Error).message}`);
+  const err = error as Error;
+  console.error(`[credit-smoke] FAIL: ${err.message}`);
+  if (err.stack) {
+    console.error(err.stack);
+  }
   process.exit(1);
 }
