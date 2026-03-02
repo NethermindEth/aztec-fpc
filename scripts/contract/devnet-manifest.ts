@@ -12,7 +12,7 @@ const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-export type FpcArtifactName = "FPC" | "CreditFPC";
+export type FpcArtifactName = "FPC" | "FPCMultiAsset" | "CreditFPC";
 
 export type DevnetDeployManifest = {
   status: "deploy_ok";
@@ -501,9 +501,13 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       "name",
       "manifest.fpc_artifact",
     );
-    if (artifactName !== "FPC" && artifactName !== "CreditFPC") {
+    if (
+      artifactName !== "FPC" &&
+      artifactName !== "FPCMultiAsset" &&
+      artifactName !== "CreditFPC"
+    ) {
       throw new ManifestValidationError(
-        'Invalid manifest.fpc_artifact.name: expected "FPC" or "CreditFPC"',
+        'Invalid manifest.fpc_artifact.name: expected "FPC", "FPCMultiAsset", or "CreditFPC"',
       );
     }
     const artifactPath = requireString(
@@ -651,8 +655,8 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
       fpc: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     },
     fpc_artifact: {
-      name: "FPC",
-      path: "./target/fpc-FPC.json",
+      name: "FPCMultiAsset",
+      path: "./target/fpc-FPCMultiAsset.json",
     },
     operator: {
       address:

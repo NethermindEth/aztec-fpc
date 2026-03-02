@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeDevnetDeployManifest } from "./devnet-manifest.ts";
 
 type DeployEnvironment = "devnet" | "local";
-type FpcArtifactName = "FPC" | "CreditFPC";
+type FpcArtifactName = "FPC" | "FPCMultiAsset" | "CreditFPC";
 
 type CliArgs = {
   environment: DeployEnvironment;
@@ -132,9 +132,12 @@ const WALLET_SPONSORED_FPC_ALIAS = "sponsoredfpc";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
+const FPC_ARTIFACT_PATH_CANDIDATES = [
+  path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
+  path.join(REPO_ROOT, "target", "fpc-FPC.json"),
+] as const;
 const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
-  fpc: path.join(REPO_ROOT, "target", "fpc-FPC.json"),
   creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
 } as const;
 
@@ -154,7 +157,7 @@ function usage(): string {
     "    --deployer-alias <alias> \\",
     "    --deployer-private-key <hex32> | --deployer-private-key-ref <ref> \\",
     "    --operator-secret-key <hex32> | --operator-secret-key-ref <ref> \\",
-    "    --fpc-artifact <path/to/*-FPC.json|*-CreditFPC.json> \\",
+    "    --fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json|*-CreditFPC.json> \\",
     "    --out <path.json> \\",
     "    [--l1-rpc-url <url>] \\",
     "    [--operator <aztec_address>] \\",
@@ -171,6 +174,15 @@ function usage(): string {
     "    If both are provided, they must match.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
   ].join("\n");
+}
+
+function resolveDefaultFpcArtifactPath(): string {
+  for (const candidatePath of FPC_ARTIFACT_PATH_CANDIDATES) {
+    if (existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+  return FPC_ARTIFACT_PATH_CANDIDATES[0];
 }
 
 function nextArg(argv: string[], index: number, flag: string): string {
@@ -278,7 +290,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let acceptedAsset: string | null =
     process.env.FPC_DEVNET_ACCEPTED_ASSET ?? null;
   let fpcArtifact: string =
-    process.env.FPC_FPC_ARTIFACT ?? REQUIRED_ARTIFACTS.fpc;
+    process.env.FPC_FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
   let out: string | null =
     process.env.FPC_DEVNET_OUT ?? process.env.FPC_LOCAL_OUT ?? null;
   let preflightOnly = false;
@@ -1431,9 +1443,9 @@ function loadFpcArtifactSelection(
     );
   }
   const name = (parsed as { name: string }).name;
-  if (name !== "FPC" && name !== "CreditFPC") {
+  if (name !== "FPC" && name !== "FPCMultiAsset" && name !== "CreditFPC") {
     throw new CliError(
-      `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC" or "CreditFPC".`,
+      `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC", "FPCMultiAsset", or "CreditFPC".`,
     );
   }
   return { artifactPath, name };
