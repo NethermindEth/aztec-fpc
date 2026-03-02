@@ -55,7 +55,13 @@ const AztecAddressSchema = z
 
 const ConfigSchema = z.object({
   runtime_profile: RuntimeProfileSchema.default("development"),
+  /** Aztec network identifier exposed in wallet discovery metadata. */
+  network_id: z.string().trim().min(1).default("aztec-alpha-local"),
   fpc_address: AztecAddressSchema,
+  /** Contract flavor identifier exposed in wallet discovery metadata. */
+  contract_variant: z.string().trim().min(1).default("fpc-v1"),
+  /** Optional externally reachable base URL override for discovery clients. */
+  quote_base_url: z.string().url().optional(),
   aztec_node_url: AztecNodeUrlSchema.optional(),
   quote_validity_seconds: z
     .number()
@@ -67,6 +73,16 @@ const ConfigSchema = z.object({
   /** The single token contract address this FPC accepts. Must match accepted_asset in the deployed contract. */
   accepted_asset_address: AztecAddressSchema,
   accepted_asset_name: z.string(),
+  /** Optional discovery-only asset list for multi-asset metadata payloads. */
+  supported_assets: z
+    .array(
+      z.object({
+        address: AztecAddressSchema,
+        name: z.string().trim().min(1),
+      }),
+    )
+    .nonempty()
+    .optional(),
   /** Baseline exchange rate: accepted_asset units per 1 FeeJuice. */
   market_rate_num: z.number().int().positive(),
   market_rate_den: z.number().int().positive(),
