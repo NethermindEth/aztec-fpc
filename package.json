@@ -56,14 +56,12 @@
     "e2e:full-lifecycle:fpc:local": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
     "e2e:full-lifecycle:credit:local": "bash scripts/services/credit-fpc-full-lifecycle-e2e.sh",
 
-    "teardown": "pkill -f '[a]ztec' || true"
-    
+    "teardown": "pkill -f '[a]ztec' || true",
+
     "chaos:api": "FPC_CHAOS_MODE=api bun scripts/chaos/fpc-chaos-test.ts",
     "chaos:onchain": "FPC_CHAOS_MODE=onchain bun scripts/chaos/fpc-chaos-test.ts",
     "chaos:full": "FPC_CHAOS_MODE=full bun scripts/chaos/fpc-chaos-test.ts",
-    "chaos:local": "bash scripts/chaos/fpc-chaos-local.sh",
-    "teardown": "pkill -f '[a]ztec' || true",
-    "test": "bun run test:contracts && bun run test:ts"
+    "chaos:local": "bash scripts/chaos/fpc-chaos-local.sh"
   },
   "workspaces": [
     "scripts",
