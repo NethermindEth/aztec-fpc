@@ -81,8 +81,43 @@ export class SimpleWallet extends BaseWallet {
   }
 }
 
-// ── Sign a quote with the operator's Schnorr key ────────────────────────────
-export async function signQuote(schnorr, operatorSigningKey, fpcAddress, tokenAddress, rateNum, rateDen, validUntil, userAddress, quoteDomainSep) {
+// ── Sign amount-based quote with the operator's Schnorr key ─────────────────
+export async function signQuote(
+  schnorr,
+  operatorSigningKey,
+  fpcAddress,
+  tokenAddress,
+  fjFeeAmount,
+  aaPaymentAmount,
+  validUntil,
+  userAddress,
+  quoteDomainSep,
+) {
+  const quoteHash = await computeInnerAuthWitHash([
+    new Fr(quoteDomainSep),
+    fpcAddress.toField(),
+    tokenAddress.toField(),
+    new Fr(fjFeeAmount),
+    new Fr(aaPaymentAmount),
+    new Fr(validUntil),
+    userAddress.toField(),
+  ]);
+  const sig = await schnorr.constructSignature(quoteHash.toBuffer(), operatorSigningKey);
+  return Array.from(sig.toBuffer()).map(b => new Fr(b));
+}
+
+// ── Sign legacy rate-based quote with the operator's Schnorr key ────────────
+export async function signRateQuote(
+  schnorr,
+  operatorSigningKey,
+  fpcAddress,
+  tokenAddress,
+  rateNum,
+  rateDen,
+  validUntil,
+  userAddress,
+  quoteDomainSep,
+) {
   const quoteHash = await computeInnerAuthWitHash([
     new Fr(quoteDomainSep),
     fpcAddress.toField(),
