@@ -1244,8 +1244,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
       maxGasCostNoTeardown * args.fpcRateNum,
       args.fpcRateDen,
     );
-    const fpcRateNum = args.fpcRateNum;
-    const fpcRateDen = args.fpcRateDen;
+    const fpcFjAmount = maxGasCostNoTeardown;
     const fpcAaAmount = fpcExpectedCharge;
     await token.methods
       .mint_to_private(operatorAddress, fpcExpectedCharge + 1_000_000n)
@@ -1263,8 +1262,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
       QUOTE_DOMAIN_SEPARATOR,
       fpc.address.toField(),
       token.address.toField(),
-      new deps.Fr(fpcRateNum),
-      new deps.Fr(fpcRateDen),
+      new deps.Fr(fpcFjAmount),
+      new deps.Fr(fpcAaAmount),
       new deps.Fr(fpcValidUntil),
       operatorAddress.toField(),
     ]);
@@ -1288,8 +1287,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
       .fee_entrypoint(
         token.address,
         fpcAuthwitNonce,
-        fpcRateNum,
-        fpcRateDen,
+        fpcFjAmount,
+        fpcAaAmount,
         fpcValidUntil,
         fpcQuoteSigBytes,
       )
@@ -1358,8 +1357,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
       fpc.address.toField(),
       token.address.toField(),
       new deps.Fr(creditFjAmount),
-      new deps.Fr(args.creditRateNum),
-      new deps.Fr(args.creditRateDen),
+      new deps.Fr(creditAaAmount),
       new deps.Fr(creditValidUntil),
       operatorAddress.toField(),
     ]);
@@ -1383,11 +1381,10 @@ async function runSmoke(args: CliArgs): Promise<void> {
       .pay_and_mint(
         token.address,
         creditAuthwitNonce,
-        args.creditRateNum,
-        args.creditRateDen,
+        creditFjAmount,
+        creditAaAmount,
         creditValidUntil,
         creditQuoteSigBytes,
-        creditFjAmount,
       )
       .getFunctionCall();
     const creditPayAndMintMethod = {
