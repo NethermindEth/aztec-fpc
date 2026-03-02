@@ -1451,6 +1451,22 @@ function loadFpcArtifactSelection(
   return { artifactPath, name };
 }
 
+function buildFpcConstructorArgs(
+  selection: FpcArtifactSelection,
+  operatorIdentity: OperatorIdentity,
+  acceptedAssetAddress: string,
+): string[] {
+  const baseArgs = [
+    operatorIdentity.address,
+    operatorIdentity.pubkeyX,
+    operatorIdentity.pubkeyY,
+  ];
+  if (selection.name === "FPCMultiAsset") {
+    return baseArgs;
+  }
+  return [...baseArgs, acceptedAssetAddress];
+}
+
 function assertRequiredArtifactsExistForDevnet(
   selection: FpcArtifactSelection,
 ): void {
@@ -1622,12 +1638,11 @@ async function main(): Promise<void> {
     payment: paymentArg,
     artifactPath: fpcSelection.artifactPath,
     alias: `devnet-fpc-${aliasSuffix}`,
-    constructorArgs: [
-      operatorIdentity.address,
-      operatorIdentity.pubkeyX,
-      operatorIdentity.pubkeyY,
+    constructorArgs: buildFpcConstructorArgs(
+      fpcSelection,
+      operatorIdentity,
       acceptedAssetAddress,
-    ],
+    ),
     context: fpcSelection.name,
   });
   console.log(

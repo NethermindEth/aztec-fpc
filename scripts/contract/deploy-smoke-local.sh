@@ -6,6 +6,25 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/deploy-smoke-local.XXXXXX")"
 source "$REPO_ROOT/scripts/common/test-cleanup.sh"
 source "$REPO_ROOT/scripts/common/local-network.sh"
 
+resolve_default_fpc_artifact() {
+  if [[ -n "${FPC_FPC_ARTIFACT:-}" ]]; then
+    printf "%s\n" "${FPC_FPC_ARTIFACT}"
+    return
+  fi
+
+  local multi_asset_path="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
+  local legacy_path="$REPO_ROOT/target/fpc-FPC.json"
+  if [[ -f "$multi_asset_path" ]]; then
+    printf "%s\n" "$multi_asset_path"
+    return
+  fi
+  if [[ -f "$legacy_path" ]]; then
+    printf "%s\n" "$legacy_path"
+    return
+  fi
+  printf "%s\n" "$multi_asset_path"
+}
+
 function cleanup() {
   local node_port="${NODE_PORT:-${FPC_DEPLOY_SMOKE_NODE_PORT:-8080}}"
   local l1_port="${L1_PORT:-${FPC_DEPLOY_SMOKE_L1_PORT:-8545}}"
@@ -96,6 +115,7 @@ aztec compile --workspace --force
 DEPLOY_OUTPUT="${FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT:-$TMP_DIR/deploy-fpc-local.json}"
 AZTEC_NODE_URL="http://${NODE_HOST}:${NODE_PORT}"
 L1_RPC_URL="http://${L1_HOST}:${L1_PORT}"
+FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 # Defaults use sandbox test account 0 (well-known keys from aztec local devnet TEST_ACCOUNTS)
 OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
 DEPLOYER_PRIVATE_KEY="${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
@@ -110,7 +130,7 @@ cmd=(
   --deployer-alias "$DEPLOYER_ALIAS"
   --deployer-private-key "$DEPLOYER_PRIVATE_KEY"
   --operator-secret-key "$OPERATOR_SECRET_KEY"
-  --fpc-artifact "${FPC_FPC_ARTIFACT:-$REPO_ROOT/target/fpc-FPC.json}"
+  --fpc-artifact "$FPC_ARTIFACT"
   --out "$DEPLOY_OUTPUT"
 )
 if [[ -n "${FPC_LOCAL_ACCEPTED_ASSET:-}" ]]; then
