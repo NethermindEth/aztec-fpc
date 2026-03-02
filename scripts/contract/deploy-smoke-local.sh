@@ -96,21 +96,25 @@ aztec compile --workspace --force
 DEPLOY_OUTPUT="${FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT:-$TMP_DIR/deploy-fpc-local.json}"
 AZTEC_NODE_URL="http://${NODE_HOST}:${NODE_PORT}"
 L1_RPC_URL="http://${L1_HOST}:${L1_PORT}"
-OPERATOR="${FPC_LOCAL_OPERATOR:-0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72}"
+# Defaults use sandbox test account 0 (well-known keys from aztec local devnet TEST_ACCOUNTS)
+OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+DEPLOYER_PRIVATE_KEY="${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
 
 echo "[deploy-smoke] Running local deploy command (variant-specific FPC)"
 cmd=(
-  bunx tsx "$REPO_ROOT/scripts/contract/deploy-fpc-local-mode.ts"
-  --aztec-node-url "$AZTEC_NODE_URL"
+  bunx tsx "$REPO_ROOT/scripts/contract/deploy-fpc-devnet.ts"
+  --environment local
+  --node-url "$AZTEC_NODE_URL"
   --l1-rpc-url "$L1_RPC_URL"
-  --operator "$OPERATOR"
+  --deployer-alias "$DEPLOYER_ALIAS"
+  --deployer-private-key "$DEPLOYER_PRIVATE_KEY"
+  --operator-secret-key "$OPERATOR_SECRET_KEY"
+  --fpc-artifact "${FPC_FPC_ARTIFACT:-$REPO_ROOT/target/fpc-FPC.json}"
   --out "$DEPLOY_OUTPUT"
 )
 if [[ -n "${FPC_LOCAL_ACCEPTED_ASSET:-}" ]]; then
   cmd+=(--accepted-asset "${FPC_LOCAL_ACCEPTED_ASSET}")
-fi
-if [[ "${FPC_LOCAL_REUSE:-0}" == "1" ]]; then
-  cmd+=(--reuse)
 fi
 "${cmd[@]}"
 
@@ -120,9 +124,10 @@ if [[ ! -f "$DEPLOY_OUTPUT" ]]; then
 fi
 
 echo "[deploy-smoke] Running relay-aware local smoke checks"
-AZTEC_NODE_URL="$AZTEC_NODE_URL" \
-FPC_DEPLOY_SMOKE_L1_RPC_URL="$L1_RPC_URL" \
-FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT="$DEPLOY_OUTPUT" \
-  bun run "$REPO_ROOT/scripts/contract/deploy-fpc-local-smoke-mode.ts"
+bunx tsx "$REPO_ROOT/scripts/contract/devnet-postdeploy-smoke.ts" \
+  --manifest "$DEPLOY_OUTPUT" \
+  --l1-rpc-url "$L1_RPC_URL" \
+  --operator-secret-key "$OPERATOR_SECRET_KEY" \
+  --l1-operator-private-key "${FPC_DEPLOY_SMOKE_L1_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
 
 echo "[deploy-smoke] PASS: full local deploy smoke flow succeeded"
