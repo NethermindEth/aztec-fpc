@@ -249,7 +249,7 @@ critical for `pay_with_credit`. Key steps:
 1. Deploys Token + CreditFPC + Noop, bridges Fee Juice, registers senders
 2. **Sends a real `pay_and_mint` tx** to establish credit (must happen before
    profiling — see "Tag index pollution" below)
-3. Verifies the credit balance is visible, with a `dev_mint` fallback
+3. Verifies the credit balance is visible before continuing
 4. Prepares two `CreditFPCActionWrapper` instances (one per flow), each with
    its own fee payment method
 5. `getMethods()` returns both as `NamedBenchmarkedInteraction` items
@@ -260,7 +260,7 @@ with its own payment method.
 
 ### Issues & Solutions (CreditFPC)
 
-Three non-obvious issues were encountered when profiling with an embedded PXE
+Four non-obvious issues were encountered when profiling with an embedded PXE
 connected to the Aztec sandbox via RPC.
 
 #### 1. Archiver `getL2Tips()` cache lag
@@ -291,19 +291,10 @@ calls.
 replay. Two calls with the same `valid_until` produce the same nullifier and the
 second fails with "Existing nullifier".
 
-**Fix**: Each call uses a distinct `valid_until` value (real send, dev_mint
-fallback, and profiling each use `VALID_UNTIL`, `VALID_UNTIL + 5n`, `VALID_UNTIL + 10n`).
+**Fix**: Each call uses a distinct `valid_until` value (real send and profiling
+use `VALID_UNTIL` and `VALID_UNTIL + 10n`).
 
-#### 4. ONCHAIN_CONSTRAINED note discovery
-
-**Problem**: `pay_and_mint` delivers balance notes via `MessageDelivery.ONCHAIN_CONSTRAINED`
-(partial note mechanism). The embedded PXE may not reliably discover these notes.
-
-**Fix**: The contract includes a `dev_mint(amount)` function that delivers credit
-via `MessageDelivery.ONCHAIN_UNCONSTRAINED`. The script falls back to this if
-`balance_of` polling returns 0 after 10 attempts.
-
-#### 5. Fee Juice bridging
+#### 4. Fee Juice bridging
 
 **Problem**: CreditFPC needs Fee Juice bridged from L1 to L2 to act as a fee
 payer. The claim can fail transiently while the L1-to-L2 message propagates.

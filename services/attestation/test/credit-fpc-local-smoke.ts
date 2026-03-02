@@ -403,7 +403,7 @@ async function main() {
   const creditFpcArtifactPath = path.join(
     repoRoot,
     "target",
-    "credit_fpc-CreditFPC.json",
+    "credit_fpc-BackedCreditFPC.json",
   );
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
@@ -523,7 +523,8 @@ async function main() {
     creditFpc.address.toField(),
     token.address.toField(),
     new Fr(fjCreditAmount),
-    new Fr(aaPaymentAmount),
+    new Fr(config.rateNum),
+    new Fr(config.rateDen),
     new Fr(validUntil),
     user.toField(),
   ]);
@@ -562,10 +563,11 @@ async function main() {
     .pay_and_mint(
       token.address,
       transferAuthwitNonce,
-      fjCreditAmount,
-      aaPaymentAmount,
+      config.rateNum,
+      config.rateDen,
       validUntil,
       quoteSigBytes,
+      fjCreditAmount,
     )
     .getFunctionCall();
   const payAndMintPaymentMethod = {
@@ -664,7 +666,8 @@ async function main() {
     creditFpc.address.toField(),
     token.address.toField(),
     new Fr(fjCreditAmount),
-    new Fr(aaPaymentAmount),
+    new Fr(config.rateNum),
+    new Fr(config.rateDen),
     new Fr(negativeValidUntil),
     user.toField(),
   ]);
@@ -692,10 +695,11 @@ async function main() {
         .pay_and_mint(
           token.address,
           negativeTransferAuthwitNonce,
-          fjCreditAmount,
-          aaPaymentAmount,
+          config.rateNum,
+          config.rateDen,
           negativeValidUntil,
           negativeQuoteSigBytes,
+          fjCreditAmount,
         )
         .send({
           from: user,

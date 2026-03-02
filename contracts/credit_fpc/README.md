@@ -132,7 +132,6 @@ If authwit is missing or mismatched, the call fails.
 - `_refund(max_gas_cost, partial_note)` (`public`, `only_self`)
 - `balance_of(account)` (`utility`, unconstrained)
 - `quote_used(accepted_asset, fj_credit_amount, aa_payment_amount, valid_until, user_address)` (`utility`, unconstrained)
-- `dev_mint(amount)` (`private`, test-only helper)
 
 ## Gas-Cost Helpers
 

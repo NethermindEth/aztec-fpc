@@ -853,8 +853,9 @@ async function verifyAttestationAmountQuoteSignature(
   feePayerAddress: AztecAddress,
   tokenAddress: AztecAddress,
   user: AztecAddress,
-  fjAmount: bigint,
-  aaPaymentAmount: bigint,
+  mintAmount: bigint,
+  rateNum: bigint,
+  rateDen: bigint,
   validUntil: bigint,
   quoteSigBytes: number[],
   scenarioPrefix: string,
@@ -863,8 +864,9 @@ async function verifyAttestationAmountQuoteSignature(
     QUOTE_DOMAIN_SEPARATOR,
     feePayerAddress.toField(),
     tokenAddress.toField(),
-    new Fr(fjAmount),
-    new Fr(aaPaymentAmount),
+    new Fr(mintAmount),
+    new Fr(rateNum),
+    new Fr(rateDen),
     new Fr(validUntil),
     user.toField(),
   ]);
@@ -1225,7 +1227,8 @@ async function runServiceScenario(
         token.address,
         user,
         fjAmount,
-        aaPaymentAmount,
+        expectedRateNum,
+        expectedRateDen,
         validUntil,
         quoteSigBytes,
         scenarioPrefix,
@@ -1537,10 +1540,11 @@ async function runCreditFeeScenario(
     .pay_and_mint(
       token.address,
       transferAuthwitNonce,
-      fjCreditAmount,
-      aaPaymentAmount,
+      quote.rateNum,
+      quote.rateDen,
       quote.validUntil,
       quote.quoteSigBytes,
+      fjCreditAmount,
     )
     .getFunctionCall();
   const payAndMintPaymentMethod = {
@@ -1622,7 +1626,8 @@ async function runCreditFeeScenario(
     .quote_used(
       token.address,
       quote.fjAmount,
-      quote.aaPaymentAmount,
+      quote.rateNum,
+      quote.rateDen,
       quote.validUntil,
       user,
     )
@@ -1722,7 +1727,7 @@ async function main() {
     const creditFpcArtifactPath = path.join(
       repoRoot,
       "target",
-      "credit_fpc-CreditFPC.json",
+      "credit_fpc-BackedCreditFPC.json",
     );
     const tokenArtifact = loadArtifact(tokenArtifactPath);
     const fpcArtifact = needsFpc ? loadArtifact(fpcArtifactPath) : null;

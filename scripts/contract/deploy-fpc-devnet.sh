@@ -34,7 +34,7 @@ fi
 
 cd "${REPO_ROOT}"
 
-if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-CreditFPC.json || ( ! -f target/fpc-FPCMultiAsset.json && ! -f target/fpc-FPC.json ) ]]; then
+if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-BackedCreditFPC.json || ( ! -f target/fpc-FPCMultiAsset.json && ! -f target/fpc-FPC.json ) ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force
   FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
