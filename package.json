@@ -55,6 +55,9 @@
     "smoke:services:local": "bash scripts/services/fpc-services-smoke.sh",
     "e2e:full-lifecycle:fpc:local": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
     "e2e:full-lifecycle:credit:local": "bash scripts/services/credit-fpc-full-lifecycle-e2e.sh",
+    "e2e:full-lifecycle:fpc:compose": "bash scripts/services/full-lifecycle-compose.sh fpc",
+    "e2e:full-lifecycle:credit:compose": "bash scripts/services/full-lifecycle-compose.sh credit",
+    "e2e:full-lifecycle:compose": "bash scripts/services/full-lifecycle-compose.sh both",
 
     "teardown": "pkill -f '[a]ztec' || true",
 
