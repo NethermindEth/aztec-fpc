@@ -6,7 +6,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeDevnetDeployManifest } from "./devnet-manifest.ts";
 
 type DeployEnvironment = "devnet" | "local";
-type FpcArtifactName = "FPC" | "FPCMultiAsset" | "CreditFPC";
+type FpcArtifactName =
+  | "FPC"
+  | "FPCMultiAsset"
+  | "CreditFPC"
+  | "BackedCreditFPC";
 
 type CliArgs = {
   environment: DeployEnvironment;
@@ -138,7 +142,7 @@ const FPC_ARTIFACT_PATH_CANDIDATES = [
 ] as const;
 const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
-  creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
+  creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-BackedCreditFPC.json"),
 } as const;
 
 class CliError extends Error {
@@ -157,7 +161,7 @@ function usage(): string {
     "    --deployer-alias <alias> \\",
     "    --deployer-private-key <hex32> | --deployer-private-key-ref <ref> \\",
     "    --operator-secret-key <hex32> | --operator-secret-key-ref <ref> \\",
-    "    --fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json|*-CreditFPC.json> \\",
+    "    --fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json|*-BackedCreditFPC.json> \\",
     "    --out <path.json> \\",
     "    [--l1-rpc-url <url>] \\",
     "    [--operator <aztec_address>] \\",
@@ -1443,9 +1447,14 @@ function loadFpcArtifactSelection(
     );
   }
   const name = (parsed as { name: string }).name;
-  if (name !== "FPC" && name !== "FPCMultiAsset" && name !== "CreditFPC") {
+  if (
+    name !== "FPC" &&
+    name !== "FPCMultiAsset" &&
+    name !== "CreditFPC" &&
+    name !== "BackedCreditFPC"
+  ) {
     throw new CliError(
-      `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC", "FPCMultiAsset", or "CreditFPC".`,
+      `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC", "FPCMultiAsset", "CreditFPC", or "BackedCreditFPC".`,
     );
   }
   return { artifactPath, name };

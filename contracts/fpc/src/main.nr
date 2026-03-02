@@ -34,8 +34,7 @@ pub contract FPCMultiAsset {
     use token::Token;
 
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
-    // Quotes must expire within this many seconds from the tx anchor timestamp.
-    global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
+
 
     /// Packed configuration stored as a single PublicImmutable slot.
     /// 3 fields (no accepted_asset -- that is now a per-quote parameter).
@@ -92,11 +91,8 @@ pub contract FPCMultiAsset {
         valid_until: u64,
         quote_sig: [u8; 64],
     ) {
-        let max_fees = self.context.gas_settings().max_fees_per_gas;
-        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
-        if enforce_setup_phase {
-            assert(!self.context.in_revertible_phase(), "fee_entrypoint must run in setup phase");
-        }
+        // no phase check / enforcement necessary
+        // FPC only callable in setup
 
         let config = self.storage.config.read();
         let sender = self.msg_sender();
@@ -118,7 +114,7 @@ pub contract FPCMultiAsset {
         );
 
         let charge = fee_juice_to_asset(
-            get_max_gas_cost_no_teardown(self.context),
+            get_max_gas_cost(self.context),
             rate_num,
             rate_den,
         );
@@ -128,9 +124,7 @@ pub contract FPCMultiAsset {
             .call(self.context);
 
         self.context.set_as_fee_payer();
-        if enforce_setup_phase | !self.context.in_revertible_phase() {
-            self.context.end_setup();
-        }
+        self.context.end_setup();
     }
 
     // =========================================================================
@@ -169,19 +163,16 @@ pub contract FPCMultiAsset {
             "invalid quote signature",
         );
 
-        // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
         context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");
-        let quote_ttl = valid_until - anchor_ts;
-        assert(quote_ttl <= MAX_QUOTE_TTL_SECONDS, "quote ttl too large");
         context.set_expiration_timestamp(valid_until);
     }
 
     /// Maximum possible fee for this tx excluding teardown gas.
     #[contract_library_method]
-    fn get_max_gas_cost_no_teardown(context: &mut PrivateContext) -> u128 {
+    fn get_max_gas_cost(context: &mut PrivateContext) -> u128 {
         let s = context.gas_settings();
         s.max_fees_per_gas.fee_per_da_gas * (s.gas_limits.da_gas as u128)
             + s.max_fees_per_gas.fee_per_l2_gas * (s.gas_limits.l2_gas as u128)

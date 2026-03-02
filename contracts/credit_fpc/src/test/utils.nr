@@ -1,4 +1,4 @@
-use crate::CreditFPC;
+use crate::BackedCreditFPC;
 use aztec::{
     authwit::auth::compute_inner_authwit_hash,
     protocol::{address::AztecAddress, traits::ToField},
@@ -171,9 +171,9 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let pk = test_operator_pubkey();
-    let credit_fpc_initializer = CreditFPC::interface().constructor(operator, pk.x, pk.y);
+    let credit_fpc_initializer = BackedCreditFPC::interface().constructor(operator, pk.x, pk.y);
     let credit_fpc_address =
-        env.deploy("CreditFPC").with_public_initializer(operator, credit_fpc_initializer);
+        env.deploy("BackedCreditFPC").with_public_initializer(operator, credit_fpc_initializer);
 
     (env, credit_fpc_address, token_address, operator, user)
 }
@@ -183,6 +183,16 @@ pub unconstrained fn max_gas_cost_no_teardown(env: TestEnvironment) -> u128 {
         let s = context.gas_settings();
         s.max_fees_per_gas.fee_per_da_gas * (s.gas_limits.da_gas as u128)
             + s.max_fees_per_gas.fee_per_l2_gas * (s.gas_limits.l2_gas as u128)
+    })
+}
+
+pub unconstrained fn max_gas_cost(env: TestEnvironment) -> u128 {
+    env.private_context(|context| {
+        let s = context.gas_settings();
+        s.max_fees_per_gas.fee_per_da_gas
+            * (s.gas_limits.da_gas as u128 + s.teardown_gas_limits.da_gas as u128)
+            + s.max_fees_per_gas.fee_per_l2_gas
+                * (s.gas_limits.l2_gas as u128 + s.teardown_gas_limits.l2_gas as u128)
     })
 }
 
@@ -240,5 +250,9 @@ pub unconstrained fn credit_balance(
     credit_fpc_address: AztecAddress,
     account: AztecAddress,
 ) -> u128 {
-    env.simulate_utility(CreditFPC::at(credit_fpc_address).balance_of(account))
+    env.simulate_utility(BackedCreditFPC::at(credit_fpc_address).balance_of(account))
+}
+
+pub unconstrained fn total_unspent_credits(env: TestEnvironment, credit_fpc_address: AztecAddress) -> u128 {
+    env.simulate_utility(BackedCreditFPC::at(credit_fpc_address).totals())
 }
