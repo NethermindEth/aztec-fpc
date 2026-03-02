@@ -20,6 +20,7 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "typecheck": "bun run --workspaces --if-present typecheck",
+    "check:docs:quote-schema": "bash scripts/check-docs-quote-schema.sh",
     "test:services": "bun run test:ts",
     "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test",
     "test:contracts": "aztec compile --workspace --force && aztec test --package fpc && aztec test --package credit_fpc",

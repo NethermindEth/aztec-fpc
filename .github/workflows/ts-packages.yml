@@ -25,6 +25,9 @@ jobs:
       - name: Biome CI
         run: bun run biome:ci
 
+      - name: Docs quote schema guard
+        run: bun run check:docs:quote-schema
+
       - name: Typecheck
         run: bun run typecheck
 
