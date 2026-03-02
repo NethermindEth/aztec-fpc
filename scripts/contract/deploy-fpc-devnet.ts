@@ -1,21 +1,28 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeDevnetDeployManifest } from "./devnet-manifest.ts";
 
+type DeployEnvironment = "devnet" | "local";
+type FpcArtifactName = "FPC" | "CreditFPC";
+
 type CliArgs = {
+  environment: DeployEnvironment;
   nodeUrl: string;
   l1RpcUrl: string | null;
   validateTopupPath: boolean;
-  sponsoredFpcAddress: string;
-  deployerAlias: string;
+  sponsoredFpcAddress: string | null;
+  deployerAlias: string | null;
   deployerPrivateKey: string | null;
   deployerPrivateKeyRef: string | null;
   operatorSecretKey: string | null;
   operatorSecretKeyRef: string | null;
+  operator: string | null;
   acceptedAsset: string | null;
+  fpcArtifact: string;
+  reuse: boolean;
   out: string;
   preflightOnly: boolean;
 };
@@ -89,6 +96,23 @@ type ContractDeployResult = {
   txHash: string;
 };
 
+type FpcArtifactSelection = {
+  artifactPath: string;
+  name: FpcArtifactName;
+};
+
+type LocalLegacyDeployOutput = {
+  status?: unknown;
+  operator?: unknown;
+  accepted_asset?: unknown;
+  fpc_address?: unknown;
+  credit_fpc_address?: unknown;
+  deployer?: {
+    wallet_alias?: unknown;
+    address?: unknown;
+  };
+};
+
 type OperatorDerivationDeps = {
   getSchnorrAccountContractAddress: (
     secretKey: unknown,
@@ -125,6 +149,12 @@ const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   fpc: path.join(REPO_ROOT, "target", "fpc-FPC.json"),
   creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
+  localModeScript: path.join(
+    REPO_ROOT,
+    "scripts",
+    "contract",
+    "deploy-fpc-local-mode.ts",
+  ),
 } as const;
 
 class CliError extends Error {
@@ -138,22 +168,26 @@ function usage(): string {
   return [
     "Usage:",
     "  bunx tsx scripts/contract/deploy-fpc-devnet.ts \\",
+    "    --environment <devnet|local> \\",
     "    --node-url <url> \\",
-    "    --sponsored-fpc-address <aztec_address> \\",
-    "    --deployer-alias <alias> \\",
-    "    (--deployer-private-key <hex32> | --deployer-private-key-ref <ref>) \\",
-    "    (--operator-secret-key <hex32> | --operator-secret-key-ref <ref>) \\",
+    "    --fpc-artifact <path/to/*-FPC.json|*-CreditFPC.json> \\",
     "    --out <path.json> \\",
     "    [--l1-rpc-url <url>] \\",
+    "    [--operator <aztec_address>] \\",
+    "    [--reuse] \\",
+    "    [--sponsored-fpc-address <aztec_address>] \\",
+    "    [--deployer-alias <alias>] \\",
+    "    [--deployer-private-key <hex32> | --deployer-private-key-ref <ref>] \\",
+    "    [--operator-secret-key <hex32> | --operator-secret-key-ref <ref>] \\",
     "    [--validate-topup-path] \\",
     "    [--accepted-asset <aztec_address>] \\",
     "    [--preflight-only]",
     "",
     "Notes:",
-    "  - --l1-rpc-url is optional for deployment-only preflight.",
+    "  - local mode delegates deployment mechanics to local-mode deploy logic and normalizes output to a unified manifest.",
+    "  - devnet mode deploys Token (unless --accepted-asset is provided) and one FPC variant from --fpc-artifact.",
+    "  - --reuse is supported in local mode only.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
-    "  - In preflight mode, the script may register missing wallet aliases but sends no contract deploy txs.",
-    "  - Without --preflight-only, the script deploys Token (unless --accepted-asset is provided), FPC, and CreditFPC and writes a validated manifest.",
   ].join("\n");
 }
 
@@ -210,6 +244,15 @@ function parseHex32(value: string, fieldName: string): string {
   return value;
 }
 
+function parseEnvironment(value: string, fieldName: string): DeployEnvironment {
+  if (value === "devnet" || value === "local") {
+    return value;
+  }
+  throw new CliError(
+    `Invalid ${fieldName}: expected "devnet" or "local", got "${value}"`,
+  );
+}
+
 function parseSecretPair(
   rawValue: string | null,
   rawRef: string | null,
@@ -231,8 +274,11 @@ function parseSecretPair(
 }
 
 function parseCliArgs(argv: string[]): CliParseResult {
-  let nodeUrl: string | null = process.env.FPC_DEVNET_NODE_URL ?? null;
-  let l1RpcUrl: string | null = process.env.FPC_DEVNET_L1_RPC_URL ?? null;
+  let environmentRaw: string = process.env.FPC_DEPLOY_ENV ?? "devnet";
+  let nodeUrl: string | null =
+    process.env.FPC_DEVNET_NODE_URL ?? process.env.AZTEC_NODE_URL ?? null;
+  let l1RpcUrl: string | null =
+    process.env.FPC_DEVNET_L1_RPC_URL ?? process.env.L1_RPC_URL ?? null;
   let validateTopupPath = process.env.FPC_DEVNET_VALIDATE_TOPUP_PATH === "1";
   let sponsoredFpcAddress: string | null =
     process.env.FPC_DEVNET_SPONSORED_FPC_ADDRESS ?? null;
@@ -246,14 +292,24 @@ function parseCliArgs(argv: string[]): CliParseResult {
     process.env.FPC_DEVNET_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null =
     process.env.FPC_DEVNET_OPERATOR_SECRET_KEY_REF ?? null;
+  let operator: string | null = process.env.FPC_LOCAL_OPERATOR ?? null;
   let acceptedAsset: string | null =
     process.env.FPC_DEVNET_ACCEPTED_ASSET ?? null;
-  let out: string | null = process.env.FPC_DEVNET_OUT ?? null;
+  let fpcArtifact: string =
+    process.env.FPC_FPC_ARTIFACT ?? REQUIRED_ARTIFACTS.fpc;
+  let reuse = process.env.FPC_LOCAL_REUSE === "1";
+  let out: string | null =
+    process.env.FPC_DEVNET_OUT ?? process.env.FPC_LOCAL_OUT ?? null;
   let preflightOnly = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     switch (arg) {
+      case "--environment":
+      case "--env":
+        environmentRaw = nextArg(argv, i, arg);
+        i += 1;
+        break;
       case "--node-url":
         nodeUrl = nextArg(argv, i, arg);
         i += 1;
@@ -289,9 +345,20 @@ function parseCliArgs(argv: string[]): CliParseResult {
         operatorSecretKeyRef = nextArg(argv, i, arg);
         i += 1;
         break;
+      case "--operator":
+        operator = nextArg(argv, i, arg);
+        i += 1;
+        break;
       case "--accepted-asset":
         acceptedAsset = nextArg(argv, i, arg);
         i += 1;
+        break;
+      case "--fpc-artifact":
+        fpcArtifact = nextArg(argv, i, arg);
+        i += 1;
+        break;
+      case "--reuse":
+        reuse = true;
         break;
       case "--out":
         out = nextArg(argv, i, arg);
@@ -309,14 +376,16 @@ function parseCliArgs(argv: string[]): CliParseResult {
     }
   }
 
+  const environment = parseEnvironment(environmentRaw, "--environment");
+  if (!nodeUrl) {
+    nodeUrl = environment === "local" ? "http://127.0.0.1:8080" : null;
+  }
+  if (environment === "local" && !l1RpcUrl) {
+    l1RpcUrl = "http://127.0.0.1:8545";
+  }
+
   if (!nodeUrl) {
     throw new CliError("Missing required --node-url");
-  }
-  if (!sponsoredFpcAddress) {
-    throw new CliError("Missing required --sponsored-fpc-address");
-  }
-  if (!deployerAlias) {
-    throw new CliError("Missing required --deployer-alias");
   }
   if (!out) {
     throw new CliError("Missing required --out");
@@ -327,45 +396,79 @@ function parseCliArgs(argv: string[]): CliParseResult {
     );
   }
 
-  const parsedDeployer = parseSecretPair(
-    deployerPrivateKey,
-    deployerPrivateKeyRef,
-    "--deployer-private-key",
-    "--deployer-private-key-ref",
-  );
-  const parsedOperator = parseSecretPair(
-    operatorSecretKey,
-    operatorSecretKeyRef,
-    "--operator-secret-key",
-    "--operator-secret-key-ref",
-  );
+  let parsedDeployer: { value: string | null; ref: string | null } = {
+    value: null,
+    ref: null,
+  };
+  let parsedOperatorSecret: { value: string | null; ref: string | null } = {
+    value: null,
+    ref: null,
+  };
+  if (environment === "devnet") {
+    if (!sponsoredFpcAddress) {
+      throw new CliError("Missing required --sponsored-fpc-address");
+    }
+    if (!deployerAlias) {
+      throw new CliError("Missing required --deployer-alias");
+    }
+    parsedDeployer = parseSecretPair(
+      deployerPrivateKey,
+      deployerPrivateKeyRef,
+      "--deployer-private-key",
+      "--deployer-private-key-ref",
+    );
+    parsedOperatorSecret = parseSecretPair(
+      operatorSecretKey,
+      operatorSecretKeyRef,
+      "--operator-secret-key",
+      "--operator-secret-key-ref",
+    );
+  }
+
+  const parsedNodeUrl = parseHttpUrl(nodeUrl, "--node-url");
+  const parsedL1Rpc = l1RpcUrl ? parseHttpUrl(l1RpcUrl, "--l1-rpc-url") : null;
+  const parsedOperator =
+    operator !== null ? parseAztecAddress(operator, "--operator") : null;
+  if (environment === "local" && !parsedOperator) {
+    throw new CliError(
+      "Missing required --operator for local mode. Provide --operator <aztec_address> or set FPC_LOCAL_OPERATOR.",
+    );
+  }
 
   return {
     kind: "args",
     args: {
-      nodeUrl: parseHttpUrl(nodeUrl, "--node-url"),
-      l1RpcUrl: l1RpcUrl ? parseHttpUrl(l1RpcUrl, "--l1-rpc-url") : null,
+      environment,
+      nodeUrl: parsedNodeUrl,
+      l1RpcUrl: parsedL1Rpc,
       validateTopupPath,
-      sponsoredFpcAddress: parseAztecAddress(
-        sponsoredFpcAddress,
-        "--sponsored-fpc-address",
-      ),
-      deployerAlias: parseNonEmptyString(deployerAlias, "--deployer-alias"),
+      sponsoredFpcAddress: sponsoredFpcAddress
+        ? parseAztecAddress(sponsoredFpcAddress, "--sponsored-fpc-address")
+        : null,
+      deployerAlias: deployerAlias
+        ? parseNonEmptyString(deployerAlias, "--deployer-alias")
+        : null,
       deployerPrivateKey: parsedDeployer.value
         ? parseHex32(parsedDeployer.value, "--deployer-private-key")
         : null,
       deployerPrivateKeyRef: parsedDeployer.ref
         ? parseNonEmptyString(parsedDeployer.ref, "--deployer-private-key-ref")
         : null,
-      operatorSecretKey: parsedOperator.value
-        ? parseHex32(parsedOperator.value, "--operator-secret-key")
+      operatorSecretKey: parsedOperatorSecret.value
+        ? parseHex32(parsedOperatorSecret.value, "--operator-secret-key")
         : null,
-      operatorSecretKeyRef: parsedOperator.ref
-        ? parseNonEmptyString(parsedOperator.ref, "--operator-secret-key-ref")
+      operatorSecretKeyRef: parsedOperatorSecret.ref
+        ? parseNonEmptyString(
+            parsedOperatorSecret.ref,
+            "--operator-secret-key-ref",
+          )
         : null,
+      operator: parsedOperator,
       acceptedAsset: acceptedAsset
         ? parseAztecAddress(acceptedAsset, "--accepted-asset")
         : null,
+      fpcArtifact: parseNonEmptyString(fpcArtifact, "--fpc-artifact"),
+      reuse,
       out,
       preflightOnly,
     },
@@ -516,12 +619,16 @@ function parsePositiveInteger(
 }
 
 function parseNodeVersion(value: unknown): string {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new CliError(
-      `Aztec node preflight failed: invalid nodeVersion=${String(value)}`,
-    );
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (normalized.length > 0) {
+      return normalized;
+    }
   }
-  return value;
+
+  // Some local-network builds report empty nodeVersion while otherwise healthy.
+  // Treat version as best-effort metadata instead of blocking deployment preflight.
+  return "unknown";
 }
 
 function parseNonZeroL1Address(value: unknown, fieldName: string): string {
@@ -758,6 +865,12 @@ function isCreateAccountConflict(message: string): boolean {
 }
 
 function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
+  if (!args.deployerAlias) {
+    throw new CliError("Missing required --deployer-alias");
+  }
+  if (!args.sponsoredFpcAddress) {
+    throw new CliError("Missing required --sponsored-fpc-address");
+  }
   const alias = normalizeDeployerAlias(args.deployerAlias);
   const existing = tryGetWalletAliasAddress(args.nodeUrl, alias.walletAlias);
   if (existing) {
@@ -1332,16 +1445,59 @@ async function assertL1RpcReachable(l1RpcUrl: string): Promise<number> {
   }
 }
 
-function assertRequiredArtifactsExist(): void {
+function loadFpcArtifactSelection(
+  artifactPathInput: string,
+): FpcArtifactSelection {
+  const artifactPath = path.resolve(artifactPathInput);
+  if (!existsSync(artifactPath)) {
+    throw new CliError(
+      `FPC artifact not found: ${artifactPath}. Run 'aztec compile --workspace --force' and retry.`,
+    );
+  }
+  let raw: string;
+  try {
+    raw = readFileSync(artifactPath, "utf8");
+  } catch (error) {
+    throw new CliError(
+      `Failed to read --fpc-artifact at ${artifactPath}: ${String(error)}`,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new CliError(
+      `FPC artifact at ${artifactPath} is not valid JSON: ${String(error)}`,
+    );
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !("name" in parsed) ||
+    typeof (parsed as { name?: unknown }).name !== "string"
+  ) {
+    throw new CliError(
+      `Invalid --fpc-artifact at ${artifactPath}: expected JSON artifact with string "name"`,
+    );
+  }
+  const name = (parsed as { name: string }).name;
+  if (name !== "FPC" && name !== "CreditFPC") {
+    throw new CliError(
+      `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC" or "CreditFPC".`,
+    );
+  }
+  return { artifactPath, name };
+}
+
+function assertRequiredArtifactsExistForDevnet(
+  selection: FpcArtifactSelection,
+): void {
   const missing: string[] = [];
   if (!existsSync(REQUIRED_ARTIFACTS.token)) {
     missing.push(REQUIRED_ARTIFACTS.token);
   }
-  if (!existsSync(REQUIRED_ARTIFACTS.fpc)) {
-    missing.push(REQUIRED_ARTIFACTS.fpc);
-  }
-  if (!existsSync(REQUIRED_ARTIFACTS.creditFpc)) {
-    missing.push(REQUIRED_ARTIFACTS.creditFpc);
+  if (!existsSync(selection.artifactPath)) {
+    missing.push(selection.artifactPath);
   }
   if (missing.length > 0) {
     const formatted = missing.map((entry) => `  - ${entry}`).join("\n");
@@ -1351,14 +1507,226 @@ function assertRequiredArtifactsExist(): void {
   }
 }
 
+function parseLegacyLocalOutput(outPath: string): LocalLegacyDeployOutput {
+  let raw: string;
+  try {
+    raw = readFileSync(outPath, "utf8");
+  } catch (error) {
+    throw new CliError(
+      `Failed to read local deploy output at ${outPath}: ${String(error)}`,
+    );
+  }
+  try {
+    return JSON.parse(raw) as LocalLegacyDeployOutput;
+  } catch (error) {
+    throw new CliError(
+      `Local deploy output at ${outPath} is not valid JSON: ${String(error)}`,
+    );
+  }
+}
+
+function runLocalModeDeploy(
+  args: CliArgs,
+  fpcSelection: FpcArtifactSelection,
+): Promise<void> {
+  if (!args.operator) {
+    throw new CliError("Local mode requires --operator");
+  }
+  const l1RpcUrl = args.l1RpcUrl;
+  if (!l1RpcUrl) {
+    throw new CliError("Local mode requires --l1-rpc-url");
+  }
+  return (async () => {
+    let nodeState: NodePreflightState;
+    try {
+      nodeState = await assertAztecNodePreflight(args.nodeUrl);
+    } catch (error) {
+      throw new CliError(
+        `Local mode preflight failed for Aztec node at ${args.nodeUrl}. Start local network with 'aztec start --local-network' (or let wrapper auto-start), then retry. Underlying error: ${String(error)}`,
+      );
+    }
+
+    let l1RpcChainId: number;
+    try {
+      l1RpcChainId = await assertL1RpcReachable(l1RpcUrl);
+    } catch (error) {
+      throw new CliError(
+        `Local mode preflight failed: could not reach L1 RPC at ${l1RpcUrl}. Start Anvil/local network first or set L1_RPC_URL/FPC_DEVNET_L1_RPC_URL. Underlying error: ${String(error)}`,
+      );
+    }
+
+    if (l1RpcChainId !== nodeState.l1ChainId) {
+      throw new CliError(
+        `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeState.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${l1RpcUrl}`,
+      );
+    }
+
+    const legacyOutPath = `${args.out}.legacy-local.json`;
+    const localDeployArgs = [
+      "tsx",
+      REQUIRED_ARTIFACTS.localModeScript,
+      "--aztec-node-url",
+      args.nodeUrl,
+      "--l1-rpc-url",
+      args.l1RpcUrl,
+      "--operator",
+      args.operator,
+      "--out",
+      legacyOutPath,
+      ...(args.acceptedAsset ? ["--accepted-asset", args.acceptedAsset] : []),
+      ...(args.reuse ? ["--reuse"] : []),
+    ];
+
+    try {
+      execFileSync("bunx", localDeployArgs, {
+        cwd: REPO_ROOT,
+        stdio: "inherit",
+      });
+    } catch (error) {
+      throw new CliError(
+        `Local mode deployment failed while executing local deploy logic. See logs above. Underlying error: ${String(error)}`,
+      );
+    }
+
+    const localOutput = parseLegacyLocalOutput(legacyOutPath);
+    const outputStatus = localOutput.status;
+    if (outputStatus !== "deploy_ok") {
+      throw new CliError(
+        `Local mode deployment output status is invalid: expected "deploy_ok", got ${String(outputStatus)}`,
+      );
+    }
+
+    const operatorAddress = parseAztecAddress(
+      String(localOutput.operator ?? ""),
+      "local deploy output operator",
+    );
+    const acceptedAssetAddress = parseAztecAddress(
+      String(localOutput.accepted_asset ?? ""),
+      "local deploy output accepted_asset",
+    );
+    const fpcAddress = parseAztecAddress(
+      String(localOutput.fpc_address ?? ""),
+      "local deploy output fpc_address",
+    );
+    const creditFpcAddress = parseAztecAddress(
+      String(localOutput.credit_fpc_address ?? ""),
+      "local deploy output credit_fpc_address",
+    );
+
+    const selectedFpcAddress =
+      fpcSelection.name === "FPC" ? fpcAddress : creditFpcAddress;
+
+    const deployerAlias =
+      localOutput.deployer &&
+      typeof localOutput.deployer.wallet_alias === "string" &&
+      localOutput.deployer.wallet_alias.length > 0
+        ? localOutput.deployer.wallet_alias
+        : "test0";
+    const deployerAddress =
+      localOutput.deployer &&
+      typeof localOutput.deployer.address === "string" &&
+      AZTEC_ADDRESS_PATTERN.test(localOutput.deployer.address)
+        ? localOutput.deployer.address
+        : operatorAddress;
+
+    writeDevnetDeployManifest(args.out, {
+      status: "deploy_ok",
+      generated_at: new Date().toISOString(),
+      deployment_environment: "local",
+      network: {
+        node_url: args.nodeUrl,
+        node_version: nodeState.nodeVersion,
+        l1_chain_id: nodeState.l1ChainId,
+        rollup_version: nodeState.rollupVersion,
+      },
+      aztec_required_addresses: {
+        l1_contract_addresses: {
+          registryAddress: nodeState.l1ContractAddresses.registryAddress,
+          rollupAddress: nodeState.l1ContractAddresses.rollupAddress,
+          inboxAddress: nodeState.l1ContractAddresses.inboxAddress,
+          outboxAddress: nodeState.l1ContractAddresses.outboxAddress,
+          feeJuiceAddress: nodeState.l1ContractAddresses.feeJuiceAddress,
+          feeJuicePortalAddress:
+            nodeState.l1ContractAddresses.feeJuicePortalAddress,
+          feeAssetHandlerAddress:
+            nodeState.l1ContractAddresses.feeAssetHandlerAddress,
+        },
+        protocol_contract_addresses: {
+          instanceRegistry:
+            nodeState.protocolContractAddresses.instanceRegistry,
+          classRegistry: nodeState.protocolContractAddresses.classRegistry,
+          multiCallEntrypoint:
+            nodeState.protocolContractAddresses.multiCallEntrypoint,
+          feeJuice: nodeState.protocolContractAddresses.feeJuice,
+        },
+      },
+      deployment_accounts: {
+        l2_deployer: {
+          alias: deployerAlias,
+          address: deployerAddress,
+          private_key_ref: "local:test-account",
+        },
+      },
+      contracts: {
+        accepted_asset: acceptedAssetAddress,
+        fpc: selectedFpcAddress,
+      },
+      fpc_artifact: {
+        name: fpcSelection.name,
+        path: fpcSelection.artifactPath,
+      },
+      operator: {
+        address: operatorAddress,
+        pubkey_x: "0",
+        pubkey_y: "0",
+      },
+      tx_hashes: {
+        accepted_asset_deploy: null,
+        fpc_deploy: null,
+      },
+      payment_mode: "fee_juice",
+    });
+    console.log(
+      `[deploy-fpc-devnet] local-mode deployment completed. wrote manifest to ${path.resolve(args.out)}`,
+    );
+    console.log(
+      `[deploy-fpc-devnet] output contracts: accepted_asset=${acceptedAssetAddress} fpc=${selectedFpcAddress} variant=${fpcSelection.name}`,
+    );
+  })();
+}
+
 async function main(): Promise<void> {
   const parseResult = parseCliArgs(process.argv.slice(2));
   if (parseResult.kind === "help") {
     return;
   }
   const args = parseResult.args;
+  const fpcSelection = loadFpcArtifactSelection(args.fpcArtifact);
 
-  console.log("[deploy-fpc-devnet] starting preflight checks");
+  if (args.environment === "local") {
+    console.log("[deploy-fpc-devnet] starting local-mode deploy flow");
+    console.log(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
+    console.log(`[deploy-fpc-devnet] l1_rpc_url=${args.l1RpcUrl}`);
+    console.log(`[deploy-fpc-devnet] operator=${args.operator}`);
+    console.log(`[deploy-fpc-devnet] reuse=${String(args.reuse)}`);
+    console.log(
+      `[deploy-fpc-devnet] fpc_artifact=${fpcSelection.artifactPath} variant=${fpcSelection.name}`,
+    );
+    console.log(
+      `[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`,
+    );
+    await runLocalModeDeploy(args, fpcSelection);
+    return;
+  }
+
+  if (!args.sponsoredFpcAddress) {
+    throw new CliError("Missing required --sponsored-fpc-address");
+  }
+  if (!args.deployerAlias) {
+    throw new CliError("Missing required --deployer-alias");
+  }
+
+  console.log("[deploy-fpc-devnet] starting devnet preflight checks");
   console.log(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
   console.log(
     `[deploy-fpc-devnet] l1_rpc_url=${args.l1RpcUrl ?? "<not provided>"}`,
@@ -1371,10 +1739,13 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] accepted_asset=${args.acceptedAsset ?? "<deploy token>"}`,
   );
   console.log(
+    `[deploy-fpc-devnet] fpc_artifact=${fpcSelection.artifactPath} variant=${fpcSelection.name}`,
+  );
+  console.log(
     `[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`,
   );
 
-  assertRequiredArtifactsExist();
+  assertRequiredArtifactsExistForDevnet(fpcSelection);
   console.log("[deploy-fpc-devnet] artifact preflight passed");
 
   const nodeState = await assertAztecNodePreflight(args.nodeUrl);
@@ -1473,12 +1844,14 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log("[deploy-fpc-devnet] deploying FPC contract");
+  console.log(
+    `[deploy-fpc-devnet] deploying ${fpcSelection.name} contract from ${fpcSelection.artifactPath}`,
+  );
   const fpcDeploy = await deployContractWithAztecWallet({
     nodeUrl: args.nodeUrl,
     fromAlias: deployer.walletAlias,
     sponsoredFpcAddress: args.sponsoredFpcAddress,
-    artifactPath: REQUIRED_ARTIFACTS.fpc,
+    artifactPath: fpcSelection.artifactPath,
     alias: `devnet-fpc-${aliasSuffix}`,
     constructorArgs: [
       operatorIdentity.address,
@@ -1486,34 +1859,16 @@ async function main(): Promise<void> {
       operatorIdentity.pubkeyY,
       acceptedAssetAddress,
     ],
-    context: "FPC",
+    context: fpcSelection.name,
   });
   console.log(
     `[deploy-fpc-devnet] fpc deployed. address=${fpcDeploy.address} tx_hash=${fpcDeploy.txHash}`,
   );
 
-  console.log("[deploy-fpc-devnet] deploying CreditFPC contract");
-  const creditFpcDeploy = await deployContractWithAztecWallet({
-    nodeUrl: args.nodeUrl,
-    fromAlias: deployer.walletAlias,
-    sponsoredFpcAddress: args.sponsoredFpcAddress,
-    artifactPath: REQUIRED_ARTIFACTS.creditFpc,
-    alias: `devnet-credit-fpc-${aliasSuffix}`,
-    constructorArgs: [
-      operatorIdentity.address,
-      operatorIdentity.pubkeyX,
-      operatorIdentity.pubkeyY,
-      acceptedAssetAddress,
-    ],
-    context: "CreditFPC",
-  });
-  console.log(
-    `[deploy-fpc-devnet] credit_fpc deployed. address=${creditFpcDeploy.address} tx_hash=${creditFpcDeploy.txHash}`,
-  );
-
   const manifest = writeDevnetDeployManifest(args.out, {
     status: "deploy_ok",
     generated_at: new Date().toISOString(),
+    deployment_environment: "devnet",
     network: {
       node_url: args.nodeUrl,
       node_version: nodeState.nodeVersion,
@@ -1553,7 +1908,10 @@ async function main(): Promise<void> {
     contracts: {
       accepted_asset: acceptedAssetAddress,
       fpc: fpcDeploy.address,
-      credit_fpc: creditFpcDeploy.address,
+    },
+    fpc_artifact: {
+      name: fpcSelection.name,
+      path: fpcSelection.artifactPath,
     },
     operator: {
       address: operatorIdentity.address,
@@ -1563,7 +1921,6 @@ async function main(): Promise<void> {
     tx_hashes: {
       accepted_asset_deploy: acceptedAssetDeployTxHash,
       fpc_deploy: fpcDeploy.txHash,
-      credit_fpc_deploy: creditFpcDeploy.txHash,
     },
     payment_mode: paymentMode,
   });
@@ -1572,7 +1929,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
   console.log(
-    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} credit_fpc=${manifest.contracts.credit_fpc}`,
+    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${fpcSelection.name}`,
   );
 }
 

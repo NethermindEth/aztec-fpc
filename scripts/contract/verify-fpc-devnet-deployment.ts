@@ -73,7 +73,7 @@ function usage(): string {
     "  FPC_DEVNET_VERIFY_NODE_READY_TIMEOUT_MS (default: 45000)",
     "",
     "Checks performed:",
-    "  1) Contract existence on node for accepted_asset, fpc, credit_fpc",
+    "  1) Contract existence on node for accepted_asset and fpc",
     "  2) FPC immutable initialization hash verification",
     "  3) Contract instance readiness (published + non-zero initialization hash)",
     "  4) Contract class readiness (class publicly registered)",
@@ -370,10 +370,6 @@ async function verifyAttempt(params: {
       key: "fpc",
       address: manifest.contracts.fpc,
     },
-    {
-      key: "credit_fpc",
-      address: manifest.contracts.credit_fpc,
-    },
   ] as const;
 
   const parsedAddresses = new Map<string, unknown>();
@@ -478,7 +474,7 @@ async function main(): Promise<void> {
   );
   const manifest = readManifestFromDisk(args.manifestPath);
   console.log(
-    `[verify-fpc-devnet] loaded manifest for node=${manifest.network.node_url} fpc=${manifest.contracts.fpc} credit_fpc=${manifest.contracts.credit_fpc}`,
+    `[verify-fpc-devnet] loaded manifest for node=${manifest.network.node_url} fpc=${manifest.contracts.fpc}`,
   );
 
   const deps = await loadAztecDeps();
@@ -529,7 +525,7 @@ async function main(): Promise<void> {
         `[verify-fpc-devnet] verification passed on attempt ${attempt}/${args.maxAttempts}`,
       );
       console.log(
-        `[verify-fpc-devnet] contracts ready: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} credit_fpc=${manifest.contracts.credit_fpc}`,
+        `[verify-fpc-devnet] contracts ready: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc}`,
       );
       return;
     }

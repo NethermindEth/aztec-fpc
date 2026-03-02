@@ -155,7 +155,7 @@ const REQUIRED_ARTIFACTS = {
 function usage(): string {
   return [
     "Usage:",
-    "  bunx tsx scripts/contract/deploy-fpc-local.ts \\",
+    "  bunx tsx scripts/contract/deploy-fpc-local-mode.ts \\",
     "    --operator <aztec_address> \\",
     "    --out <path.json> \\",
     "    [--aztec-node-url <url>] \\",
