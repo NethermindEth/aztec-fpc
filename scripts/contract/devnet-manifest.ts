@@ -12,9 +12,12 @@ const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
+export type FpcArtifactName = "FPC" | "CreditFPC";
+
 export type DevnetDeployManifest = {
   status: "deploy_ok";
   generated_at: string;
+  deployment_environment?: "local" | "devnet";
   network: {
     node_url: string;
     node_version: string;
@@ -37,7 +40,7 @@ export type DevnetDeployManifest = {
       multiCallEntrypoint: string;
       feeJuice: string;
     };
-    sponsored_fpc_address: string;
+    sponsored_fpc_address?: string;
   };
   deployment_accounts: {
     l2_deployer: {
@@ -55,7 +58,10 @@ export type DevnetDeployManifest = {
   contracts: {
     accepted_asset: string;
     fpc: string;
-    credit_fpc: string;
+  };
+  fpc_artifact?: {
+    name: FpcArtifactName;
+    path: string;
   };
   operator: {
     address: string;
@@ -65,40 +71,9 @@ export type DevnetDeployManifest = {
   tx_hashes: {
     accepted_asset_deploy: string | null;
     fpc_deploy: string | null;
-    credit_fpc_deploy: string | null;
   };
   payment_mode?: string;
 };
-
-export type LegacyDeployOutputCompat = {
-  aztec_node_url: string;
-  l1_chain_id: number;
-  operator_address: string;
-  accepted_asset: string;
-  fpc_address: string;
-  credit_fpc_address: string;
-  node_contracts: {
-    fee_juice_portal_address: string;
-    fee_juice_address: string;
-  };
-  deploy: {
-    token: {
-      address: string;
-      source: "deployed" | "provided" | "reused";
-    };
-    fpc: {
-      address: string;
-      source: "deployed" | "reused";
-    };
-    credit_fpc: {
-      address: string;
-      source: "deployed" | "reused";
-    };
-  };
-};
-
-export type DevnetDeployManifestWithCompat = DevnetDeployManifest &
-  LegacyDeployOutputCompat;
 
 class ManifestValidationError extends Error {
   constructor(message: string) {
@@ -292,6 +267,22 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     );
   }
 
+  const environmentRaw = optionalString(
+    input,
+    "deployment_environment",
+    "manifest",
+  );
+  const deploymentEnvironment =
+    environmentRaw === undefined
+      ? undefined
+      : environmentRaw === "local" || environmentRaw === "devnet"
+        ? environmentRaw
+        : (() => {
+            throw new ManifestValidationError(
+              'Invalid manifest.deployment_environment: expected "local" or "devnet"',
+            );
+          })();
+
   const networkRaw = requireObject(input, "network", "manifest");
   const network = {
     node_url: requireHttpUrl(networkRaw, "node_url", "manifest.network"),
@@ -321,6 +312,12 @@ function parseManifest(input: unknown): DevnetDeployManifest {
   const protocolContractsRaw = requireObject(
     aztecAddressesRaw,
     "protocol_contract_addresses",
+    "manifest.aztec_required_addresses",
+  );
+
+  const sponsoredFpcAddressRaw = optionalString(
+    aztecAddressesRaw,
+    "sponsored_fpc_address",
     "manifest.aztec_required_addresses",
   );
 
@@ -494,11 +491,31 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       requireString(contractsRaw, "fpc", "manifest.contracts"),
       "manifest.contracts.fpc",
     ),
-    credit_fpc: parseAztecAddress(
-      requireString(contractsRaw, "credit_fpc", "manifest.contracts"),
-      "manifest.contracts.credit_fpc",
-    ),
   };
+
+  let fpcArtifact: DevnetDeployManifest["fpc_artifact"];
+  if (hasOwn(input, "fpc_artifact")) {
+    const fpcArtifactRaw = requireObject(input, "fpc_artifact", "manifest");
+    const artifactName = requireString(
+      fpcArtifactRaw,
+      "name",
+      "manifest.fpc_artifact",
+    );
+    if (artifactName !== "FPC" && artifactName !== "CreditFPC") {
+      throw new ManifestValidationError(
+        'Invalid manifest.fpc_artifact.name: expected "FPC" or "CreditFPC"',
+      );
+    }
+    const artifactPath = requireString(
+      fpcArtifactRaw,
+      "path",
+      "manifest.fpc_artifact",
+    );
+    fpcArtifact = {
+      name: artifactName,
+      path: artifactPath,
+    };
+  }
 
   const operatorRaw = requireObject(input, "operator", "manifest");
   const operator = {
@@ -526,10 +543,6 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       txHashesRaw.fpc_deploy,
       "manifest.tx_hashes.fpc_deploy",
     ),
-    credit_fpc_deploy: parseTxHashOrNull(
-      txHashesRaw.credit_fpc_deploy,
-      "manifest.tx_hashes.credit_fpc_deploy",
-    ),
   };
 
   const paymentMode = optionalString(input, "payment_mode", "manifest");
@@ -537,80 +550,31 @@ function parseManifest(input: unknown): DevnetDeployManifest {
   return {
     status: "deploy_ok",
     generated_at: requireIsoTimestamp(input, "generated_at", "manifest"),
+    ...(deploymentEnvironment
+      ? { deployment_environment: deploymentEnvironment }
+      : {}),
     network,
     aztec_required_addresses: {
       l1_contract_addresses: l1ContractAddresses,
       protocol_contract_addresses: protocolContractAddresses,
-      sponsored_fpc_address: parseAztecAddress(
-        requireString(
-          aztecAddressesRaw,
-          "sponsored_fpc_address",
-          "manifest.aztec_required_addresses",
-        ),
-        "manifest.aztec_required_addresses.sponsored_fpc_address",
-      ),
+      ...(sponsoredFpcAddressRaw
+        ? {
+            sponsored_fpc_address: parseAztecAddress(
+              sponsoredFpcAddressRaw,
+              "manifest.aztec_required_addresses.sponsored_fpc_address",
+            ),
+          }
+        : {}),
     },
     deployment_accounts: {
       l2_deployer: l2Deployer,
       ...(l1TopupOperator ? { l1_topup_operator: l1TopupOperator } : {}),
     },
     contracts,
+    ...(fpcArtifact ? { fpc_artifact: fpcArtifact } : {}),
     operator,
     tx_hashes: txHashes,
     ...(paymentMode ? { payment_mode: paymentMode } : {}),
-  };
-}
-
-function inferTokenSource(
-  txHash: DevnetDeployManifest["tx_hashes"]["accepted_asset_deploy"],
-): "deployed" | "provided" | "reused" {
-  if (txHash) {
-    return "deployed";
-  }
-  return "provided";
-}
-
-function inferContractDeploySource(
-  txHash: DevnetDeployManifest["tx_hashes"]["fpc_deploy"],
-): "deployed" | "reused" {
-  if (txHash) {
-    return "deployed";
-  }
-  return "reused";
-}
-
-export function withLegacyDeployCompat(
-  manifest: DevnetDeployManifest,
-): DevnetDeployManifestWithCompat {
-  return {
-    ...manifest,
-    aztec_node_url: manifest.network.node_url,
-    l1_chain_id: manifest.network.l1_chain_id,
-    operator_address: manifest.operator.address,
-    accepted_asset: manifest.contracts.accepted_asset,
-    fpc_address: manifest.contracts.fpc,
-    credit_fpc_address: manifest.contracts.credit_fpc,
-    node_contracts: {
-      fee_juice_portal_address:
-        manifest.aztec_required_addresses.l1_contract_addresses
-          .feeJuicePortalAddress,
-      fee_juice_address:
-        manifest.aztec_required_addresses.l1_contract_addresses.feeJuiceAddress,
-    },
-    deploy: {
-      token: {
-        address: manifest.contracts.accepted_asset,
-        source: inferTokenSource(manifest.tx_hashes.accepted_asset_deploy),
-      },
-      fpc: {
-        address: manifest.contracts.fpc,
-        source: inferContractDeploySource(manifest.tx_hashes.fpc_deploy),
-      },
-      credit_fpc: {
-        address: manifest.contracts.credit_fpc,
-        source: inferContractDeploySource(manifest.tx_hashes.credit_fpc_deploy),
-      },
-    },
   };
 }
 
@@ -629,21 +593,21 @@ export function assertValidDevnetDeployManifest(
 export function writeDevnetDeployManifest(
   outPath: string,
   input: unknown,
-): DevnetDeployManifestWithCompat {
+): DevnetDeployManifest {
   const manifest = parseManifest(input);
-  const withCompat = withLegacyDeployCompat(manifest);
 
   const absolute = path.resolve(outPath);
   mkdirSync(path.dirname(absolute), { recursive: true });
-  writeFileSync(absolute, `${JSON.stringify(withCompat, null, 2)}\n`, "utf8");
+  writeFileSync(absolute, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
-  return withCompat;
+  return manifest;
 }
 
 function buildSelfCheckFixture(): DevnetDeployManifest {
   return {
     status: "deploy_ok",
-    generated_at: "2026-02-27T00:00:00.000Z",
+    generated_at: "2026-03-02T00:00:00.000Z",
+    deployment_environment: "devnet",
     network: {
       node_url: "https://v4-devnet-2.aztec-labs.com/",
       node_version: "4.0.0-devnet.2-patch.2",
@@ -685,8 +649,10 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
       accepted_asset:
         "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       fpc: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      credit_fpc:
-        "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    },
+    fpc_artifact: {
+      name: "FPC",
+      path: "./target/fpc-FPC.json",
     },
     operator: {
       address:
@@ -699,8 +665,6 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
         "0x1111111111111111111111111111111111111111111111111111111111111111",
       fpc_deploy:
         "0x2222222222222222222222222222222222222222222222222222222222222222",
-      credit_fpc_deploy:
-        "0x3333333333333333333333333333333333333333333333333333333333333333",
     },
     payment_mode: "fpc-sponsored",
   };
@@ -723,35 +687,22 @@ function expectThrow(description: string, fn: () => void): void {
 function runSelfCheck(): void {
   const validFixture = buildSelfCheckFixture();
   const validated = validateDevnetDeployManifest(validFixture);
-  const withCompat = withLegacyDeployCompat(validated);
 
-  if (withCompat.accepted_asset !== validated.contracts.accepted_asset) {
-    throw new Error(
-      "Self-check failed: accepted_asset compat mapping mismatch",
-    );
-  }
-  if (withCompat.fpc_address !== validated.contracts.fpc) {
-    throw new Error("Self-check failed: fpc_address compat mapping mismatch");
+  if (validated.contracts.fpc !== validFixture.contracts.fpc) {
+    throw new Error("Self-check failed: contracts.fpc mismatch");
   }
 
-  expectThrow("missing required l1 fee bridge address", () => {
+  expectThrow("missing contracts.fpc", () => {
     const broken = buildSelfCheckFixture() as unknown as Record<
       string,
       unknown
     >;
-    const aztecAddresses = broken.aztec_required_addresses as Record<
-      string,
-      unknown
-    >;
-    const l1Contracts = aztecAddresses.l1_contract_addresses as Record<
-      string,
-      unknown
-    >;
-    delete l1Contracts.feeJuicePortalAddress;
+    const contracts = broken.contracts as Record<string, unknown>;
+    delete contracts.fpc;
     validateDevnetDeployManifest(broken);
   });
 
-  expectThrow("l2_deployer missing private_key and private_key_ref", () => {
+  expectThrow("l2_deployer missing private_key/private_key_ref", () => {
     const broken = buildSelfCheckFixture() as unknown as Record<
       string,
       unknown
@@ -780,7 +731,6 @@ function usage(): string {
     "Exports:",
     "  - validateDevnetDeployManifest(input)",
     "  - assertValidDevnetDeployManifest(input)",
-    "  - withLegacyDeployCompat(manifest)",
     "  - writeDevnetDeployManifest(outPath, input)",
   ].join("\n");
 }

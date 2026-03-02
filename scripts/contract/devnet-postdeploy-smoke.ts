@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +9,7 @@ import {
 
 type CliArgs = {
   manifestPath: string;
+  fpcArtifactPath: string | null;
   l1RpcUrl: string;
   operatorSecretKey: string | null;
   l1OperatorPrivateKey: string | null;
@@ -29,6 +30,8 @@ type CliArgs = {
   fpcTopupWeiOverride: bigint | null;
   creditTopupWeiOverride: bigint | null;
 };
+
+type FpcVariant = "FPC" | "CreditFPC";
 
 type CliParseResult =
   | { kind: "help" }
@@ -192,6 +195,7 @@ function usage(): string {
     "Usage:",
     "  bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \\",
     "    [--manifest <path.json>] \\",
+    "    [--fpc-artifact <path/to/*-FPC.json|*-CreditFPC.json>] \\",
     "    [--l1-rpc-url <http(s)-url>] \\",
     "    [--operator-secret-key <hex32>] \\",
     "    [--l1-operator-private-key <hex32>] \\",
@@ -231,6 +235,7 @@ function usage(): string {
     "",
     "Environment fallbacks:",
     "  FPC_DEVNET_SMOKE_MANIFEST",
+    "  FPC_FPC_ARTIFACT",
     "  FPC_DEVNET_L1_RPC_URL (or L1_RPC_URL)",
     "  FPC_DEVNET_OPERATOR_SECRET_KEY",
     "  L1_OPERATOR_PRIVATE_KEY",
@@ -309,6 +314,7 @@ function parseHex32(value: string, fieldName: string): string {
 function parseCliArgs(argv: string[]): CliParseResult {
   let manifestPath =
     readEnvString("FPC_DEVNET_SMOKE_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
+  let fpcArtifactPath = readEnvString("FPC_FPC_ARTIFACT");
   let l1RpcUrlRaw =
     readEnvString("FPC_DEVNET_L1_RPC_URL") ??
     readEnvString("L1_RPC_URL") ??
@@ -382,6 +388,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
     switch (arg) {
       case "--manifest":
         manifestPath = path.resolve(nextArg(argv, i, arg));
+        i += 1;
+        break;
+      case "--fpc-artifact":
+        fpcArtifactPath = path.resolve(nextArg(argv, i, arg));
         i += 1;
         break;
       case "--l1-rpc-url":
@@ -485,6 +495,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
     kind: "args",
     args: {
       manifestPath: path.resolve(manifestPath),
+      fpcArtifactPath,
       l1RpcUrl: parseHttpUrl(l1RpcUrlRaw, "l1-rpc-url"),
       operatorSecretKey: operatorSecretKey
         ? parseHex32(operatorSecretKey, "operator-secret-key")
@@ -692,6 +703,69 @@ function loadArtifact(deps: AztecDeps, artifactPath: string): unknown {
     }
     throw error;
   }
+}
+
+function resolveFpcArtifactSelection(
+  manifest: DevnetDeployManifest,
+  args: CliArgs,
+): { path: string; variant: FpcVariant } {
+  const rawPath =
+    args.fpcArtifactPath ??
+    manifest.fpc_artifact?.path ??
+    path.join(REPO_ROOT, "target", "fpc-FPC.json");
+  const artifactPath = path.resolve(rawPath);
+  if (!existsSync(artifactPath)) {
+    throw new CliError(
+      `FPC artifact not found: ${artifactPath}. Provide --fpc-artifact or set FPC_FPC_ARTIFACT.`,
+    );
+  }
+
+  let raw: string;
+  try {
+    raw = readFileSync(artifactPath, "utf8");
+  } catch (error) {
+    throw new CliError(
+      `Failed to read FPC artifact at ${artifactPath}: ${String(error)}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new CliError(
+      `FPC artifact at ${artifactPath} is not valid JSON: ${String(error)}`,
+    );
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !("name" in parsed) ||
+    typeof (parsed as { name?: unknown }).name !== "string"
+  ) {
+    throw new CliError(
+      `Invalid FPC artifact at ${artifactPath}: missing string "name" field`,
+    );
+  }
+
+  const variant = (parsed as { name: string }).name;
+  if (variant !== "FPC" && variant !== "CreditFPC") {
+    throw new CliError(
+      `Unsupported FPC artifact variant at ${artifactPath}: ${variant}. Expected FPC or CreditFPC.`,
+    );
+  }
+
+  if (
+    manifest.fpc_artifact?.name &&
+    manifest.fpc_artifact.name !== variant &&
+    !args.fpcArtifactPath
+  ) {
+    throw new CliError(
+      `Manifest fpc_artifact.name=${manifest.fpc_artifact.name} does not match artifact file name=${variant}. Pass --fpc-artifact explicitly to override.`,
+    );
+  }
+
+  return { path: artifactPath, variant };
 }
 
 function fieldStringToBigInt(value: string, fieldName: string): bigint {
@@ -975,6 +1049,7 @@ async function topUpFeePayer(params: {
 async function runSmoke(args: CliArgs): Promise<void> {
   const deps = await loadDeps();
   const manifest = parseManifestFromDisk(args.manifestPath);
+  const fpcSelection = resolveFpcArtifactSelection(manifest, args);
 
   const operatorSecretKeyHex = resolveOperatorSecretKey(args, manifest);
   const l1OperatorPrivateKeyHex = resolveL1OperatorPrivateKey(args, manifest);
@@ -993,7 +1068,12 @@ async function runSmoke(args: CliArgs): Promise<void> {
     manifest.operator.pubkey_y,
     "manifest.operator.pubkey_y",
   );
-  if (derivedX !== manifestX || derivedY !== manifestY) {
+  const shouldValidateOperatorPubkey =
+    manifest.operator.pubkey_x !== "0" || manifest.operator.pubkey_y !== "0";
+  if (
+    shouldValidateOperatorPubkey &&
+    (derivedX !== manifestX || derivedY !== manifestY)
+  ) {
     throw new OperatorKeyMismatchError(
       "operator pubkey mismatch between supplied key and manifest operator pubkeys",
     );
@@ -1051,14 +1131,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
     deps,
     path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   );
-  const fpcArtifact = loadArtifact(
-    deps,
-    path.join(REPO_ROOT, "target", "fpc-FPC.json"),
-  );
-  const creditFpcArtifact = loadArtifact(
-    deps,
-    path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
-  );
+  const selectedFpcArtifact = loadArtifact(deps, fpcSelection.path);
 
   const token = deps.Contract.at(
     deps.AztecAddress.fromString(manifest.contracts.accepted_asset),
@@ -1067,12 +1140,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
   );
   const fpc = deps.Contract.at(
     deps.AztecAddress.fromString(manifest.contracts.fpc),
-    fpcArtifact,
-    wallet,
-  );
-  const creditFpc = deps.Contract.at(
-    deps.AztecAddress.fromString(manifest.contracts.credit_fpc),
-    creditFpcArtifact,
+    selectedFpcArtifact,
     wallet,
   );
 
@@ -1087,8 +1155,10 @@ async function runSmoke(args: CliArgs): Promise<void> {
     maxGasCostNoTeardown * args.topupSafetyMultiplier + 1_000_000n;
   const creditMinTopup =
     maxGasCostNoTeardown * args.topupSafetyMultiplier * 2n + 1_000_000n;
-  const fpcTopupAmount = args.fpcTopupWeiOverride ?? fpcMinTopup;
-  const creditTopupAmount = args.creditTopupWeiOverride ?? creditMinTopup;
+  const fpcTopupAmount =
+    fpcSelection.variant === "FPC"
+      ? (args.fpcTopupWeiOverride ?? fpcMinTopup)
+      : (args.creditTopupWeiOverride ?? creditMinTopup);
   if (args.fpcTopupWeiOverride && args.fpcTopupWeiOverride < fpcMinTopup) {
     throw new CliError(
       `fpc-topup-wei override is below minimum ${fpcMinTopup.toString()}`,
@@ -1107,11 +1177,9 @@ async function runSmoke(args: CliArgs): Promise<void> {
     `[devnet-postdeploy-smoke] manifest=${args.manifestPath} node_url=${manifest.network.node_url}`,
   );
   console.log(
-    `[devnet-postdeploy-smoke] contracts accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} credit_fpc=${manifest.contracts.credit_fpc}`,
+    `[devnet-postdeploy-smoke] contracts accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${fpcSelection.variant}`,
   );
-  console.log(
-    `[devnet-postdeploy-smoke] topup targets fpc=${fpcTopupAmount} credit_fpc=${creditTopupAmount}`,
-  );
+  console.log(`[devnet-postdeploy-smoke] topup target fpc=${fpcTopupAmount}`);
 
   const fpcFeeJuiceBalance = await topUpFeePayer({
     deps,
@@ -1124,275 +1192,252 @@ async function runSmoke(args: CliArgs): Promise<void> {
     l1WalletClient,
     feePayerAddress: fpc.address,
     amount: fpcTopupAmount,
-    label: "fpc",
+    label: fpcSelection.variant.toLowerCase(),
   });
   console.log(
     `[devnet-postdeploy-smoke] fpc_fee_juice_balance=${fpcFeeJuiceBalance}`,
   );
 
-  const creditFeeJuiceBalance = await topUpFeePayer({
-    deps,
-    args,
-    node,
-    wallet,
-    operatorAddress,
-    token,
-    l1PublicClient,
-    l1WalletClient,
-    feePayerAddress: creditFpc.address,
-    amount: creditTopupAmount,
-    label: "credit_fpc",
-  });
-  console.log(
-    `[devnet-postdeploy-smoke] credit_fpc_fee_juice_balance=${creditFeeJuiceBalance}`,
-  );
-
   const QUOTE_DOMAIN_SEPARATOR = deps.Fr.fromHexString("0x465043");
+  let successfulTxCount = 0;
+  if (fpcSelection.variant === "FPC") {
+    const fpcExpectedCharge = ceilDiv(
+      maxGasCostNoTeardown * args.fpcRateNum,
+      args.fpcRateDen,
+    );
+    const fpcFjAmount = maxGasCostNoTeardown;
+    const fpcAaAmount = fpcExpectedCharge;
+    await token.methods
+      .mint_to_private(operatorAddress, fpcExpectedCharge + 1_000_000n)
+      .send({ from: operatorAddress, wait: { timeout: 180 } });
+    await token.methods
+      .mint_to_public(operatorAddress, 2n)
+      .send({ from: operatorAddress, wait: { timeout: 180 } });
 
-  const fpcExpectedCharge = ceilDiv(
-    maxGasCostNoTeardown * args.fpcRateNum,
-    args.fpcRateDen,
-  );
-  const fpcFjAmount = maxGasCostNoTeardown;
-  const fpcAaAmount = fpcExpectedCharge;
-  await token.methods
-    .mint_to_private(operatorAddress, fpcExpectedCharge + 1_000_000n)
-    .send({ from: operatorAddress, wait: { timeout: 180 } });
-  await token.methods
-    .mint_to_public(operatorAddress, 2n)
-    .send({ from: operatorAddress, wait: { timeout: 180 } });
-
-  const latestFpcBlock = await node.getBlock("latest");
-  if (!latestFpcBlock) {
-    throw new Error("Could not read latest block while creating FPC quote");
-  }
-  const fpcValidUntil = latestFpcBlock.timestamp + args.quoteTtlSeconds;
-  const fpcQuoteHash = await deps.computeInnerAuthWitHash([
-    QUOTE_DOMAIN_SEPARATOR,
-    fpc.address.toField(),
-    token.address.toField(),
-    new deps.Fr(fpcFjAmount),
-    new deps.Fr(fpcAaAmount),
-    new deps.Fr(fpcValidUntil),
-    operatorAddress.toField(),
-  ]);
-  const fpcQuoteSig = await schnorr.constructSignature(
-    fpcQuoteHash.toBuffer(),
-    operatorSigningKey,
-  );
-  const fpcQuoteSigBytes = Array.from(fpcQuoteSig.toBuffer());
-  const fpcAuthwitNonce = deps.Fr.random();
-  const fpcTransferCall = token.methods.transfer_private_to_private(
-    operatorAddress,
-    operatorAddress,
-    fpcAaAmount,
-    fpcAuthwitNonce,
-  );
-  const fpcTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
-    caller: fpc.address,
-    action: fpcTransferCall,
-  });
-  const fpcFeeEntrypointCall = await fpc.methods
-    .fee_entrypoint(
-      fpcAuthwitNonce,
-      fpcFjAmount,
+    const latestFpcBlock = await node.getBlock("latest");
+    if (!latestFpcBlock) {
+      throw new Error("Could not read latest block while creating FPC quote");
+    }
+    const fpcValidUntil = latestFpcBlock.timestamp + args.quoteTtlSeconds;
+    const fpcQuoteHash = await deps.computeInnerAuthWitHash([
+      QUOTE_DOMAIN_SEPARATOR,
+      fpc.address.toField(),
+      token.address.toField(),
+      new deps.Fr(fpcFjAmount),
+      new deps.Fr(fpcAaAmount),
+      new deps.Fr(fpcValidUntil),
+      operatorAddress.toField(),
+    ]);
+    const fpcQuoteSig = await schnorr.constructSignature(
+      fpcQuoteHash.toBuffer(),
+      operatorSigningKey,
+    );
+    const fpcQuoteSigBytes = Array.from(fpcQuoteSig.toBuffer());
+    const fpcAuthwitNonce = deps.Fr.random();
+    const fpcTransferCall = token.methods.transfer_private_to_private(
+      operatorAddress,
+      operatorAddress,
       fpcAaAmount,
-      fpcValidUntil,
-      fpcQuoteSigBytes,
-    )
-    .getFunctionCall();
-  const fpcPaymentMethod = {
-    getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new deps.ExecutionPayload(
-        [fpcFeeEntrypointCall],
-        [fpcTransferAuthwit],
-        [],
-        [],
-        fpc.address,
-      ),
-    getFeePayer: async () => fpc.address,
-    getGasSettings: () => undefined,
-  };
-  const fpcReceipt = await token.methods
-    .transfer_public_to_public(
-      operatorAddress,
-      operatorAddress,
-      1n,
-      deps.Fr.random(),
-    )
-    .send({
-      from: operatorAddress,
-      fee: {
-        paymentMethod: fpcPaymentMethod,
-        gasSettings: {
-          gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
-          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-        },
-      },
-      wait: { timeout: 180 },
-    });
-  console.log(
-    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
-  );
-
-  const creditMintAmount =
-    maxGasCostNoTeardown * args.creditMintMultiplier + args.creditMintBuffer;
-  const creditExpectedCharge = ceilDiv(
-    creditMintAmount * args.creditRateNum,
-    args.creditRateDen,
-  );
-  const creditFjAmount = creditMintAmount;
-  const creditAaAmount = creditExpectedCharge;
-  await token.methods
-    .mint_to_private(operatorAddress, creditExpectedCharge + 1_000_000n)
-    .send({ from: operatorAddress, wait: { timeout: 180 } });
-  await token.methods
-    .mint_to_public(operatorAddress, 2n)
-    .send({ from: operatorAddress, wait: { timeout: 180 } });
-
-  const latestCreditBlock = await node.getBlock("latest");
-  if (!latestCreditBlock) {
-    throw new Error(
-      "Could not read latest block while creating CreditFPC quote",
+      fpcAuthwitNonce,
     );
-  }
-  const creditValidUntil = latestCreditBlock.timestamp + args.quoteTtlSeconds;
-  const creditQuoteHash = await deps.computeInnerAuthWitHash([
-    QUOTE_DOMAIN_SEPARATOR,
-    creditFpc.address.toField(),
-    token.address.toField(),
-    new deps.Fr(creditFjAmount),
-    new deps.Fr(creditAaAmount),
-    new deps.Fr(creditValidUntil),
-    operatorAddress.toField(),
-  ]);
-  const creditQuoteSig = await schnorr.constructSignature(
-    creditQuoteHash.toBuffer(),
-    operatorSigningKey,
-  );
-  const creditQuoteSigBytes = Array.from(creditQuoteSig.toBuffer());
-  const creditAuthwitNonce = deps.Fr.random();
-  const creditTransferCall = token.methods.transfer_private_to_private(
-    operatorAddress,
-    operatorAddress,
-    creditAaAmount,
-    creditAuthwitNonce,
-  );
-  const creditTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
-    caller: creditFpc.address,
-    action: creditTransferCall,
-  });
-  const payAndMintCall = await creditFpc.methods
-    .pay_and_mint(
-      creditAuthwitNonce,
-      creditFjAmount,
+    const fpcTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
+      caller: fpc.address,
+      action: fpcTransferCall,
+    });
+    const fpcFeeEntrypointCall = await fpc.methods
+      .fee_entrypoint(
+        fpcAuthwitNonce,
+        fpcFjAmount,
+        fpcAaAmount,
+        fpcValidUntil,
+        fpcQuoteSigBytes,
+      )
+      .getFunctionCall();
+    const fpcPaymentMethod = {
+      getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
+      getExecutionPayload: async () =>
+        new deps.ExecutionPayload(
+          [fpcFeeEntrypointCall],
+          [fpcTransferAuthwit],
+          [],
+          [],
+          fpc.address,
+        ),
+      getFeePayer: async () => fpc.address,
+      getGasSettings: () => undefined,
+    };
+    const fpcReceipt = await token.methods
+      .transfer_public_to_public(
+        operatorAddress,
+        operatorAddress,
+        1n,
+        deps.Fr.random(),
+      )
+      .send({
+        from: operatorAddress,
+        fee: {
+          paymentMethod: fpcPaymentMethod,
+          gasSettings: {
+            gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+          },
+        },
+        wait: { timeout: 180 },
+      });
+    console.log(
+      `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
+    );
+    successfulTxCount = 1;
+  } else {
+    const creditMintAmount =
+      maxGasCostNoTeardown * args.creditMintMultiplier + args.creditMintBuffer;
+    const creditExpectedCharge = ceilDiv(
+      creditMintAmount * args.creditRateNum,
+      args.creditRateDen,
+    );
+    const creditFjAmount = creditMintAmount;
+    const creditAaAmount = creditExpectedCharge;
+    await token.methods
+      .mint_to_private(operatorAddress, creditExpectedCharge + 1_000_000n)
+      .send({ from: operatorAddress, wait: { timeout: 180 } });
+    await token.methods
+      .mint_to_public(operatorAddress, 2n)
+      .send({ from: operatorAddress, wait: { timeout: 180 } });
+
+    const latestCreditBlock = await node.getBlock("latest");
+    if (!latestCreditBlock) {
+      throw new Error(
+        "Could not read latest block while creating CreditFPC quote",
+      );
+    }
+    const creditValidUntil = latestCreditBlock.timestamp + args.quoteTtlSeconds;
+    const creditQuoteHash = await deps.computeInnerAuthWitHash([
+      QUOTE_DOMAIN_SEPARATOR,
+      fpc.address.toField(),
+      token.address.toField(),
+      new deps.Fr(creditFjAmount),
+      new deps.Fr(creditAaAmount),
+      new deps.Fr(creditValidUntil),
+      operatorAddress.toField(),
+    ]);
+    const creditQuoteSig = await schnorr.constructSignature(
+      creditQuoteHash.toBuffer(),
+      operatorSigningKey,
+    );
+    const creditQuoteSigBytes = Array.from(creditQuoteSig.toBuffer());
+    const creditAuthwitNonce = deps.Fr.random();
+    const creditTransferCall = token.methods.transfer_private_to_private(
+      operatorAddress,
+      operatorAddress,
       creditAaAmount,
-      creditValidUntil,
-      creditQuoteSigBytes,
-    )
-    .getFunctionCall();
-  const creditPayAndMintMethod = {
-    getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new deps.ExecutionPayload(
-        [payAndMintCall],
-        [creditTransferAuthwit],
-        [],
-        [],
-        creditFpc.address,
-      ),
-    getFeePayer: async () => creditFpc.address,
-    getGasSettings: () => undefined,
-  };
-  const payAndMintReceipt = await token.methods
-    .transfer_public_to_public(
-      operatorAddress,
-      operatorAddress,
-      1n,
-      deps.Fr.random(),
-    )
-    .send({
-      from: operatorAddress,
-      fee: {
-        paymentMethod: creditPayAndMintMethod,
-        gasSettings: {
-          gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
-          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-        },
-      },
-      wait: { timeout: 180 },
-    });
-  console.log(
-    `[devnet-postdeploy-smoke] credit_pay_and_mint_tx_fee_juice=${payAndMintReceipt.transactionFee}`,
-  );
-
-  const creditBefore = BigInt(
-    (
-      await creditFpc.methods
-        .balance_of(operatorAddress)
-        .simulate({ from: operatorAddress })
-    ).toString(),
-  );
-  const payWithCreditCall = await creditFpc.methods
-    .pay_with_credit()
-    .getFunctionCall();
-  const creditPayWithCreditMethod = {
-    getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new deps.ExecutionPayload(
-        [payWithCreditCall],
-        [],
-        [],
-        [],
-        creditFpc.address,
-      ),
-    getFeePayer: async () => creditFpc.address,
-    getGasSettings: () => undefined,
-  };
-  const payWithCreditReceipt = await token.methods
-    .transfer_public_to_public(
-      operatorAddress,
-      operatorAddress,
-      1n,
-      deps.Fr.random(),
-    )
-    .send({
-      from: operatorAddress,
-      fee: {
-        paymentMethod: creditPayWithCreditMethod,
-        gasSettings: {
-          gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
-          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-        },
-      },
-      wait: { timeout: 180 },
-    });
-  console.log(
-    `[devnet-postdeploy-smoke] credit_pay_with_credit_tx_fee_juice=${payWithCreditReceipt.transactionFee}`,
-  );
-  const creditAfter = BigInt(
-    (
-      await creditFpc.methods
-        .balance_of(operatorAddress)
-        .simulate({ from: operatorAddress })
-    ).toString(),
-  );
-  if (creditAfter >= creditBefore) {
-    throw new Error(
-      `Credit balance did not decrease after pay_with_credit. before=${creditBefore} after=${creditAfter}`,
+      creditAuthwitNonce,
     );
+    const creditTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
+      caller: fpc.address,
+      action: creditTransferCall,
+    });
+    const payAndMintCall = await fpc.methods
+      .pay_and_mint(
+        creditAuthwitNonce,
+        creditFjAmount,
+        creditAaAmount,
+        creditValidUntil,
+        creditQuoteSigBytes,
+      )
+      .getFunctionCall();
+    const creditPayAndMintMethod = {
+      getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
+      getExecutionPayload: async () =>
+        new deps.ExecutionPayload(
+          [payAndMintCall],
+          [creditTransferAuthwit],
+          [],
+          [],
+          fpc.address,
+        ),
+      getFeePayer: async () => fpc.address,
+      getGasSettings: () => undefined,
+    };
+    const payAndMintReceipt = await token.methods
+      .transfer_public_to_public(
+        operatorAddress,
+        operatorAddress,
+        1n,
+        deps.Fr.random(),
+      )
+      .send({
+        from: operatorAddress,
+        fee: {
+          paymentMethod: creditPayAndMintMethod,
+          gasSettings: {
+            gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+          },
+        },
+        wait: { timeout: 180 },
+      });
+    console.log(
+      `[devnet-postdeploy-smoke] credit_pay_and_mint_tx_fee_juice=${payAndMintReceipt.transactionFee}`,
+    );
+
+    const creditBefore = BigInt(
+      (
+        await fpc.methods
+          .balance_of(operatorAddress)
+          .simulate({ from: operatorAddress })
+      ).toString(),
+    );
+    const payWithCreditCall = await fpc.methods
+      .pay_with_credit()
+      .getFunctionCall();
+    const creditPayWithCreditMethod = {
+      getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
+      getExecutionPayload: async () =>
+        new deps.ExecutionPayload([payWithCreditCall], [], [], [], fpc.address),
+      getFeePayer: async () => fpc.address,
+      getGasSettings: () => undefined,
+    };
+    const payWithCreditReceipt = await token.methods
+      .transfer_public_to_public(
+        operatorAddress,
+        operatorAddress,
+        1n,
+        deps.Fr.random(),
+      )
+      .send({
+        from: operatorAddress,
+        fee: {
+          paymentMethod: creditPayWithCreditMethod,
+          gasSettings: {
+            gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+          },
+        },
+        wait: { timeout: 180 },
+      });
+    console.log(
+      `[devnet-postdeploy-smoke] credit_pay_with_credit_tx_fee_juice=${payWithCreditReceipt.transactionFee}`,
+    );
+    const creditAfter = BigInt(
+      (
+        await fpc.methods
+          .balance_of(operatorAddress)
+          .simulate({ from: operatorAddress })
+      ).toString(),
+    );
+    if (creditAfter >= creditBefore) {
+      throw new Error(
+        `Credit balance did not decrease after pay_with_credit. before=${creditBefore} after=${creditAfter}`,
+      );
+    }
+    successfulTxCount = 2;
   }
 
-  const fpcSuccessfulTxCount = 1;
-  const creditSuccessfulTxCount = 2;
-  if (fpcSuccessfulTxCount < 1 || creditSuccessfulTxCount < 1) {
-    throw new Error(
-      `Invalid smoke tx counts fpc=${fpcSuccessfulTxCount} credit=${creditSuccessfulTxCount}`,
-    );
+  if (successfulTxCount < 1) {
+    throw new Error(`Invalid smoke tx count=${successfulTxCount}`);
   }
   console.log(
-    `[devnet-postdeploy-smoke] PASS fpc_successful_txs=${fpcSuccessfulTxCount} credit_successful_txs=${creditSuccessfulTxCount}`,
+    `[devnet-postdeploy-smoke] PASS variant=${fpcSelection.variant} successful_txs=${successfulTxCount}`,
   );
 }
 

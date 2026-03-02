@@ -4,45 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fee-entrypoint-local-smoke.XXXXXX")"
 source "$REPO_ROOT/scripts/common/test-cleanup.sh"
-AZTEC_PID=""
-AZTEC_PGID=""
-SCRIPT_PGID="$(ps -o pgid= "$$" 2>/dev/null | tr -d '[:space:]')"
-STARTED_LOCAL_NETWORK=0
-
-function wait_for_pid_exit() {
-  local pid="$1"
-  local timeout_seconds="$2"
-  local start_ts
-  start_ts="$(date +%s)"
-
-  while kill -0 "$pid" >/dev/null 2>&1; do
-    if (( "$(date +%s)" - start_ts > timeout_seconds )); then
-      return 1
-    fi
-    sleep 1
-  done
-  return 0
-}
-
-function stop_aztec_local_network() {
-  if [[ -z "$AZTEC_PID" ]] || ! kill -0 "$AZTEC_PID" >/dev/null 2>&1; then
-    return
-  fi
-
-  echo "[smoke] Stopping aztec local network (pid=$AZTEC_PID)"
-  if [[ -n "$AZTEC_PGID" && "$AZTEC_PGID" != "$SCRIPT_PGID" ]]; then
-    kill -TERM -- "-$AZTEC_PGID" >/dev/null 2>&1 || true
-    if ! wait_for_pid_exit "$AZTEC_PID" 10; then
-      kill -KILL -- "-$AZTEC_PGID" >/dev/null 2>&1 || true
-    fi
-  else
-    kill "$AZTEC_PID" >/dev/null 2>&1 || true
-    if ! wait_for_pid_exit "$AZTEC_PID" 10; then
-      kill -9 "$AZTEC_PID" >/dev/null 2>&1 || true
-    fi
-  fi
-  wait "$AZTEC_PID" >/dev/null 2>&1 || true
-}
+source "$REPO_ROOT/scripts/common/local-network.sh"
 
 function cleanup() {
   local node_port="${NODE_PORT:-${FPC_SMOKE_NODE_PORT:-8080}}"
@@ -50,9 +12,7 @@ function cleanup() {
   local attestation_port="${FPC_SERVICES_SMOKE_ATTESTATION_PORT:-3300}"
   local topup_ops_port="${FPC_SERVICES_SMOKE_TOPUP_OPS_PORT:-3401}"
 
-  if [[ "$STARTED_LOCAL_NETWORK" -eq 1 ]]; then
-    stop_aztec_local_network
-  fi
+  localnet_stop_started "[smoke]"
   test_cleanup_kill_listener_ports \
     "[smoke]" \
     "$node_port" \
@@ -66,30 +26,6 @@ function cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
-
-function has_port() {
-  local host="$1"
-  local port="$2"
-  (echo >/dev/tcp/"$host"/"$port") >/dev/null 2>&1
-}
-
-function wait_for_port() {
-  local host="$1"
-  local port="$2"
-  local timeout_seconds="$3"
-  local start_ts
-  start_ts="$(date +%s)"
-
-  while true; do
-    if has_port "$host" "$port"; then
-      return 0
-    fi
-    if (( "$(date +%s)" - start_ts > timeout_seconds )); then
-      return 1
-    fi
-    sleep 1
-  done
-}
 
 for cmd in aztec bun node; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -105,59 +41,48 @@ NODE_PORT="${FPC_SMOKE_NODE_PORT:-8080}"
 L1_HOST="${FPC_SMOKE_L1_HOST:-127.0.0.1}"
 L1_PORT="${FPC_SMOKE_L1_PORT:-8545}"
 START_LOCAL_NETWORK="${FPC_SMOKE_START_LOCAL_NETWORK:-1}"
+STARTUP_TIMEOUT_SECONDS="$(
+  localnet_resolve_timeout_seconds \
+    "${FPC_SMOKE_STARTUP_TIMEOUT_SECONDS:-${FPC_LOCAL_NETWORK_STARTUP_TIMEOUT_SECONDS:-}}" \
+    "90" \
+    "FPC_SMOKE_STARTUP_TIMEOUT_SECONDS or FPC_LOCAL_NETWORK_STARTUP_TIMEOUT_SECONDS" \
+    "[smoke]"
+)"
 
 NODE_RUNNING=0
 L1_RUNNING=0
-if has_port "$NODE_HOST" "$NODE_PORT"; then
+if localnet_has_port "$NODE_HOST" "$NODE_PORT"; then
   NODE_RUNNING=1
 fi
-if has_port "$L1_HOST" "$L1_PORT"; then
+if localnet_has_port "$L1_HOST" "$L1_PORT"; then
   L1_RUNNING=1
 fi
 
-RESET_LOCAL_STATE="${FPC_SMOKE_RESET_LOCAL_STATE:-}"
-if [[ -z "$RESET_LOCAL_STATE" ]]; then
-  RESET_LOCAL_STATE="1"
-fi
-if [[ "$RESET_LOCAL_STATE" != "0" && "$RESET_LOCAL_STATE" != "1" ]]; then
-  echo "[smoke] ERROR: FPC_SMOKE_RESET_LOCAL_STATE must be 0 or 1, got '$RESET_LOCAL_STATE'" >&2
-  exit 1
-fi
+RESET_LOCAL_STATE="$(
+  localnet_resolve_reset_state_flag \
+    "${FPC_SMOKE_RESET_LOCAL_STATE:-}" \
+    "always" \
+    "$START_LOCAL_NETWORK" \
+    "$NODE_RUNNING" \
+    "$L1_RUNNING" \
+    "FPC_SMOKE_RESET_LOCAL_STATE" \
+    "[smoke]"
+)"
 if [[ "$RESET_LOCAL_STATE" == "1" ]]; then
   echo "[smoke] Resetting local wallet/PXE state"
-  rm -rf "$REPO_ROOT"/wallet_data_* "$REPO_ROOT"/pxe_data_*
+  localnet_reset_wallet_pxe_state "$REPO_ROOT"
 fi
 
-if [[ "$START_LOCAL_NETWORK" == "1" ]]; then
-  if [[ "$NODE_RUNNING" -eq 1 && "$L1_RUNNING" -eq 1 ]]; then
-    echo "[smoke] Reusing existing local aztec devnet ($NODE_HOST:$NODE_PORT) and anvil ($L1_HOST:$L1_PORT)"
-  else
-    echo "[smoke] Starting aztec local network in background"
-    if command -v setsid >/dev/null 2>&1; then
-      setsid aztec start --local-network >"$TMP_DIR/aztec-local-network.log" 2>&1 &
-    else
-      aztec start --local-network >"$TMP_DIR/aztec-local-network.log" 2>&1 &
-    fi
-    AZTEC_PID=$!
-    AZTEC_PGID="$(ps -o pgid= "$AZTEC_PID" 2>/dev/null | tr -d '[:space:]')"
-    STARTED_LOCAL_NETWORK=1
-
-    if ! wait_for_port "$NODE_HOST" "$NODE_PORT" 180; then
-      echo "[smoke] ERROR: aztec node did not become reachable on $NODE_HOST:$NODE_PORT" >&2
-      tail -n 200 "$TMP_DIR/aztec-local-network.log" >&2 || true
-      exit 1
-    fi
-    if ! wait_for_port "$L1_HOST" "$L1_PORT" 180; then
-      echo "[smoke] ERROR: anvil did not become reachable on $L1_HOST:$L1_PORT" >&2
-      tail -n 200 "$TMP_DIR/aztec-local-network.log" >&2 || true
-      exit 1
-    fi
-  fi
-else
-  if [[ "$NODE_RUNNING" -ne 1 || "$L1_RUNNING" -ne 1 ]]; then
-    echo "[smoke] ERROR: local network auto-start disabled, but $NODE_HOST:$NODE_PORT or $L1_HOST:$L1_PORT is not reachable" >&2
-    exit 1
-  fi
+if ! localnet_start_or_reuse \
+  "[smoke]" \
+  "$START_LOCAL_NETWORK" \
+  "$NODE_HOST" \
+  "$NODE_PORT" \
+  "$L1_HOST" \
+  "$L1_PORT" \
+  "$TMP_DIR/aztec-local-network.log" \
+  "$STARTUP_TIMEOUT_SECONDS"; then
+  exit 1
 fi
 
 if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
