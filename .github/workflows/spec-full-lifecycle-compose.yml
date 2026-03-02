@@ -6,9 +6,37 @@ on:
       - main
     tags:
       - "**"
+    paths:
+      - "docker-compose.yaml"
+      - "docker-bake.hcl"
+      - "Dockerfile.smoke"
+      - "contracts/**"
+      - "scripts/**"
+      - "services/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - ".aztecrc"
+      - ".github/workflows/spec-full-lifecycle-compose.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "docker-compose.yaml"
+      - "docker-bake.hcl"
+      - "Dockerfile.smoke"
+      - "contracts/**"
+      - "scripts/**"
+      - "services/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - ".aztecrc"
+      - ".github/workflows/spec-full-lifecycle-compose.yml"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   full-lifecycle-compose:

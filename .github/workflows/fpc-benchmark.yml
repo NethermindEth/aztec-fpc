@@ -3,6 +3,17 @@ name: FPC benchmark
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "contracts/**"
+      - "profiling/**"
+      - "vendor/aztec-standards/**"
+      - "Nargo.toml"
+      - ".aztecrc"
+      - ".github/workflows/fpc-benchmark.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

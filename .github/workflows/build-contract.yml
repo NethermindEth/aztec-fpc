@@ -6,8 +6,24 @@ on:
       - main
     tags:
       - "**"
+    paths:
+      - "contracts/**"
+      - "vendor/aztec-standards/**"
+      - "Nargo.toml"
+      - ".aztecrc"
+      - ".github/workflows/build-contract.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "contracts/**"
+      - "vendor/aztec-standards/**"
+      - "Nargo.toml"
+      - ".aztecrc"
+      - ".github/workflows/build-contract.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:

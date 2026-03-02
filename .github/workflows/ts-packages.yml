@@ -2,10 +2,36 @@ name: TS packages
 
 on:
   push:
-    branches: [main]
-    tags: ["**"]
+    branches:
+      - main
+    tags:
+      - "**"
+    paths:
+      - "services/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - "README.md"
+      - "docs/spec.md"
+      - "docs/ALPHA-ADHOC-FPC-OPERATOR-RUNBOOK.md"
+      - ".github/workflows/ts-packages.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "services/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - "README.md"
+      - "docs/spec.md"
+      - "docs/ALPHA-ADHOC-FPC-OPERATOR-RUNBOOK.md"
+      - ".github/workflows/ts-packages.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check-and-test:

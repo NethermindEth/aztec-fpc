@@ -6,9 +6,33 @@ on:
       - main
     tags:
       - "**"
+    paths:
+      - "contracts/**"
+      - "scripts/**"
+      - "services/**"
+      - "vendor/aztec-standards/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - ".aztecrc"
+      - ".github/workflows/spec-deploy-smoke.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "contracts/**"
+      - "scripts/**"
+      - "services/**"
+      - "vendor/aztec-standards/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - ".aztecrc"
+      - ".github/workflows/spec-deploy-smoke.yml"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy-smoke:

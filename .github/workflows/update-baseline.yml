@@ -4,6 +4,17 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "contracts/**"
+      - "profiling/**"
+      - "vendor/aztec-standards/**"
+      - "Nargo.toml"
+      - ".aztecrc"
+      - ".github/workflows/update-baseline.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
