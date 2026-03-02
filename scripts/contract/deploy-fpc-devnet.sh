@@ -5,7 +5,27 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 MODE="${FPC_DEPLOY_ENV:-devnet}"
-FPC_ARTIFACT="${FPC_FPC_ARTIFACT:-$REPO_ROOT/target/fpc-FPC.json}"
+
+resolve_default_fpc_artifact() {
+  if [[ -n "${FPC_FPC_ARTIFACT:-}" ]]; then
+    printf "%s\n" "${FPC_FPC_ARTIFACT}"
+    return
+  fi
+
+  local multi_asset_path="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
+  local legacy_path="$REPO_ROOT/target/fpc-FPC.json"
+  if [[ -f "$multi_asset_path" ]]; then
+    printf "%s\n" "$multi_asset_path"
+    return
+  fi
+  if [[ -f "$legacy_path" ]]; then
+    printf "%s\n" "$legacy_path"
+    return
+  fi
+  printf "%s\n" "$multi_asset_path"
+}
+
+FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 
 if [[ "$MODE" != "devnet" && "$MODE" != "local" ]]; then
   echo "ERROR: FPC_DEPLOY_ENV must be 'devnet' or 'local' (got '$MODE')" >&2
@@ -14,9 +34,10 @@ fi
 
 cd "${REPO_ROOT}"
 
-if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPC.json || ! -f target/credit_fpc-CreditFPC.json ]]; then
+if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-CreditFPC.json || ( ! -f target/fpc-FPCMultiAsset.json && ! -f target/fpc-FPC.json ) ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force
+  FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 fi
 
 if [[ "$MODE" == "local" ]]; then

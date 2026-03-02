@@ -28,6 +28,7 @@ const QuoteAuthModeSchema = z.enum([
   "api_key_or_trusted_header",
   "api_key_and_trusted_header",
 ]);
+const QuoteFormatSchema = z.enum(["amount_quote", "rate_quote"]);
 const AztecNodeUrlSchema = z.string().url();
 const AztecAddressSchema = z
   .string()
@@ -71,6 +72,8 @@ const ConfigSchema = z.object({
   market_rate_den: z.number().int().positive(),
   /** Operator margin in basis points (100 = 1%). Applied on top of market rate. */
   fee_bips: z.number().int().min(0).max(10000),
+  /** Quote preimage format used for signature generation. */
+  quote_format: QuoteFormatSchema.default("amount_quote"),
   /** Secret provider strategy for operator key. */
   operator_secret_provider: SecretProviderSchema.default("auto"),
   /** Reference used by external secret providers (kms/hsm). */

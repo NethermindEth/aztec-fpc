@@ -1,4 +1,5 @@
 use crate::{CreditFPC, test::utils};
+use aztec::protocol::address::AztecAddress;
 use aztec::test::helpers::authwit::add_private_authwit_from_call;
 use token::Token;
 
@@ -44,7 +45,14 @@ unconstrained fn pay_and_mint_happy_path_transfers_charge_and_mints_credit() {
 
     env.call_private(
         user,
-        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            mint_amount,
+            charge,
+            valid_until,
+            quote_sig,
+        ),
     );
 
     let user_token_after = utils::private_balance(env, token_address, user);
@@ -99,6 +107,7 @@ unconstrained fn pay_and_mint_supports_non_1_to_1_quoted_amounts() {
     env.call_private(
         user,
         credit_fpc.pay_and_mint(
+            token_address,
             TRANSFER_AUTHWIT_NONCE,
             fj_credit_amount,
             aa_payment_amount,
@@ -140,7 +149,14 @@ unconstrained fn pay_and_mint_rejects_expired_quote() {
 
     let _ = env.call_private(
         user,
-        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            mint_amount,
+            charge,
+            valid_until,
+            quote_sig,
+        ),
     );
 }
 
@@ -177,7 +193,14 @@ unconstrained fn pay_and_mint_rejects_quote_bound_to_another_user() {
 
     let _ = env.call_private(
         other_user,
-        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            mint_amount,
+            charge,
+            valid_until,
+            quote_sig,
+        ),
     );
 }
 
@@ -219,6 +242,7 @@ unconstrained fn pay_and_mint_rejects_tampered_fj_credit_amount() {
     let _ = env.call_private(
         user,
         credit_fpc.pay_and_mint(
+            token_address,
             TRANSFER_AUTHWIT_NONCE,
             tampered_fj_credit_amount,
             quoted_aa_payment_amount,
@@ -269,6 +293,7 @@ unconstrained fn pay_and_mint_rejects_tampered_aa_payment_amount() {
     let _ = env.call_private(
         user,
         credit_fpc.pay_and_mint(
+            token_address,
             TRANSFER_AUTHWIT_NONCE,
             quoted_fj_credit_amount,
             tampered_aa_payment_amount,
@@ -311,7 +336,14 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
 
     env.call_private(
         user,
-        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            mint_amount,
+            charge,
+            valid_until,
+            quote_sig,
+        ),
     );
 
     // Second call: fresh quote sig (different valid_until avoids quote replay),
@@ -329,11 +361,60 @@ unconstrained fn pay_and_mint_requires_fresh_transfer_authwit_each_call() {
     let _ = env.call_private(
         user,
         credit_fpc.pay_and_mint(
+            token_address,
             TRANSFER_AUTHWIT_NONCE_2,
             mint_amount,
             charge,
             valid_until_2,
             quote_sig_2,
+        ),
+    );
+}
+
+// Rejects tampered accepted asset
+//
+// The quote hash binds accepted_asset. Replacing the asset at call time must
+// invalidate the signature.
+#[test(should_fail_with = "invalid quote signature")]
+unconstrained fn pay_and_mint_rejects_tampered_accepted_asset() {
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = CreditFPC::at(credit_fpc_address);
+
+    let other_token_initializer = Token::interface().constructor_with_minter(
+        "OtherToken000000000000000000000",
+        "OT00000000000000000000000000000",
+        18,
+        operator,
+        AztecAddress::zero(),
+    );
+    let other_token_address = env.deploy("@token_contract/Token").with_public_initializer(
+        operator,
+        other_token_initializer,
+    );
+
+    let max_gas_cost = utils::max_gas_cost_no_teardown(env);
+    let mint_amount = max_gas_cost + (1000 as u128);
+    let charge = mint_amount;
+    let valid_until = env.last_block_timestamp() + 3600;
+
+    let quote_sig = utils::sign_quote(
+        credit_fpc_address,
+        token_address,
+        mint_amount,
+        charge,
+        valid_until,
+        user,
+    );
+
+    let _ = env.call_private(
+        user,
+        credit_fpc.pay_and_mint(
+            other_token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            mint_amount,
+            charge,
+            valid_until,
+            quote_sig,
         ),
     );
 }
@@ -377,7 +458,14 @@ unconstrained fn pay_and_mint_credit_equals_mint_amount_minus_max_gas_cost() {
 
     env.call_private(
         user,
-        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            mint_amount,
+            charge,
+            valid_until,
+            quote_sig,
+        ),
     );
 
     // Verify the change note is exactly mint_amount - max_gas_cost = 500.
@@ -418,13 +506,26 @@ unconstrained fn pay_and_mint_prevents_quote_replay() {
 
     env.call_private(
         user,
-        credit_fpc.pay_and_mint(TRANSFER_AUTHWIT_NONCE, mint_amount, charge, valid_until, quote_sig),
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            mint_amount,
+            charge,
+            valid_until,
+            quote_sig,
+        ),
     );
 
     // Replay protection is implemented by emitting quote_hash as a nullifier.
     // Validate that the quote was marked as used after the first successful call.
     assert(
-        env.simulate_utility(credit_fpc.quote_used(mint_amount, charge, valid_until, user)),
+        env.simulate_utility(credit_fpc.quote_used(
+            token_address,
+            mint_amount,
+            charge,
+            valid_until,
+            user,
+        )),
         "quote nullifier should exist",
     );
 }

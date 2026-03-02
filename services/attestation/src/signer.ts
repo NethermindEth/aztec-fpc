@@ -32,6 +32,15 @@ export interface QuoteParams {
   userAddress: AztecAddress;
 }
 
+export interface RateQuoteParams {
+  fpcAddress: AztecAddress;
+  acceptedAsset: AztecAddress;
+  rateNum: bigint;
+  rateDen: bigint;
+  validUntil: bigint;
+  userAddress: AztecAddress;
+}
+
 /** Signs a quote hash with Schnorr and returns the raw 64-byte signature as hex. */
 export interface QuoteSchnorrSigner {
   signQuoteHash(quoteHash: Fr): Promise<string>;
@@ -55,6 +64,18 @@ export function computeQuoteHash(params: QuoteParams): Promise<Fr> {
   ]);
 }
 
+export function computeRateQuoteHash(params: RateQuoteParams): Promise<Fr> {
+  return computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    params.fpcAddress.toField(),
+    params.acceptedAsset.toField(),
+    new Fr(params.rateNum),
+    new Fr(params.rateDen),
+    new Fr(params.validUntil),
+    params.userAddress.toField(),
+  ]);
+}
+
 /**
  * Compute the quote hash and sign it with the operator's Schnorr key.
  * Returns the 64-byte signature as a hex string.
@@ -64,6 +85,14 @@ export async function signQuote(
   params: QuoteParams,
 ): Promise<string> {
   const quoteHash = await computeQuoteHash(params);
+  return signer.signQuoteHash(quoteHash);
+}
+
+export async function signRateQuote(
+  signer: QuoteSchnorrSigner,
+  params: RateQuoteParams,
+): Promise<string> {
+  const quoteHash = await computeRateQuoteHash(params);
   return signer.signQuoteHash(quoteHash);
 }
 

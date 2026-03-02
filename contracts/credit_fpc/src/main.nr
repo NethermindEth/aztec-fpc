@@ -8,6 +8,7 @@
 /// - Replaced pay_fee / pay_fee_exact with pay_and_mint / pay_with_credit
 /// - Packed config into single PublicImmutable slot (1 Merkle proof vs 4)
 /// - Switched CreditFPC quotes to exact quoted credit/payment amounts
+/// - Switched CreditFPC to multi-asset pay_and_mint (asset chosen per quote)
 
 mod fee_math;
 mod test;
@@ -44,7 +45,6 @@ pub contract CreditFPC {
         operator_pubkey_x: Field,
         /// Operator signing public key y coordinate.
         operator_pubkey_y: Field,
-        accepted_asset: AztecAddress,
     }
 
     #[storage]
@@ -55,28 +55,21 @@ pub contract CreditFPC {
 
     #[external("public")]
     #[initializer]
-    fn constructor(
-        operator: AztecAddress,
-        operator_pubkey_x: Field,
-        operator_pubkey_y: Field,
-        accepted_asset: AztecAddress,
-    ) {
+    fn constructor(operator: AztecAddress, operator_pubkey_x: Field, operator_pubkey_y: Field) {
         assert(!operator.is_zero(), "invalid operator");
-        assert(!accepted_asset.is_zero(), "invalid accepted asset");
         // Basic on-curve check: y^2 = x^3 - 17 (Grumpkin)
         assert(
             operator_pubkey_y * operator_pubkey_y
                 == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
             "operator pubkey not on curve",
         );
-        self.storage.config.initialize(
-            Config { operator, operator_pubkey_x, operator_pubkey_y, accepted_asset },
-        );
+        self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y });
     }
 
     #[external("private")]
     #[allow_phase_change]
     fn pay_and_mint(
+        accepted_asset: AztecAddress,
         authwit_nonce: Field,
         fj_credit_amount: u128,
         aa_payment_amount: u128,
@@ -99,7 +92,7 @@ pub contract CreditFPC {
                 y: config.operator_pubkey_y,
                 is_infinite: false,
             },
-            config.accepted_asset,
+            accepted_asset,
             fj_credit_amount,
             aa_payment_amount,
             valid_until,
@@ -107,14 +100,13 @@ pub contract CreditFPC {
             quote_sig,
         );
 
-        Token::at(config.accepted_asset)
+        Token::at(accepted_asset)
             .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
         let balance_set = self.storage.balances.at(sender);
         balance_set.add(fj_credit_amount).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
-        assert_no_teardown_gas(self.context);
         let max_gas_cost = get_max_gas_cost_no_teardown(self.context);
         let subtracted = balance_set.try_sub(max_gas_cost, 1);
         assert(subtracted >= max_gas_cost, "minted credit too low for max fee");
@@ -164,16 +156,16 @@ pub contract CreditFPC {
 
     #[external("utility")]
     unconstrained fn quote_used(
+        accepted_asset: AztecAddress,
         fj_credit_amount: u128,
         aa_payment_amount: u128,
         valid_until: u64,
         user_address: AztecAddress,
     ) -> bool {
-        let config = self.storage.config.read();
         let quote_hash = compute_inner_authwit_hash([
             QUOTE_DOMAIN_SEPARATOR,
             self.address.to_field(),
-            config.accepted_asset.to_field(),
+            accepted_asset.to_field(),
             fj_credit_amount as Field,
             aa_payment_amount as Field,
             valid_until as Field,
@@ -223,24 +215,17 @@ pub contract CreditFPC {
             "invalid quote signature",
         );
 
+        // Safety: this is only used as a best-effort pre-check for a clearer
+        // replay error before the canonical duplicate-nullifier protection.
+        let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
+        assert(!quote_already_used, "quote already used");
+
         // Prevent replay: the quote hash is unique per (fpc, asset, amounts, expiry, user).
         context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");
         context.set_expiration_timestamp(valid_until);
-    }
-
-    #[contract_library_method]
-    fn assert_no_teardown_gas(context: &mut PrivateContext) {
-        let gas_settings = context.gas_settings();
-        let teardown_gas_limits = gas_settings.teardown_gas_limits;
-        if gas_settings.max_fees_per_gas.fee_per_da_gas > 0 {
-            assert(teardown_gas_limits.da_gas == 0, "teardown da gas must be zero");
-        }
-        if gas_settings.max_fees_per_gas.fee_per_l2_gas > 0 {
-            assert(teardown_gas_limits.l2_gas == 0, "teardown l2 gas must be zero");
-        }
     }
 
     #[contract_library_method]

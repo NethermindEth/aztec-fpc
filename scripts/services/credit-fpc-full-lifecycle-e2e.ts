@@ -809,6 +809,7 @@ async function executeFeePaidTx(
 
   const payAndMintCall = await params.fpc.methods
     .pay_and_mint(
+      params.token.address,
       transferAuthwitNonce,
       params.quote.fjAmount,
       params.quote.aaPaymentAmount,
@@ -1523,6 +1524,7 @@ async function runFeePaidTargetTxAndAssert(
     });
     const payAndMintCall = await result.fpc.methods
       .pay_and_mint(
+        result.token.address,
         transferAuthwitNonce,
         quote.fjAmount,
         quote.aaPaymentAmount,
@@ -1708,6 +1710,7 @@ async function runFeePaidTargetTxAndAssert(
     }
     const quoteUsed = await result.fpc.methods
       .quote_used(
+        result.token.address,
         tx1Quote.fjAmount,
         tx1Quote.aaPaymentAmount,
         tx1Quote.validUntil,
@@ -1895,40 +1898,6 @@ async function negativeSenderBindingRejected(
   );
 }
 
-async function negativeTeardownGasRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
-): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
-  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
-  const latestTimestamp = await getLatestL2Timestamp(node);
-  const quote = await signQuoteForUser(
-    result,
-    result.fpc.address,
-    result.token.address,
-    fjAmount,
-    aaPaymentAmount,
-    latestTimestamp + 600n,
-    result.user,
-  );
-
-  await expectFailure(
-    "negative pay_and_mint teardown gas rejected",
-    ["teardown da gas must be zero", "teardown l2 gas must be zero"],
-    () =>
-      executeFeePaidTx(config, result, {
-        token: result.token,
-        fpc: result.fpc,
-        payer: result.user,
-        recipient: result.operator,
-        transferAmount: 1n,
-        quote,
-        teardownGasLimits: { daGas: 1, l2Gas: 1 },
-      }),
-  );
-}
-
 async function negativeDirectPayAndMintCallRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
@@ -1965,6 +1934,7 @@ async function negativeDirectPayAndMintCallRejected(
     () =>
       result.fpc.methods
         .pay_and_mint(
+          result.token.address,
           transferAuthwitNonce,
           quote.fjAmount,
           quote.aaPaymentAmount,
@@ -2210,7 +2180,6 @@ async function runStep7NegativeScenarios(
   await negativeExpiredQuoteRejected(config, result, node);
   await negativeSenderBindingRejected(config, result, node);
   await negativeMintedCreditTooLowRejected(config, result, node);
-  await negativeTeardownGasRejected(config, result, node);
   await negativeDirectPayAndMintCallRejected(config, result, node);
   await negativeDirectPayWithCreditCallRejected(result);
 

@@ -1,6 +1,6 @@
 # FPC
 
-`FPC` is a private fee-payment contract that charges users in a single accepted token per transaction and pays Aztec fees from the contract's Fee Juice balance.
+`FPC` is a private fee-payment contract that charges users in a quoted token per transaction and pays Aztec fees from the contract's Fee Juice balance.
 
 Unlike `CreditFPC`, it does not maintain a user credit ledger.
 
@@ -10,25 +10,25 @@ Unlike `CreditFPC`, it does not maintain a user credit ledger.
 
 - `operator`
 - operator Schnorr pubkey (`operator_pubkey_x`, `operator_pubkey_y`)
-- `accepted_asset`
 
 ### `fee_entrypoint` flow
 
-`fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)`:
+`fee_entrypoint(accepted_asset, authwit_nonce, rate_num, rate_den, valid_until, quote_sig)`:
 
-1. Verifies operator quote signature over exact amounts and caller address.
-2. Rejects replay by nullifying quote hash.
+1. Verifies operator quote signature over `accepted_asset`, `rate_num`, `rate_den`, and caller address.
+2. Rejects replay by nullifying quote hash (duplicate nullifier insertion fails canonically).
 3. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
-4. Enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)`.
-5. Transfers exactly `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
-6. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution; marks contract as fee payer (`set_as_fee_payer`) and unconditionally ends setup.
+4. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution (`fee_entrypoint must run in setup phase`).
+5. Requires `rate_num > 0`, then computes exact charge as `fee_juice_to_asset(get_max_gas_cost_no_teardown(...), rate_num, rate_den)`.
+6. Transfers exactly that computed charge of `accepted_asset` from user to operator using authwit.
+7. Marks contract as fee payer (`set_as_fee_payer`) and ends setup.
 
 ## How It Differs From `/contracts/credit_fpc`
 
 Both contracts use operator-signed, user-bound quotes and both act as fee payer via `set_as_fee_payer()`, but they differ in fee model and state.
 
 1. Payment mode:
-- `FPC`: token charge every transaction (`fee_entrypoint`).
+- `FPC`: token charge every transaction (`fee_entrypoint`) with per-quote asset + exchange rate.
 - `CreditFPC`: token prepay + internal credit spending (`pay_and_mint`, `pay_with_credit`).
 
 2. State model:
@@ -39,9 +39,9 @@ Both contracts use operator-signed, user-bound quotes and both act as fee payer 
 - `FPC`: single private fee entrypoint.
 - `CreditFPC`: two private fee entrypoints plus extra utility view methods.
 
-4. Quote amount semantics:
-- `FPC`: signed `fj_fee_amount` must match current no-teardown max gas cost.
-- `CreditFPC`: signed `fj_credit_amount` is desired mint amount (must be sufficient for immediate deduction).
+4. Quote semantics:
+- `FPC`: signs `accepted_asset`, `rate_num`, `rate_den`; computes token charge in-contract from current `get_max_gas_cost_no_teardown(...)`.
+- `CreditFPC`: signs `accepted_asset`, `fj_credit_amount`, and `aa_payment_amount` directly.
 
 5. Internal accounting:
 - `FPC`: no credit mint/burn bookkeeping.
@@ -51,13 +51,13 @@ Both contracts use operator-signed, user-bound quotes and both act as fee payer 
 - `FPC`: expiry + explicit TTL cap (`MAX_QUOTE_TTL_SECONDS = 3600`).
 - `CreditFPC`: expiry check but no equivalent explicit TTL cap in current implementation.
 
-## Quote Model (Amount-Based)
+## Quote Model (Rate-Based)
 
 Quote domain separator: `0x465043`.
 
 Quote hash preimage:
 
-`poseidon2([DOMAIN_SEP, contract_address, accepted_asset, fj_fee_amount, aa_payment_amount, valid_until, user_address])`
+`poseidon2([DOMAIN_SEP, contract_address, accepted_asset, rate_num, rate_den, valid_until, user_address])`
 
 Signature:
 
@@ -82,12 +82,12 @@ For `FPC`, attestation must be configured with:
 Client flow:
 
 1. Request `/quote?user=<aztec_address>&fj_amount=<expected_max_gas_cost_no_teardown>`.
-2. Receive `fj_amount`, `aa_payment_amount`, `valid_until`, `signature`.
-3. Call `fee_entrypoint(...)` with those fields and transfer authwit nonce.
+2. Receive `accepted_asset`, `rate_num`, `rate_den`, `valid_until`, `signature`.
+3. Call `fee_entrypoint(accepted_asset, ...)` with those fields and transfer authwit nonce.
 
 Important:
 
-- `FPC` enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)`, so quote `fj_amount` must match the gas settings of the transaction being built.
+- `FPC` computes charge from current `get_max_gas_cost_no_teardown(...)` and signed `(rate_num, rate_den)`.
 
 ## Wiring to Top-up Service
 
@@ -103,18 +103,18 @@ Then top-up monitors and bridges Fee Juice to keep this contract funded for fee 
 
 ## Wiring to Token + Authwit
 
-`accepted_asset` is immutable and part of quote preimage.
+`accepted_asset` is provided per `fee_entrypoint(...)` call and must match the signed quote preimage.
 
 `fee_entrypoint` requires a valid private authwit authorizing:
 
-`Token.transfer_private_to_private(user, operator, aa_payment_amount, authwit_nonce)`
+`Token.transfer_private_to_private(user, operator, computed_charge, authwit_nonce)`
 
 If authwit is missing, stale, or mismatched to amount/nonce, the call fails.
 
 ## Public/Private Interface
 
-- `constructor(operator, operator_pubkey_x, operator_pubkey_y, accepted_asset)` (`public`, initializer)
-- `fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` (`private`)
+- `constructor(operator, operator_pubkey_x, operator_pubkey_y)` (`public`, initializer)
+- `fee_entrypoint(accepted_asset, authwit_nonce, rate_num, rate_den, valid_until, quote_sig)` (`private`)
 
 Internal helpers:
 
@@ -133,11 +133,11 @@ with explicit `u128` overflow checks.
 
 Contract tests in `/home/ametel/source/aztec-fpc/contracts/fpc/src/test` cover:
 
-- constructor validation (zero `operator` / zero `accepted_asset` rejected),
+- constructor validation (zero `operator` rejected),
 - happy-path transfer accounting,
-- non-1:1 amount quote support,
-- tampered quote amount rejection (`invalid quote signature`),
-- strict fee-amount mismatch rejection (`quoted fee amount mismatch`),
+- non-1:1 exchange-rate support,
+- zero-rate numerator rejection (`rate_num must be > 0`),
+- invalid quote signature path (for example, quote bound to another user),
 - expired quote rejection,
 - overlong TTL rejection (`quote ttl too large`),
 - user-bound quote enforcement,

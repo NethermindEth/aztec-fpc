@@ -171,8 +171,7 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let pk = test_operator_pubkey();
-    let credit_fpc_initializer =
-        CreditFPC::interface().constructor(operator, pk.x, pk.y, token_address);
+    let credit_fpc_initializer = CreditFPC::interface().constructor(operator, pk.x, pk.y);
     let credit_fpc_address =
         env.deploy("CreditFPC").with_public_initializer(operator, credit_fpc_initializer);
 

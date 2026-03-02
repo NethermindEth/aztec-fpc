@@ -32,16 +32,12 @@ import { createAztecNodeClient } from '@aztec/aztec.js/node';
 import { Contract } from '@aztec/aztec.js/contracts';
 import { L1FeeJuicePortalManager } from '@aztec/aztec.js/ethereum';
 import { getInitialTestAccountsData } from '@aztec/accounts/testing';
-import { Fr } from '@aztec/foundation/curves/bn254';
 import { createLogger } from '@aztec/foundation/log';
 import { Schnorr } from '@aztec/foundation/crypto/schnorr';
 import { FeeJuiceArtifact } from '@aztec/protocol-contracts/fee-juice';
 import { ProtocolContractAddress } from '@aztec/protocol-contracts';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import {
-  FunctionCall,
-  FunctionSelector,
-  FunctionType,
   loadContractArtifact,
 } from '@aztec/stdlib/abi';
 import { ExecutionPayload } from '@aztec/stdlib/tx';
@@ -94,31 +90,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 class PayAndMintPaymentMethod {
   fpcAddress: any;
+  payAndMintCall: any;
   transferAuthWit: any;
-  quoteSigFields: any[];
-  transferNonce: bigint;
-  fjCreditAmount: bigint;
-  aaPaymentAmount: bigint;
-  validUntil: bigint;
   gasSettings: any;
 
   constructor(
     fpcAddress: any,
+    payAndMintCall: any,
     transferAuthWit: any,
-    quoteSigFields: any[],
-    transferNonce: bigint,
-    fjCreditAmount: bigint,
-    aaPaymentAmount: bigint,
-    validUntil: bigint,
     gasSettings: any,
   ) {
     this.fpcAddress = fpcAddress;
+    this.payAndMintCall = payAndMintCall;
     this.transferAuthWit = transferAuthWit;
-    this.quoteSigFields = quoteSigFields;
-    this.transferNonce = transferNonce;
-    this.fjCreditAmount = fjCreditAmount;
-    this.aaPaymentAmount = aaPaymentAmount;
-    this.validUntil = validUntil;
     this.gasSettings = gasSettings;
   }
 
@@ -133,29 +117,8 @@ class PayAndMintPaymentMethod {
   }
 
   async getExecutionPayload() {
-    const selector = await FunctionSelector.fromSignature(
-      'pay_and_mint(Field,u128,u128,u64,[u8;64])',
-    );
-
-    const feeCall = FunctionCall.from({
-      name: 'pay_and_mint',
-      to: this.fpcAddress,
-      selector,
-      type: FunctionType.PRIVATE,
-      hideMsgSender: false,
-      isStatic: false,
-      args: [
-        new Fr(this.transferNonce),
-        new Fr(this.fjCreditAmount),
-        new Fr(this.aaPaymentAmount),
-        new Fr(this.validUntil),
-        ...this.quoteSigFields,
-      ],
-      returnTypes: [],
-    });
-
     return new ExecutionPayload(
-      [feeCall],
+      [this.payAndMintCall],
       [this.transferAuthWit],
       [],
       [],
@@ -168,10 +131,12 @@ class PayAndMintPaymentMethod {
 
 class PayWithCreditPaymentMethod {
   fpcAddress: any;
+  payWithCreditCall: any;
   gasSettings: any;
 
-  constructor(fpcAddress: any, gasSettings: any) {
+  constructor(fpcAddress: any, payWithCreditCall: any, gasSettings: any) {
     this.fpcAddress = fpcAddress;
+    this.payWithCreditCall = payWithCreditCall;
     this.gasSettings = gasSettings;
   }
 
@@ -186,27 +151,29 @@ class PayWithCreditPaymentMethod {
   }
 
   async getExecutionPayload() {
-    const selector = await FunctionSelector.fromSignature('pay_with_credit()');
-
-    const feeCall = FunctionCall.from({
-      name: 'pay_with_credit',
-      to: this.fpcAddress,
-      selector,
-      type: FunctionType.PRIVATE,
-      hideMsgSender: false,
-      isStatic: false,
-      args: [],
-      returnTypes: [],
-    });
-
     return new ExecutionPayload(
-      [feeCall],
+      [this.payWithCreditCall],
       [],
       [],
       [],
       this.fpcAddress,
     );
   }
+}
+
+type PayAndMintMode = 'legacy' | 'multi_asset_quoted';
+
+function detectPayAndMintMode(creditFpcArtifact: any): PayAndMintMode {
+  const payAndMint = (creditFpcArtifact.functions ?? []).find(
+    (f: any) => f.name === 'pay_and_mint',
+  );
+  const paramNames = new Set(
+    (payAndMint?.parameters ?? []).map((p: any) => p?.name),
+  );
+  if (paramNames.has('accepted_asset')) {
+    return 'multi_asset_quoted';
+  }
+  return 'legacy';
 }
 
 // ── L1 helpers (Fee Juice bridging) ──────────────────────────────────────────
@@ -470,6 +437,8 @@ export default class CreditFPCBenchmark {
     const creditFpcArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('CreditFPC'), 'utf8')),
     );
+    const payAndMintMode = detectPayAndMintMode(creditFpcArtifact);
+    console.log(`Detected pay_and_mint mode: ${payAndMintMode}`);
     const noopArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Noop'), 'utf8')),
     );
@@ -509,6 +478,7 @@ export default class CreditFPCBenchmark {
     console.log('Registered CreditFPC + Token as senders for note discovery.');
 
     const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
+    const creditFpcAsUser = Contract.at(fpcAddress, creditFpcArtifact, wallet);
     const noopAsUser = Contract.at(noopDeploy.address, noopArtifact, wallet);
 
     // ── Bridge Fee Juice to CreditFPC via L1 ─────────────────────────────
@@ -606,14 +576,32 @@ export default class CreditFPCBenchmark {
       ),
     });
 
+    const sendPayAndMintCall =
+      payAndMintMode === 'multi_asset_quoted'
+        ? await creditFpcAsUser.methods
+            .pay_and_mint(
+              tokenAddress,
+              SEND_NONCE,
+              sendCreditMint,
+              sendTokenCharge,
+              VALID_UNTIL,
+              sendQuoteSigFields,
+            )
+            .getFunctionCall()
+        : await creditFpcAsUser.methods
+            .pay_and_mint(
+              SEND_NONCE,
+              sendCreditMint,
+              sendTokenCharge,
+              VALID_UNTIL,
+              sendQuoteSigFields,
+            )
+            .getFunctionCall();
+
     const sendPayAndMint = new PayAndMintPaymentMethod(
       fpcAddress,
+      sendPayAndMintCall,
       sendTransferAuthWit,
-      sendQuoteSigFields,
-      SEND_NONCE,
-      sendCreditMint,
-      sendTokenCharge,
-      VALID_UNTIL,
       payAndMintGasSettings,
     );
 
@@ -635,11 +623,9 @@ export default class CreditFPCBenchmark {
     console.log('Follow-up tx mined.');
 
     // ── Verify credit balance ────────────────────────────────────────────
-    const creditFpcContract = Contract.at(fpcAddress, creditFpcArtifact, wallet);
-
     let creditBalance = 0n;
     for (let i = 0; i < 10; i++) {
-      creditBalance = await creditFpcContract.methods
+      creditBalance = await creditFpcAsUser.methods
         .balance_of(userAddress)
         .simulate({ from: userAddress });
       console.log(`  [${i + 1}/10] Credit balance: ${creditBalance}`);
@@ -690,18 +676,36 @@ export default class CreditFPCBenchmark {
         QUOTE_DOMAIN_SEP,
       );
 
+      const devPayAndMintCall =
+        payAndMintMode === 'multi_asset_quoted'
+          ? await creditFpcAsUser.methods
+              .pay_and_mint(
+                tokenAddress,
+                DEV_NONCE,
+                devMintAmount,
+                devTokenCharge,
+                DEV_VALID_UNTIL,
+                devQuoteSigFields,
+              )
+              .getFunctionCall()
+          : await creditFpcAsUser.methods
+              .pay_and_mint(
+                DEV_NONCE,
+                devMintAmount,
+                devTokenCharge,
+                DEV_VALID_UNTIL,
+                devQuoteSigFields,
+              )
+              .getFunctionCall();
+
       const devPayAndMint = new PayAndMintPaymentMethod(
         fpcAddress,
+        devPayAndMintCall,
         devTransferAuthWit,
-        devQuoteSigFields,
-        DEV_NONCE,
-        devMintAmount,
-        devTokenCharge,
-        DEV_VALID_UNTIL,
         payAndMintGasSettings,
       );
 
-      await creditFpcContract.methods
+      await creditFpcAsUser.methods
         .dev_mint(totalMaxCost * 2n)
         .send({
           fee: { paymentMethod: devPayAndMint, gasSettings: payAndMintGasSettings },
@@ -715,7 +719,7 @@ export default class CreditFPCBenchmark {
         .send({ from: userAddress });
 
       for (let i = 0; i < 10; i++) {
-        creditBalance = await creditFpcContract.methods
+        creditBalance = await creditFpcAsUser.methods
           .balance_of(userAddress)
           .simulate({ from: userAddress });
         console.log(`  [${i + 1}/10] Credit balance: ${creditBalance}`);
@@ -768,14 +772,32 @@ export default class CreditFPCBenchmark {
       ),
     });
 
+    const profilePayAndMintCall =
+      payAndMintMode === 'multi_asset_quoted'
+        ? await creditFpcAsUser.methods
+            .pay_and_mint(
+              tokenAddress,
+              PROFILE_NONCE,
+              profileCreditMint,
+              profileTokenCharge,
+              PROFILE_VALID_UNTIL,
+              profileQuoteSigFields,
+            )
+            .getFunctionCall()
+        : await creditFpcAsUser.methods
+            .pay_and_mint(
+              PROFILE_NONCE,
+              profileCreditMint,
+              profileTokenCharge,
+              PROFILE_VALID_UNTIL,
+              profileQuoteSigFields,
+            )
+            .getFunctionCall();
+
     this.#payAndMintPayment = new PayAndMintPaymentMethod(
       fpcAddress,
+      profilePayAndMintCall,
       profileTransferAuthWit,
-      profileQuoteSigFields,
-      PROFILE_NONCE,
-      profileCreditMint,
-      profileTokenCharge,
-      PROFILE_VALID_UNTIL,
       payAndMintGasSettings,
     );
 
@@ -785,8 +807,12 @@ export default class CreditFPCBenchmark {
       .send({ from: userAddress });
 
     // ── pay_with_credit profiling setup ──────────────────────────────────
+    const payWithCreditCall = await creditFpcAsUser.methods
+      .pay_with_credit()
+      .getFunctionCall();
     this.#payWithCreditPayment = new PayWithCreditPaymentMethod(
       fpcAddress,
+      payWithCreditCall,
       payWithCreditGasSettings,
     );
 
