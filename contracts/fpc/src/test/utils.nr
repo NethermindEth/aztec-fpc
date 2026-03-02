@@ -1,4 +1,4 @@
-use crate::{fee_math::fee_juice_to_asset, FPC};
+use crate::{fee_math::fee_juice_to_asset, FPCMultiAsset};
 use aztec::{
     authwit::auth::compute_inner_authwit_hash,
     protocol::{address::AztecAddress, traits::ToField},
@@ -171,8 +171,9 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let pk = test_operator_pubkey();
-    let fpc_initializer = FPC::interface().constructor(operator, pk.x, pk.y, token_address);
-    let fpc_address = env.deploy("FPC").with_public_initializer(operator, fpc_initializer);
+    let fpc_initializer = FPCMultiAsset::interface().constructor(operator, pk.x, pk.y);
+    let fpc_address =
+        env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
 
     (env, fpc_address, token_address, operator, user)
 }
@@ -194,8 +195,8 @@ pub unconstrained fn expected_charge(env: TestEnvironment, rate_num: u128, rate_
 pub unconstrained fn sign_quote(
     fpc_address: AztecAddress,
     accepted_asset: AztecAddress,
-    fj_fee_amount: u128,
-    aa_payment_amount: u128,
+    rate_num: u128,
+    rate_den: u128,
     valid_until: u64,
     user_address: AztecAddress,
 ) -> [u8; 64] {
@@ -203,8 +204,8 @@ pub unconstrained fn sign_quote(
         QUOTE_DOMAIN_SEPARATOR,
         fpc_address.to_field(),
         accepted_asset.to_field(),
-        fj_fee_amount as Field,
-        aa_payment_amount as Field,
+        rate_num as Field,
+        rate_den as Field,
         valid_until as Field,
         user_address.to_field(),
     ]);
