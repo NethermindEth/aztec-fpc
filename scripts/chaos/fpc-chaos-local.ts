@@ -27,7 +27,13 @@
  *   FPC_CHAOS_LOCAL_RATE_LIMIT_BURST   default: 70
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,12 +42,12 @@ import { privateKeyToAccount } from "viem/accounts";
 
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { FeeJuiceContract, ProtocolContractAddress } from "@aztec/aztec.js/protocol";
+import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import {
@@ -106,7 +112,7 @@ type LocalConfig = {
 
 function readEnvStr(name: string, fallback: string): string {
   const v = process.env[name];
-  return v && v.trim() ? v.trim() : fallback;
+  return v?.trim() ? v.trim() : fallback;
 }
 
 function readEnvInt(name: string, fallback: number): number {
@@ -135,7 +141,10 @@ function getConfig(): LocalConfig {
   return {
     nodeUrl: readEnvStr("FPC_CHAOS_LOCAL_NODE_URL", "http://127.0.0.1:8080"),
     l1RpcUrl: readEnvStr("FPC_CHAOS_LOCAL_L1_RPC_URL", "http://127.0.0.1:8545"),
-    l1PrivateKey: readEnvStr("FPC_CHAOS_LOCAL_L1_PRIVATE_KEY", DEFAULT_L1_PRIVATE_KEY),
+    l1PrivateKey: readEnvStr(
+      "FPC_CHAOS_LOCAL_L1_PRIVATE_KEY",
+      DEFAULT_L1_PRIVATE_KEY,
+    ),
     attestationPort: readEnvInt("FPC_CHAOS_LOCAL_ATTESTATION_PORT", 3300),
     topupOpsPort: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_OPS_PORT", 3401),
     relayAdvanceBlocks: readEnvInt("FPC_CHAOS_LOCAL_RELAY_BLOCKS", 2),
@@ -149,13 +158,28 @@ function getConfig(): LocalConfig {
     marketRateNum: readEnvInt("FPC_CHAOS_LOCAL_MARKET_RATE_NUM", 1),
     marketRateDen: readEnvInt("FPC_CHAOS_LOCAL_MARKET_RATE_DEN", 1000),
     feeBips: readEnvInt("FPC_CHAOS_LOCAL_FEE_BIPS", 200),
-    quoteValiditySeconds: readEnvInt("FPC_CHAOS_LOCAL_QUOTE_VALIDITY_SECONDS", 3600),
+    quoteValiditySeconds: readEnvInt(
+      "FPC_CHAOS_LOCAL_QUOTE_VALIDITY_SECONDS",
+      3600,
+    ),
     daGasLimit: readEnvInt("FPC_CHAOS_LOCAL_DA_GAS_LIMIT", 1_000_000),
     l2GasLimit: readEnvInt("FPC_CHAOS_LOCAL_L2_GAS_LIMIT", 1_000_000),
-    topupCheckIntervalMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CHECK_INTERVAL_MS", 3_000),
-    topupConfirmTimeoutMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_TIMEOUT_MS", 180_000),
-    topupConfirmPollInitialMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_INITIAL_MS", 1_000),
-    topupConfirmPollMaxMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_MAX_MS", 15_000),
+    topupCheckIntervalMs: readEnvInt(
+      "FPC_CHAOS_LOCAL_TOPUP_CHECK_INTERVAL_MS",
+      3_000,
+    ),
+    topupConfirmTimeoutMs: readEnvInt(
+      "FPC_CHAOS_LOCAL_TOPUP_CONFIRM_TIMEOUT_MS",
+      180_000,
+    ),
+    topupConfirmPollInitialMs: readEnvInt(
+      "FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_INITIAL_MS",
+      1_000,
+    ),
+    topupConfirmPollMaxMs: readEnvInt(
+      "FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_MAX_MS",
+      15_000,
+    ),
     repoRoot,
     runDir,
   };
@@ -181,9 +205,11 @@ function loadArtifact(p: string): ContractArtifact {
   }
 }
 
-function parseBridgeSubmission(
-  logs: string,
-): { messageHash: string; leafIndex: bigint; claimSecret: string | undefined } | null {
+function parseBridgeSubmission(logs: string): {
+  messageHash: string;
+  leafIndex: bigint;
+  claimSecret: string | undefined;
+} | null {
   const m = BRIDGE_SUBMISSION_RE.exec(logs);
   if (!m) return null;
   return {
@@ -200,7 +226,11 @@ function hasBridgeConfirmed(logs: string): boolean {
 async function waitForBridgeSubmission(
   proc: ManagedProcess,
   timeoutMs: number,
-): Promise<{ messageHash: string; leafIndex: bigint; claimSecret: string | undefined }> {
+): Promise<{
+  messageHash: string;
+  leafIndex: bigint;
+  claimSecret: string | undefined;
+}> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const sub = parseBridgeSubmission(proc.getLogs());
@@ -272,7 +302,11 @@ type SetupResult = {
 };
 
 async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
-  const tokenArtifactPath = path.join(config.repoRoot, "target", "token_contract-Token.json");
+  const tokenArtifactPath = path.join(
+    config.repoRoot,
+    "target",
+    "token_contract-Token.json",
+  );
   const fpcArtifactPath = path.join(config.repoRoot, "target", "fpc-FPC.json");
 
   if (!existsSync(tokenArtifactPath) || !existsSync(fpcArtifactPath)) {
@@ -345,8 +379,11 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
 
   // Query the actual L1 FeeJuice ERC20 balance so we never try to bridge more
   // than what the operator account holds (which causes ERC20InsufficientBalance).
-  const feeJuiceL1Addr = nodeInfo.l1ContractAddresses.feeJuiceAddress.toString() as `0x${string}`;
-  const l1OperatorAddr = privateKeyToAccount(config.l1PrivateKey as Hex).address;
+  const feeJuiceL1Addr =
+    nodeInfo.l1ContractAddresses.feeJuiceAddress.toString() as `0x${string}`;
+  const l1OperatorAddr = privateKeyToAccount(
+    config.l1PrivateKey as Hex,
+  ).address;
   const l1Client = createPublicClient({ transport: http(config.l1RpcUrl) });
   const l1FeeJuiceBalance = await l1Client.readContract({
     address: feeJuiceL1Addr,
@@ -370,7 +407,8 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   // 50% of the local devnet's 1 FeeJuice covers ~25 worst-case fee-paid txs,
   // more than enough for the chaos suite (~15-20 fee-paid txs).
   const safeL1Budget = l1FeeJuiceBalance / 2n;
-  const topupAmountWei = desiredTopupWei <= safeL1Budget ? desiredTopupWei : safeL1Budget;
+  const topupAmountWei =
+    desiredTopupWei <= safeL1Budget ? desiredTopupWei : safeL1Budget;
 
   if (topupAmountWei === 0n) {
     throw new Error(
@@ -383,10 +421,13 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   );
 
   // Write attestation config
-  const attestationConfigPath = path.join(config.runDir, "attestation.config.yaml");
+  const attestationConfigPath = path.join(
+    config.runDir,
+    "attestation.config.yaml",
+  );
   writeFileSync(
     attestationConfigPath,
-    [
+    `${[
       `fpc_address: "${fpc.address.toString()}"`,
       `aztec_node_url: "${config.nodeUrl}"`,
       `quote_validity_seconds: ${config.quoteValiditySeconds}`,
@@ -400,16 +441,19 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
       `quote_rate_limit_max_requests: 60`,
       `quote_rate_limit_window_seconds: 60`,
       `quote_rate_limit_max_tracked_keys: 10000`,
-    ].join("\n") + "\n",
+    ].join("\n")}\n`,
     "utf8",
   );
 
   // Write topup config
-  const topupBridgeStatePath = path.join(config.runDir, "topup.bridge-state.json");
+  const topupBridgeStatePath = path.join(
+    config.runDir,
+    "topup.bridge-state.json",
+  );
   const topupConfigPath = path.join(config.runDir, "topup.config.yaml");
   writeFileSync(
     topupConfigPath,
-    [
+    `${[
       `fpc_address: "${fpc.address.toString()}"`,
       `aztec_node_url: "${config.nodeUrl}"`,
       `l1_rpc_url: "${config.l1RpcUrl}"`,
@@ -424,7 +468,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
       `confirmation_timeout_ms: ${config.topupConfirmTimeoutMs}`,
       `confirmation_poll_initial_ms: ${config.topupConfirmPollInitialMs}`,
       `confirmation_poll_max_ms: ${config.topupConfirmPollMaxMs}`,
-    ].join("\n") + "\n",
+    ].join("\n")}\n`,
     "utf8",
   );
 
@@ -485,7 +529,9 @@ async function startServicesAndFundFpc(
   );
 
   await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
-  console.log(`[chaos-local] Attestation service ready at ${attestationBaseUrl}`);
+  console.log(
+    `[chaos-local] Attestation service ready at ${attestationBaseUrl}`,
+  );
 
   console.log("[chaos-local] Starting topup service...");
   const topup = startManagedProcess(
@@ -520,7 +566,9 @@ async function startServicesAndFundFpc(
     await setup.token.methods
       .mint_to_private(setup.user, 1n)
       .send({ from: setup.operator, wait: { timeout: 120 } });
-    console.log(`[chaos-local] relay block ${i + 1}/${config.relayAdvanceBlocks}`);
+    console.log(
+      `[chaos-local] relay block ${i + 1}/${config.relayAdvanceBlocks}`,
+    );
   }
 
   // Wait for the L1→L2 message to be consumable, then claim if the topup
@@ -587,11 +635,12 @@ async function runChaosTest(
   const topupOpsBaseUrl = `http://127.0.0.1:${config.topupOpsPort}`;
 
   const reportPath =
-    config.reportPath ??
-    path.join(config.runDir, "chaos-report.json");
+    config.reportPath ?? path.join(config.runDir, "chaos-report.json");
 
   console.log(`\n[chaos-local] ──────────────────────────────────────────`);
-  console.log(`[chaos-local] Launching chaos test suite (mode=${config.chaosMode})`);
+  console.log(
+    `[chaos-local] Launching chaos test suite (mode=${config.chaosMode})`,
+  );
   console.log(`[chaos-local] FPC:    ${setup.fpcAddress.toString()}`);
   console.log(`[chaos-local] Token:  ${setup.tokenAddress.toString()}`);
   console.log(`[chaos-local] Attest: ${attestationBaseUrl}`);
@@ -625,12 +674,19 @@ async function runChaosTest(
 
   // 30 min ceiling for the full suite
   const exitCode = await waitForProcessExit(chaosProc, 30 * 60 * 1000);
-  console.log(`\n[chaos-local] Chaos test process exited with code ${exitCode}`);
+  console.log(
+    `\n[chaos-local] Chaos test process exited with code ${exitCode}`,
+  );
 
   if (existsSync(reportPath)) {
     try {
       const report = JSON.parse(readFileSync(reportPath, "utf8")) as {
-        summary?: { total?: number; passed?: number; failed?: number; skipped?: number };
+        summary?: {
+          total?: number;
+          passed?: number;
+          failed?: number;
+          skipped?: number;
+        };
       };
       const s = report.summary ?? {};
       console.log(
@@ -660,7 +716,9 @@ async function main(): Promise<void> {
   console.log("[chaos-local]  FPC Chaos Local – self-contained test run  ");
   console.log("[chaos-local] ════════════════════════════════════════════");
   console.log(`[chaos-local] node=${config.nodeUrl}  l1=${config.l1RpcUrl}`);
-  console.log(`[chaos-local] mode=${config.chaosMode}  runDir=${config.runDir}\n`);
+  console.log(
+    `[chaos-local] mode=${config.chaosMode}  runDir=${config.runDir}\n`,
+  );
 
   let exitCode = 0;
 
@@ -670,7 +728,9 @@ async function main(): Promise<void> {
     const setup = await deployAndConfigure(config);
 
     // ── 2. Start services + wait for FPC funding ──────────────────────────
-    console.log("\n[chaos-local] Step 2/3: Starting services and funding FPC...");
+    console.log(
+      "\n[chaos-local] Step 2/3: Starting services and funding FPC...",
+    );
     const { attestation, topup } = await startServicesAndFundFpc(config, setup);
     managed.push(attestation, topup);
 

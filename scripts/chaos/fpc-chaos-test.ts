@@ -77,7 +77,7 @@ import { EmbeddedWallet } from "@aztec/wallets/embedded";
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const U128_MAX = 2n ** 128n - 1n;
 const MAX_QUOTE_TTL_SECONDS = 3600n;
-const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+const _HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -192,9 +192,7 @@ class ChaosRunner {
     fn: () => Promise<unknown>,
   ): Promise<TestResult> {
     const start = Date.now();
-    process.stdout.write(
-      `${DIM}  [${category}]${RESET} ${name} ... `,
-    );
+    process.stdout.write(`${DIM}  [${category}]${RESET} ${name} ... `);
 
     let result: TestResult;
     try {
@@ -212,9 +210,7 @@ class ChaosRunner {
         durationMs,
         details,
       };
-      console.log(
-        `${GREEN}PASS${RESET} ${DIM}(${durationMs}ms)${RESET}`,
-      );
+      console.log(`${GREEN}PASS${RESET} ${DIM}(${durationMs}ms)${RESET}`);
     } catch (error) {
       const durationMs = Date.now() - start;
       const msg = error instanceof Error ? error.message : String(error);
@@ -265,7 +261,7 @@ class ChaosRunner {
     const skipped = this.results.filter((r) => r.status === "skip").length;
     const total = this.results.length;
 
-    console.log("\n" + "─".repeat(60));
+    console.log(`\n${"─".repeat(60)}`);
     console.log(
       `${BOLD}Chaos Test Summary${RESET}  ${DIM}(${(totalMs / 1000).toFixed(1)}s)${RESET}`,
     );
@@ -329,7 +325,10 @@ type Manifest = {
   network?: { node_url?: string };
 };
 
-function readEnvStr(name: string, fallback: string | null = null): string | null {
+function readEnvStr(
+  name: string,
+  fallback: string | null = null,
+): string | null {
   const val = process.env[name];
   if (!val || val.trim() === "") return fallback;
   return val.trim();
@@ -368,7 +367,9 @@ function loadManifest(manifestPath: string): Manifest {
   try {
     return JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
   } catch (e) {
-    throw new Error(`Failed to load manifest at ${manifestPath}: ${(e as Error).message}`);
+    throw new Error(
+      `Failed to load manifest at ${manifestPath}: ${(e as Error).message}`,
+    );
   }
 }
 
@@ -413,7 +414,10 @@ function getConfig(): ChaosConfig {
   }
   const mode = modeStr as ChaosMode;
 
-  const attestationUrl = requireEnvStr("FPC_CHAOS_ATTESTATION_URL").replace(/\/$/, "");
+  const attestationUrl = requireEnvStr("FPC_CHAOS_ATTESTATION_URL").replace(
+    /\/$/,
+    "",
+  );
 
   if ((mode === "onchain" || mode === "full") && !nodeUrl) {
     throw new Error(
@@ -492,11 +496,7 @@ async function httpGet(
   }
 }
 
-function assertOk(
-  status: number,
-  body: string,
-  label: string,
-): void {
+function assertOk(status: number, body: string, label: string): void {
   if (status < 200 || status >= 300) {
     throw new Error(
       `${label}: expected 2xx, got ${status}. body=${body.slice(0, 200)}`,
@@ -504,11 +504,7 @@ function assertOk(
   }
 }
 
-function assertClientError(
-  status: number,
-  body: string,
-  label: string,
-): void {
+function assertClientError(status: number, body: string, label: string): void {
   if (status < 400 || status >= 500) {
     throw new Error(
       `${label}: expected 4xx, got ${status}. body=${body.slice(0, 200)}`,
@@ -525,12 +521,14 @@ function parseQuote(body: string): QuoteResponse {
     typeof parsed.valid_until !== "string" ||
     typeof parsed.signature !== "string"
   ) {
-    throw new Error(`Quote response missing required fields: ${body.slice(0, 300)}`);
+    throw new Error(
+      `Quote response missing required fields: ${body.slice(0, 300)}`,
+    );
   }
   return parsed;
 }
 
-function sleep(ms: number): Promise<void> {
+function _sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));
 }
 
@@ -573,7 +571,10 @@ async function signQuote(
     new Fr(validUntil),
     userAddress.toField(),
   ]);
-  const sig = await schnorr.constructSignature(quoteHash.toBuffer(), signingKey);
+  const sig = await schnorr.constructSignature(
+    quoteHash.toBuffer(),
+    signingKey,
+  );
   return Array.from(sig.toBuffer());
 }
 
@@ -600,8 +601,7 @@ function loadArtifact(artifactPath: string): ContractArtifact {
 async function buildOnchainContext(
   config: ChaosConfig,
 ): Promise<OnchainContext> {
-  if (!config.nodeUrl)
-    throw new Error("nodeUrl is required for onchain tests");
+  if (!config.nodeUrl) throw new Error("nodeUrl is required for onchain tests");
   if (!config.fpcAddress)
     throw new Error("fpcAddress is required for onchain tests");
   if (!config.acceptedAsset)
@@ -705,9 +705,7 @@ async function buildOnchainContext(
   };
 }
 
-async function getLatestL2Timestamp(
-  ctx: OnchainContext,
-): Promise<bigint> {
+async function getLatestL2Timestamp(ctx: OnchainContext): Promise<bigint> {
   const block = await ctx.node.getBlock("latest");
   if (!block) throw new Error("Could not read latest L2 block");
   return block.timestamp;
@@ -819,7 +817,11 @@ async function submitFeePaidTxWithOptions(
   const teardownL2Gas = options?.teardownL2Gas ?? 0;
 
   await ctx.token.methods
-    .mint_to_private(payer, (authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount) + 1_000_000n)
+    .mint_to_private(
+      payer,
+      (authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount) +
+        1_000_000n,
+    )
     .send({ from: ctx.operator });
   await ctx.token.methods
     .mint_to_public(payer, 1n)
@@ -837,7 +839,13 @@ async function submitFeePaidTxWithOptions(
   });
 
   const feeEntrypointCall = await ctx.fpc.methods
-    .fee_entrypoint(entrypointNonce, fjAmount, aaPaymentAmount, validUntil, quoteSigBytes)
+    .fee_entrypoint(
+      entrypointNonce,
+      fjAmount,
+      aaPaymentAmount,
+      validUntil,
+      quoteSigBytes,
+    )
     .getFunctionCall();
 
   const paymentMethod = {
@@ -886,7 +894,9 @@ async function expectOnchainFailure(
   try {
     await action();
   } catch (err) {
-    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+    const msg = (
+      err instanceof Error ? err.message : String(err)
+    ).toLowerCase();
     if (expectedFragments.some((f) => msg.includes(f.toLowerCase()))) {
       return; // Expected rejection – test passes
     }
@@ -894,7 +904,9 @@ async function expectOnchainFailure(
       `${scenario} failed with UNEXPECTED error: ${(err as Error).message}`,
     );
   }
-  throw new Error(`${scenario} unexpectedly SUCCEEDED (should have been rejected)`);
+  throw new Error(
+    `${scenario} unexpectedly SUCCEEDED (should have been rejected)`,
+  );
 }
 
 function ceilDiv(a: bigint, b: bigint): bigint {
@@ -912,33 +924,51 @@ async function runApiTests(
   const base = config.attestationUrl;
 
   // ── Health ──────────────────────────────────────────────────────────────────
-  await runner.run("health-ok", "api", "GET /health returns 200 + {status:ok}", async () => {
-    const { status, body } = await httpGet(`${base}/health`, config);
-    assertOk(status, body, "/health");
-    const parsed = JSON.parse(body) as { status?: string };
-    if (parsed.status !== "ok") {
-      throw new Error(`/health body.status expected "ok", got: ${body.slice(0, 100)}`);
-    }
-    return { status, body };
-  });
+  await runner.run(
+    "health-ok",
+    "api",
+    "GET /health returns 200 + {status:ok}",
+    async () => {
+      const { status, body } = await httpGet(`${base}/health`, config);
+      assertOk(status, body, "/health");
+      const parsed = JSON.parse(body) as { status?: string };
+      if (parsed.status !== "ok") {
+        throw new Error(
+          `/health body.status expected "ok", got: ${body.slice(0, 100)}`,
+        );
+      }
+      return { status, body };
+    },
+  );
 
   // ── Asset endpoint ──────────────────────────────────────────────────────────
-  await runner.run("asset-ok", "api", "GET /asset returns valid structure", async () => {
-    const { status, body } = await httpGet(`${base}/asset`, config);
-    assertOk(status, body, "/asset");
-    const parsed = JSON.parse(body) as { name?: string; address?: string };
-    if (typeof parsed.name !== "string" || typeof parsed.address !== "string") {
-      throw new Error(`/asset missing name or address: ${body.slice(0, 200)}`);
-    }
-    return { name: parsed.name, address: parsed.address };
-  });
+  await runner.run(
+    "asset-ok",
+    "api",
+    "GET /asset returns valid structure",
+    async () => {
+      const { status, body } = await httpGet(`${base}/asset`, config);
+      assertOk(status, body, "/asset");
+      const parsed = JSON.parse(body) as { name?: string; address?: string };
+      if (
+        typeof parsed.name !== "string" ||
+        typeof parsed.address !== "string"
+      ) {
+        throw new Error(
+          `/asset missing name or address: ${body.slice(0, 200)}`,
+        );
+      }
+      return { name: parsed.name, address: parsed.address };
+    },
+  );
 
   await runner.run(
     "asset-address-matches-manifest",
     "api",
     "GET /asset address matches configured accepted_asset",
     async () => {
-      if (!config.acceptedAsset) return { skipped: "no accepted_asset configured" };
+      if (!config.acceptedAsset)
+        return { skipped: "no accepted_asset configured" };
       const { status, body } = await httpGet(`${base}/asset`, config);
       assertOk(status, body, "/asset");
       const parsed = JSON.parse(body) as { address?: string };
@@ -975,9 +1005,7 @@ async function runApiTests(
       const q = await fetchQuoteForSentinel(config);
       const sigBytes = Buffer.from(q.signature.replace(/^0x/, ""), "hex");
       if (sigBytes.length !== 64) {
-        throw new Error(
-          `Signature expected 64 bytes, got ${sigBytes.length}`,
-        );
+        throw new Error(`Signature expected 64 bytes, got ${sigBytes.length}`);
       }
       return { sigLenBytes: sigBytes.length };
     },
@@ -1000,7 +1028,9 @@ async function runApiTests(
       if (config.nodeUrl) {
         const node = createAztecNodeClient(config.nodeUrl);
         const block = await node.getBlock("latest");
-        nowSec = block ? block.timestamp : BigInt(Math.floor(Date.now() / 1000));
+        nowSec = block
+          ? block.timestamp
+          : BigInt(Math.floor(Date.now() / 1000));
       } else {
         nowSec = BigInt(Math.floor(Date.now() / 1000));
       }
@@ -1023,12 +1053,15 @@ async function runApiTests(
     "api",
     "Quote accepted_asset matches configured accepted_asset",
     async () => {
-      if (!config.acceptedAsset) return { skipped: "no accepted_asset configured" };
+      if (!config.acceptedAsset)
+        return { skipped: "no accepted_asset configured" };
       const q = await fetchQuoteForSentinel(config);
       const got = q.accepted_asset.toLowerCase();
       const expected = config.acceptedAsset.toLowerCase();
       if (got !== expected) {
-        throw new Error(`Quote accepted_asset mismatch. expected=${expected} got=${got}`);
+        throw new Error(
+          `Quote accepted_asset mismatch. expected=${expected} got=${got}`,
+        );
       }
       return { got, expected };
     },
@@ -1045,7 +1078,9 @@ async function runApiTests(
       assertOk(status, body, "/quote fj echo");
       const q = parseQuote(body);
       if (q.fj_amount !== requested) {
-        throw new Error(`fj_amount echo mismatch: requested=${requested} got=${q.fj_amount}`);
+        throw new Error(
+          `fj_amount echo mismatch: requested=${requested} got=${q.fj_amount}`,
+        );
       }
       return { requested, got: q.fj_amount };
     },
@@ -1176,14 +1211,17 @@ async function runApiTests(
       const { status, body } = await httpGet(url, config);
       // We accept both success (service allows it) and client error (service rejects as too large)
       if (status >= 500) {
-        throw new Error(`Server error on u128_max fj_amount: ${status} ${body.slice(0, 200)}`);
+        throw new Error(
+          `Server error on u128_max fj_amount: ${status} ${body.slice(0, 200)}`,
+        );
       }
       return { status, accepted: status < 400 };
     },
   );
 
   // ── Zero / edge user address ─────────────────────────────────────────────
-  const ZERO_USER = "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const ZERO_USER =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
   await runner.run(
     "quote-zero-user-rejected",
     "api",
@@ -1214,7 +1252,10 @@ async function runApiTests(
   );
 
   // ── Auth tests (conditional on config) ─────────────────────────────────────
-  if (config.quoteAuthApiKey || (config.quoteAuthHeader && config.quoteAuthValue)) {
+  if (
+    config.quoteAuthApiKey ||
+    (config.quoteAuthHeader && config.quoteAuthValue)
+  ) {
     await runner.run(
       "quote-auth-no-key-rejected",
       "api-auth",
@@ -1223,7 +1264,10 @@ async function runApiTests(
         const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
         // Send with no auth headers
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), config.httpTimeoutMs);
+        const timer = setTimeout(
+          () => controller.abort(),
+          config.httpTimeoutMs,
+        );
         try {
           const resp = await fetch(url, { signal: controller.signal });
           const body = await resp.text();
@@ -1247,13 +1291,16 @@ async function runApiTests(
         const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
         const wrongHeaders: Record<string, string> = {};
         if (config.quoteAuthApiKey) {
-          wrongHeaders[config.quoteAuthHeader ?? "x-api-key"] = "WRONG_KEY_FOR_CHAOS_TEST";
+          wrongHeaders[config.quoteAuthHeader ?? "x-api-key"] =
+            "WRONG_KEY_FOR_CHAOS_TEST";
         } else if (config.quoteAuthHeader) {
           wrongHeaders[config.quoteAuthHeader] = "WRONG_VALUE_FOR_CHAOS_TEST";
         }
         const { status, body } = await httpGet(url, config, wrongHeaders);
         if (status !== 401) {
-          throw new Error(`Expected 401 with wrong key, got ${status}: ${body.slice(0, 100)}`);
+          throw new Error(
+            `Expected 401 with wrong key, got ${status}: ${body.slice(0, 100)}`,
+          );
         }
         return { status };
       },
@@ -1624,7 +1671,13 @@ async function runOnchainTests(
         "tampered signature",
         // A flipped byte in the R-point can create an off-curve point, which
         // the Grumpkin circuit rejects before the FPC sig check is reached.
-        ["invalid quote signature", "signature", "invalid", "grumpkin", "not a valid"],
+        [
+          "invalid quote signature",
+          "signature",
+          "invalid",
+          "grumpkin",
+          "not a valid",
+        ],
         () =>
           submitFeePaidTx(
             config,
@@ -1815,7 +1868,12 @@ async function runOnchainTests(
         ["insufficient", "balance", "token", "underflow", "app_logic_reverted"],
         () =>
           ctx.token.methods
-            .transfer_public_to_public(ctx.otherUser, ctx.operator, 1n, Fr.random())
+            .transfer_public_to_public(
+              ctx.otherUser,
+              ctx.operator,
+              1n,
+              Fr.random(),
+            )
             .send({
               from: ctx.otherUser,
               fee: {
@@ -1933,7 +1991,14 @@ async function runOnchainTests(
         // PXE rejects before submission when it cannot find an authwit for the
         // computed message hash ("Unknown auth witness for message hash 0x…").
         // If the tx does reach simulation, the contract reverts via app_logic_reverted.
-        ["unknown auth witness", "authwit", "invalid", "nonce", "app_logic_reverted", "match"],
+        [
+          "unknown auth witness",
+          "authwit",
+          "invalid",
+          "nonce",
+          "app_logic_reverted",
+          "match",
+        ],
         () =>
           submitFeePaidTxWithOptions(
             config,
@@ -1972,7 +2037,14 @@ async function runOnchainTests(
         // PXE rejects before submission when it cannot find an authwit for the
         // computed message hash ("Unknown auth witness for message hash 0x…").
         // If the tx does reach simulation, the contract reverts via app_logic_reverted.
-        ["unknown auth witness", "authwit", "invalid", "app_logic_reverted", "match", "action"],
+        [
+          "unknown auth witness",
+          "authwit",
+          "invalid",
+          "app_logic_reverted",
+          "match",
+          "action",
+        ],
         () =>
           submitFeePaidTxWithOptions(
             config,
@@ -2137,7 +2209,9 @@ async function runStressTests(
       const testAccounts = await getInitialTestAccountsData();
       const userDat = testAccounts.at(1);
       if (!userDat) {
-        throw new Error("Need at least 2 initial test accounts for stress test");
+        throw new Error(
+          "Need at least 2 initial test accounts for stress test",
+        );
       }
       const userAddress = await ctx.wallet
         .createSchnorrAccount(userDat.secret, userDat.salt, userDat.signingKey)
