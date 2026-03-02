@@ -403,7 +403,7 @@ async function main() {
   const creditFpcArtifactPath = path.join(
     repoRoot,
     "target",
-    "credit_fpc-CreditFPC.json",
+    "credit_fpc-BackedCreditFPC.json",
   );
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
@@ -478,7 +478,6 @@ async function main() {
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
-    token.address,
   ]).send({ from: operator });
   console.log(`[credit-smoke] credit_fpc=${creditFpc.address.toString()}`);
 
@@ -783,6 +782,10 @@ async function main() {
 try {
   await main();
 } catch (error) {
-  console.error(`[credit-smoke] FAIL: ${(error as Error).message}`);
+  const err = error as Error;
+  console.error(`[credit-smoke] FAIL: ${err.message}`);
+  if (err.stack) {
+    console.error(err.stack);
+  }
   process.exit(1);
 }

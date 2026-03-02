@@ -6,6 +6,30 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 MODE="${FPC_DEPLOY_ENV:-devnet}"
 
+ensure_tool_on_path() {
+  local tool="$1"
+  if command -v "$tool" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "/snap/bin/$tool" \
+    "/usr/local/bin/$tool" \
+    "/usr/bin/$tool" \
+    "/bin/$tool" \
+    "/opt/homebrew/bin/$tool" \
+    "/home/linuxbrew/.linuxbrew/bin/$tool"; do
+    if [[ -x "$candidate" ]]; then
+      PATH="$(dirname "$candidate"):$PATH"
+      export PATH
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 resolve_default_fpc_artifact() {
   if [[ -n "${FPC_FPC_ARTIFACT:-}" ]]; then
     printf "%s\n" "${FPC_FPC_ARTIFACT}"
@@ -48,7 +72,7 @@ fi
 
 cd "${REPO_ROOT}"
 
-if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-CreditFPC.json || ( ! -f target/fpc-FPCMultiAsset.json && ! -f target/fpc-FPC.json ) ]]; then
+if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-BackedCreditFPC.json || ( ! -f target/fpc-FPCMultiAsset.json && ! -f target/fpc-FPC.json ) ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force
   if [[ -z "${FPC_VARIANT:-}" ]]; then
@@ -70,9 +94,10 @@ if [[ "$MODE" == "local" ]]; then
 
   NODE_URL="$AZTEC_NODE_URL"
   OUT_PATH="${FPC_LOCAL_OUT:-./tmp/deploy-fpc-local-manifest.json}"
-  DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:?ERROR: FPC_LOCAL_DEPLOYER_ALIAS required}"
-  DEPLOYER_PRIVATE_KEY="${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:?ERROR: FPC_LOCAL_DEPLOYER_PRIVATE_KEY required}"
-  OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:?ERROR: FPC_LOCAL_OPERATOR_SECRET_KEY required}"
+  # Defaults match aztec local-network TEST_ACCOUNTS account #0.
+  DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
+  DEPLOYER_PRIVATE_KEY="${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+  OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
 
   cmd=(
     bunx tsx scripts/contract/deploy-fpc-devnet.ts
@@ -95,7 +120,7 @@ if [[ "$MODE" == "local" ]]; then
 
   FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}"
   if [[ -f "$OUT_PATH" && -f "$FPC_MASTER_CONFIG" ]]; then
-    if command -v jq >/dev/null 2>&1 && command -v yq >/dev/null 2>&1; then
+    if ensure_tool_on_path jq && ensure_tool_on_path yq; then
       if ! FPC_DEPLOY_MANIFEST="$OUT_PATH" \
         FPC_MASTER_CONFIG="$FPC_MASTER_CONFIG" \
         FPC_CONFIGS_OUT="${FPC_CONFIGS_OUT:-./configs}" \

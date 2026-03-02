@@ -60,6 +60,7 @@ import {
   feeJuiceToAsset,
   SimpleWallet,
   signQuote,
+  signRateQuote,
   extractFpcSteps,
 } from '../profile-utils.mjs';
 
@@ -121,19 +122,29 @@ class CustomFPCPaymentMethod {
   }
 }
 
-type FeeEntrypointMode = 'fixed_amount' | 'multi_asset_rate';
+type FeeEntrypointMode = 'fixed_amount' | 'multi_asset_rate' | 'multi_asset_amount';
 
 function detectFeeEntrypointMode(fpcArtifact: any): FeeEntrypointMode {
   const feeEntrypoint = (fpcArtifact.functions ?? []).find(
     (f: any) => f.name === 'fee_entrypoint',
   );
-  const paramNames = new Set(
-    (feeEntrypoint?.parameters ?? []).map((p: any) => p?.name),
-  );
-  if (paramNames.has('accepted_asset') || paramNames.has('rate_num')) {
+  const params = feeEntrypoint?.parameters ?? feeEntrypoint?.abi?.parameters ?? [];
+  const paramNames = new Set(params.map((p: any) => p?.name));
+  if (paramNames.has('rate_num') || paramNames.has('rate_den')) {
     return 'multi_asset_rate';
   }
+  if (paramNames.has('accepted_asset')) {
+    return 'multi_asset_amount';
+  }
   return 'fixed_amount';
+}
+
+function constructorHasAcceptedAsset(fpcArtifact: any): boolean {
+  const constructor = (fpcArtifact.functions ?? []).find(
+    (f: any) => f.name === 'constructor',
+  );
+  const params = constructor?.parameters ?? constructor?.abi?.parameters ?? [];
+  return params.some((p: any) => p?.name === 'accepted_asset');
 }
 
 // ── L1 helpers (Fee Juice bridging) ──────────────────────────────────────────
@@ -407,6 +418,7 @@ export default class FPCBenchmark {
       JSON.parse(readFileSync(findArtifact('FPC'), 'utf8')),
     );
     const feeEntrypointMode = detectFeeEntrypointMode(fpcArtifact);
+    const hasAcceptedAssetInConstructor = constructorHasAcceptedAsset(fpcArtifact);
     console.log(`Detected fee_entrypoint mode: ${feeEntrypointMode}`);
     const noopArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Noop'), 'utf8')),
@@ -426,11 +438,11 @@ export default class FPCBenchmark {
 
     // ── Deploy FPC ─────────────────────────────────────────────────────────
     console.log('Deploying FPC...');
+    const constructorArgs = hasAcceptedAssetInConstructor
+      ? [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress]
+      : [operatorAddress, operatorPubKey.x, operatorPubKey.y];
     const fpcDeploy = await Contract.deploy(wallet, fpcArtifact, [
-      operatorAddress,
-      operatorPubKey.x,
-      operatorPubKey.y,
-      tokenAddress,
+      ...constructorArgs,
     ]).send({ from: userAddress });
     const fpcAddress = fpcDeploy.address;
     console.log('FPC:  ', fpcAddress.toString());
@@ -484,17 +496,30 @@ export default class FPCBenchmark {
     console.log(`L2 timestamp: ${l2Timestamp}, VALID_UNTIL: ${VALID_UNTIL}`);
 
     // ── Quote signature ────────────────────────────────────────────────────
-    const quoteSigFields = await signQuote(
-      schnorr,
-      operatorSigningKey,
-      fpcAddress,
-      tokenAddress,
-      feeEntrypointMode === 'multi_asset_rate' ? RATE_NUM : maxGasCost,
-      feeEntrypointMode === 'multi_asset_rate' ? RATE_DEN : charge,
-      VALID_UNTIL,
-      userAddress,
-      QUOTE_DOMAIN_SEP,
-    );
+    const quoteSigFields =
+      feeEntrypointMode === 'multi_asset_rate'
+        ? await signRateQuote(
+            schnorr,
+            operatorSigningKey,
+            fpcAddress,
+            tokenAddress,
+            RATE_NUM,
+            RATE_DEN,
+            VALID_UNTIL,
+            userAddress,
+            QUOTE_DOMAIN_SEP,
+          )
+        : await signQuote(
+            schnorr,
+            operatorSigningKey,
+            fpcAddress,
+            tokenAddress,
+            maxGasCost,
+            charge,
+            VALID_UNTIL,
+            userAddress,
+            QUOTE_DOMAIN_SEP,
+          );
     console.log('Quote signature created.');
 
     // ── Transfer authwit ───────────────────────────────────────────────────
@@ -529,6 +554,17 @@ export default class FPCBenchmark {
               quoteSigFields,
             )
             .getFunctionCall()
+        : feeEntrypointMode === 'multi_asset_amount'
+          ? await fpcDeploy.methods
+              .fee_entrypoint(
+                tokenAddress,
+                TX_NONCE,
+                maxGasCost,
+                charge,
+                VALID_UNTIL,
+                quoteSigFields,
+              )
+              .getFunctionCall()
         : await fpcDeploy.methods
             .fee_entrypoint(
               TX_NONCE,

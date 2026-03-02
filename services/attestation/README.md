@@ -43,7 +43,7 @@ Contract reference: `/home/ametel/source/aztec-fpc/contracts/fpc/src/main.nr`
 
 How it connects:
 
-1. `FPC.fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` expects the service quote fields directly.
+1. `FPC.fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` expects the service quote fields directly.
 2. `FPC.assert_valid_quote(...)` recomputes the same hash preimage and verifies Schnorr signature against the stored operator pubkey.
 3. It enforces quote expiry and replay protection (`push_nullifier(quote_hash)`).
 4. It enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)`.
@@ -57,7 +57,7 @@ Contract reference: `/home/ametel/source/aztec-fpc/contracts/credit_fpc/src/main
 
 How it connects:
 
-1. `CreditFPC.pay_and_mint(authwit_nonce, fj_credit_amount, aa_payment_amount, valid_until, quote_sig)` consumes the same payload shape from `/quote`.
+1. `CreditFPC.pay_and_mint(accepted_asset, authwit_nonce, fj_credit_amount, aa_payment_amount, valid_until, quote_sig)` consumes the same payload shape from `/quote`.
 2. `CreditFPC.assert_valid_quote(...)` uses the same preimage format and signature verification logic as `FPC`.
 3. It transfers exactly `aa_payment_amount` of `accepted_asset` from user to operator.
 4. It mints exactly `fj_credit_amount` into the caller's private credit balance.

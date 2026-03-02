@@ -4,10 +4,13 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 import {
+  type CreditRateQuoteParams,
+  computeCreditRateQuoteHash,
   computeQuoteHash,
   computeQuoteInnerHash,
   type QuoteParams,
   type QuoteSchnorrSigner,
+  signCreditRateQuote,
   signQuote,
 } from "../src/signer.js";
 
@@ -30,6 +33,18 @@ function makeQuoteParams(): QuoteParams {
     acceptedAsset: ASSET,
     fjFeeAmount: 1_000_000n,
     aaPaymentAmount: 1020n,
+    validUntil: 1740000300n,
+    userAddress: USER,
+  };
+}
+
+function makeCreditRateQuoteParams(): CreditRateQuoteParams {
+  return {
+    fpcAddress: FPC,
+    acceptedAsset: ASSET,
+    mintAmount: 1_000_000n,
+    rateNum: 1020n,
+    rateDen: 1000n,
     validUntil: 1740000300n,
     userAddress: USER,
   };
@@ -91,5 +106,47 @@ describe("signer", () => {
     const userHash = await computeQuoteHash(params);
     const otherUserHash = await computeQuoteHash(otherUserParams);
     assert.equal(userHash.equals(otherUserHash), false);
+  });
+});
+
+describe("signer credit rate quote", () => {
+  it("computes credit rate quote hash with exact preimage order", async () => {
+    const params = makeCreditRateQuoteParams();
+
+    const expected = await computeInnerAuthWitHash([
+      Fr.fromHexString("0x465043"),
+      params.fpcAddress.toField(),
+      params.acceptedAsset.toField(),
+      new Fr(params.mintAmount),
+      new Fr(params.rateNum),
+      new Fr(params.rateDen),
+      new Fr(params.validUntil),
+      params.userAddress.toField(),
+    ]);
+
+    const actual = await computeCreditRateQuoteHash(params);
+    assert.equal(actual.equals(expected), true);
+
+    const wrongOrder = await computeInnerAuthWitHash([
+      Fr.fromHexString("0x465043"),
+      params.fpcAddress.toField(),
+      params.acceptedAsset.toField(),
+      new Fr(params.rateNum),
+      new Fr(params.mintAmount),
+      new Fr(params.rateDen),
+      new Fr(params.validUntil),
+      params.userAddress.toField(),
+    ]);
+    assert.equal(actual.equals(wrongOrder), false);
+  });
+
+  it("returns signature hex for credit rate quote", async () => {
+    const params = makeCreditRateQuoteParams();
+    const signer: QuoteSchnorrSigner = {
+      signQuoteHash: async () => "0xfacefeed",
+    };
+
+    const sig = await signCreditRateQuote(signer, params);
+    assert.equal(sig, "0xfacefeed");
   });
 });

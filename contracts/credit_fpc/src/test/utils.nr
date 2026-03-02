@@ -1,7 +1,10 @@
-use crate::CreditFPC;
+use crate::BackedCreditFPC;
 use aztec::{
     authwit::auth::compute_inner_authwit_hash,
-    protocol::{address::AztecAddress, traits::ToField},
+    protocol::{
+        address::AztecAddress, constants::FEE_JUICE_ADDRESS,
+        storage::map::derive_storage_slot_in_map, traits::ToField,
+    },
     test::helpers::test_environment::TestEnvironment,
 };
 use std::embedded_curve_ops::{EmbeddedCurvePoint, EmbeddedCurveScalar, multi_scalar_mul};
@@ -24,6 +27,8 @@ global TEST_SIGNING_KEY: Field = 1;
 // Fq = 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47
 global FQ_HI: u128 = 0x30644e72e131a029b85045b68181585d;
 global FQ_LO: u128 = 0x97816a916871ca8d3c208c16d87cfd47;
+global FEE_JUICE_BALANCES_SLOT: Field = 1;
+global FEE_JUICE_TEST_BACKING: u128 = 1_000_000_000;
 
 /// Derive the operator's Schnorr public key from TEST_SIGNING_KEY.
 pub unconstrained fn test_operator_pubkey() -> EmbeddedCurvePoint {
@@ -171,11 +176,24 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let pk = test_operator_pubkey();
-    let credit_fpc_initializer = CreditFPC::interface().constructor(operator, pk.x, pk.y);
+    let credit_fpc_initializer = BackedCreditFPC::interface().constructor(operator, pk.x, pk.y);
     let credit_fpc_address =
-        env.deploy("CreditFPC").with_public_initializer(operator, credit_fpc_initializer);
+        env.deploy("BackedCreditFPC").with_public_initializer(operator, credit_fpc_initializer);
+
+    seed_fee_juice_backing(env, credit_fpc_address, FEE_JUICE_TEST_BACKING);
 
     (env, credit_fpc_address, token_address, operator, user)
+}
+
+pub unconstrained fn seed_fee_juice_backing(
+    env: TestEnvironment,
+    fee_payer: AztecAddress,
+    amount: u128,
+) {
+    env.public_context_at(FEE_JUICE_ADDRESS, |context| {
+        let balance_slot = derive_storage_slot_in_map(FEE_JUICE_BALANCES_SLOT, fee_payer);
+        context.storage_write(balance_slot, amount);
+    });
 }
 
 pub unconstrained fn max_gas_cost_no_teardown(env: TestEnvironment) -> u128 {
@@ -183,6 +201,16 @@ pub unconstrained fn max_gas_cost_no_teardown(env: TestEnvironment) -> u128 {
         let s = context.gas_settings();
         s.max_fees_per_gas.fee_per_da_gas * (s.gas_limits.da_gas as u128)
             + s.max_fees_per_gas.fee_per_l2_gas * (s.gas_limits.l2_gas as u128)
+    })
+}
+
+pub unconstrained fn max_gas_cost(env: TestEnvironment) -> u128 {
+    env.private_context(|context| {
+        let s = context.gas_settings();
+        s.max_fees_per_gas.fee_per_da_gas
+            * (s.gas_limits.da_gas as u128 + s.teardown_gas_limits.da_gas as u128)
+            + s.max_fees_per_gas.fee_per_l2_gas
+                * (s.gas_limits.l2_gas as u128 + s.teardown_gas_limits.l2_gas as u128)
     })
 }
 
@@ -240,5 +268,12 @@ pub unconstrained fn credit_balance(
     credit_fpc_address: AztecAddress,
     account: AztecAddress,
 ) -> u128 {
-    env.simulate_utility(CreditFPC::at(credit_fpc_address).balance_of(account))
+    env.simulate_utility(BackedCreditFPC::at(credit_fpc_address).balance_of(account))
+}
+
+pub unconstrained fn total_unspent_credits(
+    env: TestEnvironment,
+    credit_fpc_address: AztecAddress,
+) -> u128 {
+    env.simulate_utility(BackedCreditFPC::at(credit_fpc_address).totals())
 }

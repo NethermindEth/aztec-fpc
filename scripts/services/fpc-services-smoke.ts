@@ -178,6 +178,10 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
 }
 
+function maxBigInt(a: bigint, b: bigint): bigint {
+  return a > b ? a : b;
+}
+
 function loadArtifact(artifactPath: string): ContractArtifact {
   const raw = readFileSync(artifactPath, "utf8");
   const parsed = JSON.parse(raw) as NoirCompiledContract;
@@ -881,40 +885,6 @@ async function verifyAttestationAmountQuoteSignature(
   }
 }
 
-async function verifyAttestationRateQuoteSignature(
-  schnorr: Schnorr,
-  operatorPubKey: SchnorrPoint,
-  feePayerAddress: AztecAddress,
-  tokenAddress: AztecAddress,
-  user: AztecAddress,
-  rateNum: bigint,
-  rateDen: bigint,
-  validUntil: bigint,
-  quoteSigBytes: number[],
-  scenarioPrefix: string,
-): Promise<void> {
-  const quoteHash = await computeInnerAuthWitHash([
-    QUOTE_DOMAIN_SEPARATOR,
-    feePayerAddress.toField(),
-    tokenAddress.toField(),
-    new Fr(rateNum),
-    new Fr(rateDen),
-    new Fr(validUntil),
-    user.toField(),
-  ]);
-  const signature = SchnorrSignature.fromBuffer(Buffer.from(quoteSigBytes));
-  const isValid = await schnorr.verifySignature(
-    quoteHash.toBuffer(),
-    operatorPubKey,
-    signature,
-  );
-  if (!isValid) {
-    throw new Error(
-      `${scenarioPrefix} quote signature failed Schnorr verification for quoted rate preimage`,
-    );
-  }
-}
-
 async function runServiceScenario(
   scenario: ScenarioKind,
   config: SmokeConfig,
@@ -956,7 +926,7 @@ async function runServiceScenario(
         `market_rate_num: ${config.marketRateNum}`,
         `market_rate_den: ${config.marketRateDen}`,
         `fee_bips: ${config.feeBips}`,
-        `quote_format: "${scenario === "fpc" ? "rate_quote" : "amount_quote"}"`,
+        `quote_format: "amount_quote"`,
       ].join("\n")}\n`,
       "utf8",
     );
@@ -1204,33 +1174,18 @@ async function runServiceScenario(
         `${scenarioPrefix} quote fj amount mismatch. expected=${quoteFjAmount} got=${fjAmount}`,
       );
     }
-    if (scenario === "fpc") {
-      await verifyAttestationRateQuoteSignature(
-        schnorr,
-        operatorPubKey,
-        feePayerAddress,
-        token.address,
-        user,
-        expectedRateNum,
-        expectedRateDen,
-        validUntil,
-        quoteSigBytes,
-        scenarioPrefix,
-      );
-    } else {
-      await verifyAttestationAmountQuoteSignature(
-        schnorr,
-        operatorPubKey,
-        feePayerAddress,
-        token.address,
-        user,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        quoteSigBytes,
-        scenarioPrefix,
-      );
-    }
+    await verifyAttestationAmountQuoteSignature(
+      schnorr,
+      operatorPubKey,
+      feePayerAddress,
+      token.address,
+      user,
+      fjAmount,
+      aaPaymentAmount,
+      validUntil,
+      quoteSigBytes,
+      scenarioPrefix,
+    );
     console.log(`${scenarioPrefix} PASS: quote signature verification`);
 
     const chainNowMin =
@@ -1407,8 +1362,8 @@ async function runFpcFeeEntrypointScenario(
     .fee_entrypoint(
       token.address,
       transferAuthwitNonce,
-      quote.rateNum,
-      quote.rateDen,
+      quote.fjAmount,
+      quote.aaPaymentAmount,
       quote.validUntil,
       quote.quoteSigBytes,
     )
@@ -1722,7 +1677,7 @@ async function main() {
     const creditFpcArtifactPath = path.join(
       repoRoot,
       "target",
-      "credit_fpc-CreditFPC.json",
+      "credit_fpc-BackedCreditFPC.json",
     );
     const tokenArtifact = loadArtifact(tokenArtifactPath);
     const fpcArtifact = needsFpc ? loadArtifact(fpcArtifactPath) : null;
@@ -1746,12 +1701,24 @@ async function main() {
     const maxGasCostNoTeardown =
       BigInt(config.daGasLimit) * feePerDaGas +
       BigInt(config.l2GasLimit) * feePerL2Gas;
-    const requiredTxCountPerScenario = config.mode === "fpc" ? 1n : 2n;
-    const minimumTopupWei =
-      maxGasCostNoTeardown *
-        config.feeJuiceTopupSafetyMultiplier *
-        requiredTxCountPerScenario +
+    const fpcMinimumTopupWei =
+      maxGasCostNoTeardown * config.feeJuiceTopupSafetyMultiplier + 1_000_000n;
+    const creditRequestedMintWei =
+      maxGasCostNoTeardown * config.creditMintMultiplier +
+      config.creditMintBuffer;
+    const creditTxBudgetWei =
+      maxGasCostNoTeardown * config.feeJuiceTopupSafetyMultiplier * 2n +
       1_000_000n;
+    const creditMinimumTopupWei = maxBigInt(
+      creditRequestedMintWei,
+      creditTxBudgetWei,
+    );
+    const minimumTopupWei =
+      config.mode === "fpc"
+        ? fpcMinimumTopupWei
+        : config.mode === "credit"
+          ? creditMinimumTopupWei
+          : maxBigInt(fpcMinimumTopupWei, creditMinimumTopupWei);
     const configuredTopupWei = readOptionalEnvBigInt(
       "FPC_SERVICES_SMOKE_TOPUP_WEI",
     );

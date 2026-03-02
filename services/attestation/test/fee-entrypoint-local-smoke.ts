@@ -458,7 +458,6 @@ async function main() {
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
-    token.address,
   ]).send({ from: operator });
   console.log(`[smoke] fpc=${fpc.address.toString()}`);
 
@@ -488,6 +487,8 @@ async function main() {
     maxGasCostNoTeardown * config.rateNum,
     config.rateDen,
   );
+  const fjFeeAmount = maxGasCostNoTeardown;
+  const aaPaymentAmount = expectedCharge;
   const mintAmount = expectedCharge + 1_000_000n;
   console.log(`[smoke] expected_charge=${expectedCharge}`);
 
@@ -507,8 +508,8 @@ async function main() {
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
     token.address.toField(),
-    new Fr(config.rateNum),
-    new Fr(config.rateDen),
+    new Fr(fjFeeAmount),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     user.toField(),
   ]);
@@ -522,7 +523,7 @@ async function main() {
   const transferCall = token.methods.transfer_private_to_private(
     user,
     operator,
-    expectedCharge,
+    aaPaymentAmount,
     transferAuthwitNonce,
   );
   const transferAuthwit = await wallet.createAuthWit(user, {
@@ -547,8 +548,8 @@ async function main() {
     .fee_entrypoint(
       token.address,
       transferAuthwitNonce,
-      config.rateNum,
-      config.rateDen,
+      fjFeeAmount,
+      aaPaymentAmount,
       validUntil,
       quoteSigBytes,
     )
@@ -633,8 +634,8 @@ async function main() {
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
     token.address.toField(),
-    new Fr(config.rateNum),
-    new Fr(config.rateDen),
+    new Fr(fjFeeAmount),
+    new Fr(aaPaymentAmount),
     new Fr(negativeValidUntil),
     user.toField(),
   ]);
@@ -647,7 +648,7 @@ async function main() {
   const negativeTransferCall = token.methods.transfer_private_to_private(
     user,
     operator,
-    expectedCharge,
+    aaPaymentAmount,
     negativeTransferAuthwitNonce,
   );
   const negativeTransferAuthwit = await wallet.createAuthWit(user, {
@@ -658,8 +659,8 @@ async function main() {
     .fee_entrypoint(
       token.address,
       negativeTransferAuthwitNonce,
-      config.rateNum,
-      config.rateDen,
+      fjFeeAmount,
+      aaPaymentAmount,
       negativeValidUntil,
       negativeQuoteSigBytes,
     )
@@ -686,8 +687,8 @@ async function main() {
         .fee_entrypoint(
           token.address,
           negativeTransferAuthwitNonce,
-          config.rateNum,
-          config.rateDen,
+          fjFeeAmount,
+          aaPaymentAmount,
           negativeValidUntil,
           negativeQuoteSigBytes,
         )

@@ -8,12 +8,12 @@ use ::aztec::macros::aztec;
 /// Unlike the standard FPC which hardcodes `accepted_asset` at deploy time,
 /// this variant accepts the asset as a per-quote parameter. The user specifies
 /// which asset they want to pay with when requesting a quote, the operator
-/// signs a quote binding that asset+rate, and `fee_entrypoint` accepts the
+/// signs a quote binding that asset+exact amounts, and `fee_entrypoint` accepts the
 /// asset as an argument.
 ///
 /// Security is preserved because the quote hash includes the asset in its
-/// preimage -- the operator's Schnorr signature binds the rate to a specific
-/// asset.
+/// preimage -- the operator's Schnorr signature binds the quoted amounts to a
+/// specific asset.
 ///
 /// ## Storage
 ///
@@ -22,7 +22,6 @@ use ::aztec::macros::aztec;
 ///                                                  and operator signing key.
 #[aztec]
 pub contract FPCMultiAsset {
-    use crate::fee_math::fee_juice_to_asset;
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
@@ -87,8 +86,8 @@ pub contract FPCMultiAsset {
     fn fee_entrypoint(
         accepted_asset: AztecAddress,
         authwit_nonce: Field,
-        rate_num: u128,
-        rate_den: u128,
+        fj_fee_amount: u128,
+        aa_payment_amount: u128,
         valid_until: u64,
         quote_sig: [u8; 64],
     ) {
@@ -100,7 +99,6 @@ pub contract FPCMultiAsset {
 
         let config = self.storage.config.read();
         let sender = self.msg_sender();
-        assert(rate_num > (0 as u128), "rate_num must be > 0");
 
         assert_valid_quote(
             self.context,
@@ -110,21 +108,18 @@ pub contract FPCMultiAsset {
                 is_infinite: false,
             },
             accepted_asset,
-            rate_num,
-            rate_den,
+            fj_fee_amount,
+            aa_payment_amount,
             valid_until,
             sender,
             quote_sig,
         );
 
-        let charge = fee_juice_to_asset(
-            get_max_gas_cost_no_teardown(self.context),
-            rate_num,
-            rate_den,
-        );
+        let max_fee = get_max_gas_cost_no_teardown(self.context);
+        assert(fj_fee_amount == max_fee, "quoted fee amount mismatch");
 
         Token::at(accepted_asset)
-            .transfer_private_to_private(sender, config.operator, charge, authwit_nonce)
+            .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
         self.context.set_as_fee_payer();
@@ -141,15 +136,15 @@ pub contract FPCMultiAsset {
     /// inline. Pushes a nullifier to prevent replay.
     ///
     /// Quote preimage (hashed with compute_inner_authwit_hash for compatibility):
-    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, rate_num, rate_den,
+    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, fj_fee_amount, aa_payment_amount,
     ///              valid_until, user_address])
     #[contract_library_method]
     fn assert_valid_quote(
         context: &mut PrivateContext,
         operator_pubkey: EmbeddedCurvePoint,
         accepted_asset: AztecAddress,
-        rate_num: u128,
-        rate_den: u128,
+        fj_fee_amount: u128,
+        aa_payment_amount: u128,
         valid_until: u64,
         user_address: AztecAddress,
         quote_sig: [u8; 64],
@@ -158,8 +153,8 @@ pub contract FPCMultiAsset {
             QUOTE_DOMAIN_SEPARATOR,
             context.this_address().to_field(),
             accepted_asset.to_field(),
-            rate_num as Field,
-            rate_den as Field,
+            fj_fee_amount as Field,
+            aa_payment_amount as Field,
             valid_until as Field,
             user_address.to_field(),
         ]);
@@ -169,7 +164,6 @@ pub contract FPCMultiAsset {
             "invalid quote signature",
         );
 
-        // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
         context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;

@@ -435,7 +435,7 @@ export default class CreditFPCBenchmark {
       JSON.parse(readFileSync(findArtifact('Token'), 'utf8')),
     );
     const creditFpcArtifact = loadContractArtifact(
-      JSON.parse(readFileSync(findArtifact('CreditFPC'), 'utf8')),
+      JSON.parse(readFileSync(findArtifact('BackedCreditFPC'), 'utf8')),
     );
     const payAndMintMode = detectPayAndMintMode(creditFpcArtifact);
     console.log(`Detected pay_and_mint mode: ${payAndMintMode}`);
@@ -641,78 +641,80 @@ export default class CreditFPCBenchmark {
       }
     }
 
-    // Fallback: use dev_mint with ONCHAIN_UNCONSTRAINED delivery.
+    // Fallback: send another real pay_and_mint to establish credits.
+    // Previous versions used dev_mint here, but that bypasses _finalize_mint
+    // and corrupts unspent_credits accounting.
     if (creditBalance < totalMaxCost) {
-      console.log('\nCredit notes not yet visible. Trying dev_mint fallback...');
+      console.log('\nCredit notes not yet visible. Sending another pay_and_mint...');
 
-      const DEV_NONCE = SEND_NONCE + 1n;
-      const devMintAmount = totalMaxCost * 3n;
-      const devTokenCharge = feeJuiceToAsset(devMintAmount, RATE_NUM, RATE_DEN);
+      const RETRY_NONCE = SEND_NONCE + 1n;
+      const retryCreditMint = totalMaxCost * 3n;
+      const retryTokenCharge = feeJuiceToAsset(retryCreditMint, RATE_NUM, RATE_DEN);
 
       await tokenAsUser.methods
-        .mint_to_private(userAddress, devTokenCharge + 10000n)
+        .mint_to_private(userAddress, retryTokenCharge + 10000n)
         .send({ from: userAddress });
 
-      const devTransferAuthWit = await wallet.createAuthWit(userAddress, {
+      const retryTransferAuthWit = await wallet.createAuthWit(userAddress, {
         caller: fpcAddress,
         action: tokenAsUser.methods.transfer_private_to_private(
           userAddress,
           operatorAddress,
-          devTokenCharge,
-          DEV_NONCE,
+          retryTokenCharge,
+          RETRY_NONCE,
         ),
       });
 
-      const DEV_VALID_UNTIL = VALID_UNTIL + 5n;
-      const devQuoteSigFields = await signQuote(
+      const RETRY_VALID_UNTIL = VALID_UNTIL + 5n;
+      const retryQuoteSigFields = await signQuote(
         schnorr,
         operatorSigningKey,
         fpcAddress,
         tokenAddress,
-        devMintAmount,
-        devTokenCharge,
-        DEV_VALID_UNTIL,
+        retryCreditMint,
+        retryTokenCharge,
+        RETRY_VALID_UNTIL,
         userAddress,
         QUOTE_DOMAIN_SEP,
       );
 
-      const devPayAndMintCall =
+      const retryPayAndMintCall =
         payAndMintMode === 'multi_asset_quoted'
           ? await creditFpcAsUser.methods
               .pay_and_mint(
                 tokenAddress,
-                DEV_NONCE,
-                devMintAmount,
-                devTokenCharge,
-                DEV_VALID_UNTIL,
-                devQuoteSigFields,
+                RETRY_NONCE,
+                retryCreditMint,
+                retryTokenCharge,
+                RETRY_VALID_UNTIL,
+                retryQuoteSigFields,
               )
               .getFunctionCall()
           : await creditFpcAsUser.methods
               .pay_and_mint(
-                DEV_NONCE,
-                devMintAmount,
-                devTokenCharge,
-                DEV_VALID_UNTIL,
-                devQuoteSigFields,
+                RETRY_NONCE,
+                retryCreditMint,
+                retryTokenCharge,
+                RETRY_VALID_UNTIL,
+                retryQuoteSigFields,
               )
               .getFunctionCall();
 
-      const devPayAndMint = new PayAndMintPaymentMethod(
+      const retryPayAndMint = new PayAndMintPaymentMethod(
         fpcAddress,
-        devPayAndMintCall,
-        devTransferAuthWit,
+        retryPayAndMintCall,
+        retryTransferAuthWit,
         payAndMintGasSettings,
       );
 
-      await creditFpcAsUser.methods
-        .dev_mint(totalMaxCost * 2n)
+      await noopAsUser.methods
+        .noop()
         .send({
-          fee: { paymentMethod: devPayAndMint, gasSettings: payAndMintGasSettings },
+          fee: { paymentMethod: retryPayAndMint, gasSettings: payAndMintGasSettings },
           from: userAddress,
           additionalScopes: [operatorAddress],
         });
-      console.log('dev_mint tx mined.');
+      console.log('Retry pay_and_mint tx mined.');
 
       await tokenAsUser.methods
         .mint_to_private(userAddress, 1n)
@@ -737,7 +739,7 @@ export default class CreditFPCBenchmark {
 
       if (creditBalance < totalMaxCost) {
         throw new Error(
-          `Credit balance ${creditBalance} still below required ${totalMaxCost} after dev_mint fallback.`,
+          `Credit balance ${creditBalance} still below required ${totalMaxCost} after retry pay_and_mint.`,
         );
       }
     }
@@ -896,7 +898,7 @@ export default class CreditFPCBenchmark {
         const allSteps = rawSteps.map(
           (gc: any) => ({ functionName: gc.circuitName, gateCount: gc.gateCount, witgenMs: gc.witgenMs }),
         );
-        const fpcSteps = extractFpcSteps(allSteps, 'CreditFPC');
+        const fpcSteps = extractFpcSteps(allSteps, ['CreditFPC', 'BackedCreditFPC']);
         r.fpcGateCounts = fpcSteps.map((s: any) => ({
           circuitName: s.functionName,
           gateCount: s.gateCount,

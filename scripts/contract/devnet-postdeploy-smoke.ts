@@ -31,7 +31,7 @@ type CliArgs = {
   creditTopupWeiOverride: bigint | null;
 };
 
-type FpcVariant = "FPC" | "FPCMultiAsset" | "CreditFPC";
+type FpcVariant = "FPC" | "FPCMultiAsset" | "CreditFPC" | "BackedCreditFPC";
 
 type CliParseResult =
   | { kind: "help" }
@@ -201,7 +201,7 @@ function usage(): string {
     "Usage:",
     "  bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \\",
     "    [--manifest <path.json>] \\",
-    "    [--fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json|*-CreditFPC.json>] \\",
+    "    [--fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json|*-BackedCreditFPC.json>] \\",
     "    [--l1-rpc-url <http(s)-url>] \\",
     "    [--operator-secret-key <hex32>] \\",
     "    [--l1-operator-private-key <hex32>] \\",
@@ -767,10 +767,11 @@ function resolveFpcArtifactSelection(
   if (
     variant !== "FPC" &&
     variant !== "FPCMultiAsset" &&
-    variant !== "CreditFPC"
+    variant !== "CreditFPC" &&
+    variant !== "BackedCreditFPC"
   ) {
     throw new CliError(
-      `Unsupported FPC artifact variant at ${artifactPath}: ${variant}. Expected FPC, FPCMultiAsset, or CreditFPC.`,
+      `Unsupported FPC artifact variant at ${artifactPath}: ${variant}. Expected FPC, FPCMultiAsset, CreditFPC, or BackedCreditFPC.`,
     );
   }
 
@@ -1190,7 +1191,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const creditMinTopup =
     maxGasCostNoTeardown * args.topupSafetyMultiplier * 2n + 1_000_000n;
   const fpcTopupAmount =
-    fpcSelection.variant === "CreditFPC"
+    fpcSelection.variant === "CreditFPC" ||
+    fpcSelection.variant === "BackedCreditFPC"
       ? (args.creditTopupWeiOverride ?? creditMinTopup)
       : (args.fpcTopupWeiOverride ?? fpcMinTopup);
   if (args.fpcTopupWeiOverride && args.fpcTopupWeiOverride < fpcMinTopup) {
@@ -1234,13 +1236,15 @@ async function runSmoke(args: CliArgs): Promise<void> {
 
   const QUOTE_DOMAIN_SEPARATOR = deps.Fr.fromHexString("0x465043");
   let successfulTxCount = 0;
-  if (fpcSelection.variant !== "CreditFPC") {
+  if (
+    fpcSelection.variant !== "CreditFPC" &&
+    fpcSelection.variant !== "BackedCreditFPC"
+  ) {
     const fpcExpectedCharge = ceilDiv(
       maxGasCostNoTeardown * args.fpcRateNum,
       args.fpcRateDen,
     );
-    const fpcRateNum = args.fpcRateNum;
-    const fpcRateDen = args.fpcRateDen;
+    const fpcFjAmount = maxGasCostNoTeardown;
     const fpcAaAmount = fpcExpectedCharge;
     await token.methods
       .mint_to_private(operatorAddress, fpcExpectedCharge + 1_000_000n)
@@ -1258,8 +1262,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
       QUOTE_DOMAIN_SEPARATOR,
       fpc.address.toField(),
       token.address.toField(),
-      new deps.Fr(fpcRateNum),
-      new deps.Fr(fpcRateDen),
+      new deps.Fr(fpcFjAmount),
+      new deps.Fr(fpcAaAmount),
       new deps.Fr(fpcValidUntil),
       operatorAddress.toField(),
     ]);
@@ -1283,8 +1287,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
       .fee_entrypoint(
         token.address,
         fpcAuthwitNonce,
-        fpcRateNum,
-        fpcRateDen,
+        fpcFjAmount,
+        fpcAaAmount,
         fpcValidUntil,
         fpcQuoteSigBytes,
       )
