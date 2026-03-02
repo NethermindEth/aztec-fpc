@@ -8,6 +8,10 @@ Full protocol specification: [docs/spec.md](docs/spec.md)
 
 Operational probes and metrics: [docs/operational-metrics.md](docs/operational-metrics.md)
 
+Alpha asset model decision: [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md)
+
+Current contracts/services in this repo are still single-asset-per-deployment; treat multi-instance dual-asset operations as an interim workaround until ADR-0001 is implemented.
+
 ---
 
 ## Repository Layout

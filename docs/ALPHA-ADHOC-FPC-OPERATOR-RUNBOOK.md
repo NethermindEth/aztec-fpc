@@ -1,7 +1,14 @@
 # Alpha Ad-Hoc FPC Operator Runbook (30 Minutes)
 
-Date: 2026-02-27  
+Date: 2026-03-02  
 Repository root: `/home/ametel/source/aztec-fpc`
+
+## Alpha Asset Model Decision
+
+Source of truth: [ADR-0001](adr-0001-alpha-asset-model.md).
+
+- Alpha target is **single-deployment multi-asset support**.
+- The dual-stack flow below is an interim workaround for the current implementation and does **not** satisfy Alpha done criteria by itself.
 
 ## Goal
 
@@ -112,9 +119,9 @@ curl -sS http://localhost:3001/ready
 curl -sS "http://localhost:3000/quote?user=0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72&fj_amount=1000000"
 ```
 
-## Ad-Hoc Dual-Asset Pattern
+## Ad-Hoc Dual-Asset Pattern (Interim Workaround)
 
-Current architecture is one accepted asset per deployment. To run two assets, deploy two stacks:
+Current implementation is one accepted asset per deployment. To run two assets today, deploy two stacks:
 
 ```bash
 FPC_LOCAL_OUT=./tmp/deploy-usdc.json bun run deploy:fpc:local
