@@ -33,6 +33,7 @@ type DeployOutput = {
   accepted_asset: string;
   fpc_address: string;
   credit_fpc_address: string;
+  faucet_address: string;
   reuse: boolean;
   node_contracts: {
     fee_juice_portal_address: string;
@@ -42,6 +43,7 @@ type DeployOutput = {
     token_contract_artifact: string;
     fpc_artifact: string;
     credit_fpc_artifact: string;
+    faucet_artifact: string;
   };
   deployer: {
     source: "aztec_wallet_test_account";
@@ -67,6 +69,12 @@ type DeployOutput = {
     credit_fpc: {
       address: string;
       source: "deployed" | "reused";
+    };
+    faucet: {
+      address: string;
+      drip_amount: string;
+      cooldown_seconds: number;
+      initial_supply: string;
     };
   };
 };
@@ -122,6 +130,21 @@ type DeployDeps = {
       args: unknown[],
       constructorName?: string,
     ) => { send: (options: { from: unknown }) => Promise<unknown> };
+    at: (
+      address: unknown,
+      artifact: unknown,
+      wallet: unknown,
+    ) => {
+      methods: Record<
+        string,
+        (...args: unknown[]) => {
+          send: (opts: {
+            from: unknown;
+            wait?: { timeout: number };
+          }) => Promise<unknown>;
+        }
+      >;
+    };
   };
   getInitialTestAccountsData: () => Promise<
     { secret: unknown; salt: unknown; signingKey: unknown }[]
@@ -150,6 +173,7 @@ const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   fpc: path.join(REPO_ROOT, "target", "fpc-FPC.json"),
   creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-CreditFPC.json"),
+  faucet: path.join(REPO_ROOT, "target", "faucet-Faucet.json"),
 } as const;
 
 function usage(): string {
@@ -382,6 +406,7 @@ function assertRequiredArtifactsExist(): {
   tokenArtifactPath: string;
   fpcArtifactPath: string;
   creditFpcArtifactPath: string;
+  faucetArtifactPath: string;
 } {
   const missing: string[] = [];
   if (!existsSync(REQUIRED_ARTIFACTS.token)) {
@@ -393,6 +418,9 @@ function assertRequiredArtifactsExist(): {
   if (!existsSync(REQUIRED_ARTIFACTS.creditFpc)) {
     missing.push(REQUIRED_ARTIFACTS.creditFpc);
   }
+  if (!existsSync(REQUIRED_ARTIFACTS.faucet)) {
+    missing.push(REQUIRED_ARTIFACTS.faucet);
+  }
   if (missing.length > 0) {
     const formatted = missing.map((entry) => `  - ${entry}`).join("\n");
     throw new CliError(
@@ -403,6 +431,7 @@ function assertRequiredArtifactsExist(): {
     tokenArtifactPath: REQUIRED_ARTIFACTS.token,
     fpcArtifactPath: REQUIRED_ARTIFACTS.fpc,
     creditFpcArtifactPath: REQUIRED_ARTIFACTS.creditFpc,
+    faucetArtifactPath: REQUIRED_ARTIFACTS.faucet,
   };
 }
 
@@ -671,6 +700,41 @@ async function loadDeployDeps(): Promise<DeployDeps> {
     ) => unknown,
     AztecAddress: AztecAddress as { fromString: (value: string) => unknown },
   };
+}
+
+function readFaucetEnvConfig(): {
+  dripAmount: bigint;
+  cooldownSeconds: number;
+  initialSupply: bigint;
+} {
+  const dripAmount = process.env.FPC_FAUCET_DRIP_AMOUNT
+    ? readPositiveBigInt(
+        process.env.FPC_FAUCET_DRIP_AMOUNT,
+        "FPC_FAUCET_DRIP_AMOUNT",
+      )
+    : 1_000_000_000_000_000_000n; // 1 token (18 decimals)
+
+  const cooldownRaw = process.env.FPC_FAUCET_COOLDOWN_SECONDS;
+  const cooldownSeconds = cooldownRaw
+    ? ((): number => {
+        const parsed = Number(cooldownRaw.trim());
+        if (!Number.isInteger(parsed) || parsed < 0) {
+          throw new CliError(
+            `FPC_FAUCET_COOLDOWN_SECONDS must be a non-negative integer, got ${cooldownRaw}`,
+          );
+        }
+        return parsed;
+      })()
+    : 0;
+
+  const initialSupply = process.env.FPC_FAUCET_INITIAL_SUPPLY
+    ? readPositiveBigInt(
+        process.env.FPC_FAUCET_INITIAL_SUPPLY,
+        "FPC_FAUCET_INITIAL_SUPPLY",
+      )
+    : dripAmount * 100n; // fund for 100 drips by default
+
+  return { dripAmount, cooldownSeconds, initialSupply };
 }
 
 function isAztecAddress(value: unknown): value is string {
@@ -1217,7 +1281,7 @@ async function main(): Promise<void> {
 
   const artifacts = assertRequiredArtifactsExist();
   console.log(
-    `[deploy-fpc-local] artifact preflight passed. token=${artifacts.tokenArtifactPath} fpc=${artifacts.fpcArtifactPath} credit_fpc=${artifacts.creditFpcArtifactPath}`,
+    `[deploy-fpc-local] artifact preflight passed. token=${artifacts.tokenArtifactPath} fpc=${artifacts.fpcArtifactPath} credit_fpc=${artifacts.creditFpcArtifactPath} faucet=${artifacts.faucetArtifactPath}`,
   );
 
   const deployer = bootstrapDeployerFromWallet(args.aztecNodeUrl);
@@ -1268,10 +1332,13 @@ async function main(): Promise<void> {
     throw new CliError("Failed to resolve deployer sender address");
   }
 
-  // Derive operator's Schnorr public key from test accounts
+  // Derive operator's Schnorr public key from test accounts; also capture the
+  // operator's account object so it can be used as `from` for post-deploy calls.
   let operatorSigningKey: unknown = null;
+  let operatorSender: unknown = null;
   if (deployer.address.toLowerCase() === args.operator.toLowerCase()) {
     operatorSigningKey = deployerData.signingKey;
+    operatorSender = deploySender;
   } else {
     for (let i = 0; i < testAccounts.length; i += 1) {
       if (i === deployer.index) continue;
@@ -1287,11 +1354,12 @@ async function main(): Promise<void> {
       );
       if (addr.toLowerCase() === args.operator.toLowerCase()) {
         operatorSigningKey = accountData.signingKey;
+        operatorSender = (account as { address?: unknown }).address;
         break;
       }
     }
   }
-  if (!operatorSigningKey) {
+  if (!operatorSigningKey || !operatorSender) {
     throw new CliError(
       `Could not find operator ${args.operator} among local test accounts. The deploy-fpc-local script requires the operator to be a local test account.`,
     );
@@ -1318,11 +1386,16 @@ async function main(): Promise<void> {
   let tokenArtifact: unknown;
   let fpcArtifact: unknown;
   let creditFpcArtifact: unknown;
+  let faucetArtifact: unknown;
   try {
     tokenArtifact = loadDeployArtifact(artifacts.tokenArtifactPath, deployDeps);
     fpcArtifact = loadDeployArtifact(artifacts.fpcArtifactPath, deployDeps);
     creditFpcArtifact = loadDeployArtifact(
       artifacts.creditFpcArtifactPath,
+      deployDeps,
+    );
+    faucetArtifact = loadDeployArtifact(
+      artifacts.faucetArtifactPath,
       deployDeps,
     );
   } catch (error) {
@@ -1483,6 +1556,62 @@ async function main(): Promise<void> {
     console.log(`[deploy-fpc-local] credit_fpc deployed: ${creditFpcAddress}`);
   }
 
+  // ── Faucet ──────────────────────────────────────────────────────────────────
+  // The Faucet holds a public token balance that users draw from via drip().
+  // It is always (re)deployed; reuse is not supported since the drip config
+  // is baked in at construction.
+  const faucetConfig = readFaucetEnvConfig();
+  const operatorAztecAddress = deployDeps.AztecAddress.fromString(
+    args.operator,
+  );
+  const acceptedAssetAztecAddress =
+    deployDeps.AztecAddress.fromString(acceptedAssetAddress);
+  console.log(
+    `[deploy-fpc-local] deploying Faucet token=${acceptedAssetAddress} admin=${args.operator} drip_amount=${faucetConfig.dripAmount} cooldown_seconds=${faucetConfig.cooldownSeconds}`,
+  );
+  let faucetInstance: unknown;
+  try {
+    faucetInstance = await deployDeps.Contract.deploy(wallet, faucetArtifact, [
+      acceptedAssetAztecAddress,
+      operatorAztecAddress,
+      faucetConfig.dripAmount,
+      BigInt(faucetConfig.cooldownSeconds),
+    ]).send({ from: deploySender });
+  } catch (error) {
+    throw new CliError(
+      `Faucet deployment failed. Ensure artifacts are up to date and deployer has enough fee balance. Underlying error: ${String(error)}`,
+    );
+  }
+  const faucetAddress = parseDeployedAddress(
+    (faucetInstance as { address?: unknown }).address,
+    "faucet deploy",
+  );
+  console.log(`[deploy-fpc-local] faucet deployed: ${faucetAddress}`);
+
+  // Fund the Faucet with an initial token supply so drip() calls succeed.
+  // Requires the operator to be the token minter.
+  const faucetAztecAddress = deployDeps.AztecAddress.fromString(faucetAddress);
+  console.log(
+    `[deploy-fpc-local] funding faucet: mint_to_public(${faucetAddress}, ${faucetConfig.initialSupply})`,
+  );
+  try {
+    const tokenContract = deployDeps.Contract.at(
+      acceptedAssetAztecAddress,
+      tokenArtifact,
+      wallet,
+    );
+    await tokenContract.methods
+      .mint_to_public(faucetAztecAddress, faucetConfig.initialSupply)
+      .send({ from: operatorSender, wait: { timeout: 120 } });
+    console.log(
+      `[deploy-fpc-local] faucet funded with ${faucetConfig.initialSupply} tokens`,
+    );
+  } catch (error) {
+    throw new CliError(
+      `Faucet funding failed: Token.mint_to_public(${faucetAddress}, ${faucetConfig.initialSupply}) from operator=${args.operator} failed. Ensure the operator is the token minter. Underlying error: ${String(error)}`,
+    );
+  }
+
   const output: DeployOutput = {
     status: "deploy_ok",
     generated_at: new Date().toISOString(),
@@ -1494,6 +1623,7 @@ async function main(): Promise<void> {
     accepted_asset: acceptedAssetAddress,
     fpc_address: fpcAddress,
     credit_fpc_address: creditFpcAddress,
+    faucet_address: faucetAddress,
     reuse: args.reuse,
     node_contracts: {
       fee_juice_portal_address: nodeState.feeJuicePortalAddress,
@@ -1503,6 +1633,7 @@ async function main(): Promise<void> {
       token_contract_artifact: artifacts.tokenArtifactPath,
       fpc_artifact: artifacts.fpcArtifactPath,
       credit_fpc_artifact: artifacts.creditFpcArtifactPath,
+      faucet_artifact: artifacts.faucetArtifactPath,
     },
     deployer: {
       source: "aztec_wallet_test_account",
@@ -1525,6 +1656,12 @@ async function main(): Promise<void> {
       credit_fpc: {
         address: creditFpcAddress,
         source: creditFpcSource,
+      },
+      faucet: {
+        address: faucetAddress,
+        drip_amount: faucetConfig.dripAmount.toString(),
+        cooldown_seconds: faucetConfig.cooldownSeconds,
+        initial_supply: faucetConfig.initialSupply.toString(),
       },
     },
   };
