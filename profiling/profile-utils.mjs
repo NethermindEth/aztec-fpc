@@ -17,6 +17,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const TARGET    = join(__dirname, '../target');
 const ARTIFACT_ALIASES = {
   FPC: ['FPCMultiAsset'],
+  BackedCreditFPC: ['CreditFPC'],
+  CreditFPC: ['BackedCreditFPC'],
 };
 
 // ── Artifact lookup ─────────────────────────────────────────────────────────
