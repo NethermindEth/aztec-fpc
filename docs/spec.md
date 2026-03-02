@@ -1,7 +1,7 @@
 # FPC Protocol — Specification
 
 > **Status:** Alpha / MVP
-> **Last updated:** 2026-02-26
+> **Last updated:** 2026-03-02
 
 ---
 
@@ -14,7 +14,7 @@ The protocol has three components:
 | Component | What it does |
 |---|---|
 | **FPC** (Aztec.nr contract) | Accepts user tokens via private-to-private transfer, declares itself the transaction's fee payer, covers the protocol's Fee Juice requirement |
-| **Attestation Service** (TypeScript) | REST API that signs user-specific exchange-rate quotes; the FPC contract verifies these on-chain |
+| **Attestation Service** (TypeScript) | REST API that signs user-specific amount quotes; the FPC contract verifies these on-chain |
 | **Top-up Service** (TypeScript) | Background process that monitors the FPC's Fee Juice balance and bridges more from L1 when it runs low |
 
 ---
@@ -23,9 +23,9 @@ The protocol has three components:
 
 ```
 User
-  │  1. GET /quote?user=<address>
+  │  1. GET /quote?user=<address>&fj_amount=<u128>
   │◄──────────────────────────────────────  Attestation Service
-  │  signed quote (rate_num, rate_den, valid_until, signature)
+  │  signed quote (accepted_asset, fj_amount, aa_payment_amount, valid_until, signature)
   │
   │  2. Submit tx with fee_entrypoint(...)
   │     + token transfer authwit
@@ -67,8 +67,8 @@ inner_hash = poseidon2([
     DOMAIN_SEPARATOR,    // "FPC" = 0x465043
     fpc_address,
     accepted_asset,      // read from on-chain storage — enforced, not caller-supplied
-    rate_num,
-    rate_den,
+    fj_fee_amount,
+    aa_payment_amount,
     valid_until,         // unix timestamp (u64)
     user_address,        // always msg_sender — never zero
 ])
@@ -90,31 +90,30 @@ final_rate_num = market_rate_num × (10000 + fee_bips)
 final_rate_den = market_rate_den × 10000
 ```
 
-Users see only `(final_rate_num, final_rate_den)` in their quote. The contract applies ceiling division so the FPC always collects at least the actual fee cost at the quoted rate:
+At quote time, users provide `fj_amount` and receive a fixed `aa_payment_amount`:
 
 ```
-charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)
+aa_payment_amount = ceil(fj_amount × final_rate_num / final_rate_den)
 ```
 
-Policy: the standard `fee_entrypoint` requires `rate_num > 0`. Zero-rate quotes are rejected on-chain to avoid free-transaction quotes.
+For `FPC.fee_entrypoint`, `fj_amount` must match `max_gas_cost_no_teardown` for the transaction gas settings.
 
 ### 3.4 Payment Flow
 
-#### `fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig)`
+#### `fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)`
 
 ```
 User private balance →[transfer_private_to_private]→ Operator private balance
 ```
 
 1. Reads packed `config` from storage (`operator`, signing pubkey, `accepted_asset`)
-2. Asserts `rate_num > 0`
-3. Verifies Schnorr quote signature and binds `user_address = msg_sender`
-4. Pushes quote nullifier (replay protection; duplicates fail via nullifier conflict)
-5. Asserts `anchor_block_timestamp ≤ valid_until`
-6. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
-7. Computes `charge = ceil(max_gas_cost_no_teardown × rate_num / rate_den)` (`rate_den != 0` enforced in fee math)
-8. Calls `Token::at(accepted_asset).transfer_private_to_private(sender → operator, charge, nonce)`
-9. For fee-paying txs (any non-zero `maxFeesPerGas` lane), asserts setup-phase execution (`!in_revertible_phase`), then calls `set_as_fee_payer()` + `end_setup()`
+2. Verifies Schnorr quote signature and binds `user_address = msg_sender`
+3. Pushes quote nullifier (replay protection; duplicates fail via nullifier conflict)
+4. Asserts `anchor_block_timestamp ≤ valid_until`
+5. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
+6. Asserts `fj_fee_amount == get_max_gas_cost_no_teardown(...)`
+7. Calls `Token::at(accepted_asset).transfer_private_to_private(sender → operator, aa_payment_amount, nonce)`
+8. For fee-paying txs (any non-zero `maxFeesPerGas` lane), asserts setup-phase execution (`!in_revertible_phase`), then calls `set_as_fee_payer()` + `end_setup()`
 
 The token transfer is a private function call that executes in the setup phase, before `end_setup()`. It is irrevocably committed. If the user's app logic subsequently reverts, the fee has still been paid — this is unavoidable in the Aztec FPC model.
 
@@ -125,7 +124,7 @@ No teardown is scheduled. No tokens accumulate in this contract's balance.
 | Function | Aztec context | Callable by |
 |---|---|---|
 | `constructor(operator, operator_pubkey_x, operator_pubkey_y, accepted_asset)` | public | anyone (one-time initializer) |
-| `fee_entrypoint(authwit_nonce, rate_num, rate_den, valid_until, quote_sig)` | private | any user (quote binds to caller) |
+| `fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` | private | any user (quote binds to caller) |
 
 > There are no admin functions. The contract has no mutable state after construction.
 
@@ -157,20 +156,20 @@ Returns the single accepted asset name and address.
 { "name": "humanUSDC", "address": "0x..." }
 ```
 
-#### `GET /quote?user=<address>`
+#### `GET /quote?user=<address>&fj_amount=<positive_u128_decimal>`
 Returns a user-specific quote for the caller. The `user` address is bound into the quote signature — only that user can use this quote.
 
 ```json
 {
   "accepted_asset": "0x...",
-  "rate_num": "10200",
-  "rate_den": "10000000",
+  "fj_amount": "1000000",
+  "aa_payment_amount": "1020",
   "valid_until": "1740000300",
   "signature": "0x..."
 }
 ```
 
-The user passes `(rate_num, rate_den, valid_until, signature)` to `fee_entrypoint`. Only the token transfer authwit is carried in `authWitnesses`.
+The user passes `(fj_amount, aa_payment_amount, valid_until, signature)` to `fee_entrypoint`. Only the token transfer authwit is carried in `authWitnesses`.
 
 ### 4.3 Quote Signing Internals
 
@@ -271,7 +270,7 @@ curl http://localhost:3000/health
 curl http://localhost:3000/asset
 
 # Get a quote for your address
-curl "http://localhost:3000/quote?user=<your_aztec_address>"
+curl "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
 ```
 
 ---
@@ -279,23 +278,25 @@ curl "http://localhost:3000/quote?user=<your_aztec_address>"
 ## 7. Integrating from a Wallet / SDK
 
 ```typescript
-// 1. Fetch a user-specific quote
-const quote = await fetch(`${ATTESTATION_URL}/quote?user=${wallet.getAddress()}`)
+// 1. Choose fj_amount for your gas settings and fetch a user-specific quote.
+// For FPC this must match max_gas_cost_no_teardown for the tx being built.
+const fjAmount = "1000000";
+const quote = await fetch(
+  `${ATTESTATION_URL}/quote?user=${wallet.getAddress()}&fj_amount=${fjAmount}`
+)
   .then(r => r.json());
 const quoteSigBytes = Array.from(
   Buffer.from(quote.signature.replace("0x", ""), "hex")
 );
 
-// 2. Compute the charge client-side (must match what the contract will compute on-chain)
-//    charge = ceil(max_gas_cost_no_teardown * rate_num / rate_den)
-//    Use the same gas settings that will be submitted with the tx.
+// 2. Create authwit using quoted aa_payment_amount.
 const NONCE = Fr.random();
 
 // 3. Create a token transfer authwit (user authorises FPC to pull the charge)
 const tokenAuthwit = await wallet.createAuthWit(wallet.getAddress(), {
   caller: FPC_ADDRESS,
   action: Token.at(ACCEPTED_ASSET).transfer_private_to_private(
-    wallet.getAddress(), OPERATOR_ADDRESS, CHARGE, NONCE
+    wallet.getAddress(), OPERATOR_ADDRESS, BigInt(quote.aa_payment_amount), NONCE
   ),
 });
 
@@ -303,8 +304,8 @@ const tokenAuthwit = await wallet.createAuthWit(wallet.getAddress(), {
 const feeEntrypointCall = await FPC.at(FPC_ADDRESS).methods
   .fee_entrypoint(
     NONCE,
-    BigInt(quote.rate_num),
-    BigInt(quote.rate_den),
+    BigInt(quote.fj_amount),
+    BigInt(quote.aa_payment_amount),
     BigInt(quote.valid_until),
     quoteSigBytes
   )
@@ -360,6 +361,6 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 
 - **No key rotation.** The packed config is `PublicImmutable`. Operator key compromise requires redeployment.
 - **Operator tracks revenue off-chain.** All payments arrive as private notes in the operator's balance. The operator must use their PXE to discover incoming notes and maintain off-chain accounting.
-- **Charge pre-computation required.** Wallets must replicate the `ceil(max_gas_cost_no_teardown × rate_num / rate_den)` calculation client-side to create the correct token transfer authwit. If gas settings differ at submission time, the authwit may not match.
+- **`fj_amount` must match tx gas settings (FPC).** Wallets must request a quote with `fj_amount = max_gas_cost_no_teardown` for the exact gas settings used at submission. If they diverge, `fee_entrypoint` rejects with quoted-fee mismatch.
 - **No oracle integration.** Rates are set manually in config. A service restart reloads from config.yaml.
 - **Top-up service confirmation now combines message readiness + balance checks.** If message checks fail transiently, the balance-delta fallback still prevents blind success reporting.
