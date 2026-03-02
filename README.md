@@ -150,6 +150,8 @@ Default local-network endpoints:
 - Aztec node / PXE RPC: `http://localhost:8080`
 - Anvil L1 RPC (spawned by `aztec start --local-network`): `http://127.0.0.1:8545`
 
+For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; do not add a manual custom L1 FeeJuice deployment step for local E2E.
+
 ```bash
 bun run smoke:fee-entrypoint:local
 # or:
@@ -239,6 +241,8 @@ Useful overrides:
 ### 8. Deploy contracts (recommended)
 
 Use the local deploy wrapper (deploys `Token`, `FPC`, and `CreditFPC`):
+
+For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; local deploy scripts should only deploy L2 contracts (`Token`, `FPC`, `CreditFPC`) and consume node-reported L1 addresses.
 
 ```bash
 bun run deploy:fpc:local
