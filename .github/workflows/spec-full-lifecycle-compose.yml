@@ -32,6 +32,15 @@ jobs:
       - name: Run compose full lifecycle (CreditFPC)
         run: bash scripts/services/full-lifecycle-compose.sh credit
 
+      - name: Normalize compose artifact permissions
+        if: always()
+        run: |
+          if [ -d artifacts/compose-e2e ]; then
+            sudo chown -R "$USER:$USER" artifacts/compose-e2e || true
+            sudo find artifacts/compose-e2e -type d -exec chmod 755 {} +
+            sudo find artifacts/compose-e2e -type f -exec chmod 644 {} +
+          fi
+
       - name: Upload compose lifecycle artifacts
         if: always()
         uses: actions/upload-artifact@v4
