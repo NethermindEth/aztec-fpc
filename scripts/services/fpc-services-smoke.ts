@@ -1348,6 +1348,7 @@ async function runFpcFeeEntrypointScenario(
         paymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 0, l2Gas: 0 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
@@ -1476,6 +1477,7 @@ async function runCreditFeeScenario(
         paymentMethod: payAndMintPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 0, l2Gas: 0 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
