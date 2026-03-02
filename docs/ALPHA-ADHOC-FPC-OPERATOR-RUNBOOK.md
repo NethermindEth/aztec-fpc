@@ -109,7 +109,7 @@ bun run start
 ```bash
 curl -sS http://localhost:3001/health
 curl -sS http://localhost:3001/ready
-curl -sS "http://localhost:3000/quote?user=0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72"
+curl -sS "http://localhost:3000/quote?user=0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72&fj_amount=1000000"
 ```
 
 ## Ad-Hoc Dual-Asset Pattern

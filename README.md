@@ -206,8 +206,8 @@ This script implements Step 8 from the services plan:
 1. builds both services,
 2. deploys `Token` + `FPC` + `CreditFPC`,
 3. starts attestation and topup with generated test configs,
-4. requests `/quote?user=<address>`,
-5. submits transactions using quote fields (`rate_num`, `rate_den`, `valid_until`, `signature`),
+4. requests `/quote?user=<address>&fj_amount=<u128>`,
+5. submits transactions using quote fields (`fj_amount`, `aa_payment_amount`, `valid_until`, `signature`),
 6. confirms topup behavior and successful fee flows.
 
 ```bash
@@ -463,11 +463,11 @@ curl http://localhost:3000/health
 curl http://localhost:3000/metrics
 curl http://localhost:3000/asset
 # quote_auth_mode=disabled
-curl "http://localhost:3000/quote?user=<your_aztec_address>"
+curl "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
 # quote_auth_mode=api_key
-curl -H "x-api-key: <your_api_key>" "http://localhost:3000/quote?user=<your_aztec_address>"
+curl -H "x-api-key: <your_api_key>" "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
 # quote_auth_mode=trusted_header
-curl -H "x-internal-attestation: allow" "http://localhost:3000/quote?user=<your_aztec_address>"
+curl -H "x-internal-attestation: allow" "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
 curl http://localhost:3001/health
 curl http://localhost:3001/ready
 curl http://localhost:3001/metrics
@@ -507,7 +507,7 @@ User private token balance →[pay_and_mint]→ User private credit balance
 User private credit balance →[pay_with_credit]→ Fee payment
 ```
 
-- Token charge for signed quote flows = `ceil(base_amount × rate_num / rate_den)`.
+- Signed quote flows return exact amounts: `fj_amount` and `aa_payment_amount`.
 - Quote binds to `msg_sender` and is nullified after first use.
 - `FPC.fee_entrypoint` pays directly with token each transaction.
 - `CreditFPC.pay_and_mint` converts token payment into private fee credit for subsequent `pay_with_credit` calls.
