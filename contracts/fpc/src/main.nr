@@ -27,7 +27,6 @@ pub contract FPCMultiAsset {
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
         macros::{functions::{allow_phase_change, external, initializer}, storage::storage},
-        oracle::nullifiers::check_nullifier_exists,
         protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
         state_vars::PublicImmutable,
     };
@@ -93,6 +92,12 @@ pub contract FPCMultiAsset {
         valid_until: u64,
         quote_sig: [u8; 64],
     ) {
+        let max_fees = self.context.gas_settings().max_fees_per_gas;
+        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
+        if enforce_setup_phase {
+            assert(!self.context.in_revertible_phase(), "fee_entrypoint must run in setup phase");
+        }
+
         let config = self.storage.config.read();
         let sender = self.msg_sender();
         assert(rate_num > (0 as u128), "rate_num must be > 0");
@@ -123,7 +128,7 @@ pub contract FPCMultiAsset {
             .call(self.context);
 
         self.context.set_as_fee_payer();
-        if !self.context.in_revertible_phase() {
+        if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
     }
@@ -163,11 +168,6 @@ pub contract FPCMultiAsset {
             schnorr::verify_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>()),
             "invalid quote signature",
         );
-
-        // Safety: this is only used as a best-effort pre-check for a clearer
-        // replay error before the canonical duplicate-nullifier protection.
-        let quote_already_used = unsafe { check_nullifier_exists(quote_hash) };
-        assert(!quote_already_used, "quote already used");
 
         // Prevent replay: the quote hash is unique per (fpc, asset, rate, expiry, user).
         context.push_nullifier(quote_hash);

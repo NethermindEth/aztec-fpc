@@ -16,11 +16,12 @@ Unlike `CreditFPC`, it does not maintain a user credit ledger.
 `fee_entrypoint(accepted_asset, authwit_nonce, rate_num, rate_den, valid_until, quote_sig)`:
 
 1. Verifies operator quote signature over `accepted_asset`, `rate_num`, `rate_den`, and caller address.
-2. Rejects replay by nullifying quote hash.
+2. Rejects replay by nullifying quote hash (duplicate nullifier insertion fails canonically).
 3. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
-4. Requires `rate_num > 0`, then computes exact charge as `fee_juice_to_asset(get_max_gas_cost_no_teardown(...), rate_num, rate_den)`.
-5. Transfers exactly that computed charge of `accepted_asset` from user to operator using authwit.
-6. Marks contract as fee payer (`set_as_fee_payer`) and ends setup when still in setup phase.
+4. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution (`fee_entrypoint must run in setup phase`).
+5. Requires `rate_num > 0`, then computes exact charge as `fee_juice_to_asset(get_max_gas_cost_no_teardown(...), rate_num, rate_den)`.
+6. Transfers exactly that computed charge of `accepted_asset` from user to operator using authwit.
+7. Marks contract as fee payer (`set_as_fee_payer`) and ends setup.
 
 ## How It Differs From `/contracts/credit_fpc`
 
