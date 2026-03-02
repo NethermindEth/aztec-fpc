@@ -25,7 +25,21 @@ resolve_default_fpc_artifact() {
   printf "%s\n" "$multi_asset_path"
 }
 
-FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
+case "${FPC_VARIANT:-}" in
+  "")
+    FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
+    ;;
+  fpc)
+    FPC_ARTIFACT="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
+    ;;
+  credit)
+    FPC_ARTIFACT="$REPO_ROOT/target/credit_fpc-CreditFPC.json"
+    ;;
+  *)
+    echo "ERROR: FPC_VARIANT must be 'fpc' or 'credit' (got '${FPC_VARIANT}')" >&2
+    exit 1
+    ;;
+esac
 
 if [[ "$MODE" != "devnet" && "$MODE" != "local" ]]; then
   echo "ERROR: FPC_DEPLOY_ENV must be 'devnet' or 'local' (got '$MODE')" >&2
@@ -37,7 +51,9 @@ cd "${REPO_ROOT}"
 if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-CreditFPC.json || ( ! -f target/fpc-FPCMultiAsset.json && ! -f target/fpc-FPC.json ) ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force
-  FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
+  if [[ -z "${FPC_VARIANT:-}" ]]; then
+    FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
+  fi
 fi
 
 if [[ "$MODE" == "local" ]]; then
