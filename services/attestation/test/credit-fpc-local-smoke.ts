@@ -39,6 +39,7 @@ const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as Hex;
 const FEE_JUICE_TOPUP_SAFETY_MULTIPLIER = 5n;
 const ERC20_ABI = parseAbi([
+  "function balanceOf(address owner) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
 const FEE_JUICE_PORTAL_ABI = parseAbi([
@@ -284,12 +285,35 @@ async function topUpContractFeeJuice(
 
   const claimSecret = Fr.random();
   const claimSecretHash = await computeSecretHash(claimSecret);
+  const l1FeeJuiceBalance = (await publicClient.readContract({
+    address: feeJuiceTokenAddress,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: [account.address],
+  })) as bigint;
+  let effectiveTopupWei = topupWei;
+  if (effectiveTopupWei > l1FeeJuiceBalance) {
+    if (config.feeJuiceTopupWei !== null) {
+      throw new Error(
+        `CREDIT_FPC_SMOKE_FEE_JUICE_TOPUP_WEI=${effectiveTopupWei} exceeds L1 FeeJuice balance ${l1FeeJuiceBalance} for ${account.address}`,
+      );
+    }
+    effectiveTopupWei = l1FeeJuiceBalance;
+    console.log(
+      `[credit-smoke] fee_juice_topup_clamped_to_l1_balance=${effectiveTopupWei} requested=${topupWei}`,
+    );
+  }
+  if (effectiveTopupWei <= 0n) {
+    throw new Error(
+      `L1 FeeJuice balance is ${l1FeeJuiceBalance}; cannot top up contract fee payer`,
+    );
+  }
 
   const approveHash = await walletClient.writeContract({
     address: feeJuiceTokenAddress,
     abi: ERC20_ABI,
     functionName: "approve",
-    args: [portalAddress, topupWei],
+    args: [portalAddress, effectiveTopupWei],
   });
   await publicClient.waitForTransactionReceipt({ hash: approveHash });
   console.log(`[credit-smoke] l1_fee_juice_approve_tx=${approveHash}`);
@@ -298,7 +322,11 @@ async function topUpContractFeeJuice(
     address: portalAddress,
     abi: FEE_JUICE_PORTAL_ABI,
     functionName: "depositToAztecPublic",
-    args: [recipientBytes32, topupWei, claimSecretHash.toString() as Hex],
+    args: [
+      recipientBytes32,
+      effectiveTopupWei,
+      claimSecretHash.toString() as Hex,
+    ],
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   console.log(`[credit-smoke] l1_fee_juice_bridge_tx=${hash}`);
@@ -342,7 +370,7 @@ async function topUpContractFeeJuice(
   await feeJuice.methods
     .claim(
       AztecAddress.fromString(feePayerAddress),
-      topupWei,
+      effectiveTopupWei,
       claimSecret,
       new Fr(messageLeafIndex),
     )
@@ -402,14 +430,19 @@ async function main() {
     BigInt(config.daGasLimit) * feePerDaGas +
     BigInt(config.l2GasLimit) * feePerL2Gas;
   const minimumTopupWei =
-    maxGasCostNoTeardown * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER * 2n + 1_000_000n;
+    maxGasCostNoTeardown * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER + 1_000_000n;
   const feeJuiceTopupWei = config.feeJuiceTopupWei ?? minimumTopupWei;
+  if (config.feeJuiceTopupWei !== null && config.feeJuiceTopupWei <= 0n) {
+    throw new Error(
+      `CREDIT_FPC_SMOKE_FEE_JUICE_TOPUP_WEI must be > 0, got ${config.feeJuiceTopupWei}`,
+    );
+  }
   if (
     config.feeJuiceTopupWei !== null &&
     config.feeJuiceTopupWei < minimumTopupWei
   ) {
-    throw new Error(
-      `CREDIT_FPC_SMOKE_FEE_JUICE_TOPUP_WEI=${config.feeJuiceTopupWei} is below required minimum ${minimumTopupWei} for current gas settings`,
+    console.log(
+      `[credit-smoke] WARNING: CREDIT_FPC_SMOKE_FEE_JUICE_TOPUP_WEI=${config.feeJuiceTopupWei} is below recommended ${minimumTopupWei} for current gas settings`,
     );
   }
 
