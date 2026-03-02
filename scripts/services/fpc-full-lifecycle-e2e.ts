@@ -117,8 +117,6 @@ type QuoteResponse = {
 type QuoteInput = {
   fjAmount: bigint;
   aaPaymentAmount: bigint;
-  rateNum: bigint;
-  rateDen: bigint;
   validUntil: bigint;
   quoteSigBytes: number[];
 };
@@ -679,13 +677,9 @@ function parseQuoteResponse(
   const quoteSigBytes = Array.from(
     Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
   );
-  const { rateNum: expectedRateNum, rateDen: expectedRateDen } =
-    getFinalRate(config);
   const parsed: QuoteInput = {
     fjAmount: BigInt(quote.fj_amount),
     aaPaymentAmount: BigInt(quote.aa_payment_amount),
-    rateNum: expectedRateNum,
-    rateDen: expectedRateDen,
     validUntil: BigInt(quote.valid_until),
     quoteSigBytes,
   };
@@ -701,6 +695,15 @@ function parseQuoteResponse(
   if (parsed.aaPaymentAmount <= 0n) {
     throw new Error(
       "Attestation quote returned non-positive aa_payment_amount",
+    );
+  }
+  const expectedAaPaymentAmount = computeAaPaymentFromFj(
+    config,
+    parsed.fjAmount,
+  );
+  if (parsed.aaPaymentAmount !== expectedAaPaymentAmount) {
+    throw new Error(
+      `Attestation quote aa_payment_amount mismatch. expected=${expectedAaPaymentAmount} got=${parsed.aaPaymentAmount}`,
     );
   }
   if (
@@ -734,6 +737,7 @@ async function signQuoteForUser(
   validUntil: bigint,
   userAddress: AztecAddress,
 ): Promise<QuoteInput> {
+  const aaPaymentAmount = ceilDiv(fjAmount * rateNum, rateDen);
   const secret = Fr.fromHexString(result.operatorSecretHex);
   const signingKey = deriveSigningKey(secret);
   const schnorr = new Schnorr();
@@ -741,8 +745,8 @@ async function signQuoteForUser(
     QUOTE_DOMAIN_SEPARATOR,
     fpcAddress.toField(),
     acceptedAsset.toField(),
-    new Fr(rateNum),
-    new Fr(rateDen),
+    new Fr(fjAmount),
+    new Fr(aaPaymentAmount),
     new Fr(validUntil),
     userAddress.toField(),
   ]);
@@ -752,9 +756,7 @@ async function signQuoteForUser(
   );
   return {
     fjAmount,
-    aaPaymentAmount: ceilDiv(fjAmount * rateNum, rateDen),
-    rateNum,
-    rateDen,
+    aaPaymentAmount,
     validUntil,
     quoteSigBytes: Array.from(signature.toBuffer()),
   };
@@ -818,8 +820,8 @@ async function executeFeePaidTx(
     .fee_entrypoint(
       params.token.address,
       transferAuthwitNonce,
-      params.quote.rateNum,
-      params.quote.rateDen,
+      params.quote.fjAmount,
+      params.quote.aaPaymentAmount,
       params.quote.validUntil,
       params.quote.quoteSigBytes,
     )
@@ -1269,7 +1271,7 @@ async function deployContractsAndWriteRuntimeConfig(
       `market_rate_num: ${config.marketRateNum}`,
       `market_rate_den: ${config.marketRateDen}`,
       `fee_bips: ${config.feeBips}`,
-      `quote_format: "rate_quote"`,
+      `quote_format: "amount_quote"`,
     ].join("\n")}\n`,
     "utf8",
   );
@@ -1443,8 +1445,8 @@ async function runFeePaidTargetTxAndAssert(
     .fee_entrypoint(
       result.token.address,
       transferAuthwitNonce,
-      rateNum,
-      rateDen,
+      fjAmount,
+      aaPaymentAmount,
       validUntil,
       quoteSigBytes,
     )
@@ -1734,8 +1736,8 @@ async function negativeDirectEntrypointCallRejected(
         .fee_entrypoint(
           result.token.address,
           transferAuthwitNonce,
-          quote.rateNum,
-          quote.rateDen,
+          quote.fjAmount,
+          quote.aaPaymentAmount,
           quote.validUntil,
           quote.quoteSigBytes,
         )
