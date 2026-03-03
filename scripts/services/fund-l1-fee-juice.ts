@@ -529,6 +529,7 @@ async function tryDirectMint(params: {
 
   try {
     const hash = await walletClient.writeContract({
+      chain: null,
       address: params.tokenAddress,
       abi: ERC20_MINT_ABI,
       functionName: "mint",
@@ -587,6 +588,7 @@ async function mintViaFeeAssetHandler(params: {
   let mintCount = 0;
   while (balance < params.targetBalanceWei) {
     const hash = await walletClient.writeContract({
+      chain: null,
       address: params.handlerAddress,
       abi: FEE_ASSET_HANDLER_ABI,
       functionName: "mint",
