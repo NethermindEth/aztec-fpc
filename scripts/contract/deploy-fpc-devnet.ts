@@ -144,6 +144,7 @@ const FPC_ARTIFACT_PATH_CANDIDATES = [
 const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   faucet: path.join(REPO_ROOT, "target", "faucet-Faucet.json"),
+  counter: path.join(REPO_ROOT, "target", "mock_counter-Counter.json"),
 } as const;
 
 class CliError extends Error {
@@ -1698,6 +1699,9 @@ function assertRequiredArtifactsExistForDevnet(
   if (deployFaucet && !existsSync(REQUIRED_ARTIFACTS.faucet)) {
     missing.push(REQUIRED_ARTIFACTS.faucet);
   }
+  if (!existsSync(REQUIRED_ARTIFACTS.counter)) {
+    missing.push(REQUIRED_ARTIFACTS.counter);
+  }
   if (missing.length > 0) {
     const formatted = missing.map((entry) => `  - ${entry}`).join("\n");
     throw new CliError(
@@ -1931,6 +1935,23 @@ async function main(): Promise<void> {
     );
   }
 
+  console.log(
+    `[deploy-fpc-devnet] deploying Counter contract owner=${operatorIdentity.address} headstart=0`,
+  );
+  const counterDeploy = await deployContractWithAztecWallet({
+    nodeUrl: args.nodeUrl,
+    fromAlias: deployer.walletAlias,
+    payment: paymentArg,
+    artifactPath: REQUIRED_ARTIFACTS.counter,
+    init: "initialize",
+    alias: `devnet-counter-${aliasSuffix}`,
+    constructorArgs: ["0", operatorIdentity.address],
+    context: "Counter",
+  });
+  console.log(
+    `[deploy-fpc-devnet] counter deployed. address=${counterDeploy.address} tx_hash=${counterDeploy.txHash}`,
+  );
+
   const manifest = writeDevnetDeployManifest(args.out, {
     status: "deploy_ok",
     generated_at: new Date().toISOString(),
@@ -1976,6 +1997,7 @@ async function main(): Promise<void> {
       accepted_asset: acceptedAssetAddress,
       fpc: fpcDeploy.address,
       ...(faucetDeploy ? { faucet: faucetDeploy.address } : {}),
+      counter: counterDeploy.address,
     },
     fpc_artifact: {
       name: fpcSelection.name,
@@ -1990,6 +2012,7 @@ async function main(): Promise<void> {
       accepted_asset_deploy: acceptedAssetDeployTxHash,
       fpc_deploy: fpcDeploy.txHash,
       ...(faucetDeploy ? { faucet_deploy: faucetDeploy.txHash } : {}),
+      counter_deploy: counterDeploy.txHash,
     },
     ...(faucetConfig
       ? {
@@ -2007,7 +2030,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
   console.log(
-    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} variant=${fpcSelection.name}`,
+    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} counter=${manifest.contracts.counter ?? "n/a"} variant=${fpcSelection.name}`,
   );
 }
 
