@@ -4,10 +4,7 @@ use aztec::macros::aztec;
 #[aztec]
 pub contract Counter {
     use aztec::{
-        macros::{
-            functions::{external, initializer},
-            storage::storage,
-        },
+        macros::{functions::{external, initializer}, storage::storage},
         messages::message_delivery::MessageDelivery,
         oracle::logging::debug_log_format,
         protocol::{address::AztecAddress, traits::ToField},
