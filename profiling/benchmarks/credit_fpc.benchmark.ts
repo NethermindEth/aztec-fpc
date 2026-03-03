@@ -3,15 +3,16 @@
  *
  * Deploys Token + CreditFPC + Noop on a running local network, bridges Fee
  * Juice, establishes credit balance via a real pay_and_mint tx, then
- * benchmarks both flows:
+ * benchmarks all available flows:
  *
- *   pay_and_mint     — user tops up credit balance (token transfer + mint)
- *   pay_with_credit  — user pays tx fee from existing credit (no transfer)
+ *   pay_and_mint          — user tops up credit balance (token transfer + mint)
+ *   pay_with_credit       — user pays tx fee from existing credit (no transfer)
+ *   pay_with_credit_exact — user pays tx fee from credit with exact-fee settle/refund
  *
  * The aztec-benchmark profiler expects getMethods() to return items of shape
  * {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
  *
- * Because the two flows use different fee payment methods, we do NOT set
+ * Because the flows use different fee payment methods, we do NOT set
  * feePaymentMethod on the returned context (the profiler would inject a single
  * one for all interactions).  Instead, each CreditFPCActionWrapper overrides
  * the fee option with its own payment method.
@@ -382,12 +383,18 @@ interface CreditFPCBenchmarkContext {
   fpcAddress: any;
 }
 
+function hasFunction(artifact: any, functionName: string): boolean {
+  return (artifact.functions ?? []).some((f: any) => f?.name === functionName);
+}
+
 // ── Benchmark class ──────────────────────────────────────────────────────────
 
 export default class CreditFPCBenchmark {
   #actions: CreditFPCActionWrapper[] = [];
   #payAndMintPayment?: PayAndMintPaymentMethod;
   #payWithCreditPayment?: PayWithCreditPaymentMethod;
+  #payWithCreditExactPayment?: PayWithCreditPaymentMethod;
+  #hasPayWithCreditExact = false;
 
   async setup(): Promise<CreditFPCBenchmarkContext> {
     console.log('=== CreditFPC Benchmark Setup ===\n');
@@ -818,6 +825,21 @@ export default class CreditFPCBenchmark {
       payWithCreditGasSettings,
     );
 
+    this.#hasPayWithCreditExact = hasFunction(creditFpcArtifact, 'pay_with_credit_exact');
+    if (this.#hasPayWithCreditExact) {
+      const payWithCreditExactCall = await creditFpcAsUser.methods
+        .pay_with_credit_exact()
+        .getFunctionCall();
+      this.#payWithCreditExactPayment = new PayWithCreditPaymentMethod(
+        fpcAddress,
+        payWithCreditExactCall,
+        payWithCreditGasSettings,
+      );
+      console.log('Detected pay_with_credit_exact, adding to benchmark methods.');
+    } else {
+      console.log('pay_with_credit_exact not found in artifact; benchmarking legacy two-flow set.');
+    }
+
     console.log('\n=== CreditFPC Benchmark Setup Complete ===\n');
 
     return {
@@ -847,9 +869,7 @@ export default class CreditFPCBenchmark {
       context.payWithCreditGasSettings,
     );
 
-    this.#actions = [payAndMintAction, payWithCreditAction];
-
-    return [
+    const methods: Array<{ interaction: { caller: any; action: CreditFPCActionWrapper }; name: string }> = [
       {
         interaction: { caller: context.userAddress, action: payAndMintAction },
         name: 'pay_and_mint',
@@ -859,6 +879,25 @@ export default class CreditFPCBenchmark {
         name: 'pay_with_credit',
       },
     ];
+
+    const actions: CreditFPCActionWrapper[] = [payAndMintAction, payWithCreditAction];
+
+    if (this.#hasPayWithCreditExact && this.#payWithCreditExactPayment) {
+      const payWithCreditExactAction = new CreditFPCActionWrapper(
+        context.noopAsUser.methods.noop(),
+        this.#payWithCreditExactPayment,
+        [],
+        context.payWithCreditGasSettings,
+      );
+      methods.push({
+        interaction: { caller: context.userAddress, action: payWithCreditExactAction },
+        name: 'pay_with_credit_exact',
+      });
+      actions.push(payWithCreditExactAction);
+    }
+
+    this.#actions = actions;
+    return methods;
   }
 
   async teardown(context: CreditFPCBenchmarkContext): Promise<void> {

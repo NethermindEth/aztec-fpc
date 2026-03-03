@@ -6,7 +6,7 @@ This directory benchmarks two FPC (Fee Payment Contract) implementations via
 | Contract | Entry point(s) | Benchmark file |
 |---|---|---|
 | `FPC` (standard authwit-based) | `fee_entrypoint` | `benchmarks/fpc.benchmark.ts` |
-| `CreditFPC` (Schnorr-quoted) | `pay_and_mint`, `pay_with_credit` | `benchmarks/credit_fpc.benchmark.ts` |
+| `CreditFPC` (Schnorr-quoted) | `pay_and_mint`, `pay_with_credit`, `pay_with_credit_exact` (if available) | `benchmarks/credit_fpc.benchmark.ts` |
 
 `run.sh` invokes `aztec-benchmark` which discovers all `[benchmark]` entries in
 `Nargo.toml`, runs each one sequentially, and produces structured JSON reports
@@ -206,6 +206,15 @@ transfer or quote verification needed. This involves:
 
 Internal calls traced: `CreditFPC:pay_with_credit`, plus all kernel circuits.
 
+#### Flow 3: `pay_with_credit_exact` (exact-fee settle, if available)
+
+When the contract exposes `pay_with_credit_exact`, the benchmark includes a third
+interaction. This flow reserves `max_fee`, then settles/refunds against
+`transaction_fee` in public finalize logic.
+
+Internal calls traced: `CreditFPC:pay_with_credit_exact`, plus public finalize
+settlement and all kernel circuits.
+
 The label "balance-only" indicates that this flow operates purely on a
 pre-existing credit balance with no external token interaction, making it the
 cheaper path for repeat transactions.
@@ -213,10 +222,11 @@ cheaper path for repeat transactions.
 ### Output
 
 The CreditFPC benchmark (`benchmarks/credit_fpc.benchmark.ts`) follows the same
-structure as the FPC benchmark. It produces two result entries in a single JSON
-report at `profiling/benchmarks/credit_fpc.benchmark.json`, one for each flow.
+structure as the FPC benchmark. It produces two or three result entries in a
+single JSON report at `profiling/benchmarks/credit_fpc.benchmark.json`,
+depending on whether `pay_with_credit_exact` exists in the compiled artifact.
 
-Console output shows both tables:
+Console output shows one table per profiled flow:
 
 ```
 === CreditFPC Benchmark Results: pay_and_mint ===

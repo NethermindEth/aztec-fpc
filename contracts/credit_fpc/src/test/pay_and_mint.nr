@@ -507,3 +507,195 @@ unconstrained fn pay_and_mint_prevents_quote_replay() {
         "quote nullifier should exist",
     );
 }
+
+#[test(should_fail_with = "duplicate siloed nullifier")]
+unconstrained fn pay_and_mint_rejects_same_quote_even_with_new_authwit_nonce() {
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = BackedCreditFPC::at(credit_fpc_address);
+    let token = Token::at(token_address);
+
+    let max_gas_cost = utils::max_gas_cost_no_teardown(env);
+    let fj_credit_amount = max_gas_cost + (1000 as u128);
+    let aa_payment_amount = fj_credit_amount;
+    let valid_until = env.last_block_timestamp() + 3600;
+
+    env.call_private(
+        operator,
+        token.mint_to_private(user, aa_payment_amount * (2 as u128) + (100 as u128)),
+    );
+
+    let quote_sig = quote_signature(
+        credit_fpc_address,
+        token_address,
+        fj_credit_amount,
+        aa_payment_amount,
+        valid_until,
+        user,
+    );
+
+    let transfer_call_1 = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call_1);
+
+    env.call_private(
+        user,
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            fj_credit_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
+    );
+
+    let transfer_call_2 = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE_2,
+    );
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call_2);
+
+    let _ = env.call_private(
+        user,
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE_2,
+            fj_credit_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
+    );
+}
+
+#[test]
+unconstrained fn pay_and_mint_accepts_quote_when_valid_until_equals_anchor_timestamp() {
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = BackedCreditFPC::at(credit_fpc_address);
+    let token = Token::at(token_address);
+
+    let max_gas_cost = utils::max_gas_cost_no_teardown(env);
+    let fj_credit_amount = max_gas_cost + (1000 as u128);
+    let aa_payment_amount = fj_credit_amount;
+    let valid_until = env.last_block_timestamp();
+    let quote_sig = quote_signature(
+        credit_fpc_address,
+        token_address,
+        fj_credit_amount,
+        aa_payment_amount,
+        valid_until,
+        user,
+    );
+
+    env.call_private(operator, token.mint_to_private(user, aa_payment_amount + (100 as u128)));
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
+
+    env.call_private(
+        user,
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            fj_credit_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
+    );
+}
+
+#[test(should_fail_with = "insufficient FeeJuice backing")]
+unconstrained fn pay_and_mint_rejects_mint_when_fee_juice_backing_is_insufficient() {
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = BackedCreditFPC::at(credit_fpc_address);
+    let token = Token::at(token_address);
+
+    let max_gas_cost = utils::max_gas_cost(env);
+    let fj_credit_amount = max_gas_cost + (1_000_000_001 as u128);
+    let aa_payment_amount = fj_credit_amount;
+    let valid_until = env.last_block_timestamp() + 3600;
+    let quote_sig = quote_signature(
+        credit_fpc_address,
+        token_address,
+        fj_credit_amount,
+        aa_payment_amount,
+        valid_until,
+        user,
+    );
+
+    env.call_private(operator, token.mint_to_private(user, aa_payment_amount + (100 as u128)));
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
+
+    let _ = env.call_private(
+        user,
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            fj_credit_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
+    );
+}
+
+#[test(should_fail_with = "credits overflow")]
+unconstrained fn pay_and_mint_rejects_when_unspent_credits_would_overflow() {
+    let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
+    let credit_fpc = BackedCreditFPC::at(credit_fpc_address);
+    let token = Token::at(token_address);
+
+    let max_u128: u128 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    utils::set_total_unspent_credits(env, credit_fpc_address, max_u128);
+
+    let max_gas_cost = utils::max_gas_cost(env);
+    let fj_credit_amount = max_gas_cost + (1 as u128);
+    let aa_payment_amount = fj_credit_amount;
+    let valid_until = env.last_block_timestamp() + 3600;
+    let quote_sig = quote_signature(
+        credit_fpc_address,
+        token_address,
+        fj_credit_amount,
+        aa_payment_amount,
+        valid_until,
+        user,
+    );
+
+    env.call_private(operator, token.mint_to_private(user, aa_payment_amount + (100 as u128)));
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
+    add_private_authwit_from_call(env, user, credit_fpc_address, transfer_call);
+
+    let _ = env.call_private(
+        user,
+        credit_fpc.pay_and_mint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            fj_credit_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
+    );
+}
