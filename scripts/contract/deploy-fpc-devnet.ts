@@ -1640,7 +1640,15 @@ function buildFpcConstructorArgs(
     operatorIdentity.pubkeyX,
     operatorIdentity.pubkeyY,
   ];
-  if (selection.name === "FPCMultiAsset") {
+  // Current in-repo contracts (FPCMultiAsset + BackedCreditFPC) are both
+  // multi-asset and take only operator/operator_pubkey_x/operator_pubkey_y.
+  // Keep legacy single-asset artifact compatibility by appending
+  // acceptedAssetAddress only for the legacy "FPC" name.
+  if (
+    selection.name === "FPCMultiAsset" ||
+    selection.name === "CreditFPC" ||
+    selection.name === "BackedCreditFPC"
+  ) {
     return baseArgs;
   }
   return [...baseArgs, acceptedAssetAddress];

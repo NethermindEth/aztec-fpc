@@ -43,6 +43,7 @@
     "docker:build:topup": "docker buildx bake topup",
     "compose:infra": "bash scripts/services/compose-mode.sh infra",
     "compose:full": "bash scripts/services/compose-mode.sh full",
+    "compose:teardown": "docker compose down -v --remove-orphans || true",
 
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
     "deploy:fpc:devnet": "bash scripts/contract/deploy-fpc-devnet.sh",
