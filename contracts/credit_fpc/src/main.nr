@@ -157,7 +157,7 @@ pub contract BackedCreditFPC {
     fn _finalize_mint(mint_amount: u128, net_credit: u128, partial_note: PartialUintNote) {
         // we can tighten up the accounting here with transaction_fee
         // adding right now is causing tests to fail
-        
+
         let unspent_total_credits = self.storage.unspent_credits.read();
         let fj_balance = self.view(FeeJuice::at(FEE_JUICE_ADDRESS).balance_of_public(self.address));
 
