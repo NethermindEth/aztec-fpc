@@ -46,10 +46,8 @@ async function main() {
     );
   }
 
-  // ── Connect to Aztec node ────────────────────────────────────────────────────
   const node = createAztecNodeClient(config.aztec_node_url);
 
-  // ── Derive operator address and signing key ───────────────────────────────────
   // Secret resolution happens in config loading. Production mode rejects
   // plaintext config secrets and supports env/external providers.
   const secretKey = Fr.fromHexString(config.operator_secret_key);
@@ -74,7 +72,6 @@ async function main() {
     );
   }
 
-  // ── Build Schnorr signer ────────────────────────────────────────────────────
   const schnorrSigner = new Schnorr();
   const operatorPubKey = await schnorrSigner.computePublicKey(signingKey);
 
@@ -119,7 +116,6 @@ async function main() {
     `Accepted asset:    ${config.accepted_asset_name} (${acceptedAssetAddress.toString()})`,
   );
 
-  // ── Start HTTP server ────────────────────────────────────────────────────────
   const app = buildServer(config, quoteSigner, {
     nowUnixSeconds: async () => {
       const latest = await node.getBlock("latest");

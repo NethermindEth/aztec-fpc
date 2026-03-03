@@ -58,10 +58,6 @@ pub contract Faucet {
         cooldown_seconds: u64,
     }
 
-    // =========================================================================
-    // Storage
-    // =========================================================================
-
     #[storage]
     struct Storage<Context> {
         config: PublicImmutable<Config, Context>,
@@ -69,10 +65,6 @@ pub contract Faucet {
         /// Uninitialized entries read as 0, so first drip is always allowed.
         last_drip: Map<AztecAddress, PublicMutable<u64, Context>, Context>,
     }
-
-    // =========================================================================
-    // Constructor
-    // =========================================================================
 
     #[external("public")]
     #[initializer]
@@ -87,10 +79,6 @@ pub contract Faucet {
         assert(drip_amount > 0, "drip amount must be positive");
         self.storage.config.initialize(Config { token, admin, drip_amount, cooldown_seconds });
     }
-
-    // =========================================================================
-    // Public drip (rate-limited)
-    // =========================================================================
 
     /// Transfer `drip_amount` tokens from the Faucet's public balance to
     /// `recipient`. Enforces a per-recipient cooldown when cooldown_seconds > 0.
@@ -118,10 +106,6 @@ pub contract Faucet {
             .call(self.context);
     }
 
-    // =========================================================================
-    // Admin drip (no cooldown, custom amount)
-    // =========================================================================
-
     /// Transfer `amount` tokens to `recipient` without enforcing a cooldown.
     /// Only the admin may call this. Intended for deployment scripts and CI.
     ///
@@ -138,10 +122,6 @@ pub contract Faucet {
             .transfer_public_to_public(self.context.this_address(), recipient, amount, 0)
             .call(self.context);
     }
-
-    // =========================================================================
-    // Queries
-    // =========================================================================
 
     #[external("utility")]
     unconstrained fn get_config() -> Config {
