@@ -144,6 +144,34 @@ Debug only (do not enable in production):
 
 - `TOPUP_LOG_CLAIM_SECRET=1`
 
+### 4.3 One-off L1 Funding Step (Before Topup)
+
+This repo now includes a TypeScript utility to fund L1 FeeJuice for the topup operator without bridging/claiming:
+
+```bash
+bun run fund:l1:fee-juice -- \
+  --l1-rpc-url "$L1_RPC_URL" \
+  --node-url "$AZTEC_NODE_URL" \
+  --operator-private-key "$L1_OPERATOR_PRIVATE_KEY" \
+  --target-balance-wei "1000000000000000000000"
+```
+
+Expected behavior:
+
+- ensures the operator L1 address has at least `target-balance-wei`,
+- tries `FeeJuice.mint(address,uint256)` first (local-network compatible),
+- falls back to `FeeAssetHandler.mint(address)` loops when direct mint is not available (devnet/testnet style),
+- does not bridge to L2 (topup service handles bridging).
+
+Env-compatible inputs for this utility:
+
+- `L1_RPC_URL`, `AZTEC_NODE_URL`
+- `L1_OPERATOR_PRIVATE_KEY`
+- optional: `L1_FEE_JUICE_FUNDER_PRIVATE_KEY`
+- optional: `L1_FEE_JUICE_FUND_AMOUNT_WEI`
+- optional: `L1_FEE_JUICE_TOKEN_ADDRESS`, `L1_FEE_ASSET_HANDLER_ADDRESS`
+- optional: `FPC_DEPLOY_MANIFEST` (address fallback source)
+
 ## 5. Compose-Parity Service Env Blocks
 
 `docker-compose.yaml` currently wires these service envs:
