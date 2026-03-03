@@ -19,17 +19,6 @@ on:
       - ".github/workflows/docker-build-ci.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "docker-compose.yaml"
-      - "docker-bake.hcl"
-      - "Dockerfile.smoke"
-      - "contracts/**"
-      - "scripts/**"
-      - "services/**"
-      - "package.json"
-      - "bun.lock"
-      - "tsconfig*.json"
-      - ".github/workflows/docker-build-ci.yml"
   workflow_dispatch:
 
 concurrency:
@@ -37,7 +26,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            relevant:
+              - "docker-compose.yaml"
+              - "docker-bake.hcl"
+              - "Dockerfile.smoke"
+              - "contracts/**"
+              - "scripts/**"
+              - "services/**"
+              - "package.json"
+              - "bun.lock"
+              - "tsconfig*.json"
+              - ".github/workflows/docker-build-ci.yml"
+
   docker-build-ci:
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
