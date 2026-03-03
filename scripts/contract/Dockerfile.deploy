@@ -28,8 +28,7 @@ COPY vendor/ vendor/
 
 RUN sed -i '/"mock\/counter",/d' Nargo.toml && \
     aztec compile --package token_contract --force && \
-    aztec compile --package fpc --force && \
-    aztec compile --package credit_fpc --force
+    aztec compile --package fpc --force
 
 # ══════════════════════════════════════════════════════════════
 # Stage 3: runtime — common runtime image with JS dependencies

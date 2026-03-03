@@ -3,7 +3,6 @@
 This guide is a copy/paste sequence for:
 - running dockerized infra with `bun run compose:infra`
 - validating sponsored transactions via `FPC.fee_entrypoint(...)` in [main.nr](/home/ametel/source/aztec-fpc/contracts/fpc/src/main.nr)
-- deploying `CreditFPC` as well (so it is not missing from your deployment set)
 
 Run everything from repo root:
 
@@ -26,7 +25,7 @@ Do this to avoid stale container code.
 bun run docker:build
 ```
 
-## 3. Start Infra (Default: deploys FPC + CreditFPC)
+## 3. Start Infra
 
 ```bash
 bun run compose:infra -- -d
@@ -49,28 +48,22 @@ done
 ## 4. Check Deployment Output
 
 ```bash
-node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("configs/deploy-manifest.json","utf8")); console.log(JSON.stringify({status:m.status, fpc:m.fpc_address ?? m.contracts?.fpc, credit_fpc:m.credit_fpc_address ?? m.contracts?.credit_fpc ?? null, accepted_asset:m.accepted_asset ?? m.contracts?.accepted_asset}, null, 2));'
+node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("configs/deploy-manifest.json","utf8")); console.log(JSON.stringify({status:m.status, fpc:m.fpc_address ?? m.contracts?.fpc, accepted_asset:m.accepted_asset ?? m.contracts?.accepted_asset}, null, 2));'
 ```
 
-Expected: both `fpc` and `credit_fpc` are non-null.
+Expected: `fpc` is non-null.
 
 ## 5. Deploy Behavior In Compose
 
-`deploy` service in `docker-compose.yaml` now defaults to:
+`deploy` service in `docker-compose.yaml` now runs in local mode:
 
 ```yaml
-FPC_VARIANT: "${FPC_VARIANT:-both}"
+FPC_DEPLOY_ENV: "local"
 ```
 
 Override examples:
 
 ```bash
-# only FPC
-FPC_VARIANT=fpc bun run compose:infra -- -d
-
-# only CreditFPC
-FPC_VARIANT=credit bun run compose:infra -- -d
-
 # if you explicitly want native prover (not recommended for flaky networks)
 PXE_PROVER=native bun run compose:infra -- -d
 ```
