@@ -351,6 +351,9 @@ async function main() {
     tokenAddress,
     fjAmount,
   );
+  console.log(
+    `[manual-fpc] attestation_quote_response=${JSON.stringify(quote)}`,
+  );
   const aaPaymentAmount = BigInt(quote.aa_payment_amount);
   const quoteSigBytes = Array.from(
     Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
@@ -414,6 +417,53 @@ async function main() {
     getFeePayer: async () => fpcAddress,
     getGasSettings: () => undefined,
   };
+  const gasLimits = new Gas(cfg.daGasLimit, cfg.l2GasLimit);
+  const teardownGasLimits = new Gas(0, 0);
+  const maxFeesPerGas = new GasFees(feePerDaGas, feePerL2Gas);
+  const txPayloadPreview = {
+    app_call: {
+      contract: counter.address.toString(),
+      function: "increment",
+      args: [user.toString()],
+    },
+    fee: {
+      fee_payer: fpcAddress.toString(),
+      asset: ProtocolContractAddress.FeeJuice.toString(),
+      gas_settings: {
+        gas_limits: {
+          da: cfg.daGasLimit,
+          l2: cfg.l2GasLimit,
+        },
+        teardown_gas_limits: {
+          da: 0,
+          l2: 0,
+        },
+        max_fees_per_gas: {
+          da: feePerDaGas.toString(),
+          l2: feePerL2Gas.toString(),
+        },
+      },
+      fee_entrypoint_args: {
+        accepted_asset: tokenAddress.toString(),
+        nonce: nonce.toString(),
+        fj_amount: quote.fj_amount,
+        aa_payment_amount: aaPaymentAmount.toString(),
+        valid_until: quote.valid_until,
+        signature: quote.signature,
+        signature_num_bytes: quoteSigBytes.length,
+      },
+      authwit_transfer: {
+        token: tokenAddress.toString(),
+        from: user.toString(),
+        to: operator.toString(),
+        amount: aaPaymentAmount.toString(),
+        nonce: nonce.toString(),
+      },
+    },
+  };
+  console.log(
+    `[manual-fpc] tx_payload_preview=${JSON.stringify(txPayloadPreview)}`,
+  );
 
   // Step 8: send a normal user call `y.x()` while attaching the FPC payment
   // payload. Here y = Counter and x = increment(owner).
@@ -426,11 +476,7 @@ async function main() {
     from: user,
     fee: {
       paymentMethod,
-      gasSettings: {
-        gasLimits: new Gas(cfg.daGasLimit, cfg.l2GasLimit),
-        teardownGasLimits: new Gas(0, 0),
-        maxFeesPerGas: new GasFees(feePerDaGas, feePerL2Gas),
-      },
+      gasSettings: { gasLimits, teardownGasLimits, maxFeesPerGas },
     },
     wait: { timeout: 180 },
   });
