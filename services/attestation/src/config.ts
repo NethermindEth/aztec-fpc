@@ -52,6 +52,27 @@ const AztecAddressSchema = z
       });
     }
   });
+const SupportedAssetSchema = z
+  .object({
+    address: AztecAddressSchema,
+    name: z.string().trim().min(1),
+    market_rate_num: z.number().int().positive().optional(),
+    market_rate_den: z.number().int().positive().optional(),
+    fee_bips: z.number().int().min(0).max(10000).optional(),
+  })
+  .superRefine((asset, context) => {
+    const providedPricingFields =
+      Number(asset.market_rate_num !== undefined) +
+      Number(asset.market_rate_den !== undefined) +
+      Number(asset.fee_bips !== undefined);
+    if (providedPricingFields > 0 && providedPricingFields < 3) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "supported_assets pricing overrides must provide market_rate_num, market_rate_den, and fee_bips together",
+      });
+    }
+  });
 
 const ConfigSchema = z.object({
   runtime_profile: RuntimeProfileSchema.default("development"),
@@ -73,16 +94,8 @@ const ConfigSchema = z.object({
   /** The single token contract address this FPC accepts. Must match accepted_asset in the deployed contract. */
   accepted_asset_address: AztecAddressSchema,
   accepted_asset_name: z.string(),
-  /** Optional discovery-only asset list for multi-asset metadata payloads. */
-  supported_assets: z
-    .array(
-      z.object({
-        address: AztecAddressSchema,
-        name: z.string().trim().min(1),
-      }),
-    )
-    .nonempty()
-    .optional(),
+  /** Optional supported asset list. Each entry may optionally override pricing. */
+  supported_assets: z.array(SupportedAssetSchema).nonempty().optional(),
   /** Baseline exchange rate: accepted_asset units per 1 FeeJuice. */
   market_rate_num: z.number().int().positive(),
   market_rate_den: z.number().int().positive(),
@@ -140,6 +153,14 @@ const ConfigSchema = z.object({
 type ParsedConfig = z.infer<typeof ConfigSchema>;
 export type QuoteAuthMode = z.infer<typeof QuoteAuthModeSchema>;
 
+export interface SupportedAssetPolicy {
+  address: string;
+  name: string;
+  market_rate_num: number;
+  market_rate_den: number;
+  fee_bips: number;
+}
+
 export interface QuoteAuthConfig {
   mode: QuoteAuthMode;
   apiKey?: string;
@@ -155,10 +176,17 @@ export interface QuoteRateLimitConfig {
   maxTrackedKeys: number;
 }
 
+export interface RatePolicy {
+  market_rate_num: number;
+  market_rate_den: number;
+  fee_bips: number;
+}
+
 export type Config = Omit<
   ParsedConfig,
   | "operator_secret_key"
   | "aztec_node_url"
+  | "supported_assets"
   | "quote_auth_mode"
   | "quote_auth_api_key"
   | "quote_auth_api_key_header"
@@ -175,6 +203,7 @@ export type Config = Omit<
   operator_secret_key_source: SecretSource;
   operator_secret_key_provider: SecretProvider;
   operator_secret_key_dual_source: boolean;
+  supported_assets: SupportedAssetPolicy[];
   quote_auth: QuoteAuthConfig;
   quote_rate_limit: QuoteRateLimitConfig;
 };
@@ -401,6 +430,66 @@ function resolveQuoteRateLimitConfig(
   };
 }
 
+function normalizeAddress(value: string): string {
+  return AztecAddress.fromString(value).toString().toLowerCase();
+}
+
+function resolveSupportedAssets(config: ParsedConfig): SupportedAssetPolicy[] {
+  const defaultAssetAddress = normalizeAddress(config.accepted_asset_address);
+  const fallbackAsset: SupportedAssetPolicy = {
+    address: defaultAssetAddress,
+    name: config.accepted_asset_name,
+    market_rate_num: config.market_rate_num,
+    market_rate_den: config.market_rate_den,
+    fee_bips: config.fee_bips,
+  };
+  if (!config.supported_assets) {
+    return [fallbackAsset];
+  }
+
+  const resolvedAssets: SupportedAssetPolicy[] = [];
+  const seenAddresses = new Set<string>();
+  let includesDefaultAcceptedAsset = false;
+
+  for (const asset of config.supported_assets) {
+    const normalizedAddress = normalizeAddress(asset.address);
+    if (seenAddresses.has(normalizedAddress)) {
+      throw new Error(
+        `Duplicate supported asset address in config: ${normalizedAddress}`,
+      );
+    }
+    seenAddresses.add(normalizedAddress);
+    includesDefaultAcceptedAsset =
+      includesDefaultAcceptedAsset || normalizedAddress === defaultAssetAddress;
+
+    resolvedAssets.push({
+      address: normalizedAddress,
+      name: asset.name,
+      market_rate_num: asset.market_rate_num ?? config.market_rate_num,
+      market_rate_den: asset.market_rate_den ?? config.market_rate_den,
+      fee_bips: asset.fee_bips ?? config.fee_bips,
+    });
+  }
+
+  if (!includesDefaultAcceptedAsset) {
+    throw new Error(
+      "accepted_asset_address must be listed in supported_assets when supported_assets is configured",
+    );
+  }
+
+  return resolvedAssets;
+}
+
+export function resolveSelectedAssetPolicy(
+  config: Config,
+  selectedAcceptedAssetAddress: string,
+): SupportedAssetPolicy | undefined {
+  const selectedAddress = normalizeAddress(selectedAcceptedAssetAddress);
+  return config.supported_assets.find(
+    (asset) => asset.address.toLowerCase() === selectedAddress,
+  );
+}
+
 export function loadConfig(
   path: string,
   options: LoadConfigOptions = {},
@@ -432,6 +521,7 @@ export function loadConfig(
   const aztecNodeUrl = AztecNodeUrlSchema.parse(
     process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
   );
+  const supportedAssets = resolveSupportedAssets(config);
   const quoteAuth = resolveQuoteAuthConfig(config, runtimeProfile);
   const quoteRateLimit = resolveQuoteRateLimitConfig(config);
   const {
@@ -452,6 +542,7 @@ export function loadConfig(
     ...restConfig,
     runtime_profile: runtimeProfile,
     aztec_node_url: aztecNodeUrl,
+    supported_assets: supportedAssets,
     operator_secret_key: resolvedSecret.value,
     operator_secret_key_source: resolvedSecret.source,
     operator_secret_key_provider: resolvedSecret.provider,
@@ -469,7 +560,7 @@ export function loadConfig(
  * ceiling-divides, so the operator is guaranteed to collect at least
  * fee_bips of margin.
  */
-export function computeFinalRate(config: Config): {
+export function computeFinalRate(config: RatePolicy): {
   rate_num: bigint;
   rate_den: bigint;
 } {

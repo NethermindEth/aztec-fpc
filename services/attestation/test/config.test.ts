@@ -268,6 +268,99 @@ describe("attestation config secret providers", () => {
     cleanupConfig(configPath);
   });
 
+  it("resolves supported asset pricing overrides", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+          "supported_assets:",
+          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
+          '    name: "humanUSDC"',
+          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000003"',
+          '    name: "ravenETH"',
+          "    market_rate_num: 3",
+          "    market_rate_den: 1000",
+          "    fee_bips: 50",
+        ].join("\n"),
+      ),
+    );
+
+    withAttestationEnv({}, () => {
+      const config = loadConfig(configPath);
+      assert.equal(config.supported_assets.length, 2);
+      assert.deepEqual(config.supported_assets[0], {
+        address:
+          "0x0000000000000000000000000000000000000000000000000000000000000002",
+        name: "humanUSDC",
+        market_rate_num: 1,
+        market_rate_den: 1000,
+        fee_bips: 200,
+      });
+      assert.deepEqual(config.supported_assets[1], {
+        address:
+          "0x0000000000000000000000000000000000000000000000000000000000000003",
+        name: "ravenETH",
+        market_rate_num: 3,
+        market_rate_den: 1000,
+        fee_bips: 50,
+      });
+    });
+
+    cleanupConfig(configPath);
+  });
+
+  it("fails fast when supported_assets excludes accepted_asset_address", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+          "supported_assets:",
+          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000003"',
+          '    name: "ravenETH"',
+        ].join("\n"),
+      ),
+    );
+
+    withAttestationEnv({}, () => {
+      assert.throws(
+        () => loadConfig(configPath),
+        /accepted_asset_address must be listed in supported_assets/,
+      );
+    });
+
+    cleanupConfig(configPath);
+  });
+
+  it("fails fast when supported_assets contains duplicate addresses", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+          "supported_assets:",
+          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
+          '    name: "humanUSDC"',
+          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
+          '    name: "humanUSDC-duplicate"',
+        ].join("\n"),
+      ),
+    );
+
+    withAttestationEnv({}, () => {
+      assert.throws(
+        () => loadConfig(configPath),
+        /Duplicate supported asset address/,
+      );
+    });
+
+    cleanupConfig(configPath);
+  });
+
   it("accepts explicit operator_address in config", () => {
     const operatorAddress =
       "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";

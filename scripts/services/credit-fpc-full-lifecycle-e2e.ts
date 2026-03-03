@@ -1517,7 +1517,7 @@ async function runFeePaidTargetTxAndAssert(
       config.creditMintBuffer;
     const quote = parseQuoteResponse(
       await fetchQuote(
-        `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
+        `${attestationBaseUrl}/quote?user=${result.user.toString()}&accepted_asset=${result.token.address.toString()}&fj_amount=${requestedFjAmount.toString()}`,
         config.httpTimeoutMs,
       ),
       result.token.address,
@@ -1784,7 +1784,7 @@ async function negativeQuoteReplayRejected(
   const requestedFjAmount = result.maxGasCostNoTeardown + 1n;
   const quote = parseQuoteResponse(
     await fetchQuote(
-      `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
+      `${attestationBaseUrl}/quote?user=${result.user.toString()}&accepted_asset=${result.token.address.toString()}&fj_amount=${requestedFjAmount.toString()}`,
       config.httpTimeoutMs,
     ),
     result.token.address,
