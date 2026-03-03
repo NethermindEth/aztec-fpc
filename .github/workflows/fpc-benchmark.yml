@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -11,7 +15,29 @@ permissions:
   actions: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            relevant:
+              - "contracts/**"
+              - "profiling/**"
+              - "vendor/aztec-standards/**"
+              - "Nargo.toml"
+              - ".aztecrc"
+              - ".github/workflows/fpc-benchmark.yml"
+
   fpc-benchmark:
+    needs: [changes]
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     continue-on-error: true

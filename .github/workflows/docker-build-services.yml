@@ -16,6 +16,10 @@ on:
       - "bun.lock"
       - "tsconfig*.json"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   DOCKER_REGISTRY: docker.io
 

@@ -2,13 +2,54 @@ name: TS packages
 
 on:
   push:
-    branches: [main]
-    tags: ["**"]
+    branches:
+      - main
+    tags:
+      - "**"
+    paths:
+      - "services/**"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - "README.md"
+      - "docs/spec.md"
+      - "docs/ALPHA-ADHOC-FPC-OPERATOR-RUNBOOK.md"
+      - ".github/workflows/ts-packages.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            relevant:
+              - "services/**"
+              - "scripts/**"
+              - "package.json"
+              - "bun.lock"
+              - "tsconfig*.json"
+              - "README.md"
+              - "docs/spec.md"
+              - "docs/ALPHA-ADHOC-FPC-OPERATOR-RUNBOOK.md"
+              - ".github/workflows/ts-packages.yml"
+
   check-and-test:
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

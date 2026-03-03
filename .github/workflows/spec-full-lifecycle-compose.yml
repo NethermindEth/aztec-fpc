@@ -1,4 +1,4 @@
-name: Docker build CI
+name: Spec full lifecycle compose
 
 on:
   push:
@@ -16,7 +16,8 @@ on:
       - "package.json"
       - "bun.lock"
       - "tsconfig*.json"
-      - ".github/workflows/docker-build-ci.yml"
+      - ".aztecrc"
+      - ".github/workflows/spec-full-lifecycle-compose.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
@@ -48,12 +49,14 @@ jobs:
               - "package.json"
               - "bun.lock"
               - "tsconfig*.json"
-              - ".github/workflows/docker-build-ci.yml"
+              - ".aztecrc"
+              - ".github/workflows/spec-full-lifecycle-compose.yml"
 
-  docker-build-ci:
+  full-lifecycle-compose:
     needs: [changes]
     if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -63,23 +66,28 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
-
-      - name: Build all images
+      - name: Build docker images
         run: docker buildx bake --load
 
-      - name: Start services
-        if: github.event_name == 'pull_request'
-        run: bash scripts/services/compose-mode.sh infra --wait
+      - name: Run compose full lifecycle (FPC)
+        run: bash scripts/services/full-lifecycle-compose.sh fpc
 
-      - name: Smoke tests
-        if: github.event_name != 'pull_request'
-        run: bash scripts/services/compose-mode.sh full
+      - name: Run compose full lifecycle (CreditFPC)
+        run: bash scripts/services/full-lifecycle-compose.sh credit
 
-      - name: Tear down
+      - name: Normalize compose artifact permissions
         if: always()
-        run: docker compose down -v --remove-orphans
+        run: |
+          if [ -d artifacts/compose-e2e ]; then
+            sudo chown -R "$USER:$USER" artifacts/compose-e2e || true
+            sudo find artifacts/compose-e2e -type d -exec chmod 755 {} +
+            sudo find artifacts/compose-e2e -type f -exec chmod 644 {} +
+          fi
+
+      - name: Upload compose lifecycle artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-full-lifecycle-artifacts
+          path: artifacts/compose-e2e
+          if-no-files-found: warn
