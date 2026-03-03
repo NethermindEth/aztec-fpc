@@ -576,20 +576,37 @@ function ensureOperatorAccountInWallet(
   payment: string | undefined,
   expectedAddress: string,
 ): string {
-  const alias = "devnet-operator";
-  const walletAlias = `${WALLET_ACCOUNT_PREFIX}${alias}`;
+  const baseAlias = "devnet-operator";
+  let alias = baseAlias;
+  let walletAlias = `${WALLET_ACCOUNT_PREFIX}${alias}`;
 
   const existing = tryGetWalletAliasAddress(nodeUrl, walletAlias);
   if (existing) {
-    if (existing.toLowerCase() !== expectedAddress.toLowerCase()) {
-      throw new CliError(
-        `Wallet alias ${walletAlias} points to ${existing}, but operator address is ${expectedAddress}. Reconcile wallet state before continuing.`,
+    if (existing.toLowerCase() === expectedAddress.toLowerCase()) {
+      console.log(
+        `[deploy-fpc-devnet] operator account already registered in wallet as ${walletAlias}`,
       );
+      return walletAlias;
     }
-    console.log(
-      `[deploy-fpc-devnet] operator account already registered in wallet as ${walletAlias}`,
+
+    alias = `${baseAlias}-${expectedAddress.slice(2, 10).toLowerCase()}`;
+    walletAlias = `${WALLET_ACCOUNT_PREFIX}${alias}`;
+    console.warn(
+      `[deploy-fpc-devnet] operator alias conflict: ${WALLET_ACCOUNT_PREFIX}${baseAlias}=${existing}, expected ${expectedAddress}. Using scoped alias ${walletAlias}.`,
     );
-    return walletAlias;
+
+    const scopedExisting = tryGetWalletAliasAddress(nodeUrl, walletAlias);
+    if (scopedExisting) {
+      if (scopedExisting.toLowerCase() !== expectedAddress.toLowerCase()) {
+        throw new CliError(
+          `Wallet alias ${walletAlias} points to ${scopedExisting}, but operator address is ${expectedAddress}. Reconcile wallet state before continuing.`,
+        );
+      }
+      console.log(
+        `[deploy-fpc-devnet] operator account already registered in wallet as ${walletAlias}`,
+      );
+      return walletAlias;
+    }
   }
 
   if (!payment) {
@@ -621,11 +638,13 @@ function ensureOperatorAccountInWallet(
         `create operator account alias ${walletAlias}`,
       );
     } catch (error) {
-      if (
-        !(error instanceof CliError) ||
-        !isCreateAccountConflict(error.message)
-      ) {
+      if (!(error instanceof CliError)) {
         throw error;
+      }
+      if (!isCreateAccountConflict(error.message)) {
+        console.warn(
+          `[deploy-fpc-devnet] create-account with payment failed for ${walletAlias}; falling back to register-only import: ${error.message}`,
+        );
       }
       runAztecWalletCommand(
         nodeUrl,
@@ -1009,9 +1028,10 @@ function ensureSponsoredFpcIsRegistered(
         `Wallet alias ${contractAlias} points to ${existing}, but --sponsored-fpc-address is ${sponsoredFpcAddress}. Reconcile wallet alias state before continuing.`,
       );
     }
-    return;
   }
 
+  // Always re-run register-contract so the instance/class metadata is present
+  // in the active PXE data store, not only as a wallet alias.
   runAztecWalletCommand(
     nodeUrl,
     [
@@ -1898,12 +1918,20 @@ async function main(): Promise<void> {
       `[deploy-fpc-devnet] faucet deployed. address=${faucetDeploy.address} tx_hash=${faucetDeploy.txHash}`,
     );
 
-    const operatorWalletAlias = ensureOperatorAccountInWallet(
-      args.nodeUrl,
-      args.operatorSecretKey,
-      paymentArg,
-      operatorIdentity.address,
-    );
+    const operatorWalletAlias =
+      operatorIdentity.address.toLowerCase() === deployer.address.toLowerCase()
+        ? deployer.walletAlias
+        : ensureOperatorAccountInWallet(
+            args.nodeUrl,
+            args.operatorSecretKey,
+            paymentArg,
+            operatorIdentity.address,
+          );
+    if (operatorWalletAlias === deployer.walletAlias) {
+      console.log(
+        `[deploy-fpc-devnet] operator address matches deployer; reusing ${operatorWalletAlias} for faucet funding`,
+      );
+    }
     console.log(
       `[deploy-fpc-devnet] funding faucet: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorWalletAlias}`,
     );
