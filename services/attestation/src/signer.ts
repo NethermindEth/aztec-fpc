@@ -24,6 +24,7 @@ const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 
 export interface QuoteParams {
   fpcAddress: AztecAddress;
+  /** Selected per-request payment asset. */
   acceptedAsset: AztecAddress;
   fjFeeAmount: bigint;
   aaPaymentAmount: bigint;
@@ -34,6 +35,7 @@ export interface QuoteParams {
 
 export interface RateQuoteParams {
   fpcAddress: AztecAddress;
+  /** Selected per-request payment asset. */
   acceptedAsset: AztecAddress;
   rateNum: bigint;
   rateDen: bigint;
@@ -43,6 +45,7 @@ export interface RateQuoteParams {
 
 export interface CreditRateQuoteParams {
   fpcAddress: AztecAddress;
+  /** Selected per-request payment asset. */
   acceptedAsset: AztecAddress;
   mintAmount: bigint;
   rateNum: bigint;

@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import Fastify from "fastify";
 import type { Config } from "./config.js";
-import { computeFinalRate } from "./config.js";
+import { computeFinalRate, resolveSelectedAssetPolicy } from "./config.js";
 import { AttestationMetrics, type QuoteOutcome } from "./metrics.js";
 import type { QuoteSchnorrSigner } from "./signer.js";
 import { signQuote, signRateQuote } from "./signer.js";
@@ -272,13 +272,10 @@ export function buildServer(
   const app = Fastify({ logger: true });
   const metrics = new AttestationMetrics();
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
-  const acceptedAsset = AztecAddress.fromString(config.accepted_asset_address);
-  const supportedAssets = config.supported_assets ?? [
-    {
-      address: config.accepted_asset_address,
-      name: config.accepted_asset_name,
-    },
-  ];
+  const supportedAssets = config.supported_assets.map(({ address, name }) => ({
+    address,
+    name,
+  }));
 
   const nowUnixSeconds =
     clock.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000)));
@@ -329,162 +326,194 @@ export function buildServer(
     address: config.accepted_asset_address,
   }));
 
-  // ── GET /quote?user=<address>&fj_amount=<positive_integer> ───────────────
+  // ── GET /quote?user=<address>&accepted_asset=<address>&fj_amount=<u128> ──
 
-  app.get<{ Querystring: { user?: string; fj_amount?: string } }>(
-    "/quote",
-    async (req, reply) => {
-      const startedAtNs = process.hrtime.bigint();
-      let metricsRecorded = false;
-      const observe = (outcome: QuoteOutcome): void => {
-        if (metricsRecorded) {
-          return;
-        }
-        metricsRecorded = true;
-        const durationNs = process.hrtime.bigint() - startedAtNs;
-        const durationSeconds = Number(durationNs) / 1_000_000_000;
-        metrics.observeQuote(outcome, durationSeconds);
-      };
-
-      const nowSeconds = BigInt(await nowUnixSeconds());
-
-      if (rateLimiter) {
-        const identity = resolveQuoteRateLimitIdentity(
-          config,
-          req.headers,
-          req.ip,
-        );
-        const decision = rateLimiter.consume(identity.cacheKey, nowSeconds);
-        if (!decision.allowed) {
-          req.log.warn(
-            {
-              event: "quote_rate_limited",
-              identity_kind: identity.kind,
-              retry_after_seconds: decision.retryAfterSeconds,
-            },
-            "Rate limited quote request",
-          );
-          observe("rate_limited");
-          return reply
-            .header("retry-after", decision.retryAfterSeconds.toString())
-            .code(429)
-            .send(rateLimited());
-        }
+  app.get<{
+    Querystring: { user?: string; accepted_asset?: string; fj_amount?: string };
+  }>("/quote", async (req, reply) => {
+    const startedAtNs = process.hrtime.bigint();
+    let metricsRecorded = false;
+    const observe = (outcome: QuoteOutcome): void => {
+      if (metricsRecorded) {
+        return;
       }
+      metricsRecorded = true;
+      const durationNs = process.hrtime.bigint() - startedAtNs;
+      const durationSeconds = Number(durationNs) / 1_000_000_000;
+      metrics.observeQuote(outcome, durationSeconds);
+    };
 
-      if (!isQuoteAuthorized(config, req.headers)) {
+    const nowSeconds = BigInt(await nowUnixSeconds());
+
+    if (rateLimiter) {
+      const identity = resolveQuoteRateLimitIdentity(
+        config,
+        req.headers,
+        req.ip,
+      );
+      const decision = rateLimiter.consume(identity.cacheKey, nowSeconds);
+      if (!decision.allowed) {
         req.log.warn(
           {
-            event: "quote_auth_rejected",
-            mode: config.quote_auth.mode,
+            event: "quote_rate_limited",
+            identity_kind: identity.kind,
+            retry_after_seconds: decision.retryAfterSeconds,
           },
-          "Rejected unauthorized quote request",
+          "Rate limited quote request",
         );
-        observe("unauthorized");
-        return reply.code(401).send(unauthorized());
+        observe("rate_limited");
+        return reply
+          .header("retry-after", decision.retryAfterSeconds.toString())
+          .code(429)
+          .send(rateLimited());
       }
+    }
 
-      const userAddress = req.query.user?.trim();
-      if (!userAddress) {
+    if (!isQuoteAuthorized(config, req.headers)) {
+      req.log.warn(
+        {
+          event: "quote_auth_rejected",
+          mode: config.quote_auth.mode,
+        },
+        "Rejected unauthorized quote request",
+      );
+      observe("unauthorized");
+      return reply.code(401).send(unauthorized());
+    }
+
+    const userAddress = req.query.user?.trim();
+    if (!userAddress) {
+      observe("bad_request");
+      return reply
+        .code(400)
+        .send(badRequest("Missing required query param: user"));
+    }
+    let parsedUserAddress: AztecAddress;
+    try {
+      parsedUserAddress = AztecAddress.fromString(userAddress);
+    } catch {
+      observe("bad_request");
+      return reply.code(400).send(badRequest("Invalid user address"));
+    }
+    if (parsedUserAddress.isZero()) {
+      observe("bad_request");
+      return reply.code(400).send(badRequest("Invalid user address"));
+    }
+
+    const selectedAcceptedAsset = req.query.accepted_asset?.trim();
+    if (!selectedAcceptedAsset) {
+      observe("bad_request");
+      return reply
+        .code(400)
+        .send(badRequest("Missing required query param: accepted_asset"));
+    }
+    let parsedAcceptedAsset: AztecAddress;
+    try {
+      parsedAcceptedAsset = AztecAddress.fromString(selectedAcceptedAsset);
+    } catch {
+      observe("bad_request");
+      return reply.code(400).send(badRequest("Invalid accepted_asset address"));
+    }
+    if (parsedAcceptedAsset.isZero()) {
+      observe("bad_request");
+      return reply.code(400).send(badRequest("Invalid accepted_asset address"));
+    }
+
+    const selectedAssetPolicy = resolveSelectedAssetPolicy(
+      config,
+      parsedAcceptedAsset.toString(),
+    );
+    if (!selectedAssetPolicy) {
+      observe("bad_request");
+      return reply.code(400).send(badRequest("Unsupported accepted_asset"));
+    }
+
+    const fjFeeAmount = parsePositiveU128Decimal(req.query.fj_amount);
+    if (!fjFeeAmount) {
+      observe("bad_request");
+      return reply
+        .code(400)
+        .send(badRequest("Missing or invalid query param: fj_amount"));
+    }
+
+    try {
+      const { rate_num, rate_den } = computeFinalRate(selectedAssetPolicy);
+      const expiry = validUntil(nowSeconds);
+      const aaPaymentAmount = ceilDiv(fjFeeAmount * rate_num, rate_den);
+      if (!isU128(aaPaymentAmount) || aaPaymentAmount <= 0n) {
         observe("bad_request");
         return reply
           .code(400)
-          .send(badRequest("Missing required query param: user"));
-      }
-      let parsedUserAddress: AztecAddress;
-      try {
-        parsedUserAddress = AztecAddress.fromString(userAddress);
-      } catch {
-        observe("bad_request");
-        return reply.code(400).send(badRequest("Invalid user address"));
-      }
-      if (parsedUserAddress.isZero()) {
-        observe("bad_request");
-        return reply.code(400).send(badRequest("Invalid user address"));
+          .send(badRequest("Computed aa_payment_amount does not fit in u128"));
       }
 
-      const fjFeeAmount = parsePositiveU128Decimal(req.query.fj_amount);
-      if (!fjFeeAmount) {
-        observe("bad_request");
-        return reply
-          .code(400)
-          .send(badRequest("Missing or invalid query param: fj_amount"));
-      }
+      const signature =
+        config.quote_format === "rate_quote"
+          ? await signRateQuote(quoteSigner, {
+              fpcAddress,
+              acceptedAsset: parsedAcceptedAsset,
+              rateNum: rate_num,
+              rateDen: rate_den,
+              validUntil: expiry,
+              userAddress: parsedUserAddress,
+            })
+          : await signQuote(quoteSigner, {
+              fpcAddress,
+              acceptedAsset: parsedAcceptedAsset,
+              fjFeeAmount,
+              aaPaymentAmount,
+              validUntil: expiry,
+              userAddress: parsedUserAddress,
+            });
 
-      try {
-        const { rate_num, rate_den } = computeFinalRate(config);
-        const expiry = validUntil(nowSeconds);
-        const aaPaymentAmount = ceilDiv(fjFeeAmount * rate_num, rate_den);
-        if (!isU128(aaPaymentAmount) || aaPaymentAmount <= 0n) {
-          observe("bad_request");
-          return reply
-            .code(400)
-            .send(
-              badRequest("Computed aa_payment_amount does not fit in u128"),
-            );
-        }
-
-        const signature =
-          config.quote_format === "rate_quote"
-            ? await signRateQuote(quoteSigner, {
-                fpcAddress,
-                acceptedAsset,
-                rateNum: rate_num,
-                rateDen: rate_den,
-                validUntil: expiry,
-                userAddress: parsedUserAddress,
-              })
-            : await signQuote(quoteSigner, {
-                fpcAddress,
-                acceptedAsset,
-                fjFeeAmount,
-                aaPaymentAmount,
-                validUntil: expiry,
-                userAddress: parsedUserAddress,
-              });
-
-        req.log.info(
-          {
-            event: "quote_issued",
-            user: parsedUserAddress.toString(),
-            valid_until: expiry.toString(),
-            fj_amount: fjFeeAmount.toString(),
-            aa_payment_amount: aaPaymentAmount.toString(),
-            rate_num: rate_num.toString(),
-            rate_den: rate_den.toString(),
-            quote_format: config.quote_format,
-          },
-          "Quote issued",
-        );
-        observe("success");
-
-        return {
-          accepted_asset: config.accepted_asset_address,
+      req.log.info(
+        {
+          event: "quote_issued",
+          user: parsedUserAddress.toString(),
+          accepted_asset: selectedAssetPolicy.address,
+          valid_until: expiry.toString(),
           fj_amount: fjFeeAmount.toString(),
           aa_payment_amount: aaPaymentAmount.toString(),
           rate_num: rate_num.toString(),
           rate_den: rate_den.toString(),
-          valid_until: expiry.toString(),
-          signature,
+          quote_format: config.quote_format,
+        },
+        "Quote issued",
+      );
+      observe("success");
+
+      const baseResponse = {
+        accepted_asset: selectedAssetPolicy.address,
+        fj_amount: fjFeeAmount.toString(),
+        aa_payment_amount: aaPaymentAmount.toString(),
+        valid_until: expiry.toString(),
+        signature,
+      };
+      if (config.quote_format === "rate_quote") {
+        return {
+          ...baseResponse,
+          rate_num: rate_num.toString(),
+          rate_den: rate_den.toString(),
         };
-      } catch (error) {
-        observe("internal_error");
-        req.log.error(
-          {
-            err: error,
-            user: parsedUserAddress.toString(),
-          },
-          "Failed to issue quote",
-        );
-        return reply.code(500).send({
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "Internal server error",
-          },
-        });
       }
-    },
-  );
+      return baseResponse;
+    } catch (error) {
+      observe("internal_error");
+      req.log.error(
+        {
+          err: error,
+          user: parsedUserAddress.toString(),
+        },
+        "Failed to issue quote",
+      );
+      return reply.code(500).send({
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Internal server error",
+        },
+      });
+    }
+  });
 
   return app;
 }
