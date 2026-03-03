@@ -656,7 +656,7 @@ unconstrained fn pay_and_mint_rejects_mint_when_fee_juice_backing_is_insufficien
     );
 }
 
-#[test(should_fail_with = "credits overflow")]
+#[test(should_fail_with = "attempt to add with overflow")]
 unconstrained fn pay_and_mint_rejects_when_unspent_credits_would_overflow() {
     let (mut env, credit_fpc_address, token_address, operator, user) = utils::setup();
     let credit_fpc = BackedCreditFPC::at(credit_fpc_address);

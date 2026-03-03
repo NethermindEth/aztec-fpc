@@ -40,7 +40,6 @@ pub contract BackedCreditFPC {
     use uint_note::{PartialUintNote, UintNote};
 
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
-    global MAX_U128_VALUE: u128 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
 
     #[derive(Deserialize, Eq, Packable, Serialize)]
     pub struct Config {
@@ -124,7 +123,6 @@ pub contract BackedCreditFPC {
             .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
-        let net_credit = fj_credit_amount - max_fee;
         let partial_note = UintNote::partial(
             sender,
             self.storage.balances.get_storage_slot(),
@@ -138,35 +136,30 @@ pub contract BackedCreditFPC {
             self.context.end_setup();
         }
 
-        self.enqueue_self._finalize_mint(fj_credit_amount, net_credit, partial_note);
+        self.enqueue_self._finalize_mint(fj_credit_amount, partial_note);
     }
 
-    /// Runs during the public (setup) phase of pay_and_mint, BEFORE this tx's fee is
-    /// deducted. balance_of_public() reflects all prior txs' fee deductions (live accounting)
-    /// but not the current tx's fee.
+    /// Finalizes a pay_and_mint by verifying FeeJuice solvency and crediting the user
+    /// with mint_amount - transaction_fee (the actual cost of this tx's gas).
+    /// Both unspent_credits and the user's credit note increase by the same amount,
+    /// keeping them aligned.
     ///
-    /// We check against mint_amount (= net_credit + gas_cost) so that the
-    /// gas_cost headroom absorbs this tx's fee:
-    ///   post-tx fj_balance  = fj_balance - actual_fee
-    ///   post-tx unspent     = unspent + net_credit
-    ///   margin = (fj_balance - unspent - mint_amount) + (gas_cost - actual_fee)
-    ///   both terms >= 0  =>  post-tx fj_balance >= post-tx unspent  (OK)
+    /// Solvency: fj_balance >= unspent + mint_amount (pre-deduction assertion)
+    /// implies fj_balance - tx_fee >= unspent + (mint_amount - tx_fee) post-tx.
 
     #[external("public")]
     #[only_self]
-    fn _finalize_mint(mint_amount: u128, net_credit: u128, partial_note: PartialUintNote) {
-        // we can tighten up the accounting here with transaction_fee
-        // adding right now is causing tests to fail
-
+    fn _finalize_mint(mint_amount: u128, partial_note: PartialUintNote) {
         let unspent_total_credits = self.storage.unspent_credits.read();
         let fj_balance = self.view(FeeJuice::at(FEE_JUICE_ADDRESS).balance_of_public(self.address));
+        let transaction_fee_u128 = self.context.transaction_fee() as u128;
 
-        assert(mint_amount <= MAX_U128_VALUE - unspent_total_credits, "credits overflow");
-
+        assert(mint_amount >= transaction_fee_u128, "transaction fee exceeds mint amount");
+        let actual_increase = mint_amount - transaction_fee_u128;
         assert(fj_balance >= unspent_total_credits + mint_amount, "insufficient FeeJuice backing");
 
-        self.storage.unspent_credits.write(unspent_total_credits + net_credit);
-        partial_note.complete(self.context, self.address, net_credit);
+        self.storage.unspent_credits.write(unspent_total_credits + actual_increase);
+        partial_note.complete(self.context, self.address, actual_increase);
     }
 
     #[external("private")]
