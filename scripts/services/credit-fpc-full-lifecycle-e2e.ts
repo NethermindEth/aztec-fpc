@@ -852,8 +852,8 @@ async function executeFeePaidTx(
     gasSettings: {
       gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
       teardownGasLimits: params.teardownGasLimits ?? {
-        daGas: 0,
-        l2Gas: 0,
+        daGas: 100_000,
+        l2Gas: 300_000,
       },
       maxFeesPerGas: {
         feePerDaGas: result.feePerDaGas,
@@ -1626,23 +1626,14 @@ async function runFeePaidTargetTxAndAssert(
     ).toString(),
   );
 
-  const gasSettings =
-    txLabel === "tx1"
-      ? {
-          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
-          maxFeesPerGas: {
-            feePerDaGas: result.feePerDaGas,
-            feePerL2Gas: result.feePerL2Gas,
-          },
-        }
-      : {
-          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          maxFeesPerGas: {
-            feePerDaGas: result.feePerDaGas,
-            feePerL2Gas: result.feePerL2Gas,
-          },
-        };
+  const gasSettings = {
+    gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+    teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
+    maxFeesPerGas: {
+      feePerDaGas: result.feePerDaGas,
+      feePerL2Gas: result.feePerL2Gas,
+    },
+  };
 
   const receipt = await result.token.methods
     .transfer_public_to_public(
@@ -1725,8 +1716,11 @@ async function runFeePaidTargetTxAndAssert(
         `[credit-full-lifecycle-e2e] tx1 operator credit mismatch after pay_and_mint. expected=${expectedCharge} got=${operatorCredited}`,
       );
     }
+    // _finalize_mint runs in teardown where transaction_fee() is the actual fee,
+    // so the user's net credit is fjAmount minus the real fee
+    const payAndMintTxFee = BigInt(receipt.transactionFee!.toString());
     const expectedCreditAfterPayAndMint =
-      creditBefore + tx1Quote.fjAmount - result.maxGasCostNoTeardown;
+      creditBefore + tx1Quote.fjAmount - payAndMintTxFee;
     if (creditAfter !== expectedCreditAfterPayAndMint) {
       throw new Error(
         `[credit-full-lifecycle-e2e] tx1 credit balance mismatch after pay_and_mint. expected=${expectedCreditAfterPayAndMint} got=${creditAfter}`,

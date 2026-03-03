@@ -131,22 +131,20 @@ pub contract BackedCreditFPC {
             self.address,
         );
 
+        self.set_as_teardown(BackedCreditFPC::at(self.address)._finalize_mint(
+            fj_credit_amount,
+            partial_note,
+        ));
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
-
-        self.enqueue_self._finalize_mint(fj_credit_amount, partial_note);
     }
 
-    /// Finalizes a pay_and_mint by verifying FeeJuice solvency and crediting the user
-    /// with mint_amount - transaction_fee (the actual cost of this tx's gas).
-    /// Both unspent_credits and the user's credit note increase by the same amount,
-    /// keeping them aligned.
+    /// Finalizes a pay_and_mint in the teardown phase where transaction_fee() is populated.
     ///
-    /// Solvency: fj_balance >= unspent + mint_amount (pre-deduction assertion)
-    /// implies fj_balance - tx_fee >= unspent + (mint_amount - tx_fee) post-tx.
-
+    /// actual_increase = mint_amount - transaction_fee: the net credit after paying the fee.
+    /// Solvency: fj_balance (post-fee) >= unspent_credits + actual_increase.
     #[external("public")]
     #[only_self]
     fn _finalize_mint(mint_amount: u128, partial_note: PartialUintNote) {
@@ -154,8 +152,8 @@ pub contract BackedCreditFPC {
         let fj_balance = self.view(FeeJuice::at(FEE_JUICE_ADDRESS).balance_of_public(self.address));
         let transaction_fee_u128 = self.context.transaction_fee() as u128;
 
-        assert(mint_amount >= transaction_fee_u128, "transaction fee exceeds mint amount");
         let actual_increase = mint_amount - transaction_fee_u128;
+
         assert(fj_balance >= unspent_total_credits + mint_amount, "insufficient FeeJuice backing");
 
         self.storage.unspent_credits.write(unspent_total_credits + actual_increase);
@@ -189,12 +187,11 @@ pub contract BackedCreditFPC {
         assert(subtracted >= max_gas_cost, "Balance too low or note insufficient");
         balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
+        self.set_as_teardown(BackedCreditFPC::at(self.address)._deduct_credits(max_gas_cost));
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
-
-        self.enqueue_self._deduct_credits(max_gas_cost);
     }
 
     // creates an extra note per-usage compared to pay_with_credit,
@@ -229,12 +226,14 @@ pub contract BackedCreditFPC {
             self.address,
         );
 
+        self.set_as_teardown(BackedCreditFPC::at(self.address)._finalize_exact_credit_spend(
+            max_gas_cost,
+            partial_note,
+        ));
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
-
-        self.enqueue_self._finalize_exact_credit_spend(max_gas_cost, partial_note);
     }
 
     /// Deducts max_gas_cost from unspent_credits. The protocol then deducts actual_fee
