@@ -9,7 +9,6 @@
 
 The Fee Payment Contract (FPC) lets users pay Aztec L2 transaction fees in a single fixed token instead of the native Fee Juice. An operator runs the FPC, receives fee payments as private notes, and keeps the FPC funded with Fee Juice bridged from L1.
 
-For Alpha, the fee-payer contract variant in scope is `FPC`.
 
 The protocol has three components:
 
