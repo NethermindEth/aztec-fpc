@@ -565,26 +565,7 @@ function ensureOperatorAccountInWallet(
     return walletAlias;
   }
 
-  try {
-    runAztecWalletCommand(
-      nodeUrl,
-      [
-        "create-account",
-        "--alias",
-        alias,
-        "--secret-key",
-        operatorSecretKey,
-        ...(payment ? ["--payment", payment] : []),
-      ],
-      `create operator account alias ${walletAlias}`,
-    );
-  } catch (error) {
-    if (
-      !(error instanceof CliError) ||
-      !isCreateAccountConflict(error.message)
-    ) {
-      throw error;
-    }
+  if (!payment) {
     runAztecWalletCommand(
       nodeUrl,
       [
@@ -595,8 +576,43 @@ function ensureOperatorAccountInWallet(
         "--secret-key",
         operatorSecretKey,
       ],
-      `import existing operator account alias ${walletAlias} after create-account conflict`,
+      `register operator account alias ${walletAlias} (register-only, no payment method)`,
     );
+  } else {
+    try {
+      runAztecWalletCommand(
+        nodeUrl,
+        [
+          "create-account",
+          "--alias",
+          alias,
+          "--secret-key",
+          operatorSecretKey,
+          "--payment",
+          payment,
+        ],
+        `create operator account alias ${walletAlias}`,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof CliError) ||
+        !isCreateAccountConflict(error.message)
+      ) {
+        throw error;
+      }
+      runAztecWalletCommand(
+        nodeUrl,
+        [
+          "create-account",
+          "--register-only",
+          "--alias",
+          alias,
+          "--secret-key",
+          operatorSecretKey,
+        ],
+        `import existing operator account alias ${walletAlias} after create-account conflict`,
+      );
+    }
   }
 
   const resolved = tryGetWalletAliasAddress(nodeUrl, walletAlias);
