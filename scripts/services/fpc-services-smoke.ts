@@ -1521,7 +1521,7 @@ async function runCreditFeeScenario(
         paymentMethod: payAndMintPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
+          teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
@@ -1547,7 +1547,10 @@ async function runCreditFeeScenario(
       await creditFpc.methods.balance_of(user).simulate({ from: user })
     ).toString(),
   );
-  const expectedCreditAfterPayAndMint = fjCreditAmount - maxGasCostNoTeardown;
+  // _finalize_mint runs in teardown where transaction_fee() is the actual fee,
+  // so the user's net credit is fjCreditAmount minus the real fee
+  const payAndMintTxFee = BigInt(payAndMintReceipt.transactionFee!.toString());
+  const expectedCreditAfterPayAndMint = fjCreditAmount - payAndMintTxFee;
 
   console.log(
     `[services-smoke:credit] pay_and_mint_tx_fee_juice=${payAndMintReceipt.transactionFee}`,
@@ -1610,6 +1613,7 @@ async function runCreditFeeScenario(
         paymentMethod: payWithCreditPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },

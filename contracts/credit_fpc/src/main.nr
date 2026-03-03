@@ -39,7 +39,6 @@ pub contract BackedCreditFPC {
     use uint_note::{PartialUintNote, UintNote};
 
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
-    global MAX_U128_VALUE: u128 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
 
     #[derive(Deserialize, Eq, Packable, Serialize)]
     pub struct Config {
@@ -123,7 +122,6 @@ pub contract BackedCreditFPC {
             .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
-        let net_credit = fj_credit_amount - max_fee;
         let partial_note = UintNote::partial(
             sender,
             self.storage.balances.get_storage_slot(),
@@ -132,40 +130,33 @@ pub contract BackedCreditFPC {
             self.address,
         );
 
+        self.set_as_teardown(BackedCreditFPC::at(self.address)._finalize_mint(
+            fj_credit_amount,
+            partial_note,
+        ));
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
-
-        self.enqueue_self._finalize_mint(fj_credit_amount, net_credit, partial_note);
     }
 
-    /// Runs during the public (setup) phase of pay_and_mint, BEFORE this tx's fee is
-    /// deducted. balance_of_public() reflects all prior txs' fee deductions (live accounting)
-    /// but not the current tx's fee.
+    /// Finalizes a pay_and_mint in the teardown phase where transaction_fee() is populated.
     ///
-    /// We check against mint_amount (= net_credit + gas_cost) so that the
-    /// gas_cost headroom absorbs this tx's fee:
-    ///   post-tx fj_balance  = fj_balance - actual_fee
-    ///   post-tx unspent     = unspent + net_credit
-    ///   margin = (fj_balance - unspent - mint_amount) + (gas_cost - actual_fee)
-    ///   both terms >= 0  =>  post-tx fj_balance >= post-tx unspent  (OK)
-
+    /// actual_increase = mint_amount - transaction_fee: the net credit after paying the fee.
+    /// Solvency: fj_balance (post-fee) >= unspent_credits + actual_increase.
     #[external("public")]
     #[only_self]
-    fn _finalize_mint(mint_amount: u128, net_credit: u128, partial_note: PartialUintNote) {
-        // we can tighten up the accounting here with transaction_fee
-        // adding right now is causing tests to fail
-
+    fn _finalize_mint(mint_amount: u128, partial_note: PartialUintNote) {
         let unspent_total_credits = self.storage.unspent_credits.read();
         let fj_balance = self.view(FeeJuice::at(FEE_JUICE_ADDRESS).balance_of_public(self.address));
+        let transaction_fee_u128 = self.context.transaction_fee() as u128;
 
-        assert(mint_amount <= MAX_U128_VALUE - unspent_total_credits, "credits overflow");
+        let actual_increase = mint_amount - transaction_fee_u128;
 
         assert(fj_balance >= unspent_total_credits + mint_amount, "insufficient FeeJuice backing");
 
-        self.storage.unspent_credits.write(unspent_total_credits + net_credit);
-        partial_note.complete(self.context, self.address, net_credit);
+        self.storage.unspent_credits.write(unspent_total_credits + actual_increase);
+        partial_note.complete(self.context, self.address, actual_increase);
     }
 
     #[external("private")]
@@ -195,12 +186,11 @@ pub contract BackedCreditFPC {
         assert(subtracted >= max_gas_cost, "Balance too low or note insufficient");
         balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
+        self.set_as_teardown(BackedCreditFPC::at(self.address)._deduct_credits(max_gas_cost));
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
-
-        self.enqueue_self._deduct_credits(max_gas_cost);
     }
 
     // creates an extra note per-usage compared to pay_with_credit,
@@ -235,12 +225,14 @@ pub contract BackedCreditFPC {
             self.address,
         );
 
+        self.set_as_teardown(BackedCreditFPC::at(self.address)._finalize_exact_credit_spend(
+            max_gas_cost,
+            partial_note,
+        ));
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
-
-        self.enqueue_self._finalize_exact_credit_spend(max_gas_cost, partial_note);
     }
 
     /// Deducts max_gas_cost from unspent_credits. The protocol then deducts actual_fee

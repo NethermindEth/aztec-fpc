@@ -37,7 +37,7 @@ import { privateKeyToAccount } from "viem/accounts";
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as Hex;
-const FEE_JUICE_TOPUP_SAFETY_MULTIPLIER = 5n;
+const FEE_JUICE_TOPUP_SAFETY_MULTIPLIER = 3n;
 const ERC20_ABI = parseAbi([
   "function balanceOf(address owner) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
@@ -181,7 +181,7 @@ function getConfig(): SmokeConfig {
     "CREDIT_FPC_SMOKE_RELAY_ADVANCE_BLOCKS",
     2,
   );
-  const mintMultiplier = readEnvBigInt("CREDIT_FPC_SMOKE_MINT_MULTIPLIER", 5n);
+  const mintMultiplier = readEnvBigInt("CREDIT_FPC_SMOKE_MINT_MULTIPLIER", 3n);
   const mintBuffer = readEnvBigInt("CREDIT_FPC_SMOKE_MINT_BUFFER", 1_000_000n);
 
   if (rateDen === 0n) {
@@ -590,7 +590,7 @@ async function main() {
         paymentMethod: payAndMintPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
+          teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
@@ -616,7 +616,10 @@ async function main() {
       await creditFpc.methods.balance_of(user).simulate({ from: user })
     ).toString(),
   );
-  const expectedCreditAfterPayAndMint = mintAmount - maxGasCostNoTeardown;
+  // _finalize_mint runs in teardown where transaction_fee() is the actual fee,
+  // so the user's net credit is mintAmount minus the real fee
+  const payAndMintTxFee = BigInt(payAndMintReceipt.transactionFee!.toString());
+  const expectedCreditAfterPayAndMint = mintAmount - payAndMintTxFee;
 
   console.log(
     `[credit-smoke] pay_and_mint_tx_fee_juice=${payAndMintReceipt.transactionFee}`,
@@ -745,6 +748,7 @@ async function main() {
         paymentMethod: payWithCreditPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
@@ -815,6 +819,7 @@ async function main() {
         paymentMethod: payWithCreditExactPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
@@ -890,10 +895,13 @@ async function main() {
   }
 
   // Deterministic overdraft scenario:
-  // 1) mint net credit for exactly four pay_with_credit payments
-  // 2) run four pay_with_credit-backed transactions (success)
-  // 3) the fifth pay_with_credit-backed transaction must fail
-  const plannedSuccessfulPayWithCreditTxs = 4n;
+  // Mint net credit for exactly N pay_with_credit payments, execute them, then
+  // verify the (N+1)-th payment fails due to insufficient credit.
+  // Default N=1 keeps L1 FeeJuice usage under the 1e18 test-wallet limit.
+  const plannedSuccessfulPayWithCreditTxs = readEnvBigInt(
+    "CREDIT_FPC_SMOKE_OVERDRAFT_PLANNED_TXS",
+    1n,
+  );
   const overdraftNetCredit =
     observedPayWithCreditCost * plannedSuccessfulPayWithCreditTxs;
   const overdraftFjCreditAmount = maxGasCostNoTeardown + overdraftNetCredit;
@@ -999,7 +1007,7 @@ async function main() {
     getGasSettings: () => undefined,
   };
 
-  await token.methods
+  const overdraftPayAndMintReceipt = await token.methods
     .transfer_public_to_public(userOverdraft, userOverdraft, 1n, Fr.random())
     .send({
       from: userOverdraft,
@@ -1007,12 +1015,18 @@ async function main() {
         paymentMethod: overdraftPayAndMintPaymentMethod,
         gasSettings: {
           gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
+          teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
         },
       },
       wait: { timeout: 180 },
     });
+
+  // With teardown-based _finalize_mint, actual credit = mint_amount - transaction_fee
+  const overdraftTxFee = BigInt(
+    overdraftPayAndMintReceipt.transactionFee!.toString(),
+  );
+  const expectedOverdraftCredit = overdraftFjCreditAmount - overdraftTxFee;
 
   const overdraftPayWithCreditCall = await creditFpc.methods
     .pay_with_credit()
@@ -1038,9 +1052,9 @@ async function main() {
         .simulate({ from: userOverdraft })
     ).toString(),
   );
-  if (overdraftCreditStart !== overdraftNetCredit) {
+  if (overdraftCreditStart !== expectedOverdraftCredit) {
     throw new Error(
-      `Overdraft scenario credit mismatch after pay_and_mint. expected=${overdraftNetCredit} got=${overdraftCreditStart}`,
+      `Overdraft scenario credit mismatch after pay_and_mint. expected=${expectedOverdraftCredit} got=${overdraftCreditStart}`,
     );
   }
 
@@ -1053,6 +1067,7 @@ async function main() {
           paymentMethod: overdraftPayWithCreditPaymentMethod,
           gasSettings: {
             gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+            teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
             maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           },
         },
@@ -1064,7 +1079,7 @@ async function main() {
   }
 
   await expectFailure(
-    "fifth pay_with_credit tx fails after exhausting four-credit budget",
+    `pay_with_credit tx #${plannedSuccessfulPayWithCreditTxs + 1n} fails after exhausting credit budget`,
     ["Balance too low or note insufficient", "credit underflow"],
     () =>
       token.methods
@@ -1080,6 +1095,7 @@ async function main() {
             paymentMethod: overdraftPayWithCreditPaymentMethod,
             gasSettings: {
               gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+              teardownGasLimits: { daGas: 100_000, l2Gas: 300_000 },
               maxFeesPerGas: { feePerDaGas, feePerL2Gas },
             },
           },
