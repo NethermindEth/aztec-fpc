@@ -52,14 +52,18 @@ services:
         target: /app/fpc-config.yaml
     volumes:
       - ./configs:/app/configs
+      - deploy-crs-cache:/root/.bb-crs
     environment:
+      FPC_DEPLOY_ENV: "local"
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
-      FPC_DEVNET_DEPLOYER_ALIAS: "${FPC_DEVNET_DEPLOYER_ALIAS:-test0}"
-      FPC_DEVNET_DEPLOYER_PRIVATE_KEY: "${FPC_DEVNET_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
-      FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_DEVNET_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
-      FPC_DEVNET_OUT: "/app/configs/deploy-manifest.json"
+      PXE_PROVER: "${PXE_PROVER:-wasm}"
+      CRS_PATH: "${CRS_PATH:-/root/.bb-crs}"
+      FPC_LOCAL_DEPLOYER_ALIAS: "${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
+      FPC_LOCAL_DEPLOYER_PRIVATE_KEY: "${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      FPC_LOCAL_OPERATOR_SECRET_KEY: "${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       FPC_MASTER_CONFIG: "/app/fpc-config.yaml"
+      FPC_LOCAL_OUT: "/app/configs/deploy-manifest.json"
       FPC_CONFIGS_OUT: "/app/configs"
     depends_on:
       aztec-node:
@@ -91,6 +95,9 @@ services:
       L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
       L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
       TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
+      TOPUP_BRIDGE_STATE_PATH: "${TOPUP_BRIDGE_STATE_PATH:-/tmp/.topup-bridge-state.json}"
+      TOPUP_AUTOCLAIM_ENABLED: "${TOPUP_AUTOCLAIM_ENABLED:-1}"
+      TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX: "${TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX:-0}"
     depends_on:
       deploy:
         condition: service_completed_successfully
@@ -105,7 +112,7 @@ services:
     environment:
       FPC_DEVNET_SMOKE_MANIFEST: "/app/configs/deploy-manifest.json"
       L1_RPC_URL: "http://anvil:8545"
-      FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_DEVNET_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
     depends_on:
       deploy:
@@ -119,7 +126,7 @@ services:
       - "services/attestation/test/fee-entrypoint-local-smoke.ts"
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
-      FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_DEVNET_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      FPC_LOCAL_OPERATOR_SECRET_KEY: "${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"
       FPC_SERVICES_SMOKE_L1_RPC_URL: "http://anvil:8545"
     depends_on:
@@ -145,3 +152,6 @@ services:
 configs:
   fpc-config:
     file: ./fpc-config.yaml
+
+volumes:
+  deploy-crs-cache:

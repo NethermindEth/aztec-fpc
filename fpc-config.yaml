@@ -17,7 +17,7 @@ attestation:
 
 topup:
   threshold: "100000000000000000"
-  top_up_amount: "5000"
+  top_up_amount: "1000000000000000000"
   bridge_state_path: ".topup-bridge-state.json"
   ops_port: 3001
   check_interval_ms: 60000
