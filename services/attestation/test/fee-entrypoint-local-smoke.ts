@@ -4,11 +4,9 @@ import pino from "pino";
 
 const pinoLogger = pino();
 
-import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
-import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -30,10 +28,10 @@ import {
   parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { deployContract } from "../../../scripts/common/deploy-utils.ts";
+import { resolveScriptAccounts } from "../../../scripts/common/script-credentials.ts";
 
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
-const DEFAULT_LOCAL_L1_PRIVATE_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as Hex;
 const FEE_JUICE_TOPUP_SAFETY_MULTIPLIER = 5n;
 const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
@@ -159,8 +157,7 @@ function getConfig(): SmokeConfig {
   const nodeUrl = process.env.AZTEC_NODE_URL ?? "http://localhost:8080";
   const nodeTimeoutMs = readEnvNumber("FPC_SMOKE_NODE_TIMEOUT_MS", 30_000);
   const l1RpcUrl = process.env.FPC_SMOKE_L1_RPC_URL ?? "http://localhost:8545";
-  const l1PrivateKey = (process.env.FPC_SMOKE_L1_PRIVATE_KEY ??
-    DEFAULT_LOCAL_L1_PRIVATE_KEY) as Hex;
+  const l1PrivateKey = "" as Hex; // Set by resolveScriptAccounts
   const feeJuiceTopupWei = readOptionalEnvBigInt("FPC_SMOKE_FEE_JUICE_TOPUP_WEI");
   const feeJuiceWaitTimeoutMs = readEnvNumber("FPC_SMOKE_FEE_JUICE_WAIT_TIMEOUT_MS", 120_000);
   // Match default attestation config effective rate:
@@ -498,7 +495,13 @@ async function main() {
     BigInt(config.daGasLimit) * feePerDaGas + BigInt(config.l2GasLimit) * feePerL2Gas;
   const feeJuiceTopupWei = resolveFeeJuiceTopupWei(config, maxGasCostNoTeardown);
 
-  const testAccounts = await getInitialTestAccountsData();
+  const { accounts: testAccounts, l1PrivateKey } = await resolveScriptAccounts(
+    config.nodeUrl,
+    config.l1RpcUrl,
+    wallet,
+  );
+  config.l1PrivateKey = l1PrivateKey as Hex;
+
   const [operator, user] = await Promise.all(
     testAccounts.slice(0, 2).map(async (account) => {
       return (await wallet.createSchnorrAccount(account.secret, account.salt, account.signingKey))
@@ -514,19 +517,21 @@ async function main() {
   const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
   const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-  const token = await Contract.deploy(
+  const token = await deployContract(
     wallet,
     tokenArtifact,
     ["SmokeToken", "SMK", 18, operator, operator],
+    { from: operator },
     "constructor_with_minter",
-  ).send({ from: operator });
+  );
   pinoLogger.info(`[smoke] token=${token.address.toString()}`);
 
-  const fpc = await Contract.deploy(wallet, fpcArtifact, [
-    operator,
-    operatorPubKey.x,
-    operatorPubKey.y,
-  ]).send({ from: operator });
+  const fpc = await deployContract(
+    wallet,
+    fpcArtifact,
+    [operator, operatorPubKey.x, operatorPubKey.y],
+    { from: operator },
+  );
   pinoLogger.info(`[smoke] fpc=${fpc.address.toString()}`);
 
   pinoLogger.info(`[smoke] fee_per_da_gas=${feePerDaGas}`);

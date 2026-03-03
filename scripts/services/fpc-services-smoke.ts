@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,11 +6,10 @@ import pino from "pino";
 
 const pinoLogger = pino();
 
-import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash, lookupValidity } from "@aztec/aztec.js/authorization";
-import { Contract } from "@aztec/aztec.js/contracts";
+import type { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
@@ -24,7 +22,7 @@ import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { createPublicClient, createWalletClient, type Hex, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-
+import { deployContract } from "../common/deploy-utils.ts";
 import {
   installManagedProcessSignalHandlers,
   type ManagedProcess,
@@ -35,9 +33,8 @@ import {
   waitForLog,
   waitForNodeReady,
 } from "../common/managed-process.ts";
+import { resolveScriptAccounts } from "../common/script-credentials.ts";
 
-const DEFAULT_LOCAL_L1_PRIVATE_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ERC20_ABI = parseAbi([
   "function balanceOf(address account) view returns (uint256)",
@@ -319,68 +316,6 @@ async function waitForTopupBridgeOutcome(
   );
 }
 
-function bootstrapTopupAutoclaimAccount(
-  repoRoot: string,
-  nodeUrl: string,
-  claimerSecretKey: string,
-): void {
-  const timeoutRaw = process.env.TOPUP_AUTOCLAIM_BOOTSTRAP_TIMEOUT_MS?.trim();
-  const timeoutMs = timeoutRaw && timeoutRaw.length > 0 ? Number.parseInt(timeoutRaw, 10) : 180_000;
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error(
-      "[services-smoke] invalid TOPUP_AUTOCLAIM_BOOTSTRAP_TIMEOUT_MS; expected positive integer milliseconds",
-    );
-  }
-  const scriptPath = path.join(
-    repoRoot,
-    "scripts",
-    "services",
-    "bootstrap-topup-autoclaim-account.ts",
-  );
-  pinoLogger.info(`[services-smoke] bootstrapping topup auto-claim claimer on ${nodeUrl}`);
-  try {
-    execFileSync(
-      "bun",
-      [
-        "run",
-        scriptPath,
-        "--node-url",
-        nodeUrl,
-        "--secret-key",
-        claimerSecretKey,
-        "--alias",
-        "services-smoke-autoclaim",
-      ],
-      {
-        cwd: repoRoot,
-        env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: timeoutMs,
-        killSignal: "SIGTERM",
-      },
-    );
-  } catch (error) {
-    const stdout =
-      error && typeof error === "object" && "stdout" in error
-        ? String((error as { stdout?: unknown }).stdout ?? "")
-        : "";
-    const stderr =
-      error && typeof error === "object" && "stderr" in error
-        ? String((error as { stderr?: unknown }).stderr ?? "")
-        : "";
-    const message =
-      error && typeof error === "object" && "message" in error
-        ? String((error as { message?: unknown }).message ?? "")
-        : "";
-    const timeoutHint = message.toLowerCase().includes("timed out")
-      ? `\nbootstrap timeout: ${timeoutMs}ms`
-      : "";
-    throw new Error(
-      `[services-smoke] failed to bootstrap topup auto-claim claimer.${timeoutHint}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
-    );
-  }
-}
-
 async function waitForTopupBridgeSubmission(
   proc: ManagedProcess,
   timeoutMs: number,
@@ -645,6 +580,7 @@ async function runServiceScenario(
   schnorr: Schnorr,
   operatorPubKey: SchnorrPoint,
   operatorSecretHex: string,
+  operator: AztecAddress,
   l1PrivateKey: Hex,
   topupThreshold: bigint,
   topupAmount: bigint,
@@ -666,6 +602,7 @@ async function runServiceScenario(
         `port: ${config.attestationPort}`,
         `accepted_asset_name: "SmokeToken"`,
         `accepted_asset_address: "${token.address.toString()}"`,
+        `operator_address: "${operator.toString()}"`,
         `market_rate_num: ${config.marketRateNum}`,
         `market_rate_den: ${config.marketRateDen}`,
         `fee_bips: ${config.feeBips}`,
@@ -1077,9 +1014,11 @@ async function main() {
     await waitForNodeReady(node, config.nodeTimeoutMs);
     const wallet = await EmbeddedWallet.create(node);
 
-    const l1PrivateKey =
-      process.env.FPC_SERVICES_SMOKE_L1_PRIVATE_KEY ?? DEFAULT_LOCAL_L1_PRIVATE_KEY;
-    assertPrivateKeyHex(l1PrivateKey, "FPC_SERVICES_SMOKE_L1_PRIVATE_KEY");
+    const { accounts: testAccounts, l1PrivateKey } = await resolveScriptAccounts(
+      config.nodeUrl,
+      config.l1RpcUrl,
+      wallet,
+    );
 
     const minFees = await node.getCurrentMinFees();
     const feePerDaGas = minFees.feePerDaGas;
@@ -1149,7 +1088,6 @@ async function main() {
       );
     }
 
-    const testAccounts = await getInitialTestAccountsData();
     const operatorData = testAccounts.at(0);
     const userData = testAccounts.at(1);
     if (!operatorData || !userData) {
@@ -1166,12 +1104,13 @@ async function main() {
     pinoLogger.info(`[services-smoke] operator=${operator.toString()}`);
     pinoLogger.info(`[services-smoke] user=${user.toString()}`);
 
-    const token = await Contract.deploy(
+    const token = await deployContract(
       wallet,
       tokenArtifact,
       ["SmokeToken", "SMK", 18, operator, operator],
+      { from: operator },
       "constructor_with_minter",
-    ).send({ from: operator });
+    );
     pinoLogger.info(`[services-smoke] token=${token.address.toString()}`);
 
     // Derive operator signing pubkey for inline Schnorr verification.
@@ -1179,12 +1118,12 @@ async function main() {
     const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
     const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-    const fpc = await Contract.deploy(wallet, fpcArtifact, [
-      operator,
-      operatorPubKey.x,
-      operatorPubKey.y,
-      token.address,
-    ]).send({ from: operator });
+    const fpc = await deployContract(
+      wallet,
+      fpcArtifact,
+      [operator, operatorPubKey.x, operatorPubKey.y, token.address],
+      { from: operator },
+    );
     pinoLogger.info(`[services-smoke] fpc=${fpc.address.toString()}`);
 
     pinoLogger.info(
@@ -1193,7 +1132,6 @@ async function main() {
 
     const operatorSecretHex = operatorData.secret.toString();
     assertPrivateKeyHex(operatorSecretHex, "operator secret");
-    bootstrapTopupAutoclaimAccount(repoRoot, config.nodeUrl, operatorSecretHex);
     const publishedOperator = await node.getContract(operator);
     if (!publishedOperator) {
       throw new Error(
@@ -1213,6 +1151,7 @@ async function main() {
       schnorr,
       operatorPubKey,
       operatorSecretHex,
+      operator,
       l1PrivateKey as Hex,
       topupThreshold,
       topupAmount,
