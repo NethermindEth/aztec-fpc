@@ -30,7 +30,7 @@ No other smoke/deploy/test flows are part of this definition.
   - `aztec start --local-network`
 - Contracts compiled (`aztec compile --workspace --force`) including:
   - `target/token_contract-Token.json`
-  - `target/credit_fpc-CreditFPC.json`
+  - `target/credit_fpc-BackedCreditFPC.json`
 - Attestation and topup services buildable/runnable from this repo
 
 ## Asset Model And Wiring
@@ -38,7 +38,7 @@ Two different assets are involved and must not be conflated:
 
 1. `accepted_asset` (L2 token used to charge tx #1 in `pay_and_mint`)
 - This is a test token deployed on Aztec L2 (`token_contract-Token`).
-- It is passed to CreditFPC constructor as `accepted_asset`.
+- It is chosen per quote (`accepted_asset`) at runtime for `pay_and_mint`.
 - Attestation must return this exact address in `/quote.accepted_asset`.
 
 2. Fee Juice (protocol fee asset for gas payment)
@@ -59,7 +59,6 @@ Address source of truth is always `node_getNodeInfo`; nothing is hardcoded.
    - `operator = operator Aztec address`
    - `operator_pubkey_x = operator Schnorr pubkey x`
    - `operator_pubkey_y = operator Schnorr pubkey y`
-   - `accepted_asset = deployed L2 token address`
 5. Run CreditFPC scenario:
    - start attestation + topup with generated runtime config:
      - attestation config uses `fpc_address=<CreditFPC>` + `accepted_asset_address`
