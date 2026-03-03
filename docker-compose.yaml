@@ -116,7 +116,7 @@ services:
 
   smoke:
     image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke"]
+    profiles: ["smoke", "full"]
     command:
       - "scripts/services/fpc-services-smoke.ts"
       - "services/attestation/test/fee-entrypoint-local-smoke.ts"

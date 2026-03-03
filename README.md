@@ -432,9 +432,16 @@ services/attestation/config.yaml -> config.example.yaml
 services/topup/config.yaml       -> config.example.yaml
 ```
 
-Start the stack:
+Run compose in mode-based flows:
 
 ```bash
+# Infra only (no tests)
+bun run compose:infra
+
+# Full mode (deployment + smoke tests, exits with smoke status)
+bun run compose:full
+
+# Or directly with docker compose for infra-only
 docker compose up
 ```
 

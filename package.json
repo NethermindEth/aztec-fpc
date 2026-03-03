@@ -41,6 +41,8 @@
     "docker:build:services": "docker buildx bake services",
     "docker:build:smoke": "docker buildx bake smoke",
     "docker:build:topup": "docker buildx bake topup",
+    "compose:infra": "bash scripts/services/compose-mode.sh infra",
+    "compose:full": "bash scripts/services/compose-mode.sh full",
 
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
     "render:config:devnet": "bunx tsx scripts/services/render-config-from-manifest.ts --manifest ./deployments/devnet-manifest-v2.json",
