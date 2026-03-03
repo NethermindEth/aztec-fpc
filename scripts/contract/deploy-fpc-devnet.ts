@@ -1630,6 +1630,9 @@ function buildFpcConstructorArgs(
     operatorIdentity.pubkeyX,
     operatorIdentity.pubkeyY,
   ];
+  // FPCMultiAsset takes only operator/operator_pubkey_x/operator_pubkey_y.
+  // Keep legacy single-asset artifact compatibility by appending
+  // acceptedAssetAddress only for the legacy "FPC" name.
   if (selection.name === "FPCMultiAsset") {
     return baseArgs;
   }

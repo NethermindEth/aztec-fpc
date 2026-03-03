@@ -8,11 +8,28 @@ set -euo pipefail
 # injected.
 #
 # Environment variables (all optional, with defaults):
-#   FPC_DEPLOY_MANIFEST — path to deploy manifest JSON (default: ./deployments/devnet-manifest-v2.json)
+#   FPC_DEPLOY_MANIFEST — path to deploy manifest JSON
 #   FPC_MASTER_CONFIG  — path to master config YAML  (default: ./fpc-config.yaml)
 #   FPC_CONFIGS_OUT    — output directory             (default: ./configs)
 
-FPC_DEPLOY_MANIFEST="${FPC_DEPLOY_MANIFEST:-./deployments/devnet-manifest-v2.json}"
+# Manifest resolution priority:
+# 1) explicit FPC_DEPLOY_MANIFEST
+# 2) FPC_LOCAL_OUT (used by local deploy scripts/compose deploy service)
+# 3) ./configs/deploy-manifest.json (compose output in this repo)
+# 4) ./deployments/devnet-manifest-v2.json (devnet workflow default)
+# 5) legacy fallback ./tmp/deploy-fpc-local-manifest.json
+if [ -n "${FPC_DEPLOY_MANIFEST:-}" ]; then
+  FPC_DEPLOY_MANIFEST="${FPC_DEPLOY_MANIFEST}"
+elif [ -n "${FPC_LOCAL_OUT:-}" ]; then
+  FPC_DEPLOY_MANIFEST="${FPC_LOCAL_OUT}"
+elif [ -f "./configs/deploy-manifest.json" ]; then
+  FPC_DEPLOY_MANIFEST="./configs/deploy-manifest.json"
+elif [ -f "./deployments/devnet-manifest-v2.json" ]; then
+  FPC_DEPLOY_MANIFEST="./deployments/devnet-manifest-v2.json"
+else
+  FPC_DEPLOY_MANIFEST="./tmp/deploy-fpc-local-manifest.json"
+fi
+
 FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}"
 FPC_CONFIGS_OUT="${FPC_CONFIGS_OUT:-./configs}"
 

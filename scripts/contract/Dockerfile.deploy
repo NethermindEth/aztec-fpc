@@ -24,6 +24,7 @@ WORKDIR /app
 COPY .aztecrc ./
 COPY Nargo.toml ./
 COPY contracts/ contracts/
+COPY mock/counter/ mock/counter/
 COPY vendor/ vendor/
 
 RUN aztec compile --workspace --force

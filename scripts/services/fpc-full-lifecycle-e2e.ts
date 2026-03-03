@@ -13,12 +13,8 @@ import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
-import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import {
-  FeeJuiceContract,
-  ProtocolContractAddress,
-} from "@aztec/aztec.js/protocol";
+import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import {
@@ -95,8 +91,6 @@ type DeploymentRuntimeResult = {
 type TopupBridgeSubmission = {
   messageHash: string;
   leafIndex: bigint;
-  claimSecretHash: string;
-  claimSecret?: string;
 };
 
 type TopupLogCounters = {
@@ -358,14 +352,12 @@ function resolveFpcArtifactPath(repoRoot: string): string {
 function parseTopupBridgeSubmissions(logs: string): TopupBridgeSubmission[] {
   const submissions: TopupBridgeSubmission[] = [];
   const pattern =
-    /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+) claim_secret_hash=(0x[0-9a-fA-F]+)(?: claim_secret=([^\s]+))?/g;
+    /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+)/g;
   let match: RegExpExecArray | null = pattern.exec(logs);
   while (match) {
     submissions.push({
       messageHash: match[1],
       leafIndex: BigInt(match[2]),
-      claimSecretHash: match[3],
-      claimSecret: match[4],
     });
     match = pattern.exec(logs);
   }
@@ -533,87 +525,6 @@ async function waitForFeeJuiceBalanceAboveBaseline(
   }
   throw new Error(
     `Timed out waiting for Fee Juice balance above baseline=${baseline} on ${feePayerAddress.toString()}`,
-  );
-}
-
-async function claimBridgeSubmissionForTarget(
-  node: ReturnType<typeof createAztecNodeClient>,
-  params: {
-    token: Contract;
-    operator: AztecAddress;
-    user: AztecAddress;
-    wallet: EmbeddedWallet;
-    feePayerAddress: AztecAddress;
-    topupAmountWei: bigint;
-  },
-  submission: TopupBridgeSubmission,
-  relayAdvanceBlocks: number,
-  timeoutMs: number,
-  pollMs: number,
-): Promise<bigint> {
-  if (!submission.claimSecret) {
-    throw new Error(
-      `Cannot claim bridge submission ${submission.messageHash}: claim_secret is missing from topup logs`,
-    );
-  }
-
-  // Force block production to make L1->L2 messages claimable deterministically on local devnet.
-  await advanceL2Blocks(
-    params.token,
-    params.operator,
-    params.user,
-    relayAdvanceBlocks,
-  );
-
-  await waitForL1ToL2MessageReady(
-    node,
-    Fr.fromHexString(submission.messageHash),
-    {
-      timeoutSeconds: Math.max(1, Math.floor(timeoutMs / 1000)),
-      forPublicConsumption: false,
-    },
-  );
-
-  const feeJuice = FeeJuiceContract.at(params.wallet);
-  await feeJuice.methods
-    .claim(
-      params.feePayerAddress,
-      params.topupAmountWei,
-      Fr.fromString(submission.claimSecret),
-      new Fr(submission.leafIndex),
-    )
-    .send({ from: params.operator });
-
-  return waitForPositiveFeeJuiceBalance(
-    node,
-    params.feePayerAddress,
-    timeoutMs,
-    pollMs,
-  );
-}
-
-async function claimTopupBridgeSubmission(
-  node: ReturnType<typeof createAztecNodeClient>,
-  result: DeploymentRuntimeResult,
-  submission: TopupBridgeSubmission,
-  relayAdvanceBlocks: number,
-  timeoutMs: number,
-  pollMs: number,
-): Promise<bigint> {
-  return claimBridgeSubmissionForTarget(
-    node,
-    {
-      token: result.token,
-      operator: result.operator,
-      user: result.user,
-      wallet: result.wallet,
-      feePayerAddress: result.fpc.address,
-      topupAmountWei: result.topupAmountWei,
-    },
-    submission,
-    relayAdvanceBlocks,
-    timeoutMs,
-    pollMs,
   );
 }
 
@@ -1848,7 +1759,6 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
       env: {
         ...process.env,
         L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
-        TOPUP_LOG_CLAIM_SECRET: "1",
       },
     },
   );
@@ -1883,25 +1793,16 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
 
     let isolatedBalance = await getFeeJuiceBalance(isolatedFpc.address, node);
     if (isolatedBalance === 0n) {
-      isolatedBalance = await claimBridgeSubmissionForTarget(
+      isolatedBalance = await waitForPositiveFeeJuiceBalance(
         node,
-        {
-          token: isolatedToken,
-          operator: result.operator,
-          user: result.user,
-          wallet: result.wallet,
-          feePayerAddress: isolatedFpc.address,
-          topupAmountWei: effectiveBudgetWei,
-        },
-        submission.submission,
-        config.relayAdvanceBlocks,
+        isolatedFpc.address,
         config.topupWaitTimeoutMs,
         config.topupPollMs,
       );
     }
     if (isolatedBalance <= 0n) {
       throw new Error(
-        "isolated insufficient-fee scenario funding did not produce Fee Juice",
+        `isolated insufficient-fee scenario funding did not produce Fee Juice (submission=${submission.submission.messageHash})`,
       );
     }
   } finally {
@@ -2057,7 +1958,6 @@ async function orchestrateServicesAndAssertBridgeCycles(
         env: {
           ...process.env,
           L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
-          TOPUP_LOG_CLAIM_SECRET: "1",
         },
       },
     );
@@ -2122,13 +2022,11 @@ async function orchestrateServicesAndAssertBridgeCycles(
     );
     if (feeJuiceAfterCycle1 === 0n) {
       console.log(
-        `[full-lifecycle-e2e] bridge cycle #1 confirmed but Fee Juice is still zero; claiming bridge message ${cycle1Submission.submission.messageHash}`,
+        `[full-lifecycle-e2e] bridge cycle #1 confirmed but Fee Juice is still zero; waiting for auto-claim settlement (message_hash=${cycle1Submission.submission.messageHash})`,
       );
-      feeJuiceAfterCycle1 = await claimTopupBridgeSubmission(
+      feeJuiceAfterCycle1 = await waitForPositiveFeeJuiceBalance(
         node,
-        result,
-        cycle1Submission.submission,
-        config.relayAdvanceBlocks,
+        result.fpc.address,
         config.topupWaitTimeoutMs,
         config.topupPollMs,
       );
@@ -2183,15 +2081,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
       feeJuiceAfterCycle2 = await getFeeJuiceBalance(result.fpc.address, node);
       if (feeJuiceAfterCycle2 <= feeJuiceAfterTx1) {
         console.log(
-          `[full-lifecycle-e2e] bridge cycle #2 confirmed but Fee Juice did not increase; claiming bridge message ${cycle2Submission.submission.messageHash}`,
-        );
-        await claimTopupBridgeSubmission(
-          node,
-          result,
-          cycle2Submission.submission,
-          config.relayAdvanceBlocks,
-          config.topupWaitTimeoutMs,
-          config.topupPollMs,
+          `[full-lifecycle-e2e] bridge cycle #2 confirmed but Fee Juice did not increase; waiting for auto-claim settlement (message_hash=${cycle2Submission.submission.messageHash})`,
         );
         feeJuiceAfterCycle2 = await waitForFeeJuiceBalanceAboveBaseline(
           node,
