@@ -366,8 +366,8 @@ The repository now exposes the devnet deployment lifecycle through stable comman
   - implementation: `scripts/contract/deploy-fpc-devnet.ts`
 - `bun run verify:deploy:fpc:devnet`
   - implementation: `scripts/contract/verify-fpc-devnet-deployment.ts`
-- `bun run render:config:devnet`
-  - implementation: `scripts/services/render-config-from-manifest.ts`
+- `bun run generate:configs`
+  - implementation: `scripts/config/generate-service-configs.sh`
 - `bun run smoke:deploy:fpc:devnet`
   - implementation: `scripts/contract/devnet-postdeploy-smoke.ts`
 

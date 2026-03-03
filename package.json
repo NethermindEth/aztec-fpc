@@ -45,11 +45,9 @@
     "compose:full": "bash scripts/services/compose-mode.sh full",
 
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
-    "render:config:devnet": "bunx tsx scripts/services/render-config-from-manifest.ts --manifest ./deployments/devnet-manifest-v2.json",
-    "deploy:fpc:local": "FPC_DEPLOY_ENV=local bash scripts/contract/deploy-fpc-devnet.sh",
-    "deploy:fpc:devnet": "FPC_DEPLOY_ENV=devnet bash scripts/contract/deploy-fpc-devnet.sh",
+    "deploy:fpc:devnet": "bash scripts/contract/deploy-fpc-devnet.sh",
     "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/devnet-manifest-v2.json",
-    "smoke:deploy:fpc:devnet": "FPC_DEPLOY_ENV=devnet bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
+    "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
 
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-smoke-local.sh",
     "smoke:fee-entrypoint:local": "bash scripts/contract/fee-entrypoint-local-smoke.sh",

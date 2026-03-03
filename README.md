@@ -303,11 +303,8 @@ bun run deploy:fpc:devnet
 # 2) Verify deployed contracts and FPC immutables from manifest
 bun run verify:deploy:fpc:devnet
 
-# 3) Render attestation/topup configs from manifest
-export FPC_DEVNET_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
-# If your .env uses L1_ADDRESS_PK, map it to the renderer's expected variable
-export L1_OPERATOR_PRIVATE_KEY="${L1_ADDRESS_PK}"
-bun run render:config:devnet
+# 3) Generate attestation/topup configs from manifest + master config
+bun run generate:configs
 
 # 4) Execute post-deploy runtime smoke (FPC + CreditFPC paths)
 bun run smoke:deploy:fpc:devnet

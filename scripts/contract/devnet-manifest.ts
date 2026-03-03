@@ -21,7 +21,6 @@ export type FpcArtifactName =
 export type DevnetDeployManifest = {
   status: "deploy_ok";
   generated_at: string;
-  deployment_environment?: "local" | "devnet";
   network: {
     node_url: string;
     node_version: string;
@@ -270,22 +269,6 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       'Invalid manifest.status: expected "deploy_ok"',
     );
   }
-
-  const environmentRaw = optionalString(
-    input,
-    "deployment_environment",
-    "manifest",
-  );
-  const deploymentEnvironment =
-    environmentRaw === undefined
-      ? undefined
-      : environmentRaw === "local" || environmentRaw === "devnet"
-        ? environmentRaw
-        : (() => {
-            throw new ManifestValidationError(
-              'Invalid manifest.deployment_environment: expected "local" or "devnet"',
-            );
-          })();
 
   const networkRaw = requireObject(input, "network", "manifest");
   const network = {
@@ -559,9 +542,6 @@ function parseManifest(input: unknown): DevnetDeployManifest {
   return {
     status: "deploy_ok",
     generated_at: requireIsoTimestamp(input, "generated_at", "manifest"),
-    ...(deploymentEnvironment
-      ? { deployment_environment: deploymentEnvironment }
-      : {}),
     network,
     aztec_required_addresses: {
       l1_contract_addresses: l1ContractAddresses,
@@ -616,7 +596,6 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
   return {
     status: "deploy_ok",
     generated_at: "2026-03-02T00:00:00.000Z",
-    deployment_environment: "devnet",
     network: {
       node_url: "https://v4-devnet-2.aztec-labs.com/",
       node_version: "4.0.0-devnet.2-patch.2",

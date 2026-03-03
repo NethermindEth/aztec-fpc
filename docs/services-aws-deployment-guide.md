@@ -141,11 +141,7 @@ If contracts are redeployed later, regenerate both service configs from the new 
 
 ```bash
 cd /home/ametel/source/aztec-fpc
-FPC_RUNTIME_PROFILE=production \
-FPC_DEVNET_L1_RPC_URL="https://<sepolia-rpc>" \
-OPERATOR_SECRET_PROVIDER=env \
-L1_OPERATOR_SECRET_PROVIDER=env \
-bun run render:config:devnet
+bun run generate:configs
 ```
 
 Then re-apply your secret removal/secret-ref policy in the generated YAML before rollout.
