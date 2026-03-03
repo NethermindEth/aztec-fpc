@@ -64,7 +64,6 @@ import {
   extractFpcSteps,
 } from '../profile-utils.mjs';
 
-// ── Constants ────────────────────────────────────────────────────────────────
 
 const NODE_URL = process.env.AZTEC_NODE_URL || 'http://127.0.0.1:8080';
 const L1_RPC_URL = process.env.L1_RPC_URL || 'http://127.0.0.1:8545';
@@ -81,7 +80,6 @@ const QUOTE_DOMAIN_SEP = 0x465043n; // "FPC" as field
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ── CustomFPCPaymentMethod ───────────────────────────────────────────────────
 
 class CustomFPCPaymentMethod {
   fpcAddress: any;
@@ -147,7 +145,6 @@ function constructorHasAcceptedAsset(fpcArtifact: any): boolean {
   return params.some((p: any) => p?.name === 'accepted_asset');
 }
 
-// ── L1 helpers (Fee Juice bridging) ──────────────────────────────────────────
 
 async function createL1Client(node: any) {
   const nodeInfo = await node.getNodeInfo();
@@ -268,7 +265,6 @@ async function fundFpcWithFeeJuice(
   );
 }
 
-// ── Action wrapper ───────────────────────────────────────────────────────────
 // The installed aztec-benchmark profiler expects each item from getMethods() to
 // be either a plain {caller, action} (ContractFunctionInteractionCallIntent) or
 // a {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
@@ -346,7 +342,6 @@ class FPCActionWrapper {
   }
 }
 
-// ── Benchmark context ────────────────────────────────────────────────────────
 
 interface FPCBenchmarkContext {
   pxe: any;
@@ -360,7 +355,6 @@ interface FPCBenchmarkContext {
   fpcAddress: any;
 }
 
-// ── Benchmark class ──────────────────────────────────────────────────────────
 // The aztec-benchmark CLI duck-types this class (checks for getMethods/setup/
 // teardown methods). We don't extend BenchmarkBase to avoid a runtime import
 // of the @defi-wonderland/aztec-benchmark package from inside the benchmark
@@ -372,13 +366,11 @@ export default class FPCBenchmark {
   async setup(): Promise<FPCBenchmarkContext> {
     console.log('=== FPC Benchmark Setup ===\n');
 
-    // ── Connect to node ────────────────────────────────────────────────────
     const node = createAztecNodeClient(NODE_URL);
     console.log('Connected to node at', NODE_URL);
 
     console.log('Connected to node, will compute VALID_UNTIL after setup deploys.');
 
-    // ── Start embedded PXE (clean slate each run) ──────────────────────────
     rmSync(PXE_DATA_DIR, { recursive: true, force: true });
     mkdirSync(PXE_DATA_DIR, { recursive: true });
     const pxeConfig = {
@@ -389,7 +381,6 @@ export default class FPCBenchmark {
     const pxe = await createPXE(node, pxeConfig);
     console.log('PXE started');
 
-    // ── Create wallet + register test accounts ─────────────────────────────
     const wallet = new SimpleWallet(pxe, node);
     const testAccounts = await getInitialTestAccountsData();
     const [userData, operatorData] = testAccounts;
@@ -405,12 +396,10 @@ export default class FPCBenchmark {
     console.log('user:    ', userAddress.toString());
     console.log('operator:', operatorAddress.toString());
 
-    // ── Derive operator Schnorr signing key + public key ───────────────────
     const schnorr = new Schnorr();
     const operatorSigningKey = deriveSigningKey(operatorData.secret);
     const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-    // ── Load & normalise artifacts ─────────────────────────────────────────
     const tokenArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Token'), 'utf8')),
     );
@@ -424,7 +413,6 @@ export default class FPCBenchmark {
       JSON.parse(readFileSync(findArtifact('Noop'), 'utf8')),
     );
 
-    // ── Deploy Token ───────────────────────────────────────────────────────
     console.log('\nDeploying Token...');
     const tokenDeploy = await Contract.deploy(wallet, tokenArtifact, [
       'TestToken',
@@ -436,7 +424,6 @@ export default class FPCBenchmark {
     const tokenAddress = tokenDeploy.address;
     console.log('Token:', tokenAddress.toString());
 
-    // ── Deploy FPC ─────────────────────────────────────────────────────────
     console.log('Deploying FPC...');
     const constructorArgs = hasAcceptedAssetInConstructor
       ? [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress]
@@ -447,7 +434,6 @@ export default class FPCBenchmark {
     const fpcAddress = fpcDeploy.address;
     console.log('FPC:  ', fpcAddress.toString());
 
-    // ── Deploy Noop (minimal app tx placeholder for profiling) ────────────
     console.log('Deploying Noop...');
     const noopDeploy = await Contract.deploy(wallet, noopArtifact, []).send({
       from: userAddress,
@@ -457,7 +443,6 @@ export default class FPCBenchmark {
     const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
     const noopAsUser = Contract.at(noopDeploy.address, noopArtifact, wallet);
 
-    // ── Bridge Fee Juice to FPC via L1 ─────────────────────────────────────
     const l1Client = await createL1Client(node);
     await fundFpcWithFeeJuice(
       node,
@@ -468,7 +453,6 @@ export default class FPCBenchmark {
       l1Client,
     );
 
-    // ── Compute gas-dependent charge ───────────────────────────────────────
     const minFees = await node.getCurrentMinFees();
     const PADDING = 1.5;
     const feeDa = BigInt(Math.ceil(Number(minFees.feePerDaGas) * PADDING));
@@ -481,7 +465,6 @@ export default class FPCBenchmark {
     console.log(`\nfeePerDaGas=${feeDa} feePerL2Gas=${feeL2}`);
     console.log(`max gas cost: ${maxGasCost} | token charge: ${charge}`);
 
-    // ── Mint tokens to user ────────────────────────────────────────────────
     const mintAmount = charge + 1000n;
     console.log(`\nMinting ${mintAmount} tokens to user...`);
     await tokenAsUser.methods
@@ -489,13 +472,11 @@ export default class FPCBenchmark {
       .send({ from: userAddress });
     console.log('Minted.');
 
-    // ── Refresh L2 timestamp for quote (blocks mined during setup) ────────
     const latestHeader = await node.getBlockHeader('latest');
     const l2Timestamp = latestHeader!.globalVariables.timestamp;
     const VALID_UNTIL = l2Timestamp + QUOTE_TTL_SECONDS;
     console.log(`L2 timestamp: ${l2Timestamp}, VALID_UNTIL: ${VALID_UNTIL}`);
 
-    // ── Quote signature ────────────────────────────────────────────────────
     const quoteSigFields =
       feeEntrypointMode === 'multi_asset_rate'
         ? await signRateQuote(
@@ -522,7 +503,6 @@ export default class FPCBenchmark {
           );
     console.log('Quote signature created.');
 
-    // ── Transfer authwit ───────────────────────────────────────────────────
     const TX_NONCE = BigInt(Date.now());
     const transferAuthWit = await wallet.createAuthWit(userAddress, {
       caller: fpcAddress,
@@ -535,7 +515,6 @@ export default class FPCBenchmark {
     });
     console.log('Transfer authwit created.');
 
-    // ── Gas settings ───────────────────────────────────────────────────────
     const gasSettings = GasSettings.default({
       gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
       teardownGasLimits: new Gas(0, 0),

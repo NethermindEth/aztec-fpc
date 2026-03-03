@@ -46,18 +46,10 @@ pub contract FPCMultiAsset {
         operator_pubkey_y: Field,
     }
 
-    // =========================================================================
-    // Storage
-    // =========================================================================
-
     #[storage]
     struct Storage<Context> {
         config: PublicImmutable<Config, Context>,
     }
-
-    // =========================================================================
-    // Constructor
-    // =========================================================================
 
     #[external("public")]
     #[initializer]
@@ -72,13 +64,9 @@ pub contract FPCMultiAsset {
         self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y });
     }
 
-    // =========================================================================
-    // Fee entrypoint
-    //
     // Transfers the fee charge from the user's private balance directly to the
     // operator's private balance. The quote signature is verified inline using
     // the operator's stored public key -- no cross-circuit authwit call needed.
-    // =========================================================================
 
     #[external("private")]
     #[allow_phase_change]
@@ -126,10 +114,6 @@ pub contract FPCMultiAsset {
             self.context.end_setup();
         }
     }
-
-    // =========================================================================
-    // Internal helpers
-    // =========================================================================
 
     /// Compute the quote hash and verify the operator's Schnorr signature
     /// inline. Pushes a nullifier to prevent replay.

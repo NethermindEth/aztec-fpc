@@ -70,18 +70,10 @@ import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
-
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const U128_MAX = 2n ** 128n - 1n;
 const MAX_QUOTE_TTL_SECONDS = 3600n;
 const _HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 
 type ChaosMode = "api" | "onchain" | "full";
 type TestStatus = "pass" | "fail" | "skip";
@@ -164,10 +156,6 @@ type OnchainContext = {
   feePerL2Gas: bigint;
   maxGasCostNoTeardown: bigint;
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TEST RUNNER
-// ─────────────────────────────────────────────────────────────────────────────
 
 const RESET = "\x1b[0m";
 const GREEN = "\x1b[32m";
@@ -310,10 +298,6 @@ class ChaosRunner {
     };
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CONFIG PARSING
-// ─────────────────────────────────────────────────────────────────────────────
 
 type Manifest = {
   aztec_node_url?: string;
@@ -458,10 +442,6 @@ function getConfig(): ChaosConfig {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HTTP HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-
 function authHeaders(config: ChaosConfig): Record<string, string> {
   const headers: Record<string, string> = {};
   if (config.quoteAuthApiKey) {
@@ -532,10 +512,6 @@ function _sleep(ms: number): Promise<void> {
   return new Promise((res) => setTimeout(res, ms));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// QUOTE HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-
 // Sentinel user for API-only tests – not a valid account but a real format address
 const SENTINEL_USER =
   "0x0000000000000000000000000000000000000000000000000000000000000001";
@@ -593,10 +569,6 @@ function loadArtifact(artifactPath: string): ContractArtifact {
     throw err;
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ON-CHAIN CONTEXT SETUP
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function buildOnchainContext(
   config: ChaosConfig,
@@ -925,17 +897,12 @@ function ceilDiv(a: bigint, b: bigint): bigint {
   return (a + b - 1n) / b;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// API CHAOS TESTS
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function runApiTests(
   runner: ChaosRunner,
   config: ChaosConfig,
 ): Promise<void> {
   const base = config.attestationUrl;
 
-  // ── Health ──────────────────────────────────────────────────────────────────
   await runner.run(
     "health-ok",
     "api",
@@ -953,7 +920,6 @@ async function runApiTests(
     },
   );
 
-  // ── Asset endpoint ──────────────────────────────────────────────────────────
   await runner.run(
     "asset-ok",
     "api",
@@ -995,7 +961,6 @@ async function runApiTests(
     },
   );
 
-  // ── Valid quote ─────────────────────────────────────────────────────────────
   await runner.run(
     "quote-valid-structure",
     "api",
@@ -1098,7 +1063,6 @@ async function runApiTests(
     },
   );
 
-  // ── Bad inputs: missing/invalid params ─────────────────────────────────────
   await runner.run(
     "quote-no-params",
     "api",
@@ -1231,7 +1195,6 @@ async function runApiTests(
     },
   );
 
-  // ── Zero / edge user address ─────────────────────────────────────────────
   const ZERO_USER =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
   await runner.run(
@@ -1263,7 +1226,6 @@ async function runApiTests(
     },
   );
 
-  // ── Auth tests (conditional on config) ─────────────────────────────────────
   if (
     config.quoteAuthApiKey ||
     (config.quoteAuthHeader && config.quoteAuthValue)
@@ -1338,7 +1300,6 @@ async function runApiTests(
     );
   }
 
-  // ── Rate limiting ───────────────────────────────────────────────────────────
   await runner.run(
     "rate-limit-burst",
     "api-ratelimit",
@@ -1366,7 +1327,6 @@ async function runApiTests(
     },
   );
 
-  // ── Topup service API ───────────────────────────────────────────────────────
   if (config.topupUrl) {
     const topupBase = config.topupUrl;
 
@@ -1404,7 +1364,6 @@ async function runApiTests(
     );
   }
 
-  // ── Concurrent quote consistency ────────────────────────────────────────────
   await runner.run(
     "quote-concurrent-consistency",
     "api-concurrent",
@@ -1442,10 +1401,6 @@ async function runApiTests(
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ON-CHAIN SECURITY TESTS
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function runOnchainTests(
   runner: ChaosRunner,
   config: ChaosConfig,
@@ -1462,7 +1417,6 @@ async function runOnchainTests(
   const TEST_RATE = { num: 1n, den: 1000n };
   const aaPaymentAmount = computeAaPayment(TEST_RATE);
 
-  // ── Happy path (baseline) ──────────────────────────────────────────────────
   await runner.run(
     "onchain-happy-path",
     "onchain",
@@ -1492,7 +1446,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Replay attack: same quote used twice ──────────────────────────────────
   await runner.run(
     "onchain-quote-replay",
     "onchain",
@@ -1540,7 +1493,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Expired quote ─────────────────────────────────────────────────────────
   await runner.run(
     "onchain-expired-quote",
     "onchain",
@@ -1580,7 +1532,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Overlong TTL ──────────────────────────────────────────────────────────
   await runner.run(
     "onchain-overlong-ttl",
     "onchain",
@@ -1615,7 +1566,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Sender binding: quote for user A submitted by user B ─────────────────
   await runner.run(
     "onchain-sender-binding",
     "onchain",
@@ -1657,7 +1607,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Tampered signature ────────────────────────────────────────────────────
   await runner.run(
     "onchain-tampered-signature",
     "onchain",
@@ -1704,7 +1653,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Tampered fj_amount ────────────────────────────────────────────────────
   await runner.run(
     "onchain-tampered-fj-amount",
     "onchain",
@@ -1740,7 +1688,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Tampered aa_payment_amount ────────────────────────────────────────────
   await runner.run(
     "onchain-tampered-aa-amount",
     "onchain",
@@ -1778,7 +1725,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── fj_amount ≠ max_gas_cost_no_teardown ─────────────────────────────────
   await runner.run(
     "onchain-fj-gas-mismatch",
     "onchain",
@@ -1819,7 +1765,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Insufficient user balance ──────────────────────────────────────────────
   await runner.run(
     "onchain-insufficient-balance",
     "onchain",
@@ -1915,7 +1860,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── valid_until in the past (auditor: expiry boundary) ────────────────────
   await runner.run(
     "onchain-valid-until-past",
     "onchain",
@@ -1948,7 +1892,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Teardown gas must be zero (spec §3.4) ──────────────────────────────────
   await runner.run(
     "onchain-teardown-gas-rejected",
     "onchain",
@@ -1986,7 +1929,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Authwit nonce mismatch (auditor: authwit binding) ───────────────────────
   await runner.run(
     "onchain-authwit-nonce-mismatch",
     "onchain",
@@ -2033,7 +1975,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Authwit amount mismatch (auditor: cannot pay less than signed) ───────
   await runner.run(
     "onchain-authwit-amount-mismatch",
     "onchain",
@@ -2079,7 +2020,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Quote signed for wrong FPC address (auditor: binding to contract) ─────
   await runner.run(
     "onchain-quote-wrong-fpc-address",
     "onchain",
@@ -2114,7 +2054,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Quote signed for wrong accepted_asset (auditor: no cross-asset quote) ─
   await runner.run(
     "onchain-quote-wrong-accepted-asset",
     "onchain",
@@ -2149,7 +2088,6 @@ async function runOnchainTests(
     },
   );
 
-  // ── Malformed signature length (auditor: ABI / circuit boundary) ───────────
   await runner.run(
     "onchain-signature-wrong-length",
     "onchain",
@@ -2199,10 +2137,6 @@ async function runOnchainTests(
     },
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CONCURRENT STRESS TESTS
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function runStressTests(
   runner: ChaosRunner,
@@ -2318,13 +2252,8 @@ async function runStressTests(
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function main(): Promise<void> {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    // Print the module docstring as help
     console.log(
       "FPC Chaos Test – see top of fpc-chaos-test.ts for ENV VAR documentation.",
     );
@@ -2345,11 +2274,9 @@ async function main(): Promise<void> {
   const runner = new ChaosRunner(config);
   const globalStart = Date.now();
 
-  // Phase 1 – API tests (always)
   console.log(`${BOLD}Phase 1: API surface tests${RESET}`);
   await runApiTests(runner, config);
 
-  // Phase 2 – On-chain tests (onchain or full mode)
   if (config.mode === "onchain" || config.mode === "full") {
     if (!config.operatorSecretKey) {
       runner.skip(
@@ -2377,7 +2304,6 @@ async function main(): Promise<void> {
       }
       await runOnchainTests(runner, config, ctx);
 
-      // Phase 3 – Stress tests (full mode only)
       if (config.mode === "full") {
         console.log(`\n${BOLD}Phase 3: Concurrent stress tests${RESET}`);
         await runStressTests(runner, config, ctx);

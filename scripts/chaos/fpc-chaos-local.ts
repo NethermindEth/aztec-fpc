@@ -67,19 +67,11 @@ import {
   waitForNodeReady,
 } from "../common/managed-process.ts";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
-
 const DEFAULT_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
 const BRIDGE_SUBMISSION_RE =
   /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+) claim_secret_hash=(0x[0-9a-fA-F]+)(?: claim_secret=([^\s]+))?/;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CONFIG
-// ─────────────────────────────────────────────────────────────────────────────
 
 type LocalConfig = {
   nodeUrl: string;
@@ -184,10 +176,6 @@ function getConfig(): LocalConfig {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-
 function loadArtifact(p: string): ContractArtifact {
   const raw = readFileSync(p, "utf8");
   const parsed = JSON.parse(raw) as NoirCompiledContract;
@@ -282,10 +270,6 @@ async function waitForProcessExit(
   throw new Error(`${proc.name} did not exit within ${timeoutMs}ms`);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DEPLOY + SETUP
-// ─────────────────────────────────────────────────────────────────────────────
-
 type SetupResult = {
   fpcAddress: AztecAddress;
   tokenAddress: AztecAddress;
@@ -368,7 +352,6 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   ]).send({ from: operator });
   console.log(`[chaos-local] FPC deployed at ${fpc.address.toString()}`);
 
-  // ── Compute topup amount capped by the real L1 FeeJuice ERC20 balance ────
   const [minFees, nodeInfo] = await Promise.all([
     node.getCurrentMinFees(),
     node.getNodeInfo(),
@@ -490,10 +473,6 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
     topupAmountWei,
   };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SERVICE STARTUP + BRIDGE CYCLE
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function startServicesAndFundFpc(
   config: LocalConfig,
@@ -619,10 +598,6 @@ async function startServicesAndFundFpc(
   return { attestation, topup };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RUN CHAOS TEST
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function runChaosTest(
   config: LocalConfig,
   setup: SetupResult,
@@ -704,10 +679,6 @@ async function runChaosTest(
   return exitCode;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function main(): Promise<void> {
   installManagedProcessSignalHandlers();
 
@@ -725,18 +696,15 @@ async function main(): Promise<void> {
   let exitCode = 0;
 
   try {
-    // ── 1. Deploy contracts ───────────────────────────────────────────────
     console.log("[chaos-local] Step 1/3: Deploying contracts...");
     const setup = await deployAndConfigure(config);
 
-    // ── 2. Start services + wait for FPC funding ──────────────────────────
     console.log(
       "\n[chaos-local] Step 2/3: Starting services and funding FPC...",
     );
     const { attestation, topup } = await startServicesAndFundFpc(config, setup);
     managed.push(attestation, topup);
 
-    // ── 3. Run chaos tests ────────────────────────────────────────────────
     console.log("\n[chaos-local] Step 3/3: Running chaos tests...");
     exitCode = await runChaosTest(config, setup);
   } catch (err) {

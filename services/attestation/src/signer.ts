@@ -132,6 +132,5 @@ export async function signCreditRateQuote(
   return signer.signQuoteHash(quoteHash);
 }
 
-// ── Backward-compatible aliases ──────────────────────────────────────────────
 // Keep the old name available so existing imports don't break during migration.
 export const computeQuoteInnerHash = computeQuoteHash;

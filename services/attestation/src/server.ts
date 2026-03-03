@@ -291,8 +291,6 @@ export function buildServer(
     return nowSeconds + BigInt(config.quote_validity_seconds);
   }
 
-  // ── GET /health ─────────────────────────────────────────────────────────────
-
   app.get("/.well-known/fpc.json", async (req) => ({
     discovery_version: DISCOVERY_VERSION,
     attestation_api_version: ATTESTATION_API_VERSION,
@@ -311,22 +309,16 @@ export function buildServer(
 
   app.get("/health", async () => ({ status: "ok" }));
 
-  // ── GET /metrics ───────────────────────────────────────────────────────────
-
   app.get("/metrics", async (_req, reply) => {
     return reply
       .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
       .send(metrics.renderPrometheus());
   });
 
-  // ── GET /asset ───────────────────────────────────────────────────────────────
-
   app.get("/asset", async () => ({
     name: config.accepted_asset_name,
     address: config.accepted_asset_address,
   }));
-
-  // ── GET /quote?user=<address>&accepted_asset=<address>&fj_amount=<u128> ──
 
   app.get<{
     Querystring: { user?: string; accepted_asset?: string; fj_amount?: string };
