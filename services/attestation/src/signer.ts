@@ -24,11 +24,33 @@ const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 
 export interface QuoteParams {
   fpcAddress: AztecAddress;
+  /** Selected per-request payment asset. */
   acceptedAsset: AztecAddress;
   fjFeeAmount: bigint;
   aaPaymentAmount: bigint;
   validUntil: bigint;
   /** The user's Aztec address. Always non-zero — all quotes are user-specific. */
+  userAddress: AztecAddress;
+}
+
+export interface RateQuoteParams {
+  fpcAddress: AztecAddress;
+  /** Selected per-request payment asset. */
+  acceptedAsset: AztecAddress;
+  rateNum: bigint;
+  rateDen: bigint;
+  validUntil: bigint;
+  userAddress: AztecAddress;
+}
+
+export interface CreditRateQuoteParams {
+  fpcAddress: AztecAddress;
+  /** Selected per-request payment asset. */
+  acceptedAsset: AztecAddress;
+  mintAmount: bigint;
+  rateNum: bigint;
+  rateDen: bigint;
+  validUntil: bigint;
   userAddress: AztecAddress;
 }
 
@@ -55,6 +77,33 @@ export function computeQuoteHash(params: QuoteParams): Promise<Fr> {
   ]);
 }
 
+export function computeRateQuoteHash(params: RateQuoteParams): Promise<Fr> {
+  return computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    params.fpcAddress.toField(),
+    params.acceptedAsset.toField(),
+    new Fr(params.rateNum),
+    new Fr(params.rateDen),
+    new Fr(params.validUntil),
+    params.userAddress.toField(),
+  ]);
+}
+
+export function computeCreditRateQuoteHash(
+  params: CreditRateQuoteParams,
+): Promise<Fr> {
+  return computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    params.fpcAddress.toField(),
+    params.acceptedAsset.toField(),
+    new Fr(params.mintAmount),
+    new Fr(params.rateNum),
+    new Fr(params.rateDen),
+    new Fr(params.validUntil),
+    params.userAddress.toField(),
+  ]);
+}
+
 /**
  * Compute the quote hash and sign it with the operator's Schnorr key.
  * Returns the 64-byte signature as a hex string.
@@ -64,6 +113,22 @@ export async function signQuote(
   params: QuoteParams,
 ): Promise<string> {
   const quoteHash = await computeQuoteHash(params);
+  return signer.signQuoteHash(quoteHash);
+}
+
+export async function signRateQuote(
+  signer: QuoteSchnorrSigner,
+  params: RateQuoteParams,
+): Promise<string> {
+  const quoteHash = await computeRateQuoteHash(params);
+  return signer.signQuoteHash(quoteHash);
+}
+
+export async function signCreditRateQuote(
+  signer: QuoteSchnorrSigner,
+  params: CreditRateQuoteParams,
+): Promise<string> {
+  const quoteHash = await computeCreditRateQuoteHash(params);
   return signer.signQuoteHash(quoteHash);
 }
 

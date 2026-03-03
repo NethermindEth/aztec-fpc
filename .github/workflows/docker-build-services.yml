@@ -10,9 +10,15 @@ on:
       - "services/attestation/**"
       - "services/topup/**"
       - "services/Dockerfile.common"
+      - "scripts/contract/**"
+      - "contracts/**"
       - "package.json"
       - "bun.lock"
       - "tsconfig*.json"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   DOCKER_REGISTRY: docker.io
@@ -67,6 +73,8 @@ jobs:
           echo "- nethermind/aztec-fpc-attestation:${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
           echo "- nethermind/aztec-fpc-topup:${TAG}" >> $GITHUB_STEP_SUMMARY
           echo "- nethermind/aztec-fpc-topup:${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
+          echo "- nethermind/aztec-fpc-contract-deployment:${TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "- nethermind/aztec-fpc-contract-deployment:${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
           echo "### Platforms" >> $GITHUB_STEP_SUMMARY
           echo "- linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
           echo "### Commit" >> $GITHUB_STEP_SUMMARY

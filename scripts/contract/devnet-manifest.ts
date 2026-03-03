@@ -12,12 +12,15 @@ const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-export type FpcArtifactName = "FPC" | "CreditFPC";
+export type FpcArtifactName =
+  | "FPC"
+  | "FPCMultiAsset"
+  | "CreditFPC"
+  | "BackedCreditFPC";
 
 export type DevnetDeployManifest = {
   status: "deploy_ok";
   generated_at: string;
-  deployment_environment?: "local" | "devnet";
   network: {
     node_url: string;
     node_version: string;
@@ -274,22 +277,6 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     );
   }
 
-  const environmentRaw = optionalString(
-    input,
-    "deployment_environment",
-    "manifest",
-  );
-  const deploymentEnvironment =
-    environmentRaw === undefined
-      ? undefined
-      : environmentRaw === "local" || environmentRaw === "devnet"
-        ? environmentRaw
-        : (() => {
-            throw new ManifestValidationError(
-              'Invalid manifest.deployment_environment: expected "local" or "devnet"',
-            );
-          })();
-
   const networkRaw = requireObject(input, "network", "manifest");
   const network = {
     node_url: requireHttpUrl(networkRaw, "node_url", "manifest.network"),
@@ -519,9 +506,14 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       "name",
       "manifest.fpc_artifact",
     );
-    if (artifactName !== "FPC" && artifactName !== "CreditFPC") {
+    if (
+      artifactName !== "FPC" &&
+      artifactName !== "FPCMultiAsset" &&
+      artifactName !== "CreditFPC" &&
+      artifactName !== "BackedCreditFPC"
+    ) {
       throw new ManifestValidationError(
-        'Invalid manifest.fpc_artifact.name: expected "FPC" or "CreditFPC"',
+        'Invalid manifest.fpc_artifact.name: expected "FPC", "FPCMultiAsset", "CreditFPC", or "BackedCreditFPC"',
       );
     }
     const artifactPath = requireString(
@@ -617,9 +609,6 @@ function parseManifest(input: unknown): DevnetDeployManifest {
   return {
     status: "deploy_ok",
     generated_at: requireIsoTimestamp(input, "generated_at", "manifest"),
-    ...(deploymentEnvironment
-      ? { deployment_environment: deploymentEnvironment }
-      : {}),
     network,
     aztec_required_addresses: {
       l1_contract_addresses: l1ContractAddresses,
@@ -675,7 +664,6 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
   return {
     status: "deploy_ok",
     generated_at: "2026-03-02T00:00:00.000Z",
-    deployment_environment: "devnet",
     network: {
       node_url: "https://v4-devnet-2.aztec-labs.com/",
       node_version: "4.0.0-devnet.2-patch.2",
@@ -719,8 +707,8 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
       fpc: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     },
     fpc_artifact: {
-      name: "FPC",
-      path: "./target/fpc-FPC.json",
+      name: "FPCMultiAsset",
+      path: "./target/fpc-FPCMultiAsset.json",
     },
     operator: {
       address:

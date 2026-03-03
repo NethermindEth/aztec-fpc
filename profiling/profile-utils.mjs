@@ -15,18 +15,29 @@ import { dirname, join }               from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TARGET    = join(__dirname, '../target');
+const ARTIFACT_ALIASES = {
+  FPC: ['FPCMultiAsset'],
+  BackedCreditFPC: ['CreditFPC'],
+  CreditFPC: ['BackedCreditFPC'],
+};
 
 // ── Artifact lookup ─────────────────────────────────────────────────────────
 export function findArtifact(contractName) {
-  const suffix = `-${contractName}.json`;
-  const matches = readdirSync(TARGET).filter(f => f.endsWith(suffix));
-  if (matches.length === 0) {
-    throw new Error(`No artifact matching *${suffix} in ${TARGET}. Did you run 'aztec compile'?`);
+  const candidates = [contractName, ...(ARTIFACT_ALIASES[contractName] ?? [])];
+
+  for (const candidate of candidates) {
+    const suffix = `-${candidate}.json`;
+    const matches = readdirSync(TARGET).filter(f => f.endsWith(suffix));
+    if (matches.length === 1) {
+      return join(TARGET, matches[0]);
+    }
+    if (matches.length > 1) {
+      throw new Error(`Multiple artifacts matching *${suffix} in ${TARGET}: ${matches.join(', ')}`);
+    }
   }
-  if (matches.length > 1) {
-    throw new Error(`Multiple artifacts matching *${suffix} in ${TARGET}: ${matches.join(', ')}`);
-  }
-  return join(TARGET, matches[0]);
+
+  const expected = candidates.map(c => `*-${c}.json`).join(' or ');
+  throw new Error(`No artifact matching ${expected} in ${TARGET}. Did you run 'aztec compile'?`);
 }
 
 // ── fee_juice_to_asset: ceiling division (mirrors fee_math.nr) ──────────────
@@ -72,8 +83,43 @@ export class SimpleWallet extends BaseWallet {
   }
 }
 
-// ── Sign a quote with the operator's Schnorr key ────────────────────────────
-export async function signQuote(schnorr, operatorSigningKey, fpcAddress, tokenAddress, rateNum, rateDen, validUntil, userAddress, quoteDomainSep) {
+// ── Sign amount-based quote with the operator's Schnorr key ─────────────────
+export async function signQuote(
+  schnorr,
+  operatorSigningKey,
+  fpcAddress,
+  tokenAddress,
+  fjFeeAmount,
+  aaPaymentAmount,
+  validUntil,
+  userAddress,
+  quoteDomainSep,
+) {
+  const quoteHash = await computeInnerAuthWitHash([
+    new Fr(quoteDomainSep),
+    fpcAddress.toField(),
+    tokenAddress.toField(),
+    new Fr(fjFeeAmount),
+    new Fr(aaPaymentAmount),
+    new Fr(validUntil),
+    userAddress.toField(),
+  ]);
+  const sig = await schnorr.constructSignature(quoteHash.toBuffer(), operatorSigningKey);
+  return Array.from(sig.toBuffer()).map(b => new Fr(b));
+}
+
+// ── Sign legacy rate-based quote with the operator's Schnorr key ────────────
+export async function signRateQuote(
+  schnorr,
+  operatorSigningKey,
+  fpcAddress,
+  tokenAddress,
+  rateNum,
+  rateDen,
+  validUntil,
+  userAddress,
+  quoteDomainSep,
+) {
   const quoteHash = await computeInnerAuthWitHash([
     new Fr(quoteDomainSep),
     fpcAddress.toField(),
@@ -96,8 +142,9 @@ export async function signQuote(schnorr, operatorSigningKey, fpcAddress, tokenAd
 //   start = first step matching the FPC contract name
 //   end   = first Noop: step (the app tx we control)
 export function extractFpcSteps(executionSteps, fpcContractName) {
+  const contractNames = Array.isArray(fpcContractName) ? fpcContractName : [fpcContractName];
   const fpcStart = executionSteps.findIndex(s =>
-    (s.functionName ?? '').startsWith(fpcContractName + ':'),
+    contractNames.some(name => (s.functionName ?? '').startsWith(name + ':')),
   );
   if (fpcStart === -1) return [];
 

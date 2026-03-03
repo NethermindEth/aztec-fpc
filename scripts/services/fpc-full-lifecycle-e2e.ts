@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -152,6 +158,11 @@ const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const MAX_PORT = 65535;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DIAGNOSTIC_TAIL_LINES = 200;
+// Keep the legacy FPC artifact only as a non-default compatibility fallback.
+const FPC_ARTIFACT_FILE_CANDIDATES = [
+  "fpc-FPCMultiAsset.json",
+  "fpc-FPC.json",
+] as const;
 function printHelp(): void {
   console.log(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
 
@@ -320,6 +331,28 @@ function loadArtifact(artifactPath: string): ContractArtifact {
     }
     throw error;
   }
+}
+
+function resolveFpcArtifactPath(repoRoot: string): string {
+  const explicitPath =
+    process.env.FPC_FULL_E2E_FPC_ARTIFACT ?? process.env.FPC_FPC_ARTIFACT;
+  if (explicitPath && explicitPath.trim().length > 0) {
+    return path.resolve(explicitPath);
+  }
+
+  for (const artifactFile of FPC_ARTIFACT_FILE_CANDIDATES) {
+    const candidatePath = path.join(repoRoot, "target", artifactFile);
+    if (existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  const searched = FPC_ARTIFACT_FILE_CANDIDATES.map((entry) =>
+    path.join(repoRoot, "target", entry),
+  ).join(", ");
+  throw new Error(
+    `FPC artifact not found. Looked for ${searched}. Set FPC_FULL_E2E_FPC_ARTIFACT or FPC_FPC_ARTIFACT to override.`,
+  );
 }
 
 function parseTopupBridgeSubmissions(logs: string): TopupBridgeSubmission[] {
@@ -640,6 +673,7 @@ function computeAaPaymentFromFj(
 function parseQuoteResponse(
   quote: QuoteResponse,
   expectedAsset: AztecAddress,
+  config: FullE2EConfig,
 ): QuoteInput {
   const quoteSigBytes = Array.from(
     Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
@@ -662,6 +696,15 @@ function parseQuoteResponse(
   if (parsed.aaPaymentAmount <= 0n) {
     throw new Error(
       "Attestation quote returned non-positive aa_payment_amount",
+    );
+  }
+  const expectedAaPaymentAmount = computeAaPaymentFromFj(
+    config,
+    parsed.fjAmount,
+  );
+  if (parsed.aaPaymentAmount !== expectedAaPaymentAmount) {
+    throw new Error(
+      `Attestation quote aa_payment_amount mismatch. expected=${expectedAaPaymentAmount} got=${parsed.aaPaymentAmount}`,
     );
   }
   if (
@@ -690,10 +733,12 @@ async function signQuoteForUser(
   fpcAddress: AztecAddress,
   acceptedAsset: AztecAddress,
   fjAmount: bigint,
-  aaPaymentAmount: bigint,
+  rateNum: bigint,
+  rateDen: bigint,
   validUntil: bigint,
   userAddress: AztecAddress,
 ): Promise<QuoteInput> {
+  const aaPaymentAmount = ceilDiv(fjAmount * rateNum, rateDen);
   const secret = Fr.fromHexString(result.operatorSecretHex);
   const signingKey = deriveSigningKey(secret);
   const schnorr = new Schnorr();
@@ -774,6 +819,7 @@ async function executeFeePaidTx(
 
   const feeEntrypointCall = await params.fpc.methods
     .fee_entrypoint(
+      params.token.address,
       transferAuthwitNonce,
       params.quote.fjAmount,
       params.quote.aaPaymentAmount,
@@ -1119,7 +1165,7 @@ async function deployContractsAndWriteRuntimeConfig(
     "target",
     "token_contract-Token.json",
   );
-  const fpcArtifactPath = path.join(repoRoot, "target", "fpc-FPC.json");
+  const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
@@ -1226,6 +1272,7 @@ async function deployContractsAndWriteRuntimeConfig(
       `market_rate_num: ${config.marketRateNum}`,
       `market_rate_den: ${config.marketRateDen}`,
       `fee_bips: ${config.feeBips}`,
+      `quote_format: "amount_quote"`,
     ].join("\n")}\n`,
     "utf8",
   );
@@ -1304,7 +1351,7 @@ async function runFeePaidTargetTxAndAssert(
 ): Promise<bigint> {
   const requestedFjAmount = result.maxGasCostNoTeardown;
   const quote = await fetchQuote(
-    `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
+    `${attestationBaseUrl}/quote?user=${result.user.toString()}&accepted_asset=${result.token.address.toString()}&fj_amount=${requestedFjAmount.toString()}`,
     config.httpTimeoutMs,
   );
   const quoteSigBytes = Array.from(
@@ -1312,6 +1359,7 @@ async function runFeePaidTargetTxAndAssert(
   );
   const fjAmount = BigInt(quote.fj_amount);
   const aaPaymentAmount = BigInt(quote.aa_payment_amount);
+  const { rateNum, rateDen } = getFinalRate(config);
   const validUntil = BigInt(quote.valid_until);
 
   if (quoteSigBytes.length !== 64) {
@@ -1330,6 +1378,12 @@ async function runFeePaidTargetTxAndAssert(
   if (fjAmount !== requestedFjAmount) {
     throw new Error(
       `Attestation quote fj_amount mismatch. expected=${requestedFjAmount} got=${fjAmount}`,
+    );
+  }
+  const expectedAaPaymentAmount = ceilDiv(fjAmount * rateNum, rateDen);
+  if (aaPaymentAmount !== expectedAaPaymentAmount) {
+    throw new Error(
+      `Attestation quote aa_payment_amount mismatch. expected=${expectedAaPaymentAmount} got=${aaPaymentAmount}`,
     );
   }
   if (
@@ -1390,6 +1444,7 @@ async function runFeePaidTargetTxAndAssert(
 
   const feeEntrypointCall = await result.fpc.methods
     .fee_entrypoint(
+      result.token.address,
       transferAuthwitNonce,
       fjAmount,
       aaPaymentAmount,
@@ -1504,10 +1559,11 @@ async function negativeQuoteReplayRejected(
   const requestedFjAmount = result.maxGasCostNoTeardown;
   const quote = parseQuoteResponse(
     await fetchQuote(
-      `${attestationBaseUrl}/quote?user=${result.user.toString()}&fj_amount=${requestedFjAmount.toString()}`,
+      `${attestationBaseUrl}/quote?user=${result.user.toString()}&accepted_asset=${result.token.address.toString()}&fj_amount=${requestedFjAmount.toString()}`,
       config.httpTimeoutMs,
     ),
     result.token.address,
+    config,
   );
 
   await executeFeePaidTx(config, result, {
@@ -1540,14 +1596,15 @@ async function negativeExpiredQuoteRejected(
   node: ReturnType<typeof createAztecNodeClient>,
 ): Promise<void> {
   const fjAmount = result.maxGasCostNoTeardown;
-  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const { rateNum, rateDen } = getFinalRate(config);
   const latestTimestamp = await getLatestL2Timestamp(node);
   const expiredQuote = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
     fjAmount,
-    aaPaymentAmount,
+    rateNum,
+    rateDen,
     latestTimestamp,
     result.user,
   );
@@ -1575,7 +1632,7 @@ async function negativeOverlongTtlRejected(
   node: ReturnType<typeof createAztecNodeClient>,
 ): Promise<void> {
   const fjAmount = result.maxGasCostNoTeardown;
-  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const { rateNum, rateDen } = getFinalRate(config);
   const latestTimestamp = await getLatestL2Timestamp(node);
   const ttlSafetyBufferSeconds = 600n;
   const ttlTooLargeQuote = await signQuoteForUser(
@@ -1583,7 +1640,8 @@ async function negativeOverlongTtlRejected(
     result.fpc.address,
     result.token.address,
     fjAmount,
-    aaPaymentAmount,
+    rateNum,
+    rateDen,
     latestTimestamp +
       BigInt(MAX_QUOTE_VALIDITY_SECONDS) +
       ttlSafetyBufferSeconds,
@@ -1611,14 +1669,15 @@ async function negativeSenderBindingRejected(
   node: ReturnType<typeof createAztecNodeClient>,
 ): Promise<void> {
   const fjAmount = result.maxGasCostNoTeardown;
-  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const { rateNum, rateDen } = getFinalRate(config);
   const latestTimestamp = await getLatestL2Timestamp(node);
   const quoteSignedForUser = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
     fjAmount,
-    aaPaymentAmount,
+    rateNum,
+    rateDen,
     latestTimestamp + 600n,
     result.user,
   );
@@ -1638,40 +1697,6 @@ async function negativeSenderBindingRejected(
   );
 }
 
-async function negativeTeardownGasRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
-): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
-  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
-  const latestTimestamp = await getLatestL2Timestamp(node);
-  const quote = await signQuoteForUser(
-    result,
-    result.fpc.address,
-    result.token.address,
-    fjAmount,
-    aaPaymentAmount,
-    latestTimestamp + 600n,
-    result.user,
-  );
-
-  await expectFailure(
-    "negative teardown gas rejected",
-    ["teardown da gas must be zero", "teardown l2 gas must be zero"],
-    () =>
-      executeFeePaidTx(config, result, {
-        token: result.token,
-        fpc: result.fpc,
-        payer: result.user,
-        recipient: result.operator,
-        transferAmount: 1n,
-        quote,
-        teardownGasLimits: { daGas: 1, l2Gas: 1 },
-      }),
-  );
-}
-
 async function negativeDirectEntrypointCallRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
@@ -1679,13 +1704,15 @@ async function negativeDirectEntrypointCallRejected(
 ): Promise<void> {
   const fjAmount = result.maxGasCostNoTeardown;
   const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const { rateNum, rateDen } = getFinalRate(config);
   const latestTimestamp = await getLatestL2Timestamp(node);
   const quote = await signQuoteForUser(
     result,
     result.fpc.address,
     result.token.address,
     fjAmount,
-    aaPaymentAmount,
+    rateNum,
+    rateDen,
     latestTimestamp + 600n,
     result.user,
   );
@@ -1708,6 +1735,7 @@ async function negativeDirectEntrypointCallRejected(
     () =>
       result.fpc.methods
         .fee_entrypoint(
+          result.token.address,
           transferAuthwitNonce,
           quote.fjAmount,
           quote.aaPaymentAmount,
@@ -1755,7 +1783,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     "target",
     "token_contract-Token.json",
   );
-  const fpcArtifactPath = path.join(result.repoRoot, "target", "fpc-FPC.json");
+  const fpcArtifactPath = resolveFpcArtifactPath(result.repoRoot);
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
 
@@ -1881,14 +1909,15 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   }
 
   const fjAmount = result.maxGasCostNoTeardown;
-  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
+  const { rateNum, rateDen } = getFinalRate(config);
   const quoteAnchor = await getLatestL2Timestamp(node);
   const quote1 = await signQuoteForUser(
     result,
     isolatedFpc.address,
     isolatedToken.address,
     fjAmount,
-    aaPaymentAmount,
+    rateNum,
+    rateDen,
     quoteAnchor + 600n,
     result.user,
   );
@@ -1897,7 +1926,8 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     isolatedFpc.address,
     isolatedToken.address,
     fjAmount,
-    aaPaymentAmount,
+    rateNum,
+    rateDen,
     quoteAnchor + 601n,
     result.user,
   );
@@ -1945,7 +1975,6 @@ async function runStep7NegativeScenarios(
   await negativeExpiredQuoteRejected(config, result, node);
   await negativeOverlongTtlRejected(config, result, node);
   await negativeSenderBindingRejected(config, result, node);
-  await negativeTeardownGasRejected(config, result, node);
   await negativeDirectEntrypointCallRejected(config, result, node);
 
   await stopManagedProcess(topup);

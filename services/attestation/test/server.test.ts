@@ -8,6 +8,10 @@ import { computeQuoteHash } from "../src/signer.js";
 
 const VALID_USER =
   "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
+const DEFAULT_ACCEPTED_ASSET =
+  "0x0000000000000000000000000000000000000000000000000000000000000002";
+const SECONDARY_ACCEPTED_ASSET =
+  "0x0000000000000000000000000000000000000000000000000000000000000003";
 const VALID_FJ_AMOUNT = "1000000";
 const U128_MAX = "340282366920938463463374607431768211455";
 const U128_MAX_PLUS_ONE = "340282366920938463463374607431768211456";
@@ -15,20 +19,32 @@ const U128_MAX_PLUS_ONE = "340282366920938463463374607431768211456";
 function quoteUrl(
   user: string = VALID_USER,
   fjAmount: string = VALID_FJ_AMOUNT,
+  acceptedAsset: string = DEFAULT_ACCEPTED_ASSET,
 ): string {
-  return `/quote?user=${user}&fj_amount=${fjAmount}`;
+  return `/quote?user=${user}&accepted_asset=${acceptedAsset}&fj_amount=${fjAmount}`;
 }
 
 const TEST_CONFIG: Config = {
   runtime_profile: "development",
+  network_id: "aztec-alpha-local",
   fpc_address:
     "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
+  contract_variant: "fpc-v1",
+  quote_base_url: undefined,
   aztec_node_url: "http://localhost:8080",
   quote_validity_seconds: 300,
   port: 3000,
-  accepted_asset_address:
-    "0x0000000000000000000000000000000000000000000000000000000000000002",
+  accepted_asset_address: DEFAULT_ACCEPTED_ASSET,
   accepted_asset_name: "humanUSDC",
+  supported_assets: [
+    {
+      address: DEFAULT_ACCEPTED_ASSET,
+      name: "humanUSDC",
+      market_rate_num: 1,
+      market_rate_den: 1000,
+      fee_bips: 200,
+    },
+  ],
   market_rate_num: 1,
   market_rate_den: 1000,
   fee_bips: 200,
@@ -97,6 +113,89 @@ describe("server", () => {
       const response = await app.inject({ method: "GET", url: "/health" });
       assert.equal(response.statusCode, 200);
       assert.deepEqual(response.json(), { status: "ok" });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns wallet discovery metadata", async () => {
+    const app = buildServer(TEST_CONFIG, mockSigner());
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/.well-known/fpc.json",
+        headers: {
+          host: "attestation.local:3000",
+        },
+      });
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json(), {
+        discovery_version: "1.0",
+        attestation_api_version: "1.0",
+        network_id: TEST_CONFIG.network_id,
+        fpc_address: TEST_CONFIG.fpc_address,
+        contract_variant: TEST_CONFIG.contract_variant,
+        quote_base_url: "http://attestation.local:3000",
+        endpoints: {
+          discovery: "/.well-known/fpc.json",
+          health: "/health",
+          asset: "/asset",
+          quote: "/quote",
+        },
+        supported_assets: [
+          {
+            address: TEST_CONFIG.accepted_asset_address,
+            name: TEST_CONFIG.accepted_asset_name,
+          },
+        ],
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns configured multi-asset discovery metadata", async () => {
+    const app = buildServer(
+      {
+        ...TEST_CONFIG,
+        supported_assets: [
+          {
+            address:
+              "0x0000000000000000000000000000000000000000000000000000000000000002",
+            name: "humanUSDC",
+          },
+          {
+            address:
+              "0x0000000000000000000000000000000000000000000000000000000000000003",
+            name: "ravenETH",
+          },
+        ],
+      },
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/.well-known/fpc.json",
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json() as {
+        supported_assets: Array<{ address: string; name: string }>;
+      };
+      assert.deepEqual(body.supported_assets, [
+        {
+          address:
+            "0x0000000000000000000000000000000000000000000000000000000000000002",
+          name: "humanUSDC",
+        },
+        {
+          address:
+            "0x0000000000000000000000000000000000000000000000000000000000000003",
+          name: "ravenETH",
+        },
+      ]);
     } finally {
       await app.close();
     }
@@ -194,11 +293,15 @@ describe("server", () => {
         aa_payment_amount: string;
         valid_until: string;
         signature: string;
+        rate_num?: string;
+        rate_den?: string;
       };
       assert.equal(body.accepted_asset, TEST_CONFIG.accepted_asset_address);
       assert.equal(body.fj_amount, VALID_FJ_AMOUNT);
       assert.equal(body.aa_payment_amount, "1020");
       assert.equal(body.signature, "0xabc123");
+      assert.equal(body.rate_num, undefined);
+      assert.equal(body.rate_den, undefined);
 
       const validUntil = BigInt(body.valid_until);
       assert.equal(
@@ -249,7 +352,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: "/quote?user=not_an_address&fj_amount=1",
+        url: `/quote?user=not_an_address&accepted_asset=${DEFAULT_ACCEPTED_ASSET}&fj_amount=1`,
       });
       assert.equal(response.statusCode, 400);
       assert.deepEqual(response.json(), {
@@ -269,7 +372,7 @@ describe("server", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/quote?user=${VALID_USER}`,
+        url: `/quote?user=${VALID_USER}&accepted_asset=${DEFAULT_ACCEPTED_ASSET}`,
       });
       assert.equal(response.statusCode, 400);
       assert.deepEqual(response.json(), {
@@ -278,6 +381,112 @@ describe("server", () => {
           message: "Missing or invalid query param: fj_amount",
         },
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 400 for missing accepted_asset", async () => {
+    const app = buildServer(TEST_CONFIG, mockSigner());
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/quote?user=${VALID_USER}&fj_amount=${VALID_FJ_AMOUNT}`,
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Missing required query param: accepted_asset",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns 400 for unsupported accepted_asset", async () => {
+    const app = buildServer(TEST_CONFIG, mockSigner());
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: quoteUrl(
+          VALID_USER,
+          VALID_FJ_AMOUNT,
+          "0x0000000000000000000000000000000000000000000000000000000000000004",
+        ),
+      });
+      assert.equal(response.statusCode, 400);
+      assert.deepEqual(response.json(), {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Unsupported accepted_asset",
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("issues quote using selected supported asset pricing policy", async () => {
+    let calledQuoteHashHex: string | undefined;
+    const app = buildServer(
+      {
+        ...TEST_CONFIG,
+        supported_assets: [
+          {
+            address: DEFAULT_ACCEPTED_ASSET,
+            name: "humanUSDC",
+            market_rate_num: 1,
+            market_rate_den: 1000,
+            fee_bips: 200,
+          },
+          {
+            address: SECONDARY_ACCEPTED_ASSET,
+            name: "ravenETH",
+            market_rate_num: 3,
+            market_rate_den: 1000,
+            fee_bips: 0,
+          },
+        ],
+      },
+      {
+        signQuoteHash: async (quoteHash) => {
+          calledQuoteHashHex = quoteHash.toString();
+          return "0xselectedasset";
+        },
+      },
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: quoteUrl(VALID_USER, VALID_FJ_AMOUNT, SECONDARY_ACCEPTED_ASSET),
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json() as {
+        accepted_asset: string;
+        fj_amount: string;
+        aa_payment_amount: string;
+        valid_until: string;
+        signature: string;
+      };
+      assert.equal(body.accepted_asset, SECONDARY_ACCEPTED_ASSET);
+      assert.equal(body.fj_amount, VALID_FJ_AMOUNT);
+      assert.equal(body.aa_payment_amount, "3000");
+      assert.equal(body.signature, "0xselectedasset");
+
+      const expectedHash = await computeQuoteHash({
+        fpcAddress: AztecAddress.fromString(TEST_CONFIG.fpc_address),
+        acceptedAsset: AztecAddress.fromString(SECONDARY_ACCEPTED_ASSET),
+        fjFeeAmount: BigInt(VALID_FJ_AMOUNT),
+        aaPaymentAmount: 3000n,
+        validUntil: BigInt(body.valid_until),
+        userAddress: AztecAddress.fromString(VALID_USER),
+      });
+      assert.equal(calledQuoteHashHex, expectedHash.toString());
     } finally {
       await app.close();
     }
@@ -310,6 +519,15 @@ describe("server", () => {
         market_rate_num: 2,
         market_rate_den: 1,
         fee_bips: 0,
+        supported_assets: [
+          {
+            address: DEFAULT_ACCEPTED_ASSET,
+            name: "humanUSDC",
+            market_rate_num: 2,
+            market_rate_den: 1,
+            fee_bips: 0,
+          },
+        ],
       },
       mockSigner(),
     );

@@ -6,12 +6,51 @@ on:
       - main
     tags:
       - "**"
+    paths:
+      - "contracts/**"
+      - "scripts/**"
+      - "services/**"
+      - "vendor/aztec-standards/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig*.json"
+      - ".aztecrc"
+      - ".github/workflows/spec-deploy-smoke.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            relevant:
+              - "contracts/**"
+              - "scripts/**"
+              - "services/**"
+              - "vendor/aztec-standards/**"
+              - "package.json"
+              - "bun.lock"
+              - "tsconfig*.json"
+              - ".aztecrc"
+              - ".github/workflows/spec-deploy-smoke.yml"
+
   deploy-smoke:
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

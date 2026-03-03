@@ -31,7 +31,7 @@ type CliArgs = {
   creditTopupWeiOverride: bigint | null;
 };
 
-type FpcVariant = "FPC" | "CreditFPC";
+type FpcVariant = "FPC" | "FPCMultiAsset" | "CreditFPC" | "BackedCreditFPC";
 
 type CliParseResult =
   | { kind: "help" }
@@ -66,6 +66,7 @@ type WalletLike = {
     authorizer: AztecAddressLike,
     intent: unknown,
   ) => Promise<unknown>;
+  registerContract: (instance: unknown, artifact?: unknown) => Promise<unknown>;
 };
 
 type NodeLike = {
@@ -75,6 +76,7 @@ type NodeLike = {
     feePerL2Gas: bigint;
   }>;
   getBlock: (blockTag: string) => Promise<{ timestamp: bigint } | null>;
+  getContract: (address: AztecAddressLike) => Promise<unknown | undefined>;
 };
 
 type L1PublicClientLike = {
@@ -185,6 +187,11 @@ const DEFAULT_MANIFEST_PATH = path.join(
 );
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+// Keep the legacy FPC artifact only as a non-default compatibility fallback.
+const FPC_ARTIFACT_PATH_CANDIDATES = [
+  path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
+  path.join(REPO_ROOT, "target", "fpc-FPC.json"),
+] as const;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const UINT_DEC_PATTERN = /^(0|[1-9][0-9]*)$/;
 const ETH_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -195,7 +202,7 @@ function usage(): string {
     "Usage:",
     "  bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \\",
     "    [--manifest <path.json>] \\",
-    "    [--fpc-artifact <path/to/*-FPC.json|*-CreditFPC.json>] \\",
+    "    [--fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json|*-BackedCreditFPC.json>] \\",
     "    [--l1-rpc-url <http(s)-url>] \\",
     "    [--operator-secret-key <hex32>] \\",
     "    [--l1-operator-private-key <hex32>] \\",
@@ -687,6 +694,15 @@ async function loadDeps(): Promise<AztecDeps> {
   return deps;
 }
 
+function resolveDefaultFpcArtifactPath(): string {
+  for (const candidatePath of FPC_ARTIFACT_PATH_CANDIDATES) {
+    if (existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+  return FPC_ARTIFACT_PATH_CANDIDATES[0];
+}
+
 function loadArtifact(deps: AztecDeps, artifactPath: string): unknown {
   const raw = readFileSync(artifactPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
@@ -712,7 +728,7 @@ function resolveFpcArtifactSelection(
   const rawPath =
     args.fpcArtifactPath ??
     manifest.fpc_artifact?.path ??
-    path.join(REPO_ROOT, "target", "fpc-FPC.json");
+    resolveDefaultFpcArtifactPath();
   const artifactPath = path.resolve(rawPath);
   if (!existsSync(artifactPath)) {
     throw new CliError(
@@ -749,9 +765,14 @@ function resolveFpcArtifactSelection(
   }
 
   const variant = (parsed as { name: string }).name;
-  if (variant !== "FPC" && variant !== "CreditFPC") {
+  if (
+    variant !== "FPC" &&
+    variant !== "FPCMultiAsset" &&
+    variant !== "CreditFPC" &&
+    variant !== "BackedCreditFPC"
+  ) {
     throw new CliError(
-      `Unsupported FPC artifact variant at ${artifactPath}: ${variant}. Expected FPC or CreditFPC.`,
+      `Unsupported FPC artifact variant at ${artifactPath}: ${variant}. Expected FPC, FPCMultiAsset, CreditFPC, or BackedCreditFPC.`,
     );
   }
 
@@ -1133,16 +1154,31 @@ async function runSmoke(args: CliArgs): Promise<void> {
   );
   const selectedFpcArtifact = loadArtifact(deps, fpcSelection.path);
 
-  const token = deps.Contract.at(
-    deps.AztecAddress.fromString(manifest.contracts.accepted_asset),
-    tokenArtifact,
-    wallet,
+  const tokenAddress = deps.AztecAddress.fromString(
+    manifest.contracts.accepted_asset,
   );
-  const fpc = deps.Contract.at(
-    deps.AztecAddress.fromString(manifest.contracts.fpc),
-    selectedFpcArtifact,
-    wallet,
-  );
+  const fpcAddress = deps.AztecAddress.fromString(manifest.contracts.fpc);
+
+  // Contract.at() no longer auto-registers with PXE (SDK breaking change).
+  // Fetch on-chain instances and register explicitly before use.
+  const tokenInstance = await node.getContract(tokenAddress);
+  if (!tokenInstance) {
+    throw new CliError(
+      `Token contract not found on node at ${manifest.contracts.accepted_asset}`,
+    );
+  }
+  await wallet.registerContract(tokenInstance, tokenArtifact);
+
+  const fpcInstance = await node.getContract(fpcAddress);
+  if (!fpcInstance) {
+    throw new CliError(
+      `FPC contract not found on node at ${manifest.contracts.fpc}`,
+    );
+  }
+  await wallet.registerContract(fpcInstance, selectedFpcArtifact);
+
+  const token = deps.Contract.at(tokenAddress, tokenArtifact, wallet);
+  const fpc = deps.Contract.at(fpcAddress, selectedFpcArtifact, wallet);
 
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas as bigint;
@@ -1156,9 +1192,10 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const creditMinTopup =
     maxGasCostNoTeardown * args.topupSafetyMultiplier * 2n + 1_000_000n;
   const fpcTopupAmount =
-    fpcSelection.variant === "FPC"
-      ? (args.fpcTopupWeiOverride ?? fpcMinTopup)
-      : (args.creditTopupWeiOverride ?? creditMinTopup);
+    fpcSelection.variant === "CreditFPC" ||
+    fpcSelection.variant === "BackedCreditFPC"
+      ? (args.creditTopupWeiOverride ?? creditMinTopup)
+      : (args.fpcTopupWeiOverride ?? fpcMinTopup);
   if (args.fpcTopupWeiOverride && args.fpcTopupWeiOverride < fpcMinTopup) {
     throw new CliError(
       `fpc-topup-wei override is below minimum ${fpcMinTopup.toString()}`,
@@ -1200,7 +1237,10 @@ async function runSmoke(args: CliArgs): Promise<void> {
 
   const QUOTE_DOMAIN_SEPARATOR = deps.Fr.fromHexString("0x465043");
   let successfulTxCount = 0;
-  if (fpcSelection.variant === "FPC") {
+  if (
+    fpcSelection.variant !== "CreditFPC" &&
+    fpcSelection.variant !== "BackedCreditFPC"
+  ) {
     const fpcExpectedCharge = ceilDiv(
       maxGasCostNoTeardown * args.fpcRateNum,
       args.fpcRateDen,
@@ -1246,6 +1286,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
     });
     const fpcFeeEntrypointCall = await fpc.methods
       .fee_entrypoint(
+        token.address,
         fpcAuthwitNonce,
         fpcFjAmount,
         fpcAaAmount,
@@ -1279,6 +1320,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
           paymentMethod: fpcPaymentMethod,
           gasSettings: {
             gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            teardownGasLimits: { daGas: 0, l2Gas: 0 },
             maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           },
         },
@@ -1338,6 +1380,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
     });
     const payAndMintCall = await fpc.methods
       .pay_and_mint(
+        token.address,
         creditAuthwitNonce,
         creditFjAmount,
         creditAaAmount,
@@ -1371,6 +1414,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
           paymentMethod: creditPayAndMintMethod,
           gasSettings: {
             gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            teardownGasLimits: { daGas: 0, l2Gas: 0 },
             maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           },
         },
@@ -1410,6 +1454,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
           paymentMethod: creditPayWithCreditMethod,
           gasSettings: {
             gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+            teardownGasLimits: { daGas: 0, l2Gas: 0 },
             maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           },
         },

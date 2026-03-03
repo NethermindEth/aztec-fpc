@@ -27,7 +27,7 @@ CreditFPC has a separate lifecycle and requirement set documented in `docs/e2e-t
   - `aztec start --local-network`
 - Contracts compiled (`aztec compile --workspace --force`) including:
   - `target/token_contract-Token.json`
-  - `target/fpc-FPC.json`
+  - `target/fpc-FPCMultiAsset.json`
 - Attestation and topup services buildable/runnable from this repo
 
 ## Asset Model And Wiring
@@ -35,7 +35,7 @@ Two different assets are involved and must not be conflated:
 
 1. `accepted_asset` (L2 token used to charge the user)
 - This is a test token deployed on Aztec L2 (`token_contract-Token`).
-- It is passed to the FPC constructor as `accepted_asset`.
+- It is chosen per quote (`accepted_asset`) at runtime for `fee_entrypoint`.
 - Attestation must return this exact address in `/quote.accepted_asset`.
 - No L1 token wiring is required for this asset in this E2E.
 
@@ -48,6 +48,25 @@ Two different assets are involved and must not be conflated:
 - Topup bridges L1 Fee Juice to FPC using `L1FeeJuicePortalManager.bridgeTokensPublic(...)`.
 
 Address source of truth is always `node_getNodeInfo`; nothing is hardcoded.
+For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; no manual custom L1 FeeJuice deployment step is required.
+
+## Local-Network Troubleshooting
+Use this runbook when local E2E fails with address or wiring symptoms.
+
+1. Stale hardcoded addresses
+- Symptom: startup/config errors, attestation quote mismatches, or topup failures after node restart/redeploy.
+- Check: verify any configured FeeJuice L1/L2 addresses against fresh `node_getNodeInfo` output.
+- Fix: remove stale hardcoded values; regenerate deploy/config artifacts and use node-reported addresses.
+
+2. L1 chain-id mismatch (`l1_rpc_url` vs node-reported chain)
+- Symptom: topup validation rejects config or bridge submit fails with chain/network mismatch errors.
+- Check: compare node-reported `l1ChainId` from `node_getNodeInfo` with the chain id served by `l1_rpc_url`.
+- Fix: point services to the correct L1 RPC for the active local-network instance.
+
+3. FeeJuice portal/address mismatch
+- Symptom: bridge submission/confirmation fails or FeeJuice balance never increases after a bridge tx.
+- Check: compare configured/derived FeeJuice token + portal addresses with node-reported `l1ContractAddresses`.
+- Fix: do not override local-network FeeJuice addresses manually; use node-derived values and rerun deploy/config generation.
 
 ## Full Lifecycle Phases
 1. Start or reuse local devnet via `aztec start --local-network`.
@@ -57,7 +76,6 @@ Address source of truth is always `node_getNodeInfo`; nothing is hardcoded.
    - `operator = operator Aztec address`
    - `operator_pubkey_x = operator Schnorr pubkey x`
    - `operator_pubkey_y = operator Schnorr pubkey y`
-   - `accepted_asset = deployed L2 token address`
 5. Run FPC scenario:
    - start attestation + topup with generated runtime config:
      - attestation config uses `fpc_address=<FPC>` + `accepted_asset_address`

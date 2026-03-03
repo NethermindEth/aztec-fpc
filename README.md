@@ -6,11 +6,13 @@ Operator-run fee payment contracts for Aztec L2:
 
 Full protocol specification: [docs/spec.md](docs/spec.md)
 
+Wallet discovery contract (`GET /.well-known/fpc.json`): [docs/wallet-discovery-spec.md](docs/wallet-discovery-spec.md)
+
 Operational probes and metrics: [docs/operational-metrics.md](docs/operational-metrics.md)
 
 Alpha asset model decision: [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md)
 
-Current contracts/services in this repo are still single-asset-per-deployment; treat multi-instance dual-asset operations as an interim workaround until ADR-0001 is implemented.
+Current contract surface is multi-asset for both active variants: `FPCMultiAsset` and `BackedCreditFPC`.
 
 ---
 
@@ -36,6 +38,7 @@ aztec-fpc/
 │   │   └── test/               ← Contract + service smoke harnesses
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
 ├── scripts/
+│   ├── chaos/                  ← FPC chaos / adversarial test suite (see scripts/chaos/README.md)
 │   ├── contract/               ← Deploy + contract smoke wrappers (FPC and CreditFPC)
 │   └── services/               ← Service-integrated smoke wrapper (fpc|credit|both)
 ├── vendor/
@@ -92,8 +95,8 @@ bun install
 ### 3. Compile contracts (workspace)
 
 Compile the full workspace so all required artifacts exist:
-- `target/fpc-FPC.json`
-- `target/credit_fpc-CreditFPC.json`
+- `target/fpc-FPCMultiAsset.json`
+- `target/credit_fpc-BackedCreditFPC.json`
 - `target/generic_proxy-GenericProxy.json`
 - `target/token_contract-Token.json`
 
@@ -128,6 +131,7 @@ bun run ci
 - `spec-credit-fpc-smoke.yml`: local-devnet smoke for `CreditFPC.pay_and_mint` + `pay_with_credit`
 - `spec-deploy-smoke.yml`: local deploy smoke for `deploy-fpc-local` output validation
 - `spec-services-smoke.yml`: service-integrated local-network smoke (`FPC_SERVICES_SMOKE_MODE=fpc|credit|both`) covering quote + topup + contract fee flow
+- `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suites for `FPC` and `CreditFPC`, with uploaded diagnostics artifacts
 
 ### 5. Run local-devnet FPC fee-entrypoint smoke test
 
@@ -146,6 +150,8 @@ aztec start --local-network
 Default local-network endpoints:
 - Aztec node / PXE RPC: `http://localhost:8080`
 - Anvil L1 RPC (spawned by `aztec start --local-network`): `http://127.0.0.1:8545`
+
+For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; do not add a manual custom L1 FeeJuice deployment step for local E2E.
 
 ```bash
 bun run smoke:fee-entrypoint:local
@@ -237,6 +243,8 @@ Useful overrides:
 
 Use the local deploy wrapper (deploys `Token`, `FPC`, and `CreditFPC`):
 
+For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; local deploy scripts should only deploy L2 contracts (`Token`, `FPC`, `CreditFPC`) and consume node-reported L1 addresses.
+
 ```bash
 bun run deploy:fpc:local
 ```
@@ -295,11 +303,8 @@ bun run deploy:fpc:devnet
 # 2) Verify deployed contracts and FPC immutables from manifest
 bun run verify:deploy:fpc:devnet
 
-# 3) Render attestation/topup configs from manifest
-export FPC_DEVNET_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
-# If your .env uses L1_ADDRESS_PK, map it to the renderer's expected variable
-export L1_OPERATOR_PRIVATE_KEY="${L1_ADDRESS_PK}"
-bun run render:config:devnet
+# 3) Generate attestation/topup configs from manifest + master config
+bun run generate:configs
 
 # 4) Execute post-deploy runtime smoke (FPC + CreditFPC paths)
 bun run smoke:deploy:fpc:devnet
@@ -316,14 +321,14 @@ Manifest secret-handling warning:
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
 # operator_pubkey_x/y = Schnorr signing public key coordinates for quote signatures
-# accepted_asset = token contract address accepted for payments
+# accepted_asset is selected per quote/request (not constructor-bound)
 aztec deploy \
-  --artifact target/fpc-FPC.json \
-  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y> <accepted_asset_address>
+  --artifact target/fpc-FPCMultiAsset.json \
+  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
 
 aztec deploy \
-  --artifact target/credit_fpc-CreditFPC.json \
-  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y> <accepted_asset_address>
+  --artifact target/credit_fpc-BackedCreditFPC.json \
+  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
 ```
 
 Record the deployed address.
@@ -414,6 +419,8 @@ The compose stack (`docker-compose.yaml`) includes:
 | `aztec-node` | Aztec sandbox node | 8080 |
 | `attestation` | FPC attestation service | 3000 |
 | `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
+| `e2e-fpc` (profile `e2e-fpc`) | Compose-backed `FPC` full lifecycle runner | — |
+| `e2e-credit` (profile `e2e-credit`) | Compose-backed `CreditFPC` full lifecycle runner | — |
 
 Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
 
@@ -422,10 +429,37 @@ services/attestation/config.yaml -> config.example.yaml
 services/topup/config.yaml       -> config.example.yaml
 ```
 
-Start the stack:
+Run compose in mode-based flows:
 
 ```bash
+# Infra only (no tests)
+bun run compose:infra
+
+# Full mode (deployment + smoke tests, exits with smoke status)
+bun run compose:full
+
+# Or directly with docker compose for infra-only
 docker compose up
+```
+
+Run compose-backed full lifecycle suites:
+
+```bash
+# FPC only
+bun run e2e:full-lifecycle:fpc:compose
+
+# CreditFPC only
+bun run e2e:full-lifecycle:credit:compose
+
+# both suites sequentially
+bun run e2e:full-lifecycle:compose
+```
+
+Compose full-lifecycle artifacts are persisted under:
+
+```text
+artifacts/compose-e2e/fpc
+artifacts/compose-e2e/credit
 ```
 
 #### Environment variable overrides

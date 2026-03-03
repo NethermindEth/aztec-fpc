@@ -3,36 +3,25 @@ mod test;
 
 use ::aztec::macros::aztec;
 
-/// Fee Payment Contract (FPC)
+/// Fee Payment Contract -- Multi-Asset Variant
 ///
-/// A minimal single-asset FPC. Users pay transaction fees in one fixed token
-/// via a private-to-private transfer to the operator. No public balance
-/// accumulates in this contract.
+/// Unlike the standard FPC which hardcodes `accepted_asset` at deploy time,
+/// this variant accepts the asset as a per-quote parameter. The user specifies
+/// which asset they want to pay with when requesting a quote, the operator
+/// signs a quote binding that asset+exact amounts, and `fee_entrypoint` accepts the
+/// asset as an argument.
 ///
-/// ## Payment flow
-///
-/// 1. User requests a confidential quote from the attestation service, providing
-///    their Aztec address.
-/// 2. Attestation service returns a quote signed by the operator's Schnorr key,
-///    binding exact fee/payment amounts and the user's address.
-/// 3. User creates one authwit:
-///    - Token transfer authwit -- authorises FPC to call
-///      `transfer_private_to_private(user -> operator, charge, nonce)`
-/// 4. User submits their tx with `fee_entrypoint` as the fee payment:
-///    - Quote signature is verified inline against the operator's public key
-///    - Quoted FeeJuice amount is checked against current gas settings
-///    - Token transfers private: user -> operator
-///    - FPC declares itself fee payer
-///    - Setup completes; protocol deducts Fee Juice from FPC's balance
+/// Security is preserved because the quote hash includes the asset in its
+/// preimage -- the operator's Schnorr signature binds the quoted amounts to a
+/// specific asset.
 ///
 /// ## Storage
 ///
 /// - config            (PublicImmutable<Config>) -- packed immutable config
-///                                                  containing operator address,
-///                                                  operator signing key, and
-///                                                  accepted asset.
+///                                                  containing operator address
+///                                                  and operator signing key.
 #[aztec]
-pub contract FPC {
+pub contract FPCMultiAsset {
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
@@ -48,7 +37,7 @@ pub contract FPC {
     global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
 
     /// Packed configuration stored as a single PublicImmutable slot.
-    /// Reduces the 4 separate Merkle membership proofs to one.
+    /// 3 fields (no accepted_asset -- that is now a per-quote parameter).
     #[derive(Deserialize, Eq, Packable, Serialize)]
     pub struct Config {
         operator: AztecAddress,
@@ -56,7 +45,6 @@ pub contract FPC {
         operator_pubkey_x: Field,
         /// Operator signing public key y coordinate.
         operator_pubkey_y: Field,
-        accepted_asset: AztecAddress,
     }
 
     // =========================================================================
@@ -74,23 +62,15 @@ pub contract FPC {
 
     #[external("public")]
     #[initializer]
-    fn constructor(
-        operator: AztecAddress,
-        operator_pubkey_x: Field,
-        operator_pubkey_y: Field,
-        accepted_asset: AztecAddress,
-    ) {
+    fn constructor(operator: AztecAddress, operator_pubkey_x: Field, operator_pubkey_y: Field) {
         assert(!operator.is_zero(), "invalid operator");
-        assert(!accepted_asset.is_zero(), "invalid accepted asset");
         // Basic on-curve check: y^2 = x^3 - 17 (Grumpkin)
         assert(
             operator_pubkey_y * operator_pubkey_y
                 == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
             "operator pubkey not on curve",
         );
-        self.storage.config.initialize(
-            Config { operator, operator_pubkey_x, operator_pubkey_y, accepted_asset },
-        );
+        self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y });
     }
 
     // =========================================================================
@@ -104,6 +84,7 @@ pub contract FPC {
     #[external("private")]
     #[allow_phase_change]
     fn fee_entrypoint(
+        accepted_asset: AztecAddress,
         authwit_nonce: Field,
         fj_fee_amount: u128,
         aa_payment_amount: u128,
@@ -126,7 +107,7 @@ pub contract FPC {
                 y: config.operator_pubkey_y,
                 is_infinite: false,
             },
-            config.accepted_asset,
+            accepted_asset,
             fj_fee_amount,
             aa_payment_amount,
             valid_until,
@@ -134,11 +115,10 @@ pub contract FPC {
             quote_sig,
         );
 
-        assert_no_teardown_gas(self.context);
-        let expected_fj_fee_amount = get_max_gas_cost_no_teardown(self.context);
-        assert(expected_fj_fee_amount == fj_fee_amount, "quoted fee amount mismatch");
+        let max_fee = get_max_gas_cost_no_teardown(self.context);
+        assert(fj_fee_amount == max_fee, "quoted fee amount mismatch");
 
-        Token::at(config.accepted_asset)
+        Token::at(accepted_asset)
             .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
@@ -156,8 +136,8 @@ pub contract FPC {
     /// inline. Pushes a nullifier to prevent replay.
     ///
     /// Quote preimage (hashed with compute_inner_authwit_hash for compatibility):
-    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, fj_fee_amount,
-    ///              aa_payment_amount, valid_until, user_address])
+    ///   poseidon2([DOMAIN_SEP, fpc_address, accepted_asset, fj_fee_amount, aa_payment_amount,
+    ///              valid_until, user_address])
     #[contract_library_method]
     fn assert_valid_quote(
         context: &mut PrivateContext,
@@ -184,7 +164,6 @@ pub contract FPC {
             "invalid quote signature",
         );
 
-        // Prevent replay: the quote hash is unique per (fpc, asset, amounts, expiry, user).
         context.push_nullifier(quote_hash);
 
         let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
@@ -192,19 +171,6 @@ pub contract FPC {
         let quote_ttl = valid_until - anchor_ts;
         assert(quote_ttl <= MAX_QUOTE_TTL_SECONDS, "quote ttl too large");
         context.set_expiration_timestamp(valid_until);
-    }
-
-    /// Maximum possible fee for this tx excluding teardown gas.
-    #[contract_library_method]
-    fn assert_no_teardown_gas(context: &mut PrivateContext) {
-        let gas_settings = context.gas_settings();
-        let teardown_gas_limits = gas_settings.teardown_gas_limits;
-        if gas_settings.max_fees_per_gas.fee_per_da_gas > 0 {
-            assert(teardown_gas_limits.da_gas == 0, "teardown da gas must be zero");
-        }
-        if gas_settings.max_fees_per_gas.fee_per_l2_gas > 0 {
-            assert(teardown_gas_limits.l2_gas == 0, "teardown l2 gas must be zero");
-        }
     }
 
     /// Maximum possible fee for this tx excluding teardown gas.

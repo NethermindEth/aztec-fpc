@@ -3,15 +3,16 @@
  *
  * Deploys Token + CreditFPC + Noop on a running local network, bridges Fee
  * Juice, establishes credit balance via a real pay_and_mint tx, then
- * benchmarks both flows:
+ * benchmarks all available flows:
  *
- *   pay_and_mint     — user tops up credit balance (token transfer + mint)
- *   pay_with_credit  — user pays tx fee from existing credit (no transfer)
+ *   pay_and_mint          — user tops up credit balance (token transfer + mint)
+ *   pay_with_credit       — user pays tx fee from existing credit (no transfer)
+ *   pay_with_credit_exact — user pays tx fee from credit with exact-fee settle/refund
  *
  * The aztec-benchmark profiler expects getMethods() to return items of shape
  * {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
  *
- * Because the two flows use different fee payment methods, we do NOT set
+ * Because the flows use different fee payment methods, we do NOT set
  * feePaymentMethod on the returned context (the profiler would inject a single
  * one for all interactions).  Instead, each CreditFPCActionWrapper overrides
  * the fee option with its own payment method.
@@ -32,16 +33,12 @@ import { createAztecNodeClient } from '@aztec/aztec.js/node';
 import { Contract } from '@aztec/aztec.js/contracts';
 import { L1FeeJuicePortalManager } from '@aztec/aztec.js/ethereum';
 import { getInitialTestAccountsData } from '@aztec/accounts/testing';
-import { Fr } from '@aztec/foundation/curves/bn254';
 import { createLogger } from '@aztec/foundation/log';
 import { Schnorr } from '@aztec/foundation/crypto/schnorr';
 import { FeeJuiceArtifact } from '@aztec/protocol-contracts/fee-juice';
 import { ProtocolContractAddress } from '@aztec/protocol-contracts';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import {
-  FunctionCall,
-  FunctionSelector,
-  FunctionType,
   loadContractArtifact,
 } from '@aztec/stdlib/abi';
 import { ExecutionPayload } from '@aztec/stdlib/tx';
@@ -94,31 +91,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 class PayAndMintPaymentMethod {
   fpcAddress: any;
+  payAndMintCall: any;
   transferAuthWit: any;
-  quoteSigFields: any[];
-  transferNonce: bigint;
-  fjCreditAmount: bigint;
-  aaPaymentAmount: bigint;
-  validUntil: bigint;
   gasSettings: any;
 
   constructor(
     fpcAddress: any,
+    payAndMintCall: any,
     transferAuthWit: any,
-    quoteSigFields: any[],
-    transferNonce: bigint,
-    fjCreditAmount: bigint,
-    aaPaymentAmount: bigint,
-    validUntil: bigint,
     gasSettings: any,
   ) {
     this.fpcAddress = fpcAddress;
+    this.payAndMintCall = payAndMintCall;
     this.transferAuthWit = transferAuthWit;
-    this.quoteSigFields = quoteSigFields;
-    this.transferNonce = transferNonce;
-    this.fjCreditAmount = fjCreditAmount;
-    this.aaPaymentAmount = aaPaymentAmount;
-    this.validUntil = validUntil;
     this.gasSettings = gasSettings;
   }
 
@@ -133,29 +118,8 @@ class PayAndMintPaymentMethod {
   }
 
   async getExecutionPayload() {
-    const selector = await FunctionSelector.fromSignature(
-      'pay_and_mint(Field,u128,u128,u64,[u8;64])',
-    );
-
-    const feeCall = FunctionCall.from({
-      name: 'pay_and_mint',
-      to: this.fpcAddress,
-      selector,
-      type: FunctionType.PRIVATE,
-      hideMsgSender: false,
-      isStatic: false,
-      args: [
-        new Fr(this.transferNonce),
-        new Fr(this.fjCreditAmount),
-        new Fr(this.aaPaymentAmount),
-        new Fr(this.validUntil),
-        ...this.quoteSigFields,
-      ],
-      returnTypes: [],
-    });
-
     return new ExecutionPayload(
-      [feeCall],
+      [this.payAndMintCall],
       [this.transferAuthWit],
       [],
       [],
@@ -168,10 +132,12 @@ class PayAndMintPaymentMethod {
 
 class PayWithCreditPaymentMethod {
   fpcAddress: any;
+  payWithCreditCall: any;
   gasSettings: any;
 
-  constructor(fpcAddress: any, gasSettings: any) {
+  constructor(fpcAddress: any, payWithCreditCall: any, gasSettings: any) {
     this.fpcAddress = fpcAddress;
+    this.payWithCreditCall = payWithCreditCall;
     this.gasSettings = gasSettings;
   }
 
@@ -186,27 +152,29 @@ class PayWithCreditPaymentMethod {
   }
 
   async getExecutionPayload() {
-    const selector = await FunctionSelector.fromSignature('pay_with_credit()');
-
-    const feeCall = FunctionCall.from({
-      name: 'pay_with_credit',
-      to: this.fpcAddress,
-      selector,
-      type: FunctionType.PRIVATE,
-      hideMsgSender: false,
-      isStatic: false,
-      args: [],
-      returnTypes: [],
-    });
-
     return new ExecutionPayload(
-      [feeCall],
+      [this.payWithCreditCall],
       [],
       [],
       [],
       this.fpcAddress,
     );
   }
+}
+
+type PayAndMintMode = 'legacy' | 'multi_asset_quoted';
+
+function detectPayAndMintMode(creditFpcArtifact: any): PayAndMintMode {
+  const payAndMint = (creditFpcArtifact.functions ?? []).find(
+    (f: any) => f.name === 'pay_and_mint',
+  );
+  const paramNames = new Set(
+    (payAndMint?.parameters ?? []).map((p: any) => p?.name),
+  );
+  if (paramNames.has('accepted_asset')) {
+    return 'multi_asset_quoted';
+  }
+  return 'legacy';
 }
 
 // ── L1 helpers (Fee Juice bridging) ──────────────────────────────────────────
@@ -415,12 +383,18 @@ interface CreditFPCBenchmarkContext {
   fpcAddress: any;
 }
 
+function hasFunction(artifact: any, functionName: string): boolean {
+  return (artifact.functions ?? []).some((f: any) => f?.name === functionName);
+}
+
 // ── Benchmark class ──────────────────────────────────────────────────────────
 
 export default class CreditFPCBenchmark {
   #actions: CreditFPCActionWrapper[] = [];
   #payAndMintPayment?: PayAndMintPaymentMethod;
   #payWithCreditPayment?: PayWithCreditPaymentMethod;
+  #payWithCreditExactPayment?: PayWithCreditPaymentMethod;
+  #hasPayWithCreditExact = false;
 
   async setup(): Promise<CreditFPCBenchmarkContext> {
     console.log('=== CreditFPC Benchmark Setup ===\n');
@@ -468,8 +442,10 @@ export default class CreditFPCBenchmark {
       JSON.parse(readFileSync(findArtifact('Token'), 'utf8')),
     );
     const creditFpcArtifact = loadContractArtifact(
-      JSON.parse(readFileSync(findArtifact('CreditFPC'), 'utf8')),
+      JSON.parse(readFileSync(findArtifact('BackedCreditFPC'), 'utf8')),
     );
+    const payAndMintMode = detectPayAndMintMode(creditFpcArtifact);
+    console.log(`Detected pay_and_mint mode: ${payAndMintMode}`);
     const noopArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Noop'), 'utf8')),
     );
@@ -509,6 +485,7 @@ export default class CreditFPCBenchmark {
     console.log('Registered CreditFPC + Token as senders for note discovery.');
 
     const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
+    const creditFpcAsUser = Contract.at(fpcAddress, creditFpcArtifact, wallet);
     const noopAsUser = Contract.at(noopDeploy.address, noopArtifact, wallet);
 
     // ── Bridge Fee Juice to CreditFPC via L1 ─────────────────────────────
@@ -606,14 +583,32 @@ export default class CreditFPCBenchmark {
       ),
     });
 
+    const sendPayAndMintCall =
+      payAndMintMode === 'multi_asset_quoted'
+        ? await creditFpcAsUser.methods
+            .pay_and_mint(
+              tokenAddress,
+              SEND_NONCE,
+              sendCreditMint,
+              sendTokenCharge,
+              VALID_UNTIL,
+              sendQuoteSigFields,
+            )
+            .getFunctionCall()
+        : await creditFpcAsUser.methods
+            .pay_and_mint(
+              SEND_NONCE,
+              sendCreditMint,
+              sendTokenCharge,
+              VALID_UNTIL,
+              sendQuoteSigFields,
+            )
+            .getFunctionCall();
+
     const sendPayAndMint = new PayAndMintPaymentMethod(
       fpcAddress,
+      sendPayAndMintCall,
       sendTransferAuthWit,
-      sendQuoteSigFields,
-      SEND_NONCE,
-      sendCreditMint,
-      sendTokenCharge,
-      VALID_UNTIL,
       payAndMintGasSettings,
     );
 
@@ -635,11 +630,9 @@ export default class CreditFPCBenchmark {
     console.log('Follow-up tx mined.');
 
     // ── Verify credit balance ────────────────────────────────────────────
-    const creditFpcContract = Contract.at(fpcAddress, creditFpcArtifact, wallet);
-
     let creditBalance = 0n;
     for (let i = 0; i < 10; i++) {
-      creditBalance = await creditFpcContract.methods
+      creditBalance = await creditFpcAsUser.methods
         .balance_of(userAddress)
         .simulate({ from: userAddress });
       console.log(`  [${i + 1}/10] Credit balance: ${creditBalance}`);
@@ -655,67 +648,87 @@ export default class CreditFPCBenchmark {
       }
     }
 
-    // Fallback: use dev_mint with ONCHAIN_UNCONSTRAINED delivery.
+    // Fallback: send another real pay_and_mint to establish credits.
+    // Previous versions used dev_mint here, but that bypasses _finalize_mint
+    // and corrupts unspent_credits accounting.
     if (creditBalance < totalMaxCost) {
-      console.log('\nCredit notes not yet visible. Trying dev_mint fallback...');
+      console.log('\nCredit notes not yet visible. Sending another pay_and_mint...');
 
-      const DEV_NONCE = SEND_NONCE + 1n;
-      const devMintAmount = totalMaxCost * 3n;
-      const devTokenCharge = feeJuiceToAsset(devMintAmount, RATE_NUM, RATE_DEN);
+      const RETRY_NONCE = SEND_NONCE + 1n;
+      const retryCreditMint = totalMaxCost * 3n;
+      const retryTokenCharge = feeJuiceToAsset(retryCreditMint, RATE_NUM, RATE_DEN);
 
       await tokenAsUser.methods
-        .mint_to_private(userAddress, devTokenCharge + 10000n)
+        .mint_to_private(userAddress, retryTokenCharge + 10000n)
         .send({ from: userAddress });
 
-      const devTransferAuthWit = await wallet.createAuthWit(userAddress, {
+      const retryTransferAuthWit = await wallet.createAuthWit(userAddress, {
         caller: fpcAddress,
         action: tokenAsUser.methods.transfer_private_to_private(
           userAddress,
           operatorAddress,
-          devTokenCharge,
-          DEV_NONCE,
+          retryTokenCharge,
+          RETRY_NONCE,
         ),
       });
 
-      const DEV_VALID_UNTIL = VALID_UNTIL + 5n;
-      const devQuoteSigFields = await signQuote(
+      const RETRY_VALID_UNTIL = VALID_UNTIL + 5n;
+      const retryQuoteSigFields = await signQuote(
         schnorr,
         operatorSigningKey,
         fpcAddress,
         tokenAddress,
-        devMintAmount,
-        devTokenCharge,
-        DEV_VALID_UNTIL,
+        retryCreditMint,
+        retryTokenCharge,
+        RETRY_VALID_UNTIL,
         userAddress,
         QUOTE_DOMAIN_SEP,
       );
 
-      const devPayAndMint = new PayAndMintPaymentMethod(
+      const retryPayAndMintCall =
+        payAndMintMode === 'multi_asset_quoted'
+          ? await creditFpcAsUser.methods
+              .pay_and_mint(
+                tokenAddress,
+                RETRY_NONCE,
+                retryCreditMint,
+                retryTokenCharge,
+                RETRY_VALID_UNTIL,
+                retryQuoteSigFields,
+              )
+              .getFunctionCall()
+          : await creditFpcAsUser.methods
+              .pay_and_mint(
+                RETRY_NONCE,
+                retryCreditMint,
+                retryTokenCharge,
+                RETRY_VALID_UNTIL,
+                retryQuoteSigFields,
+              )
+              .getFunctionCall();
+
+      const retryPayAndMint = new PayAndMintPaymentMethod(
         fpcAddress,
-        devTransferAuthWit,
-        devQuoteSigFields,
-        DEV_NONCE,
-        devMintAmount,
-        devTokenCharge,
-        DEV_VALID_UNTIL,
+        retryPayAndMintCall,
+        retryTransferAuthWit,
         payAndMintGasSettings,
       );
 
-      await creditFpcContract.methods
-        .dev_mint(totalMaxCost * 2n)
+      await noopAsUser.methods
+        .noop()
         .send({
-          fee: { paymentMethod: devPayAndMint, gasSettings: payAndMintGasSettings },
+          fee: { paymentMethod: retryPayAndMint, gasSettings: payAndMintGasSettings },
           from: userAddress,
           additionalScopes: [operatorAddress],
         });
-      console.log('dev_mint tx mined.');
+      console.log('Retry pay_and_mint tx mined.');
 
       await tokenAsUser.methods
         .mint_to_private(userAddress, 1n)
         .send({ from: userAddress });
 
       for (let i = 0; i < 10; i++) {
-        creditBalance = await creditFpcContract.methods
+        creditBalance = await creditFpcAsUser.methods
           .balance_of(userAddress)
           .simulate({ from: userAddress });
         console.log(`  [${i + 1}/10] Credit balance: ${creditBalance}`);
@@ -733,7 +746,7 @@ export default class CreditFPCBenchmark {
 
       if (creditBalance < totalMaxCost) {
         throw new Error(
-          `Credit balance ${creditBalance} still below required ${totalMaxCost} after dev_mint fallback.`,
+          `Credit balance ${creditBalance} still below required ${totalMaxCost} after retry pay_and_mint.`,
         );
       }
     }
@@ -768,14 +781,32 @@ export default class CreditFPCBenchmark {
       ),
     });
 
+    const profilePayAndMintCall =
+      payAndMintMode === 'multi_asset_quoted'
+        ? await creditFpcAsUser.methods
+            .pay_and_mint(
+              tokenAddress,
+              PROFILE_NONCE,
+              profileCreditMint,
+              profileTokenCharge,
+              PROFILE_VALID_UNTIL,
+              profileQuoteSigFields,
+            )
+            .getFunctionCall()
+        : await creditFpcAsUser.methods
+            .pay_and_mint(
+              PROFILE_NONCE,
+              profileCreditMint,
+              profileTokenCharge,
+              PROFILE_VALID_UNTIL,
+              profileQuoteSigFields,
+            )
+            .getFunctionCall();
+
     this.#payAndMintPayment = new PayAndMintPaymentMethod(
       fpcAddress,
+      profilePayAndMintCall,
       profileTransferAuthWit,
-      profileQuoteSigFields,
-      PROFILE_NONCE,
-      profileCreditMint,
-      profileTokenCharge,
-      PROFILE_VALID_UNTIL,
       payAndMintGasSettings,
     );
 
@@ -785,10 +816,29 @@ export default class CreditFPCBenchmark {
       .send({ from: userAddress });
 
     // ── pay_with_credit profiling setup ──────────────────────────────────
+    const payWithCreditCall = await creditFpcAsUser.methods
+      .pay_with_credit()
+      .getFunctionCall();
     this.#payWithCreditPayment = new PayWithCreditPaymentMethod(
       fpcAddress,
+      payWithCreditCall,
       payWithCreditGasSettings,
     );
+
+    this.#hasPayWithCreditExact = hasFunction(creditFpcArtifact, 'pay_with_credit_exact');
+    if (this.#hasPayWithCreditExact) {
+      const payWithCreditExactCall = await creditFpcAsUser.methods
+        .pay_with_credit_exact()
+        .getFunctionCall();
+      this.#payWithCreditExactPayment = new PayWithCreditPaymentMethod(
+        fpcAddress,
+        payWithCreditExactCall,
+        payWithCreditGasSettings,
+      );
+      console.log('Detected pay_with_credit_exact, adding to benchmark methods.');
+    } else {
+      console.log('pay_with_credit_exact not found in artifact; benchmarking legacy two-flow set.');
+    }
 
     console.log('\n=== CreditFPC Benchmark Setup Complete ===\n');
 
@@ -819,9 +869,7 @@ export default class CreditFPCBenchmark {
       context.payWithCreditGasSettings,
     );
 
-    this.#actions = [payAndMintAction, payWithCreditAction];
-
-    return [
+    const methods: Array<{ interaction: { caller: any; action: CreditFPCActionWrapper }; name: string }> = [
       {
         interaction: { caller: context.userAddress, action: payAndMintAction },
         name: 'pay_and_mint',
@@ -831,6 +879,25 @@ export default class CreditFPCBenchmark {
         name: 'pay_with_credit',
       },
     ];
+
+    const actions: CreditFPCActionWrapper[] = [payAndMintAction, payWithCreditAction];
+
+    if (this.#hasPayWithCreditExact && this.#payWithCreditExactPayment) {
+      const payWithCreditExactAction = new CreditFPCActionWrapper(
+        context.noopAsUser.methods.noop(),
+        this.#payWithCreditExactPayment,
+        [],
+        context.payWithCreditGasSettings,
+      );
+      methods.push({
+        interaction: { caller: context.userAddress, action: payWithCreditExactAction },
+        name: 'pay_with_credit_exact',
+      });
+      actions.push(payWithCreditExactAction);
+    }
+
+    this.#actions = actions;
+    return methods;
   }
 
   async teardown(context: CreditFPCBenchmarkContext): Promise<void> {
@@ -870,7 +937,7 @@ export default class CreditFPCBenchmark {
         const allSteps = rawSteps.map(
           (gc: any) => ({ functionName: gc.circuitName, gateCount: gc.gateCount, witgenMs: gc.witgenMs }),
         );
-        const fpcSteps = extractFpcSteps(allSteps, 'CreditFPC');
+        const fpcSteps = extractFpcSteps(allSteps, ['CreditFPC', 'BackedCreditFPC']);
         r.fpcGateCounts = fpcSteps.map((s: any) => ({
           circuitName: s.functionName,
           gateCount: s.gateCount,

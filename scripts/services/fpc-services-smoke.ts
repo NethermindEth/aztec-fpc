@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +69,11 @@ const FEE_JUICE_PORTAL_ABI = parseAbi([
   "event DepositToAztecPublic(bytes32 indexed to, uint256 amount, bytes32 secretHash, bytes32 key, uint256 index)",
 ]);
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
+// Keep the legacy FPC artifact only as a non-default compatibility fallback.
+const FPC_ARTIFACT_FILE_CANDIDATES = [
+  "fpc-FPCMultiAsset.json",
+  "fpc-FPC.json",
+] as const;
 
 type TopupBridgeOutcome = "confirmed" | "timeout" | "failed";
 type TopupBridgeSubmission = {
@@ -118,6 +129,8 @@ type AssetResponse = {
 type ServiceFlowResult = {
   fjAmount: bigint;
   aaPaymentAmount: bigint;
+  rateNum: bigint;
+  rateDen: bigint;
   validUntil: bigint;
   quoteSigBytes: number[];
 };
@@ -166,6 +179,10 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
 }
 
+function maxBigInt(a: bigint, b: bigint): bigint {
+  return a > b ? a : b;
+}
+
 function loadArtifact(artifactPath: string): ContractArtifact {
   const raw = readFileSync(artifactPath, "utf8");
   const parsed = JSON.parse(raw) as NoirCompiledContract;
@@ -180,6 +197,28 @@ function loadArtifact(artifactPath: string): ContractArtifact {
     }
     throw err;
   }
+}
+
+function resolveFpcArtifactPath(repoRoot: string): string {
+  const explicitPath =
+    process.env.FPC_SERVICES_SMOKE_FPC_ARTIFACT ?? process.env.FPC_FPC_ARTIFACT;
+  if (explicitPath && explicitPath.trim().length > 0) {
+    return path.resolve(explicitPath);
+  }
+
+  for (const artifactFile of FPC_ARTIFACT_FILE_CANDIDATES) {
+    const candidatePath = path.join(repoRoot, "target", artifactFile);
+    if (existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  const searched = FPC_ARTIFACT_FILE_CANDIDATES.map((entry) =>
+    path.join(repoRoot, "target", entry),
+  ).join(", ");
+  throw new Error(
+    `FPC artifact not found. Looked for ${searched}. Set FPC_SERVICES_SMOKE_FPC_ARTIFACT or FPC_FPC_ARTIFACT to override.`,
+  );
 }
 
 function normalizeHexAddress(value: unknown, fieldName: string): Hex {
@@ -813,7 +852,7 @@ function getScenarioKinds(mode: SmokeMode): ScenarioKind[] {
   }
 }
 
-async function verifyAttestationQuoteSignature(
+async function verifyAttestationAmountQuoteSignature(
   schnorr: Schnorr,
   operatorPubKey: SchnorrPoint,
   feePayerAddress: AztecAddress,
@@ -888,6 +927,7 @@ async function runServiceScenario(
         `market_rate_num: ${config.marketRateNum}`,
         `market_rate_den: ${config.marketRateDen}`,
         `fee_bips: ${config.feeBips}`,
+        `quote_format: "amount_quote"`,
       ].join("\n")}\n`,
       "utf8",
     );
@@ -1083,7 +1123,7 @@ async function runServiceScenario(
 
     const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
     const quote = await fetchQuote(
-      `${attestationBaseUrl}/quote?user=${user.toString()}&fj_amount=${quoteFjAmount.toString()}`,
+      `${attestationBaseUrl}/quote?user=${user.toString()}&accepted_asset=${token.address.toString()}&fj_amount=${quoteFjAmount.toString()}`,
       config.httpTimeoutMs,
     );
     const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
@@ -1135,7 +1175,7 @@ async function runServiceScenario(
         `${scenarioPrefix} quote fj amount mismatch. expected=${quoteFjAmount} got=${fjAmount}`,
       );
     }
-    await verifyAttestationQuoteSignature(
+    await verifyAttestationAmountQuoteSignature(
       schnorr,
       operatorPubKey,
       feePayerAddress,
@@ -1246,6 +1286,8 @@ async function runServiceScenario(
     return {
       fjAmount,
       aaPaymentAmount,
+      rateNum: expectedRateNum,
+      rateDen: expectedRateDen,
       validUntil,
       quoteSigBytes,
     };
@@ -1319,6 +1361,7 @@ async function runFpcFeeEntrypointScenario(
 
   const feeEntrypointCall = await fpc.methods
     .fee_entrypoint(
+      token.address,
       transferAuthwitNonce,
       quote.fjAmount,
       quote.aaPaymentAmount,
@@ -1448,6 +1491,7 @@ async function runCreditFeeScenario(
 
   const payAndMintCall = await creditFpc.methods
     .pay_and_mint(
+      token.address,
       transferAuthwitNonce,
       fjCreditAmount,
       aaPaymentAmount,
@@ -1531,7 +1575,13 @@ async function runCreditFeeScenario(
   }
 
   const quoteUsed = await creditFpc.methods
-    .quote_used(quote.fjAmount, quote.aaPaymentAmount, quote.validUntil, user)
+    .quote_used(
+      token.address,
+      quote.fjAmount,
+      quote.aaPaymentAmount,
+      quote.validUntil,
+      user,
+    )
     .simulate({ from: user });
   if (!quoteUsed) {
     throw new Error(
@@ -1624,11 +1674,11 @@ async function main() {
       "target",
       "token_contract-Token.json",
     );
-    const fpcArtifactPath = path.join(repoRoot, "target", "fpc-FPC.json");
+    const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
     const creditFpcArtifactPath = path.join(
       repoRoot,
       "target",
-      "credit_fpc-CreditFPC.json",
+      "credit_fpc-BackedCreditFPC.json",
     );
     const tokenArtifact = loadArtifact(tokenArtifactPath);
     const fpcArtifact = needsFpc ? loadArtifact(fpcArtifactPath) : null;
@@ -1652,12 +1702,24 @@ async function main() {
     const maxGasCostNoTeardown =
       BigInt(config.daGasLimit) * feePerDaGas +
       BigInt(config.l2GasLimit) * feePerL2Gas;
-    const requiredTxCountPerScenario = config.mode === "fpc" ? 1n : 2n;
-    const minimumTopupWei =
-      maxGasCostNoTeardown *
-        config.feeJuiceTopupSafetyMultiplier *
-        requiredTxCountPerScenario +
+    const fpcMinimumTopupWei =
+      maxGasCostNoTeardown * config.feeJuiceTopupSafetyMultiplier + 1_000_000n;
+    const creditRequestedMintWei =
+      maxGasCostNoTeardown * config.creditMintMultiplier +
+      config.creditMintBuffer;
+    const creditTxBudgetWei =
+      maxGasCostNoTeardown * config.feeJuiceTopupSafetyMultiplier * 2n +
       1_000_000n;
+    const creditMinimumTopupWei = maxBigInt(
+      creditRequestedMintWei,
+      creditTxBudgetWei,
+    );
+    const minimumTopupWei =
+      config.mode === "fpc"
+        ? fpcMinimumTopupWei
+        : config.mode === "credit"
+          ? creditMinimumTopupWei
+          : maxBigInt(fpcMinimumTopupWei, creditMinimumTopupWei);
     const configuredTopupWei = readOptionalEnvBigInt(
       "FPC_SERVICES_SMOKE_TOPUP_WEI",
     );

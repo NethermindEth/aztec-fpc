@@ -11,17 +11,17 @@ It supports two private flows:
 
 `CreditFPC` stores:
 
-- immutable config (`operator`, operator Schnorr pubkey, `accepted_asset`), and
+- immutable config (`operator`, operator Schnorr pubkey), and
 - per-user private credit balance notes (`balances`).
 
 ### `pay_and_mint` flow
 
-`pay_and_mint(authwit_nonce, fj_credit_amount, aa_payment_amount, valid_until, quote_sig)`:
+`pay_and_mint(accepted_asset, authwit_nonce, fj_credit_amount, aa_payment_amount, valid_until, quote_sig)`:
 
-1. Verifies operator quote signature over exact amounts and caller address.
+1. Verifies operator quote signature over `accepted_asset`, exact amounts, and caller address.
 2. Rejects replay by nullifying quote hash.
 3. Checks quote expiry against anchor timestamp.
-4. Transfers exactly `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
+4. Transfers exactly `aa_payment_amount` of the quoted `accepted_asset` from user to operator using authwit.
 5. Mints exactly `fj_credit_amount` private credit for the caller.
 6. Deducts `get_max_gas_cost_no_teardown(...)` from the minted credit for the current tx setup gas.
 7. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution; marks contract as fee payer (`set_as_fee_payer`) and unconditionally ends setup.
@@ -41,8 +41,8 @@ No quote and no token transfer are used in this path.
 Both contracts verify user-bound, operator-signed amount quotes and both call `set_as_fee_payer()`, but their payment models are different.
 
 1. Payment mode:
-- `FPC`: pay token every transaction via `fee_entrypoint(...)`.
-- `CreditFPC`: prepay token via `pay_and_mint(...)`, then reuse credit via `pay_with_credit()`.
+- `FPC`: pay token every transaction via `fee_entrypoint(...)` (asset selected per quote).
+- `CreditFPC`: prepay token via `pay_and_mint(...)`, then reuse credit via `pay_with_credit()` (asset selected per quote).
 
 2. State model:
 - `FPC`: only immutable config; no per-user credit state.
@@ -95,8 +95,8 @@ For `CreditFPC`, the attestation service must be configured with:
 The service signs the exact preimage this contract verifies. Client usage is:
 
 1. Request `/quote?user=<aztec_address>&fj_amount=<desired_credit_mint>`.
-2. Receive `fj_amount`, `aa_payment_amount`, `valid_until`, `signature`.
-3. Call `pay_and_mint(...)` with those fields plus transfer authwit nonce.
+2. Receive `accepted_asset`, `fj_amount`, `aa_payment_amount`, `valid_until`, `signature`.
+3. Call `pay_and_mint(accepted_asset, ...)` with those fields plus transfer authwit nonce.
 
 Important semantics:
 
@@ -116,7 +116,7 @@ Then top-up monitors and bridges Fee Juice to keep this contract funded as a fee
 
 ## Wiring to Token + Authwit
 
-`accepted_asset` is immutable and enforced in quote hash preimage.
+`accepted_asset` is provided per `pay_and_mint(...)` call and enforced by quote signature/hash preimage.
 
 `pay_and_mint` requires a valid private authwit authorizing this contract to execute:
 
@@ -126,13 +126,12 @@ If authwit is missing or mismatched, the call fails.
 
 ## Public/Private/Utility Interface
 
-- `constructor(operator, operator_pubkey_x, operator_pubkey_y, accepted_asset)` (`public`, initializer)
-- `pay_and_mint(authwit_nonce, fj_credit_amount, aa_payment_amount, valid_until, quote_sig)` (`private`)
+- `constructor(operator, operator_pubkey_x, operator_pubkey_y)` (`public`, initializer)
+- `pay_and_mint(accepted_asset, authwit_nonce, fj_credit_amount, aa_payment_amount, valid_until, quote_sig)` (`private`)
 - `pay_with_credit()` (`private`)
 - `_refund(max_gas_cost, partial_note)` (`public`, `only_self`)
 - `balance_of(account)` (`utility`, unconstrained)
-- `quote_used(fj_credit_amount, aa_payment_amount, valid_until, user_address)` (`utility`, unconstrained)
-- `dev_mint(amount)` (`private`, test-only helper)
+- `quote_used(accepted_asset, fj_credit_amount, aa_payment_amount, valid_until, user_address)` (`utility`, unconstrained)
 
 ## Gas-Cost Helpers
 
@@ -148,5 +147,6 @@ Contract tests in `/home/ametel/source/aztec-fpc/contracts/credit_fpc/src/test` 
 - expired quote rejection,
 - user-bound signature enforcement,
 - tampered amount rejection (`invalid quote signature`),
+- tampered `accepted_asset` rejection (`invalid quote signature`),
 - authwit freshness/missing authwit failure,
 - quote replay tracking via `quote_used`.
