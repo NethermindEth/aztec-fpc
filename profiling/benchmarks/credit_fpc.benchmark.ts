@@ -539,11 +539,12 @@ export default class CreditFPCBenchmark {
     // ── Gas settings ─────────────────────────────────────────────────────
     const payAndMintGasSettings = GasSettings.default({
       gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
-      teardownGasLimits: new Gas(0, 0),
+      teardownGasLimits: new Gas(100_000, 300_000),
       maxFeesPerGas: new GasFees(feeDa, feeL2),
     });
     const payWithCreditGasSettings = GasSettings.default({
       gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
+      teardownGasLimits: new Gas(100_000, 300_000),
       maxFeesPerGas: new GasFees(feeDa, feeL2),
     });
 
