@@ -84,3 +84,41 @@ unconstrained fn pay_with_credit_does_not_transfer_payment_asset() {
     assert_eq(user_token_after, user_token_before);
     assert_eq(operator_token_after, operator_token_before);
 }
+
+#[test]
+unconstrained fn pay_with_credit_exact_decrements_credit_and_totals_by_same_amount() {
+    let (mut env, credit_fpc_address, _token_address, _operator, user, _, _, max_gas_cost) =
+        setup_with_credit();
+    let credit_fpc = BackedCreditFPC::at(credit_fpc_address);
+
+    let credit_before = utils::credit_balance(env, credit_fpc_address, user);
+    let totals_before = utils::total_unspent_credits(env, credit_fpc_address);
+
+    env.call_private(user, credit_fpc.pay_with_credit_exact());
+
+    let credit_after = utils::credit_balance(env, credit_fpc_address, user);
+    let totals_after = utils::total_unspent_credits(env, credit_fpc_address);
+    let credit_delta = credit_before - credit_after;
+    let totals_delta = totals_before - totals_after;
+
+    // Exact settle path must keep per-user credit delta aligned with global totals delta.
+    assert_eq(credit_delta, totals_delta);
+    // Exact settle should never deduct more than max fee for the tx.
+    assert(credit_delta <= max_gas_cost, "exact credit delta exceeds max fee");
+}
+
+#[test]
+unconstrained fn pay_with_credit_exact_does_not_transfer_payment_asset() {
+    let (mut env, credit_fpc_address, token_address, operator, user, _, _, _) = setup_with_credit();
+    let credit_fpc = BackedCreditFPC::at(credit_fpc_address);
+
+    let user_token_before = utils::private_balance(env, token_address, user);
+    let operator_token_before = utils::private_balance(env, token_address, operator);
+
+    env.call_private(user, credit_fpc.pay_with_credit_exact());
+
+    let user_token_after = utils::private_balance(env, token_address, user);
+    let operator_token_after = utils::private_balance(env, token_address, operator);
+    assert_eq(user_token_after, user_token_before);
+    assert_eq(operator_token_after, operator_token_before);
+}

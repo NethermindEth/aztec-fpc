@@ -28,6 +28,7 @@ global TEST_SIGNING_KEY: Field = 1;
 global FQ_HI: u128 = 0x30644e72e131a029b85045b68181585d;
 global FQ_LO: u128 = 0x97816a916871ca8d3c208c16d87cfd47;
 global FEE_JUICE_BALANCES_SLOT: Field = 1;
+global CREDIT_FPC_UNSPENT_CREDITS_SLOT: Field = 5;
 global FEE_JUICE_TEST_BACKING: u128 = 1_000_000_000;
 
 /// Derive the operator's Schnorr public key from TEST_SIGNING_KEY.
@@ -276,4 +277,14 @@ pub unconstrained fn total_unspent_credits(
     credit_fpc_address: AztecAddress,
 ) -> u128 {
     env.simulate_utility(BackedCreditFPC::at(credit_fpc_address).totals())
+}
+
+pub unconstrained fn set_total_unspent_credits(
+    env: TestEnvironment,
+    credit_fpc_address: AztecAddress,
+    amount: u128,
+) {
+    env.public_context_at(credit_fpc_address, |context| {
+        context.storage_write(CREDIT_FPC_UNSPENT_CREDITS_SLOT, amount);
+    });
 }

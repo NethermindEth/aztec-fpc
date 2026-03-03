@@ -447,8 +447,8 @@ async function main() {
   }
 
   const testAccounts = await getInitialTestAccountsData();
-  const [operator, user] = await Promise.all(
-    testAccounts.slice(0, 2).map(async (account) => {
+  const [operator, user, userOverdraft] = await Promise.all(
+    testAccounts.slice(0, 3).map(async (account) => {
       return (
         await wallet.createSchnorrAccount(
           account.secret,
@@ -461,6 +461,7 @@ async function main() {
 
   console.log(`[credit-smoke] operator=${operator.toString()}`);
   console.log(`[credit-smoke] user=${user.toString()}`);
+  console.log(`[credit-smoke] user_overdraft=${userOverdraft.toString()}`);
 
   const schnorr = new Schnorr();
   const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
@@ -713,6 +714,16 @@ async function main() {
       }),
   );
 
+  await expectFailure(
+    "direct pay_with_credit_exact call rejected outside setup phase",
+    ["must run in setup phase"],
+    () =>
+      creditFpc.methods.pay_with_credit_exact().send({
+        from: user,
+        wait: { timeout: 180 },
+      }),
+  );
+
   const creditBeforePayWithCredit = creditAfterPayAndMint;
   const operatorTokenBeforePayWithCredit = operatorTokenAfterPayAndMint;
   const payWithCreditCall = await creditFpc.methods
@@ -773,6 +784,279 @@ async function main() {
       `Operator token balance changed during pay_with_credit-only tx. before=${operatorTokenBeforePayWithCredit} after=${operatorTokenAfterPayWithCredit}`,
     );
   }
+
+  const creditBeforePayWithCreditExact = creditAfterPayWithCredit;
+  const totalsBeforePayWithCreditExact = BigInt(
+    (await creditFpc.methods.totals().simulate({ from: user })).toString(),
+  );
+  const operatorTokenBeforePayWithCreditExact = operatorTokenAfterPayWithCredit;
+  const payWithCreditExactCall = await creditFpc.methods
+    .pay_with_credit_exact()
+    .getFunctionCall();
+  const payWithCreditExactPaymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload(
+        [payWithCreditExactCall],
+        [],
+        [],
+        [],
+        creditFpc.address,
+      ),
+    getFeePayer: async () => creditFpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  const payWithCreditExactReceipt = await token.methods
+    .transfer_public_to_public(user, user, 1n, Fr.random())
+    .send({
+      from: user,
+      fee: {
+        paymentMethod: payWithCreditExactPaymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+        },
+      },
+      wait: { timeout: 180 },
+    });
+
+  const creditAfterPayWithCreditExact = BigInt(
+    (await creditFpc.methods.balance_of(user).simulate({ from: user })).toString(),
+  );
+  const totalsAfterPayWithCreditExact = BigInt(
+    (await creditFpc.methods.totals().simulate({ from: user })).toString(),
+  );
+  const operatorTokenAfterPayWithCreditExact = BigInt(
+    (
+      await token.methods
+        .balance_of_private(operator)
+        .simulate({ from: operator })
+    ).toString(),
+  );
+  const exactTxFee = BigInt(payWithCreditExactReceipt.transactionFee.toString());
+  const exactCreditDelta = creditBeforePayWithCreditExact - creditAfterPayWithCreditExact;
+  const exactTotalsDelta = totalsBeforePayWithCreditExact - totalsAfterPayWithCreditExact;
+
+  console.log(
+    `[credit-smoke] pay_with_credit_exact_tx_fee_juice=${payWithCreditExactReceipt.transactionFee}`,
+  );
+  console.log(
+    `[credit-smoke] credit_before_pay_with_credit_exact=${creditBeforePayWithCreditExact}`,
+  );
+  console.log(
+    `[credit-smoke] credit_after_pay_with_credit_exact=${creditAfterPayWithCreditExact}`,
+  );
+
+  if (exactCreditDelta !== exactTxFee) {
+    throw new Error(
+      `Exact credit delta mismatch. expected_tx_fee=${exactTxFee} got_credit_delta=${exactCreditDelta}`,
+    );
+  }
+  if (exactTotalsDelta !== exactTxFee) {
+    throw new Error(
+      `Exact totals delta mismatch. expected_tx_fee=${exactTxFee} got_totals_delta=${exactTotalsDelta}`,
+    );
+  }
+  if (operatorTokenAfterPayWithCreditExact !== operatorTokenBeforePayWithCreditExact) {
+    throw new Error(
+      `Operator token balance changed during pay_with_credit_exact-only tx. before=${operatorTokenBeforePayWithCreditExact} after=${operatorTokenAfterPayWithCreditExact}`,
+    );
+  }
+
+  const observedPayWithCreditCost =
+    creditBeforePayWithCredit - creditAfterPayWithCredit;
+  if (observedPayWithCreditCost <= 0n) {
+    throw new Error(
+      `Observed pay_with_credit deduction must be positive, got ${observedPayWithCreditCost}`,
+    );
+  }
+
+  // Deterministic overdraft scenario:
+  // 1) mint net credit for exactly four pay_with_credit payments
+  // 2) run four pay_with_credit-backed transactions (success)
+  // 3) the fifth pay_with_credit-backed transaction must fail
+  const plannedSuccessfulPayWithCreditTxs = 4n;
+  const overdraftNetCredit =
+    observedPayWithCreditCost * plannedSuccessfulPayWithCreditTxs;
+  const overdraftFjCreditAmount = maxGasCostNoTeardown + overdraftNetCredit;
+  const overdraftAaPaymentAmount = ceilDiv(
+    overdraftFjCreditAmount * config.rateNum,
+    config.rateDen,
+  );
+
+  // Ensure FeeJuice backing is high enough for the additional mint. The contract
+  // requires: fee_juice_balance >= unspent_credits + mint_amount at finalize_mint.
+  const currentTotals = BigInt(
+    (await creditFpc.methods.totals().simulate({ from: operator })).toString(),
+  );
+  const currentFeeJuiceBalance = await getFeeJuiceBalance(creditFpc.address, node);
+  const requiredFeeJuiceBalance = currentTotals + overdraftFjCreditAmount;
+  if (currentFeeJuiceBalance < requiredFeeJuiceBalance) {
+    const topupDelta = requiredFeeJuiceBalance - currentFeeJuiceBalance + 1_000_000n;
+    console.log(
+      `[credit-smoke] overdraft_fee_juice_topup_delta=${topupDelta} current_balance=${currentFeeJuiceBalance} required_balance=${requiredFeeJuiceBalance}`,
+    );
+    const toppedUpBalance = await topUpContractFeeJuice(
+      config,
+      node,
+      wallet,
+      operator,
+      token,
+      user,
+      creditFpc.address.toString(),
+      topupDelta,
+    );
+    console.log(
+      `[credit-smoke] overdraft_fee_juice_balance_after_topup=${toppedUpBalance}`,
+    );
+  }
+
+  await token.methods
+    .mint_to_private(userOverdraft, overdraftAaPaymentAmount + 1_000_000n)
+    .send({ from: operator });
+  await token.methods.mint_to_public(userOverdraft, 10n).send({ from: operator });
+
+  const overdraftQuoteBlock = await node.getBlock("latest");
+  if (!overdraftQuoteBlock) {
+    throw new Error(
+      "Could not read latest L2 block while building overdraft quote validity window",
+    );
+  }
+  const overdraftValidUntil = overdraftQuoteBlock.timestamp + config.quoteTtlSeconds;
+  const overdraftQuoteHash = await computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    creditFpc.address.toField(),
+    token.address.toField(),
+    new Fr(overdraftFjCreditAmount),
+    new Fr(overdraftAaPaymentAmount),
+    new Fr(overdraftValidUntil),
+    userOverdraft.toField(),
+  ]);
+  const overdraftQuoteSig = await schnorr.constructSignature(
+    overdraftQuoteHash.toBuffer(),
+    operatorSigningKey,
+  );
+  const overdraftQuoteSigBytes = Array.from(overdraftQuoteSig.toBuffer());
+
+  const overdraftTransferAuthwitNonce = Fr.random();
+  const overdraftTransferCall = token.methods.transfer_private_to_private(
+    userOverdraft,
+    operator,
+    overdraftAaPaymentAmount,
+    overdraftTransferAuthwitNonce,
+  );
+  const overdraftTransferAuthwit = await wallet.createAuthWit(userOverdraft, {
+    caller: creditFpc.address,
+    action: overdraftTransferCall,
+  });
+
+  const overdraftPayAndMintCall = await creditFpc.methods
+    .pay_and_mint(
+      token.address,
+      overdraftTransferAuthwitNonce,
+      overdraftFjCreditAmount,
+      overdraftAaPaymentAmount,
+      overdraftValidUntil,
+      overdraftQuoteSigBytes,
+    )
+    .getFunctionCall();
+  const overdraftPayAndMintPaymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload(
+        [overdraftPayAndMintCall],
+        [overdraftTransferAuthwit],
+        [],
+        [],
+        creditFpc.address,
+      ),
+    getFeePayer: async () => creditFpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  await token.methods
+    .transfer_public_to_public(userOverdraft, userOverdraft, 1n, Fr.random())
+    .send({
+      from: userOverdraft,
+      fee: {
+        paymentMethod: overdraftPayAndMintPaymentMethod,
+        gasSettings: {
+          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+          teardownGasLimits: { daGas: 0, l2Gas: 0 },
+          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+        },
+      },
+      wait: { timeout: 180 },
+    });
+
+  const overdraftPayWithCreditCall = await creditFpc.methods
+    .pay_with_credit()
+    .getFunctionCall();
+  const overdraftPayWithCreditPaymentMethod = {
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
+    getExecutionPayload: async () =>
+      new ExecutionPayload(
+        [overdraftPayWithCreditCall],
+        [],
+        [],
+        [],
+        creditFpc.address,
+      ),
+    getFeePayer: async () => creditFpc.address,
+    getGasSettings: () => undefined,
+  };
+
+  const overdraftCreditStart = BigInt(
+    (
+      await creditFpc.methods
+        .balance_of(userOverdraft)
+        .simulate({ from: userOverdraft })
+    ).toString(),
+  );
+  if (overdraftCreditStart !== overdraftNetCredit) {
+    throw new Error(
+      `Overdraft scenario credit mismatch after pay_and_mint. expected=${overdraftNetCredit} got=${overdraftCreditStart}`,
+    );
+  }
+
+  for (let i = 0n; i < plannedSuccessfulPayWithCreditTxs; i += 1n) {
+    await token.methods
+      .transfer_public_to_public(userOverdraft, userOverdraft, 1n, Fr.random())
+      .send({
+        from: userOverdraft,
+        fee: {
+          paymentMethod: overdraftPayWithCreditPaymentMethod,
+          gasSettings: {
+            gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+            maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+          },
+        },
+        wait: { timeout: 180 },
+      });
+    console.log(
+      `[credit-smoke] overdraft_pay_with_credit_success=${i + 1n}/${plannedSuccessfulPayWithCreditTxs}`,
+    );
+  }
+
+  await expectFailure(
+    "fifth pay_with_credit tx fails after exhausting four-credit budget",
+    ["Balance too low or note insufficient", "credit underflow"],
+    () =>
+      token.methods
+        .transfer_public_to_public(userOverdraft, userOverdraft, 1n, Fr.random())
+        .send({
+          from: userOverdraft,
+          fee: {
+            paymentMethod: overdraftPayWithCreditPaymentMethod,
+            gasSettings: {
+              gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+              maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+            },
+          },
+          wait: { timeout: 180 },
+        }),
+  );
 
   console.log(
     "[credit-smoke] PASS: credit_fpc pay_and_mint + pay_with_credit flow succeeded",

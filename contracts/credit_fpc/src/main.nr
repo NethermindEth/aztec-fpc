@@ -124,7 +124,6 @@ pub contract BackedCreditFPC {
             .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
-        let net_credit = fj_credit_amount - max_fee;
         let partial_note = UintNote::partial(
             sender,
             self.storage.balances.get_storage_slot(),
@@ -138,30 +137,35 @@ pub contract BackedCreditFPC {
             self.context.end_setup();
         }
 
-        self.enqueue_self._finalize_mint(fj_credit_amount, net_credit, partial_note);
+        self.enqueue_self._finalize_mint(fj_credit_amount, partial_note);
     }
 
     /// Runs during the public (setup) phase of pay_and_mint, BEFORE this tx's fee is
     /// deducted. balance_of_public() reflects all prior txs' fee deductions (live accounting)
     /// but not the current tx's fee.
     ///
-    /// We check against mint_amount (= net_credit + gas_cost_no_teardown) so that the
-    /// gas_cost_no_teardown headroom absorbs this tx's fee:
+    /// We check against mint_amount so that the
+    /// gas_cost headroom can absorb this tx's fee:
     ///   post-tx fj_balance  = fj_balance - actual_fee
-    ///   post-tx unspent     = unspent + net_credit
-    ///   margin = (fj_balance - unspent - mint_amount) + (gas_cost_no_teardown - actual_fee)
+    ///   post-tx unspent     = unspent + (mint_amount - actual_fee)
+    ///   margin = (fj_balance - unspent - mint_amount) 
     ///   both terms >= 0  =>  post-tx fj_balance >= post-tx unspent  (OK)
     #[external("public")]
     #[only_self]
-    fn _finalize_mint(mint_amount: u128, net_credit: u128, partial_note: PartialUintNote) {
-        let unspent = self.storage.unspent_credits.read();
+    fn _finalize_mint(mint_amount: u128, partial_note: PartialUintNote) {
+        let unspent_total_credits = self.storage.unspent_credits.read();
+        let transaction_fee_u128 = self.context.transaction_fee() as u128;
+
+        assert(mint_amount >= transaction_fee_u128, "transaction fee greater than mint amount");
+
         let fj_balance = self.view(FeeJuice::at(FEE_JUICE_ADDRESS).balance_of_public(self.address));
 
-        assert(mint_amount <= MAX_U128_VALUE - unspent, "credits overflow");
-        assert(fj_balance >= unspent + mint_amount, "insufficient FeeJuice backing");
+        assert(mint_amount <= MAX_U128_VALUE - unspent_total_credits, "credits overflow");
 
-        self.storage.unspent_credits.write(unspent + net_credit);
-        partial_note.complete(self.context, self.address, net_credit);
+        assert(fj_balance >= unspent_total_credits + mint_amount, "insufficient FeeJuice backing");
+
+        self.storage.unspent_credits.write(unspent_total_credits + (mint_amount - transaction_fee_u128));
+        partial_note.complete(self.context, self.address, mint_amount - transaction_fee_u128);
     }
 
     #[external("private")]
@@ -199,6 +203,43 @@ pub contract BackedCreditFPC {
         self.enqueue_self._deduct_credits(max_gas_cost);
     }
 
+    // creates an extra note per-usage compared to pay_with_credit, 
+    // more expensive than pay_with_credit()
+    // may be appropriate for some users, especially if big diff between actual_fee and max_fee
+
+    #[external("private")]
+    #[allow_phase_change]
+    fn pay_with_credit_exact() {
+        let max_fees = self.context.gas_settings().max_fees_per_gas;
+        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
+        if enforce_setup_phase {
+            assert(!self.context.in_revertible_phase(), "pay_with_credit_exact must run in setup phase");
+        }
+
+        let sender = self.context.maybe_msg_sender().unwrap();
+        let max_gas_cost = get_max_gas_cost(self.context);
+
+        let balance_set = self.storage.balances.at(sender);
+        let subtracted = balance_set.try_sub(max_gas_cost, 1);
+        assert(subtracted >= max_gas_cost, "Balance too low or note insufficient");
+        balance_set.add(subtracted - max_gas_cost).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
+
+        let partial_note = UintNote::partial(
+            sender,
+            self.storage.balances.get_storage_slot(),
+            self.context,
+            sender,
+            self.address,
+        );
+
+        self.context.set_as_fee_payer();
+        if enforce_setup_phase | !self.context.in_revertible_phase() {
+            self.context.end_setup();
+        }
+
+        self.enqueue_self._finalize_exact_credit_spend(max_gas_cost, partial_note);
+    }
+
     /// Deducts max_gas_cost from unspent_credits. The protocol then deducts actual_fee
     /// (<= max_gas_cost) from the FJ balance. Since unspent_credits drops by more than
     /// fj_balance does, the invariant fj_balance >= unspent_credits is preserved.
@@ -210,6 +251,25 @@ pub contract BackedCreditFPC {
         let unspent = self.storage.unspent_credits.read();
         assert(unspent >= amount, "credit underflow");
         self.storage.unspent_credits.write(unspent - amount);
+    }
+
+    /// Settles a pay_with_credit_exact call by deducting max_fee from unspent credits and
+    /// refunding the unused portion (max_fee - transaction_fee) back to the sender.
+    #[external("public")]
+    #[only_self]
+    fn _finalize_exact_credit_spend(max_fee: u128, partial_note: PartialUintNote) {
+        let unspent = self.storage.unspent_credits.read();
+        let transaction_fee_u128 = self.context.transaction_fee() as u128;
+
+        assert(unspent >= max_fee, "credit underflow");
+        assert(max_fee >= transaction_fee_u128, "transaction fee greater than max fee");
+        let refund = max_fee - transaction_fee_u128;
+
+        // Net effect on unspent_credits is -transaction_fee.
+        self.storage.unspent_credits.write(unspent - transaction_fee_u128);
+        if refund > 0 {
+            partial_note.complete(self.context, self.address, refund);
+        }
     }
 
     #[external("utility")]
