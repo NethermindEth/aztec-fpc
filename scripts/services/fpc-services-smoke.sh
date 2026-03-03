@@ -14,14 +14,6 @@ setup_node \
   --tmp-dir "$TMP_DIR" \
   --reset-mode "always"
 
-SMOKE_MODE="${FPC_SERVICES_SMOKE_MODE:-both}"
-if [[ "$SMOKE_MODE" != "fpc" && "$SMOKE_MODE" != "credit" && "$SMOKE_MODE" != "both" ]]; then
-  echo "[services-smoke] ERROR: FPC_SERVICES_SMOKE_MODE must be one of fpc|credit|both, got '$SMOKE_MODE'" >&2
-  exit 1
-fi
-export FPC_SERVICES_SMOKE_MODE="$SMOKE_MODE"
-echo "[services-smoke] Mode: $SMOKE_MODE"
-
 if ! bun --cwd "$REPO_ROOT/scripts" -e "import('@aztec/accounts/testing')" >/dev/null 2>&1; then
   echo "[services-smoke] Installing workspace dependencies"
   bun install

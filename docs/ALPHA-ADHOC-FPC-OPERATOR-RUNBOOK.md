@@ -8,13 +8,13 @@ Repository root: `<repo-root>`
 Source of truth: [ADR-0001](adr-0001-alpha-asset-model.md).
 
 - Alpha target is **single-deployment multi-asset support**.
-- Current contract surface in this repo follows that target (`FPCMultiAsset` + `BackedCreditFPC`).
+- Current contract surface in this repo follows that target (`FPCMultiAsset`).
 
 ## Goal
 
 Spin up a working local FPC operator stack with:
 
-- `Token` + `FPC` + `CreditFPC` deployed
+- `Token` + `FPC` deployed
 - attestation service running
 - top-up service running
 - end-to-end fee flow validated
@@ -32,10 +32,10 @@ bun install
 
 ## Fastest Validation Path (Recommended)
 
-This single flow compiles contracts, deploys contracts, starts services, and validates both FPC modes (`fpc` + `credit`):
+This single flow compiles contracts, deploys contracts, starts services, and validates the FPC fee flow:
 
 ```bash
-FPC_SERVICES_SMOKE_MODE=both bun run smoke:services:local
+bun run smoke:services:local
 ```
 
 Expected success signal: script exits `0` and prints service-smoke completion logs without errors.
@@ -64,7 +64,6 @@ Deployment output file: `./tmp/deploy-fpc-local.json`
 Useful fields in output:
 
 - `fpc_address`
-- `credit_fpc_address`
 - `accepted_asset`
 - `operator`
 
@@ -137,4 +136,4 @@ Then run separate attestation/top-up instances per stack with:
 
 - `deploy-fpc-local` output file exists and has non-zero addresses.
 - attestation and top-up processes are healthy.
-- `bun run smoke:services:local` passes in `both` mode.
+- `bun run smoke:services:local` passes.

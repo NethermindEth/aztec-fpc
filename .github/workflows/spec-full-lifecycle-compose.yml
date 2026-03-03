@@ -70,10 +70,7 @@ jobs:
         run: docker buildx bake --load
 
       - name: Run compose full lifecycle (FPC)
-        run: bash scripts/services/full-lifecycle-compose.sh fpc
-
-      - name: Run compose full lifecycle (CreditFPC)
-        run: bash scripts/services/full-lifecycle-compose.sh credit
+        run: bash scripts/services/full-lifecycle-compose.sh
 
       - name: Normalize compose artifact permissions
         if: always()

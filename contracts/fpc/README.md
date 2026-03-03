@@ -2,7 +2,7 @@
 
 `FPC` is a private fee-payment contract that charges users in a quoted token per transaction and pays Aztec fees from the contract's Fee Juice balance.
 
-Unlike `CreditFPC`, it does not maintain a user credit ledger.
+It does not maintain a user credit ledger.
 
 ## What This Contract Does
 
@@ -22,34 +22,6 @@ Unlike `CreditFPC`, it does not maintain a user credit ledger.
 5. Enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)` (`quoted fee amount mismatch` on mismatch).
 6. Transfers exactly signed `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
 7. Marks contract as fee payer (`set_as_fee_payer`) and ends setup.
-
-## How It Differs From `/contracts/credit_fpc`
-
-Both contracts use operator-signed, user-bound quotes and both act as fee payer via `set_as_fee_payer()`, but they differ in fee model and state.
-
-1. Payment mode:
-- `FPC`: token charge every transaction (`fee_entrypoint`) with per-quote asset + exact signed payment amount.
-- `CreditFPC`: token prepay + internal credit spending (`pay_and_mint`, `pay_with_credit`).
-
-2. State model:
-- `FPC`: immutable config only.
-- `CreditFPC`: immutable config + per-user private credit balance notes.
-
-3. Entrypoints:
-- `FPC`: single private fee entrypoint.
-- `CreditFPC`: two private fee entrypoints plus extra utility view methods.
-
-4. Quote semantics:
-- `FPC`: signs `accepted_asset`, `fj_fee_amount`, and `aa_payment_amount`; requires `fj_fee_amount == get_max_gas_cost_no_teardown(...)`.
-- `CreditFPC`: signs `accepted_asset`, `fj_credit_amount`, and `aa_payment_amount` directly.
-
-5. Internal accounting:
-- `FPC`: no credit mint/burn bookkeeping.
-- `CreditFPC`: mints credit and subtracts gas-reserve amounts from credit notes.
-
-6. Quote validity constraints:
-- `FPC`: expiry + explicit TTL cap (`MAX_QUOTE_TTL_SECONDS = 3600`).
-- `CreditFPC`: expiry check but no equivalent explicit TTL cap in current implementation.
 
 ## Quote Model (Amount-Based)
 

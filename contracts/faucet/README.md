@@ -80,7 +80,7 @@ Faucet.drip(user)
        user shields tokens
   └─ Token.transfer_public_to_private(user, amount, secret_hash)
        user pays FPC fee
-  └─ FPC.fee_entrypoint(...)  (or CreditFPC.pay_and_mint(...))
+  └─ FPC.fee_entrypoint(...)
 ```
 
 The accepted asset used by the FPC and the token held by the Faucet are the same contract.

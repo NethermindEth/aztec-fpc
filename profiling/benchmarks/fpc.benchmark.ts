@@ -174,7 +174,7 @@ async function mineL1Blocks(l1Client: any, count: number) {
 
 /**
  * Bridge Fee Juice from L1 and claim on L2 so the FPC can act as fee payer.
- * Reuses the pattern from profile-gates-credit-fpc.mjs.
+ * Bridges Fee Juice from L1 to L2 so the FPC can act as fee payer.
  */
 async function fundFpcWithFeeJuice(
   node: any,

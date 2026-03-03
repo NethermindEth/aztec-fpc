@@ -101,14 +101,12 @@ jobs:
             sleep 1
           done
 
-          for contract in fpc credit_fpc; do
-            echo "--- Benchmarking $contract ---"
-            npx --prefix profiling aztec-benchmark \
-              --config Nargo.toml \
-              --output-dir profiling/benchmarks \
-              --suffix _latest \
-              --contracts "$contract"
-          done
+          echo "--- Benchmarking fpc ---"
+          npx --prefix profiling aztec-benchmark \
+            --config Nargo.toml \
+            --output-dir profiling/benchmarks \
+            --suffix _latest \
+            --contracts fpc
 
       - name: List baseline files
         run: ls -lh profiling/benchmarks/*_latest.benchmark.json
