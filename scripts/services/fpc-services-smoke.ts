@@ -1122,7 +1122,7 @@ async function runServiceScenario(
 
     const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
     const quote = await fetchQuote(
-      `${attestationBaseUrl}/quote?user=${user.toString()}&fj_amount=${quoteFjAmount.toString()}`,
+      `${attestationBaseUrl}/quote?user=${user.toString()}&accepted_asset=${token.address.toString()}&fj_amount=${quoteFjAmount.toString()}`,
       config.httpTimeoutMs,
     );
     const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
