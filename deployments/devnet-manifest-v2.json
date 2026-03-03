@@ -34,8 +34,7 @@
   },
   "contracts": {
     "accepted_asset": "0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a",
-    "fpc": "0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5",
-    "credit_fpc": "0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3"
+    "fpc": "0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5"
   },
   "operator": {
     "address": "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
@@ -44,8 +43,7 @@
   },
   "tx_hashes": {
     "accepted_asset_deploy": "0x1efb858ca7a1e0322352b3b935ff33942bc8d10c4f6f57deeecf4d7c6c0753d8",
-    "fpc_deploy": "0x0f8d0024bfd61409958c266ad847eb8aa823701b0d66c55db3d86472413292f7",
-    "credit_fpc_deploy": "0x165e0a7559b6f18e0a1f7758b2d1ec081d265bb0ea32ee7aeaf65437fdae5843"
+    "fpc_deploy": "0x0f8d0024bfd61409958c266ad847eb8aa823701b0d66c55db3d86472413292f7"
   },
   "payment_mode": "fpc-sponsored",
   "aztec_node_url": "https://v4-devnet-2.aztec-labs.com/",
@@ -53,7 +51,6 @@
   "operator_address": "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
   "accepted_asset": "0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a",
   "fpc_address": "0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5",
-  "credit_fpc_address": "0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3",
   "node_contracts": {
     "fee_juice_portal_address": "0x516e3f74fd1c19b24da0706d28b5a30578f054ab",
     "fee_juice_address": "0x35d0186d1fd53b72996475d965c5ed171d52b986"
@@ -67,9 +64,5 @@
       "address": "0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5",
       "source": "deployed"
     },
-    "credit_fpc": {
-      "address": "0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3",
-      "source": "deployed"
-    }
   }
 }
