@@ -29,7 +29,7 @@ function parseAccountIndex(value: string | undefined): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error(
-      `Invalid TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX=${value}. Expected integer >= 0`,
+      "Invalid TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX. Expected integer >= 0",
     );
   }
   return parsed;
@@ -46,7 +46,7 @@ export async function createTopupAutoClaimer(
 
   if (accountIndex >= testAccounts.length) {
     throw new Error(
-      `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX=${accountIndex} out of range. Available test accounts=${testAccounts.length}`,
+      `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX out of range. Available test accounts=${testAccounts.length}`,
     );
   }
 
