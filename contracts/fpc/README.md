@@ -2,7 +2,6 @@
 
 `FPC` is a private fee-payment contract that charges users in a quoted token per transaction and pays Aztec fees from the contract's Fee Juice balance.
 
-It does not maintain a user credit ledger.
 
 ## What This Contract Does
 
