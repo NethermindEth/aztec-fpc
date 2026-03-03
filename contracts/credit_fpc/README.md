@@ -1,6 +1,6 @@
-# CreditFPC
+# BackedCreditFPC (CreditFPC)
 
-`CreditFPC` is a private fee-payment contract that converts a quoted token payment into private fee credit, then spends that credit to pay Aztec transaction fees.
+`BackedCreditFPC` is a private fee-payment contract that converts a quoted token payment into private fee credit, then spends that credit to pay Aztec transaction fees.
 
 It supports two private flows:
 
@@ -9,7 +9,7 @@ It supports two private flows:
 
 ## What This Contract Does
 
-`CreditFPC` stores:
+`BackedCreditFPC` stores:
 
 - immutable config (`operator`, operator Schnorr pubkey), and
 - per-user private credit balance notes (`balances`).
@@ -22,9 +22,9 @@ It supports two private flows:
 2. Rejects replay by nullifying quote hash.
 3. Checks quote expiry against anchor timestamp.
 4. Transfers exactly `aa_payment_amount` of the quoted `accepted_asset` from user to operator using authwit.
-5. Mints exactly `fj_credit_amount` private credit for the caller.
-6. Deducts `get_max_gas_cost_no_teardown(...)` from the minted credit for the current tx setup gas.
-7. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution; marks contract as fee payer (`set_as_fee_payer`) and unconditionally ends setup.
+5. Computes `max_fee = get_max_gas_cost(...)` and requires `fj_credit_amount >= max_fee` (`minted credit too low for max fee` on mismatch).
+6. Mints only `net_credit = fj_credit_amount - max_fee` to the caller's private credit balance (via `_finalize_mint`).
+7. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution; marks contract as fee payer (`set_as_fee_payer`) and ends setup when required by phase rules.
 
 ### `pay_with_credit` flow
 
@@ -32,7 +32,7 @@ It supports two private flows:
 
 1. Computes `get_max_gas_cost(...)` including teardown gas limits.
 2. Deducts that amount from caller credit balance.
-3. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution; marks contract as fee payer and unconditionally ends setup.
+3. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution; marks contract as fee payer and ends setup when required by phase rules.
 
 No quote and no token transfer are used in this path.
 
@@ -42,27 +42,27 @@ Both contracts verify user-bound, operator-signed amount quotes and both call `s
 
 1. Payment mode:
 - `FPC`: pay token every transaction via `fee_entrypoint(...)` (asset selected per quote).
-- `CreditFPC`: prepay token via `pay_and_mint(...)`, then reuse credit via `pay_with_credit()` (asset selected per quote).
+- `BackedCreditFPC`: prepay token via `pay_and_mint(...)`, then reuse credit via `pay_with_credit()` (asset selected per quote).
 
 2. State model:
 - `FPC`: only immutable config; no per-user credit state.
-- `CreditFPC`: immutable config + private per-user `balances` note set.
+- `BackedCreditFPC`: immutable config + private per-user `balances` note set + public `unspent_credits`.
 
 3. Entrypoints:
 - `FPC`: one private fee entrypoint (`fee_entrypoint`).
-- `CreditFPC`: two private fee entrypoints (`pay_and_mint`, `pay_with_credit`), plus utility `balance_of` and `quote_used`.
+- `BackedCreditFPC`: two private fee entrypoints (`pay_and_mint`, `pay_with_credit`), plus utility `balance_of`, `totals`, and `quote_used`.
 
 4. Amount semantics in quote:
 - `FPC`: signed `fj_fee_amount` must equal `get_max_gas_cost_no_teardown(...)` in-contract (`quoted fee amount mismatch` on mismatch).
-- `CreditFPC`: signed `fj_credit_amount` is caller-chosen mint amount (must still be large enough for immediate setup deduction).
+- `BackedCreditFPC`: signed `fj_credit_amount` is caller-chosen mint amount and must be at least `get_max_gas_cost(...)`.
 
 5. Gas deduction behavior:
 - `FPC`: token transfer covers payment; no internal credit ledger.
-- `CreditFPC`: `pay_and_mint` mints credit then immediately subtracts current `get_max_gas_cost_no_teardown(...)`; `pay_with_credit` subtracts `get_max_gas_cost(...)` (includes teardown).
+- `BackedCreditFPC`: `pay_and_mint` reserves `get_max_gas_cost(...)` for the current transaction and mints only net credit; `pay_with_credit` subtracts `get_max_gas_cost(...)` from existing credit.
 
 6. Quote validity constraints:
 - `FPC`: enforces expiry and a hard max TTL (`MAX_QUOTE_TTL_SECONDS = 3600`).
-- `CreditFPC`: enforces expiry (`anchor_ts <= valid_until`) but does not enforce the same max-TTL cap in current implementation.
+- `BackedCreditFPC`: enforces expiry (`anchor_ts <= valid_until`) but does not enforce the same max-TTL cap in current implementation.
 
 ## Quote Model (Amount-Based)
 
@@ -84,9 +84,9 @@ Replay protection:
 
 ## Wiring to Attestation Service
 
-Attestation service reference: `/home/ametel/source/aztec-fpc/services/attestation`
+Attestation service reference: `services/attestation`
 
-For `CreditFPC`, the attestation service must be configured with:
+For `BackedCreditFPC`, the attestation service must be configured with:
 
 - `fpc_address = <credit_fpc_address>`
 - `accepted_asset_address = <token_address>`
@@ -104,9 +104,9 @@ Important semantics:
 
 ## Wiring to Top-up Service
 
-Top-up service reference: `/home/ametel/source/aztec-fpc/services/topup`
+Top-up service reference: `services/topup`
 
-Because `CreditFPC` calls `set_as_fee_payer()`, it must hold Fee Juice balance on its own contract address.
+Because `BackedCreditFPC` calls `set_as_fee_payer()`, it must hold Fee Juice balance on its own contract address.
 
 Configure top-up with:
 
@@ -129,24 +129,27 @@ If authwit is missing or mismatched, the call fails.
 - `constructor(operator, operator_pubkey_x, operator_pubkey_y)` (`public`, initializer)
 - `pay_and_mint(accepted_asset, authwit_nonce, fj_credit_amount, aa_payment_amount, valid_until, quote_sig)` (`private`)
 - `pay_with_credit()` (`private`)
-- `_refund(max_gas_cost, partial_note)` (`public`, `only_self`)
+- `claim_fee_juice(amount, claim_secret, message_leaf_index)` (`private`, operator-only)
+- `_finalize_mint(mint_amount, net_credit, partial_note)` (`public`, `only_self`)
+- `_deduct_credits(amount)` (`public`, `only_self`)
 - `balance_of(account)` (`utility`, unconstrained)
+- `totals()` (`utility`, unconstrained)
 - `quote_used(accepted_asset, fj_credit_amount, aa_payment_amount, valid_until, user_address)` (`utility`, unconstrained)
 
 ## Gas-Cost Helpers
 
-- `get_max_gas_cost_no_teardown(...)`: used by `pay_and_mint` immediate deduction.
-- `get_max_gas_cost(...)`: used by `pay_with_credit`, includes teardown gas limits.
+- `get_max_gas_cost(...)`: used by both `pay_and_mint` (reserve calculation) and `pay_with_credit` (credit deduction). Includes teardown gas limits.
 
 ## Test Coverage Highlights
 
-Contract tests in `/home/ametel/source/aztec-fpc/contracts/credit_fpc/src/test` cover:
+Contract tests in `contracts/credit_fpc/src/test` cover:
 
 - happy path token charge + credit mint,
-- non-1:1 quoted amount support,
+- support for different quoted credit and payment amounts,
 - expired quote rejection,
 - user-bound signature enforcement,
 - tampered amount rejection (`invalid quote signature`),
 - tampered `accepted_asset` rejection (`invalid quote signature`),
 - authwit freshness/missing authwit failure,
-- quote replay tracking via `quote_used`.
+- quote replay tracking via `quote_used`,
+- `pay_with_credit` credit/totals decrement and no token-transfer behavior.

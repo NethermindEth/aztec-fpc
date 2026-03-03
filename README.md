@@ -25,13 +25,11 @@ aztec-fpc/
 │   │   ├── Nargo.toml          ← Noir package (git-pinned Aztec deps)
 │   │   └── src/
 │   │       ├── main.nr         ← FPC contract
-│   │       ├── fee_math.nr     ← Fee math helpers
 │   │       └── test/           ← Contract integration/unit tests
 │   └── credit_fpc/
 │       ├── Nargo.toml          ← Noir package (git-pinned Aztec deps)
 │       └── src/
 │           ├── main.nr         ← CreditFPC contract
-│           ├── fee_math.nr     ← Fee math helpers
 │           └── test/           ← Contract integration/unit tests
 ├── services/
 │   ├── attestation/            ← Quote-signing REST service (TypeScript)
@@ -292,7 +290,7 @@ For the current devnet deployment flow, use:
 Canonical command sequence:
 
 ```bash
-cd /home/ametel/source/aztec-fpc
+cd <repo-root>
 
 # Load your local env file if used by your setup
 set -a; source .env; set +a
