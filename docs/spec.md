@@ -29,7 +29,7 @@ The protocol has three components:
 
 ```
 User
-  │  1. GET /quote?user=<address>&fj_amount=<u128>
+  │  1. GET /quote?user=<address>&accepted_asset=<address>&fj_amount=<u128>
   │◄──────────────────────────────────────  Attestation Service
   │  signed quote (accepted_asset, fj_amount, aa_payment_amount, valid_until, signature)
   │
@@ -60,7 +60,7 @@ Aztec L2
 
 | Field | Type | Description |
 |---|---|---|
-| `config` | `PublicImmutable<Config>` | Packed immutable config: `operator`, `operator_pubkey_x`, `operator_pubkey_y`, `accepted_asset`. |
+| `config` | `PublicImmutable<Config>` | Packed immutable config: `operator`, `operator_pubkey_x`, `operator_pubkey_y`. |
 
 The contract keeps one packed immutable config slot and no mutable admin state after deployment.
 
@@ -72,7 +72,7 @@ All quotes are user-specific. The inner hash preimage is:
 inner_hash = poseidon2([
     DOMAIN_SEPARATOR,    // "FPC" = 0x465043
     fpc_address,
-    accepted_asset,      // read from on-chain storage — enforced, not caller-supplied
+    accepted_asset,      // selected in quote request and bound by signature
     fj_fee_amount,
     aa_payment_amount,
     valid_until,         // unix timestamp (u64)
@@ -86,9 +86,11 @@ The contract pushes `quote_hash` as a nullifier, so consumed quotes cannot be re
 
 ### 3.3 Exchange Rate
 
-The operator sets two values in the attestation service config:
-- `market_rate_num / market_rate_den` — the base exchange rate (accepted asset units per 1 FeeJuice)
+The operator sets baseline rate values in the attestation config:
+- `market_rate_num / market_rate_den` — base exchange rate (asset units per 1 FeeJuice)
 - `fee_bips` — operator margin in basis points (e.g. 200 = 2%)
+
+For multi-asset deployments, each `supported_assets` entry may override those values with asset-specific `market_rate_num`, `market_rate_den`, and `fee_bips`.
 
 The service computes the **final rate**:
 ```
@@ -96,7 +98,7 @@ final_rate_num = market_rate_num × (10000 + fee_bips)
 final_rate_den = market_rate_den × 10000
 ```
 
-At quote time, users provide `fj_amount` and receive a fixed `aa_payment_amount`:
+At quote time, users provide `accepted_asset` + `fj_amount`; the service resolves the selected asset's pricing policy and returns a fixed `aa_payment_amount`:
 
 ```
 aa_payment_amount = ceil(fj_amount × final_rate_num / final_rate_den)
@@ -106,13 +108,13 @@ For `FPC.fee_entrypoint`, `fj_amount` must match `max_gas_cost_no_teardown` for 
 
 ### 3.4 Payment Flow
 
-#### `fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)`
+#### `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)`
 
 ```
 User private balance →[transfer_private_to_private]→ Operator private balance
 ```
 
-1. Reads packed `config` from storage (`operator`, signing pubkey, `accepted_asset`)
+1. Reads packed `config` from storage (`operator`, signing pubkey)
 2. Verifies Schnorr quote signature and binds `user_address = msg_sender`
 3. Pushes quote nullifier (replay protection; duplicates fail via nullifier conflict)
 4. Asserts `anchor_block_timestamp ≤ valid_until`
@@ -129,8 +131,8 @@ No teardown is scheduled. No tokens accumulate in this contract's balance.
 
 | Function | Aztec context | Callable by |
 |---|---|---|
-| `constructor(operator, operator_pubkey_x, operator_pubkey_y, accepted_asset)` | public | anyone (one-time initializer) |
-| `fee_entrypoint(authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` | private | any user (quote binds to caller) |
+| `constructor(operator, operator_pubkey_x, operator_pubkey_y)` | public | anyone (one-time initializer) |
+| `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` | private | any user (quote binds to caller) |
 
 > There are no admin functions. The contract has no mutable state after construction.
 
@@ -147,7 +149,7 @@ The FPC itself holds no token balance. Its only balance is Fee Juice (protocol-l
 ### 4.1 Responsibilities
 
 - Hold the `operator` private key
-- Compute final exchange rates (market rate + operator bips)
+- Compute final exchange rates (market rate + operator bips), including per-asset overrides
 - Sign user-specific quotes on demand
 - Publish machine-readable discovery metadata for wallet endpoint resolution
 
@@ -181,13 +183,13 @@ Use HTTPS for `quote_base_url` in production; HTTP is acceptable for local devel
 Returns `{ status: "ok" }`. Use for liveness probes.
 
 #### `GET /asset`
-Returns the single accepted asset name and address.
+Returns the default configured asset name and address (`accepted_asset_*`), kept for backward compatibility.
 
 ```json
 { "name": "humanUSDC", "address": "0x..." }
 ```
 
-#### `GET /quote?user=<address>&fj_amount=<positive_u128_decimal>`
+#### `GET /quote?user=<address>&accepted_asset=<address>&fj_amount=<positive_u128_decimal>`
 Returns a user-specific quote for the caller. The `user` address is bound into the quote signature — only that user can use this quote.
 
 ```json
@@ -200,11 +202,13 @@ Returns a user-specific quote for the caller. The `user` address is bound into t
 }
 ```
 
-The user passes `(fj_amount, aa_payment_amount, valid_until, signature)` to `fee_entrypoint`. Only the token transfer authwit is carried in `authWitnesses`.
+The user passes `(accepted_asset, fj_amount, aa_payment_amount, valid_until, signature)` to `fee_entrypoint`. Only the token transfer authwit is carried in `authWitnesses`.
+
+Deterministic `400 BAD_REQUEST` responses cover missing/invalid `user`, missing/invalid `accepted_asset`, unsupported `accepted_asset`, missing/invalid `fj_amount`, and computed overflow for `aa_payment_amount`.
 
 ### 4.3 Quote Signing Internals
 
-The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) to compute the same quote hash as `assert_valid_quote`, then signs the 32-byte hash payload with the operator Schnorr key and returns a 64-byte hex signature.
+The service uses `computeInnerAuthWitHash` (from `@aztec/stdlib/auth-witness`) to compute the same quote hash as `assert_valid_quote`, using the request-selected `accepted_asset`, then signs the 32-byte hash payload with the operator Schnorr key and returns a 64-byte hex signature.
 
 ### 4.4 Wallet Discovery Contract
 
@@ -283,7 +287,7 @@ aztec compile --workspace --force
 # operator_pubkey_x/y are the operator Schnorr signing pubkey coordinates.
 aztec deploy \
   --artifact target/fpc-FPC.json \
-  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y> <accepted_asset_address>
+  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
 ```
 
 Record the deployed contract address — you'll need it in both service configs.
@@ -294,6 +298,7 @@ Record the deployed contract address — you'll need it in both service configs.
 cd services/attestation
 cp config.example.yaml config.yaml
 # Edit config.yaml: set fpc_address, accepted_asset_*, rates
+# For multi-asset, set supported_assets entries and optional per-asset pricing overrides.
 # Optionally set discovery identity fields (network_id, contract_variant, quote_base_url)
 # Provide operator key via OPERATOR_SECRET_KEY (recommended) or config.operator_secret_key
 bun install
@@ -327,7 +332,7 @@ curl http://localhost:3000/.well-known/fpc.json
 curl http://localhost:3000/asset
 
 # Get a quote for your address
-curl "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
+curl "http://localhost:3000/quote?user=<your_aztec_address>&accepted_asset=<asset_address>&fj_amount=1000000"
 ```
 
 ---
@@ -348,7 +353,7 @@ const quoteUrl = new URL(quotePath, discovery.quote_base_url).toString();
 // For FPC this must match max_gas_cost_no_teardown for the tx being built.
 const fjAmount = "1000000";
 const quote = await fetch(
-  `${quoteUrl}?user=${wallet.getAddress()}&fj_amount=${fjAmount}`
+  `${quoteUrl}?user=${wallet.getAddress()}&accepted_asset=${ACCEPTED_ASSET}&fj_amount=${fjAmount}`
 )
   .then(r => r.json());
 const quoteSigBytes = Array.from(
@@ -369,6 +374,7 @@ const tokenAuthwit = await wallet.createAuthWit(wallet.getAddress(), {
 // 4. Build fee_entrypoint call and use it as payment method payload
 const feeEntrypointCall = await FPC.at(FPC_ADDRESS).methods
   .fee_entrypoint(
+    ACCEPTED_ASSET,
     NONCE,
     BigInt(quote.fj_amount),
     BigInt(quote.aa_payment_amount),
@@ -415,7 +421,7 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 - If the user's app logic reverts, the fee has still been paid. This is unavoidable in the Aztec FPC model — users accept this when using any FPC.
 
 ### No on-chain asset whitelist
-- The accepted asset is fixed at deployment in `accepted_asset`. Any attempt to pay with a different token will fail because the quote inner hash includes `accepted_asset` read from contract storage — a quote signed over the wrong asset address will not verify.
+- The contract does not enforce an allowlist in storage. Protection comes from quote binding: `accepted_asset` is in the signed preimage, so tampering the asset at call time invalidates signature verification.
 
 ### Top-up service
 - The L1 operator key needs ETH for gas and Fee Juice bridging. Keep only the needed float; replenish from a cold wallet.
