@@ -4,6 +4,7 @@ members = [
     "contracts/credit_fpc",
     "contracts/faucet",
     "contracts/noop",
+    "mock/counter",
     "vendor/aztec-standards/src/generic_proxy",
     "vendor/aztec-standards/src/token_contract",
 ]
