@@ -21,6 +21,8 @@ type CliArgs = {
   deployerPrivateKeyRef: string | null;
   operatorSecretKey: string | null;
   operatorSecretKeyRef: string | null;
+  sponsorSecretKey: string | null;
+  sponsorSecretKeyRef: string | null;
   operator: string | null;
   acceptedAsset: string | null;
   fpcArtifact: string;
@@ -92,6 +94,11 @@ type OperatorIdentity = {
   pubkeyY: string;
 };
 
+type SponsorIdentity = {
+  pubkeyX: string;
+  pubkeyY: string;
+};
+
 type ContractDeployResult = {
   address: string;
   txHash: string;
@@ -100,6 +107,7 @@ type ContractDeployResult = {
 type FpcArtifactSelection = {
   artifactPath: string;
   name: FpcArtifactName;
+  hasSponsorPubkey: boolean;
 };
 
 type OperatorDerivationDeps = {
@@ -163,6 +171,7 @@ function usage(): string {
     "    --out <path.json> \\",
     "    [--l1-rpc-url <url>] \\",
     "    [--operator <aztec_address>] \\",
+    "    [--sponsor-secret-key <hex32> | --sponsor-secret-key-ref <ref>] \\",
     "    [--sponsored-fpc-address <aztec_address>] \\",
     "    [--validate-topup-path] \\",
     "    [--accepted-asset <aztec_address>] \\",
@@ -278,6 +287,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
     process.env.FPC_DEVNET_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null =
     process.env.FPC_DEVNET_OPERATOR_SECRET_KEY_REF ?? null;
+  let sponsorSecretKey: string | null =
+    process.env.FPC_DEVNET_SPONSOR_SECRET_KEY ?? null;
+  let sponsorSecretKeyRef: string | null =
+    process.env.FPC_DEVNET_SPONSOR_SECRET_KEY_REF ?? null;
   let operator: string | null = null;
   let acceptedAsset: string | null =
     process.env.FPC_DEVNET_ACCEPTED_ASSET ?? null;
@@ -322,6 +335,14 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--operator-secret-key-ref":
         operatorSecretKeyRef = nextArg(argv, i, arg);
+        i += 1;
+        break;
+      case "--sponsor-secret-key":
+        sponsorSecretKey = nextArg(argv, i, arg);
+        i += 1;
+        break;
+      case "--sponsor-secret-key-ref":
+        sponsorSecretKeyRef = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--operator":
@@ -380,6 +401,12 @@ function parseCliArgs(argv: string[]): CliParseResult {
     "--operator-secret-key-ref",
   );
 
+  if (sponsorSecretKey && sponsorSecretKeyRef) {
+    throw new CliError(
+      "Ambiguous sponsor key input: provide only one of --sponsor-secret-key or --sponsor-secret-key-ref",
+    );
+  }
+
   const parsedNodeUrl = parseHttpUrl(nodeUrl, "--node-url");
   const parsedL1Rpc = l1RpcUrl ? parseHttpUrl(l1RpcUrl, "--l1-rpc-url") : null;
   const parsedOperator =
@@ -409,6 +436,12 @@ function parseCliArgs(argv: string[]): CliParseResult {
             parsedOperatorSecret.ref,
             "--operator-secret-key-ref",
           )
+        : null,
+      sponsorSecretKey: sponsorSecretKey
+        ? parseHex32(sponsorSecretKey, "--sponsor-secret-key")
+        : null,
+      sponsorSecretKeyRef: sponsorSecretKeyRef
+        ? parseNonEmptyString(sponsorSecretKeyRef, "--sponsor-secret-key-ref")
         : null,
       operator: parsedOperator,
       acceptedAsset: acceptedAsset
@@ -1244,6 +1277,36 @@ async function deriveOperatorIdentity(
   }
 }
 
+async function deriveSponsorIdentity(
+  sponsorSecretKey: string,
+): Promise<SponsorIdentity> {
+  const deps = await loadOperatorDerivationDeps();
+
+  let secretKeyFr: unknown;
+  try {
+    secretKeyFr = deps.Fr.fromHexString(sponsorSecretKey);
+  } catch (error) {
+    throw new CliError(
+      `Sponsor key derivation failed: invalid sponsor secret key. Underlying error: ${String(error)}`,
+    );
+  }
+
+  try {
+    const signingKey = deps.deriveSigningKey(secretKeyFr);
+    const schnorr = new deps.Schnorr();
+    const pubkey = await schnorr.computePublicKey(signingKey);
+
+    const pubkeyX = parseFieldValueString(pubkey.x, "sponsor pubkey x");
+    const pubkeyY = parseFieldValueString(pubkey.y, "sponsor pubkey y");
+
+    return { pubkeyX, pubkeyY };
+  } catch (error) {
+    throw new CliError(
+      `Sponsor key derivation failed: could not derive sponsor pubkey. Underlying error: ${String(error)}`,
+    );
+  }
+}
+
 async function assertAztecNodePreflight(
   nodeUrl: string,
 ): Promise<NodePreflightState> {
@@ -1430,12 +1493,27 @@ function loadFpcArtifactSelection(
       `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC", "FPCMultiAsset", "CreditFPC", or "BackedCreditFPC".`,
     );
   }
-  return { artifactPath, name };
+  const functions = (parsed as { functions?: unknown[] }).functions ?? [];
+  const ctorFn = functions.find(
+    (f: unknown) =>
+      f &&
+      typeof f === "object" &&
+      (f as { name?: string }).name === "constructor",
+  ) as
+    | {
+        parameters?: Array<{ name?: string }>;
+        abi?: { parameters?: Array<{ name?: string }> };
+      }
+    | undefined;
+  const params = ctorFn?.parameters ?? ctorFn?.abi?.parameters ?? [];
+  const hasSponsorPubkey = params.some((p) => p?.name === "sponsor_pubkey_x");
+  return { artifactPath, name, hasSponsorPubkey };
 }
 
 function buildFpcConstructorArgs(
   selection: FpcArtifactSelection,
   operatorIdentity: OperatorIdentity,
+  sponsorIdentity: SponsorIdentity | null,
   acceptedAssetAddress: string,
 ): string[] {
   const baseArgs = [
@@ -1443,6 +1521,9 @@ function buildFpcConstructorArgs(
     operatorIdentity.pubkeyX,
     operatorIdentity.pubkeyY,
   ];
+  if (selection.hasSponsorPubkey && sponsorIdentity) {
+    baseArgs.push(sponsorIdentity.pubkeyX, sponsorIdentity.pubkeyY);
+  }
   if (selection.name === "FPCMultiAsset") {
     return baseArgs;
   }
@@ -1565,6 +1646,24 @@ async function main(): Promise<void> {
   console.log(
     `[deploy-fpc-devnet] operator identity derived. address=${operatorIdentity.address} pubkey_x=${operatorIdentity.pubkeyX} pubkey_y=${operatorIdentity.pubkeyY}`,
   );
+
+  let sponsorIdentity: SponsorIdentity | null = null;
+  if (fpcSelection.hasSponsorPubkey) {
+    const sponsorKey = args.sponsorSecretKey ?? args.operatorSecretKey;
+    if (!sponsorKey) {
+      throw new CliError(
+        "FPC artifact requires sponsor pubkey but neither --sponsor-secret-key nor --operator-secret-key was provided for derivation.",
+      );
+    }
+    sponsorIdentity = await deriveSponsorIdentity(sponsorKey);
+    const keySource = args.sponsorSecretKey
+      ? "dedicated"
+      : "operator (default)";
+    console.log(
+      `[deploy-fpc-devnet] sponsor identity derived (${keySource}). pubkey_x=${sponsorIdentity.pubkeyX} pubkey_y=${sponsorIdentity.pubkeyY}`,
+    );
+  }
+
   console.log("[deploy-fpc-devnet] step 3 account resolution checks passed");
 
   if (args.preflightOnly) {
@@ -1622,6 +1721,7 @@ async function main(): Promise<void> {
     constructorArgs: buildFpcConstructorArgs(
       fpcSelection,
       operatorIdentity,
+      sponsorIdentity,
       acceptedAssetAddress,
     ),
     context: fpcSelection.name,
@@ -1684,6 +1784,14 @@ async function main(): Promise<void> {
       pubkey_x: operatorIdentity.pubkeyX,
       pubkey_y: operatorIdentity.pubkeyY,
     },
+    ...(sponsorIdentity
+      ? {
+          sponsor: {
+            pubkey_x: sponsorIdentity.pubkeyX,
+            pubkey_y: sponsorIdentity.pubkeyY,
+          },
+        }
+      : {}),
     tx_hashes: {
       accepted_asset_deploy: acceptedAssetDeployTxHash,
       fpc_deploy: fpcDeploy.txHash,

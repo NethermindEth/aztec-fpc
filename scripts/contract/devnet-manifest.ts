@@ -71,6 +71,10 @@ export type DevnetDeployManifest = {
     pubkey_x: string;
     pubkey_y: string;
   };
+  sponsor?: {
+    pubkey_x: string;
+    pubkey_y: string;
+  };
   tx_hashes: {
     accepted_asset_deploy: string | null;
     fpc_deploy: string | null;
@@ -525,6 +529,21 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     ),
   };
 
+  let sponsor: DevnetDeployManifest["sponsor"];
+  if (hasOwn(input, "sponsor")) {
+    const sponsorRaw = requireObject(input, "sponsor", "manifest");
+    sponsor = {
+      pubkey_x: parseFieldValue(
+        requireString(sponsorRaw, "pubkey_x", "manifest.sponsor"),
+        "manifest.sponsor.pubkey_x",
+      ),
+      pubkey_y: parseFieldValue(
+        requireString(sponsorRaw, "pubkey_y", "manifest.sponsor"),
+        "manifest.sponsor.pubkey_y",
+      ),
+    };
+  }
+
   const txHashesRaw = requireObject(input, "tx_hashes", "manifest");
   const txHashes = {
     accepted_asset_deploy: parseTxHashOrNull(
@@ -562,6 +581,7 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     contracts,
     ...(fpcArtifact ? { fpc_artifact: fpcArtifact } : {}),
     operator,
+    ...(sponsor ? { sponsor } : {}),
     tx_hashes: txHashes,
     ...(paymentMode ? { payment_mode: paymentMode } : {}),
   };
