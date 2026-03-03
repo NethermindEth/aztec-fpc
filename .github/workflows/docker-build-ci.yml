@@ -59,11 +59,11 @@ jobs:
 
       - name: Start services
         if: github.event_name == 'pull_request'
-        run: docker compose up --wait
+        run: bash scripts/services/compose-mode.sh infra --wait
 
       - name: Smoke tests
         if: github.event_name != 'pull_request'
-        run: docker compose --profile smoke up --attach smoke --exit-code-from smoke
+        run: bash scripts/services/compose-mode.sh full
 
       - name: Tear down
         if: always()
