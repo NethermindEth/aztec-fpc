@@ -46,7 +46,6 @@ DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
 echo "[deploy-smoke] Running local deploy command (variant-specific FPC)"
 cmd=(
   bunx tsx "$REPO_ROOT/scripts/contract/deploy-fpc-devnet.ts"
-  --environment local
   --node-url "$AZTEC_NODE_URL"
   --l1-rpc-url "$L1_RPC_URL"
   --deployer-alias "$DEPLOYER_ALIAS"

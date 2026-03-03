@@ -176,18 +176,7 @@ Render `services/attestation/config.yaml` and `services/topup/config.yaml` from 
 
 ```bash
 cd /home/ametel/source/aztec-fpc
-export FPC_DEVNET_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
-export L1_OPERATOR_PRIVATE_KEY="0x..."
-bun run render:config:devnet
-```
-
-Equivalent explicit command (with overrides):
-
-```bash
-bun run render:config:devnet -- \
-  --l1-rpc-url "https://sepolia.infura.io/v3/<key>" \
-  --l1-operator-private-key "0x..." \
-  --accepted-asset-name "humanUSDC"
+bun run generate:configs
 ```
 
 If your local `.env` stores the L1 key as `L1_ADDRESS_PK`, map it before running:

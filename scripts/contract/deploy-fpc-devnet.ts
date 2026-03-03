@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeDevnetDeployManifest } from "./devnet-manifest.ts";
 
-type DeployEnvironment = "devnet" | "local";
 type FpcArtifactName =
   | "FPC"
   | "FPCMultiAsset"
@@ -13,7 +12,6 @@ type FpcArtifactName =
   | "BackedCreditFPC";
 
 type CliArgs = {
-  environment: DeployEnvironment;
   nodeUrl: string;
   l1RpcUrl: string | null;
   validateTopupPath: boolean;
@@ -157,7 +155,6 @@ function usage(): string {
   return [
     "Usage:",
     "  bunx tsx scripts/contract/deploy-fpc-devnet.ts \\",
-    "    --environment <devnet|local> \\",
     "    --node-url <url> \\",
     "    --deployer-alias <alias> \\",
     "    --deployer-private-key <hex32> | --deployer-private-key-ref <ref> \\",
@@ -173,8 +170,8 @@ function usage(): string {
     "",
     "Notes:",
     "  - --sponsored-fpc-address determines payment mode: if provided, contracts are deployed with",
-    "    sponsored FPC payment (devnet); if absent, deployer account uses --register-only and",
-    "    contracts are deployed with fee juice payment (local sandbox with TEST_ACCOUNTS=true).",
+    "    sponsored FPC payment; if absent, deployer account uses --register-only and",
+    "    contracts are deployed with fee juice payment.",
     "  - --operator is optional; if omitted, the operator address is derived from --operator-secret-key.",
     "    If both are provided, they must match.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
@@ -243,15 +240,6 @@ function parseHex32(value: string, fieldName: string): string {
   return value;
 }
 
-function parseEnvironment(value: string, fieldName: string): DeployEnvironment {
-  if (value === "devnet" || value === "local") {
-    return value;
-  }
-  throw new CliError(
-    `Invalid ${fieldName}: expected "devnet" or "local", got "${value}"`,
-  );
-}
-
 function parseSecretPair(
   rawValue: string | null,
   rawRef: string | null,
@@ -273,7 +261,6 @@ function parseSecretPair(
 }
 
 function parseCliArgs(argv: string[]): CliParseResult {
-  let environmentRaw: string = process.env.FPC_DEPLOY_ENV ?? "devnet";
   let nodeUrl: string | null =
     process.env.FPC_DEVNET_NODE_URL ?? process.env.AZTEC_NODE_URL ?? null;
   let l1RpcUrl: string | null =
@@ -291,23 +278,17 @@ function parseCliArgs(argv: string[]): CliParseResult {
     process.env.FPC_DEVNET_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null =
     process.env.FPC_DEVNET_OPERATOR_SECRET_KEY_REF ?? null;
-  let operator: string | null = process.env.FPC_LOCAL_OPERATOR ?? null;
+  let operator: string | null = null;
   let acceptedAsset: string | null =
     process.env.FPC_DEVNET_ACCEPTED_ASSET ?? null;
   let fpcArtifact: string =
     process.env.FPC_FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
-  let out: string | null =
-    process.env.FPC_DEVNET_OUT ?? process.env.FPC_LOCAL_OUT ?? null;
+  let out: string | null = process.env.FPC_DEVNET_OUT ?? null;
   let preflightOnly = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     switch (arg) {
-      case "--environment":
-      case "--env":
-        environmentRaw = nextArg(argv, i, arg);
-        i += 1;
-        break;
       case "--node-url":
         nodeUrl = nextArg(argv, i, arg);
         i += 1;
@@ -371,14 +352,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
     }
   }
 
-  const environment = parseEnvironment(environmentRaw, "--environment");
-  if (!nodeUrl) {
-    nodeUrl = environment === "local" ? "http://127.0.0.1:8080" : null;
-  }
-  if (environment === "local" && !l1RpcUrl) {
-    l1RpcUrl = "http://127.0.0.1:8545";
-  }
-
   if (!nodeUrl) {
     throw new CliError("Missing required --node-url");
   }
@@ -415,7 +388,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
   return {
     kind: "args",
     args: {
-      environment,
       nodeUrl: parsedNodeUrl,
       l1RpcUrl: parsedL1Rpc,
       validateTopupPath,
@@ -1504,7 +1476,6 @@ async function main(): Promise<void> {
   const fpcSelection = loadFpcArtifactSelection(args.fpcArtifact);
 
   console.log("[deploy-fpc-devnet] starting preflight checks");
-  console.log(`[deploy-fpc-devnet] environment=${args.environment}`);
   console.log(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
   console.log(
     `[deploy-fpc-devnet] l1_rpc_url=${args.l1RpcUrl ?? "<not provided>"}`,
@@ -1662,7 +1633,6 @@ async function main(): Promise<void> {
   const manifest = writeDevnetDeployManifest(args.out, {
     status: "deploy_ok",
     generated_at: new Date().toISOString(),
-    deployment_environment: args.environment,
     network: {
       node_url: args.nodeUrl,
       node_version: nodeState.nodeVersion,

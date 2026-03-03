@@ -8,11 +8,11 @@ set -euo pipefail
 # injected.
 #
 # Environment variables (all optional, with defaults):
-#   FPC_DEPLOY_MANIFEST — path to deploy manifest JSON (default: ./tmp/deploy-fpc-local-manifest.json)
+#   FPC_DEPLOY_MANIFEST — path to deploy manifest JSON (default: ./deployments/devnet-manifest-v2.json)
 #   FPC_MASTER_CONFIG  — path to master config YAML  (default: ./fpc-config.yaml)
 #   FPC_CONFIGS_OUT    — output directory             (default: ./configs)
 
-FPC_DEPLOY_MANIFEST="${FPC_DEPLOY_MANIFEST:-${FPC_LOCAL_OUT:-./tmp/deploy-fpc-local-manifest.json}}"
+FPC_DEPLOY_MANIFEST="${FPC_DEPLOY_MANIFEST:-./deployments/devnet-manifest-v2.json}"
 FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}"
 FPC_CONFIGS_OUT="${FPC_CONFIGS_OUT:-./configs}"
 
