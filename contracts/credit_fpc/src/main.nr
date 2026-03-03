@@ -96,7 +96,10 @@ pub contract BackedCreditFPC {
         let max_fees = self.context.gas_settings().max_fees_per_gas;
         let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
         if enforce_setup_phase {
-            assert(!self.context.in_revertible_phase(), "pay_and_mint must run in setup phase");
+            assert(
+                !self.context.in_revertible_phase(),
+                "pay_and_mint must run in setup phase",
+            );
         }
 
         let config = self.storage.config.read();
@@ -185,7 +188,10 @@ pub contract BackedCreditFPC {
         let max_fees = self.context.gas_settings().max_fees_per_gas;
         let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
         if enforce_setup_phase {
-            assert(!self.context.in_revertible_phase(), "pay_with_credit must run in setup phase");
+            assert(
+                !self.context.in_revertible_phase(),
+                "pay_with_credit must run in setup phase",
+            );
         }
 
         let sender = self.context.maybe_msg_sender().unwrap();
@@ -214,7 +220,10 @@ pub contract BackedCreditFPC {
         let max_fees = self.context.gas_settings().max_fees_per_gas;
         let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
         if enforce_setup_phase {
-            assert(!self.context.in_revertible_phase(), "pay_with_credit_exact must run in setup phase");
+            assert(
+                !self.context.in_revertible_phase(),
+                "pay_with_credit_exact must run in setup phase",
+            );
         }
 
         let sender = self.context.maybe_msg_sender().unwrap();
