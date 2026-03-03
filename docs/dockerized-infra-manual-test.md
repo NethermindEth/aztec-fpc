@@ -2,7 +2,9 @@
 
 This guide is a copy/paste sequence for:
 - running dockerized infra with `bun run compose:infra`
-- validating sponsored transactions via `FPC.fee_entrypoint(...)` in [main.nr](/home/ametel/source/aztec-fpc/contracts/fpc/src/main.nr)
+- validating sponsored transactions via:
+  - `FPC.fee_entrypoint(...)` in [main.nr](/home/ametel/source/aztec-fpc/contracts/fpc/src/main.nr)
+  - `CreditFPC.pay_and_mint(...)` in [main.nr](/home/ametel/source/aztec-fpc/contracts/credit_fpc/src/main.nr)
 - deploying `CreditFPC` as well (so it is not missing from your deployment set)
 
 Run everything from repo root:
@@ -40,8 +42,11 @@ Wait for core endpoints:
 ```bash
 for i in $(seq 1 90); do
   curl -fsS http://localhost:3000/health >/dev/null && \
+  curl -fsS http://localhost:3002/health >/dev/null && \
   curl -fsS http://localhost:3001/health >/dev/null && \
-  curl -fsS http://localhost:3001/ready >/dev/null && break
+  curl -fsS http://localhost:3001/ready >/dev/null && \
+  curl -fsS http://localhost:3003/health >/dev/null && \
+  curl -fsS http://localhost:3003/ready >/dev/null && break
   sleep 2
 done
 ```
@@ -53,6 +58,13 @@ node -e 'const fs=require("fs"); const m=JSON.parse(fs.readFileSync("configs/dep
 ```
 
 Expected: both `fpc` and `credit_fpc` are non-null.
+
+`deploy` auto-generates:
+- `configs/attestation/config.yaml` (points to `contracts.fpc`)
+- `configs/attestation-credit/config.yaml` (points to `contracts.credit_fpc`)
+- `configs/topup/config.yaml` (points to `contracts.fpc`)
+- `configs/topup-credit/config.yaml` (points to `contracts.credit_fpc`)
+- both addresses are sourced from `configs/deploy-manifest.json` each run
 
 ## 5. Deploy Behavior In Compose
 
@@ -106,21 +118,32 @@ Note:
 
 Goal:
 - execute a normal user call (`y.x()`) = `Counter.increment(...)`
-- pay fees via `FPC.fee_entrypoint(...)`
-- have protocol Fee Juice charged to `fpc_address`
+- pay fees via either:
+  - `FPC.fee_entrypoint(...)`
+  - `CreditFPC.pay_and_mint(...)`
+- have protocol Fee Juice charged to the selected fee-payer contract address
 - while waiting for topup, the script auto-advances local blocks using [advance-local-network-blocks.ts](/home/ametel/source/aztec-fpc/scripts/advance-local-network-blocks.ts)
 
 Important CLI note:
-- `aztec-wallet send --payment method=fpc-private|fpc-public` targets the canonical paymaster ABI (`fee_entrypoint_private/public`), not this repo's custom `FPCMultiAsset.fee_entrypoint(...)`.
-- so for this repo's FPC, use the dedicated manual script:
+- `aztec-wallet send --payment method=fpc-private|fpc-public` targets the canonical paymaster ABI (`fee_entrypoint_private/public`), not this repo's custom `FPCMultiAsset.fee_entrypoint(...)` / `BackedCreditFPC.pay_and_mint(...)`.
+- so for this repo's FPC/CreditFPC flows, use the dedicated manual scripts:
   - [manual-fpc-sponsored-user-tx.ts](/home/ametel/source/aztec-fpc/scripts/manual-fpc-sponsored-user-tx.ts)
+  - [manual-credit-fpc-sponsored-user-tx.ts](/home/ametel/source/aztec-fpc/scripts/manual-credit-fpc-sponsored-user-tx.ts)
 
-Run:
+Run FPC flow:
 
 ```bash
 cd /home/ametel/source/aztec-fpc
 MOCK_COUNTER_ADDRESS="$COUNTER_ADDRESS" \
 bunx tsx ./scripts/manual-fpc-sponsored-user-tx.ts
+```
+
+Run CreditFPC flow:
+
+```bash
+cd /home/ametel/source/aztec-fpc
+MOCK_COUNTER_ADDRESS="$COUNTER_ADDRESS" \
+bunx tsx ./scripts/manual-credit-fpc-sponsored-user-tx.ts
 ```
 
 Optional overrides:
@@ -137,15 +160,28 @@ L2_GAS_LIMIT=1000000 \
 bunx tsx ./scripts/manual-fpc-sponsored-user-tx.ts
 ```
 
+CreditFPC script-specific optional override:
+
+```bash
+# Only needed if attestation-credit is not on default localhost:3002
+QUOTE_BASE_URL=http://localhost:3002 \
+CREDIT_FPC_ARTIFACT_PATH=./target/credit_fpc-BackedCreditFPC.json \
+MOCK_COUNTER_ADDRESS="$COUNTER_ADDRESS" \
+bunx tsx ./scripts/manual-credit-fpc-sponsored-user-tx.ts
+```
+
 Expected terminal output includes:
 - `PASS: sponsored Counter.increment tx via FPCMultiAsset fee_entrypoint`
+- `PASS: sponsored Counter.increment tx via CreditFPC pay_and_mint`
 - `tx_fee_juice=...`
 - matching `expected_charge`, `user_debited`, and `operator_credited`
 - `counter_before=...` and `counter_after=...` where `counter_after = counter_before + 1`
 
-If you see `FPC Fee Juice balance is still zero ...`:
+If you see a `Fee Juice balance ... is below required ...` error:
 - wait for topup to bridge and claim Fee Juice, then rerun Step 7
-- verify topup readiness with `curl -fsS http://localhost:3001/ready`
+- verify topup readiness:
+  - `curl -fsS http://localhost:3001/ready` (FPC topup)
+  - `curl -fsS http://localhost:3003/ready` (CreditFPC topup)
 - optionally force relay progress with `bunx tsx ./scripts/advance-local-network-blocks.ts`
 
 ## 8. Verify Quote Response Shape (No `rate_num` / `rate_den`)
