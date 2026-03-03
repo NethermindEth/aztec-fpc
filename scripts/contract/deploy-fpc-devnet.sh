@@ -18,30 +18,14 @@ resolve_default_fpc_artifact() {
   printf "%s\n" "$multi_asset_path"
 }
 
-case "${FPC_VARIANT:-}" in
-  "")
-    FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
-    ;;
-  fpc)
-    FPC_ARTIFACT="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
-    ;;
-  credit)
-    FPC_ARTIFACT="$REPO_ROOT/target/credit_fpc-BackedCreditFPC.json"
-    ;;
-  *)
-    echo "ERROR: FPC_VARIANT must be 'fpc' or 'credit' (got '${FPC_VARIANT}')" >&2
-    exit 1
-    ;;
-esac
+FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 
 cd "${REPO_ROOT}"
 
-if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-BackedCreditFPC.json || ! -f target/fpc-FPCMultiAsset.json ]]; then
+if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPCMultiAsset.json ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force
-  if [[ -z "${FPC_VARIANT:-}" ]]; then
-    FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
-  fi
+  FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 fi
 
 NODE_URL="${FPC_DEVNET_NODE_URL:-${AZTEC_NODE_URL:-https://v4-devnet-2.aztec-labs.com/}}"

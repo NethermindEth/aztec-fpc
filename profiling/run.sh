@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Compile contracts and benchmark all FPC variants via aztec-benchmark.
+# Compile contracts and benchmark the FPC contract via aztec-benchmark.
 #
-# Currently benchmarks:
-#   fpc         — FPC.fee_entrypoint
-#   credit_fpc  — CreditFPC.pay_and_mint + CreditFPC.pay_with_credit
+# Benchmarks:
+#   fpc — FPC.fee_entrypoint
 #
 # Produces structured JSON (profiling/benchmarks/*.benchmark.json) and
 # human-readable console summaries (gate counts, gas, proving time).
@@ -51,16 +50,14 @@ echo "[profile] Compiling contracts..."
 # issue: the CLI's post-benchmark cleanup destroys all active sockets, which
 # breaks the bb native backend for any subsequent benchmark in the same process.
 
-for contract in fpc credit_fpc; do
-  echo ""
-  echo "[profile] Running benchmark: $contract ..."
-  AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
-    npx --prefix "$SCRIPT_DIR" aztec-benchmark \
-      --config "$REPO_ROOT/Nargo.toml" \
-      --output-dir "$SCRIPT_DIR/benchmarks" \
-      --contracts "$contract"
-  echo "[profile] Finished benchmark: $contract"
-done
+echo ""
+echo "[profile] Running benchmark: fpc ..."
+AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
+  npx --prefix "$SCRIPT_DIR" aztec-benchmark \
+    --config "$REPO_ROOT/Nargo.toml" \
+    --output-dir "$SCRIPT_DIR/benchmarks" \
+    --contracts fpc
+echo "[profile] Finished benchmark: fpc"
 
 echo ""
 echo "[profile] Benchmark JSONs saved to profiling/benchmarks/"

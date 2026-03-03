@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "contracts/fpc",
-    "contracts/credit_fpc",
     "contracts/faucet",
     "contracts/noop",
     "vendor/aztec-standards/src/generic_proxy",
@@ -10,4 +9,3 @@ members = [
 
 [benchmark]
 fpc = "profiling/benchmarks/fpc.benchmark.ts"
-credit_fpc = "profiling/benchmarks/credit_fpc.benchmark.ts"

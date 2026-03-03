@@ -11,7 +11,6 @@ Use `deployments/devnet-manifest-v2.json` as source of truth.
 - `aztec_node_url`: `https://v4-devnet-2.aztec-labs.com/`
 - `l1_chain_id`: `11155111` (Sepolia)
 - `fpc_address`: `0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5`
-- `credit_fpc_address`: `0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3`
 - `accepted_asset`: `0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a`
 - `operator_address`: `0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8`
 

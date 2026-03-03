@@ -45,21 +45,6 @@ How it is wired:
 
 Operationally: if `fpc_address` points to the deployed `FPC`, this service funds the address used to pay fees for transactions using `fee_entrypoint`.
 
-## Wiring to `/contracts/credit_fpc`
-
-Contract reference: `contracts/credit_fpc/src/main.nr`
-
-How it is wired:
-
-- `CreditFPC.pay_and_mint(...)` and `CreditFPC.pay_with_credit()` call `self.context.set_as_fee_payer()` and spend Fee Juice from the `CreditFPC` contract address.
-- To support CreditFPC, run this service with `fpc_address` set to the deployed `CreditFPC` address.
-- As with FPC, wiring is address-level and protocol-level (Fee Juice balance + bridge), not contract-method integration.
-
-Important:
-
-- The config key name remains `fpc_address`, but it is effectively "fee payer contract address" and can be either `FPC` or `CreditFPC`.
-- If both contracts must stay funded simultaneously, run two top-up instances with different `fpc_address`, ports, and state files.
-
 ## Endpoints
 
 The top-up service exposes ops endpoints only.

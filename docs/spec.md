@@ -9,18 +9,13 @@
 
 The Fee Payment Contract (FPC) lets users pay Aztec L2 transaction fees in a single fixed token instead of the native Fee Juice. An operator runs the FPC, receives fee payments as private notes, and keeps the FPC funded with Fee Juice bridged from L1.
 
-For Alpha, two fee-payer contract variants remain in scope:
-- `FPC`
-- `CreditFPC`
-
-This document is FPC-first for contract call semantics, while preserving shared operator/service guidance that applies to both variants. CreditFPC-specific lifecycle coverage remains documented in [`e2e-test-spec-credit.md`](./e2e-test-spec-credit.md).
 
 The protocol has three components:
 
 | Component | What it does |
 |---|---|
-| **FPC / CreditFPC** (Aztec.nr contracts) | Fee-payer contract variants used in Alpha; each handles user fee intent and covers protocol Fee Juice via the same attestation + top-up service model |
-| **Attestation Service** (TypeScript) | REST API that signs user-specific amount quotes; `FPC` and `CreditFPC` verify these on-chain |
+| **FPC** (Aztec.nr contract) | Fee-payer contract used in Alpha; handles user fee intent and covers protocol Fee Juice via the attestation + top-up service model |
+| **Attestation Service** (TypeScript) | REST API that signs user-specific amount quotes; `FPC` verifies these on-chain |
 | **Top-up Service** (TypeScript) | Background process that monitors the FPC's Fee Juice balance and bridges more from L1 when it runs low |
 
 ---

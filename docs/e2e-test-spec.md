@@ -11,8 +11,6 @@ This document defines a single end-to-end test for the FPC lifecycle only.
 
 No other smoke/deploy/test flows are part of this definition.
 
-CreditFPC has a separate lifecycle and requirement set documented in `docs/e2e-test-spec-credit.md`.
-
 ## Test Entry Point
 - Command: `bun run e2e:full-lifecycle:fpc:local`
 - Script: `scripts/services/fpc-full-lifecycle-e2e.sh`

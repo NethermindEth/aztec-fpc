@@ -55,7 +55,7 @@ Required JSON fields:
 | `attestation_api_version` | string | Attestation API contract version. Alpha fixed value: `"1.0"` |
 | `network_id` | string | Must exactly match lookup key `network_id` |
 | `fpc_address` | string | Must exactly match lookup key `fpc_address` |
-| `contract_variant` | string | Contract flavor identifier (for example `fpc-v1`, `credit-fpc-v1`) |
+| `contract_variant` | string | Contract flavor identifier (for example `fpc-v1`) |
 | `quote_base_url` | string | Absolute base URL for quote API (HTTPS required outside localhost/dev) |
 | `endpoints` | object | Required relative paths: `discovery`, `health`, `asset`, `quote` |
 | `supported_assets` | array | Non-empty array of `{ address, name }`; each `address` lowercase `0x` form |

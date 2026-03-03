@@ -12,7 +12,7 @@ network_id: "aztec-alpha-local"
 # The deployed FPC contract address on Aztec L2
 fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac"
 
-# Contract flavor exposed in discovery metadata (for example: fpc-v1, credit-fpc-v1)
+# Contract flavor exposed in discovery metadata (for example: fpc-v1)
 contract_variant: "fpc-v1"
 
 # Optional public base URL override used in discovery responses.

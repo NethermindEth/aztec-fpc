@@ -5,11 +5,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeDevnetDeployManifest } from "./devnet-manifest.ts";
 
-type FpcArtifactName =
-  | "FPC"
-  | "FPCMultiAsset"
-  | "CreditFPC"
-  | "BackedCreditFPC";
+type FpcArtifactName = "FPC" | "FPCMultiAsset";
 
 type CliArgs = {
   nodeUrl: string;
@@ -141,7 +137,6 @@ const FPC_ARTIFACT_PATH_CANDIDATES = [
 ] as const;
 const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
-  creditFpc: path.join(REPO_ROOT, "target", "credit_fpc-BackedCreditFPC.json"),
   faucet: path.join(REPO_ROOT, "target", "faucet-Faucet.json"),
 } as const;
 
@@ -160,7 +155,7 @@ function usage(): string {
     "    --deployer-alias <alias> \\",
     "    --deployer-private-key <hex32> | --deployer-private-key-ref <ref> \\",
     "    --operator-secret-key <hex32> | --operator-secret-key-ref <ref> \\",
-    "    --fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json|*-BackedCreditFPC.json> \\",
+    "    --fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json> \\",
     "    --out <path.json> \\",
     "    [--l1-rpc-url <url>] \\",
     "    [--operator <aztec_address>] \\",
@@ -1617,14 +1612,9 @@ function loadFpcArtifactSelection(
     );
   }
   const name = (parsed as { name: string }).name;
-  if (
-    name !== "FPC" &&
-    name !== "FPCMultiAsset" &&
-    name !== "CreditFPC" &&
-    name !== "BackedCreditFPC"
-  ) {
+  if (name !== "FPC" && name !== "FPCMultiAsset") {
     throw new CliError(
-      `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC", "FPCMultiAsset", "CreditFPC", or "BackedCreditFPC".`,
+      `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC" or "FPCMultiAsset".`,
     );
   }
   return { artifactPath, name };

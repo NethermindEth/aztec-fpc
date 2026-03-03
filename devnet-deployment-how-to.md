@@ -14,7 +14,6 @@ Live deployment snapshot (from `deployments/devnet-manifest-v2.json`, generated 
 
 - `contracts.accepted_asset=0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a`
 - `contracts.fpc=0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5`
-- `contracts.credit_fpc=0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3`
 
 ## 1. One Command Deploy
 
@@ -29,7 +28,6 @@ This command deploys:
 
 - `Token` (unless you provide `FPC_DEVNET_ACCEPTED_ASSET`)
 - `FPC`
-- `CreditFPC`
 
 It writes the manifest to:
 
@@ -155,7 +153,7 @@ bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts \
 
 Checks performed:
 
-- contract existence on node for `accepted_asset`, `fpc`, `credit_fpc`
+- contract existence on node for `accepted_asset`, `fpc`
 - FPC immutable verification against manifest operator/pubkeys/accepted asset
 - contract instance readiness (published instance + non-zero initialization hash)
 - contract class readiness (class publicly registered)
@@ -215,8 +213,7 @@ bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \
 What this validates:
 
 - one successful FPC fee path tx
-- one successful CreditFPC path tx (`pay_and_mint` and `pay_with_credit`)
-- L1 FeeJuice bridge/topup path to both FPC and CreditFPC
+- L1 FeeJuice bridge/topup path to FPC
 
 Optional explicit operator override (only needed when manifest fallback is not usable):
 
@@ -264,6 +261,5 @@ Check non-zero:
 
 - `contracts.accepted_asset`
 - `contracts.fpc`
-- `contracts.credit_fpc`
 - `aztec_required_addresses.l1_contract_addresses.*`
 - `aztec_required_addresses.protocol_contract_addresses.*`
