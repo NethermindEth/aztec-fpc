@@ -12,7 +12,7 @@ Operational probes and metrics: [docs/operational-metrics.md](docs/operational-m
 
 Alpha asset model decision: [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md)
 
-Current contracts/services in this repo are still single-asset-per-deployment; treat multi-instance dual-asset operations as an interim workaround until ADR-0001 is implemented.
+Current contract surface is multi-asset for both active variants: `FPCMultiAsset` and `BackedCreditFPC`.
 
 ---
 
@@ -95,8 +95,8 @@ bun install
 ### 3. Compile contracts (workspace)
 
 Compile the full workspace so all required artifacts exist:
-- `target/fpc-FPC.json`
-- `target/credit_fpc-CreditFPC.json`
+- `target/fpc-FPCMultiAsset.json`
+- `target/credit_fpc-BackedCreditFPC.json`
 - `target/generic_proxy-GenericProxy.json`
 - `target/token_contract-Token.json`
 
@@ -324,14 +324,14 @@ Manifest secret-handling warning:
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
 # operator_pubkey_x/y = Schnorr signing public key coordinates for quote signatures
-# accepted_asset = token contract address accepted for payments
+# accepted_asset is selected per quote/request (not constructor-bound)
 aztec deploy \
-  --artifact target/fpc-FPC.json \
-  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y> <accepted_asset_address>
+  --artifact target/fpc-FPCMultiAsset.json \
+  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
 
 aztec deploy \
-  --artifact target/credit_fpc-CreditFPC.json \
-  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y> <accepted_asset_address>
+  --artifact target/credit_fpc-BackedCreditFPC.json \
+  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
 ```
 
 Record the deployed address.

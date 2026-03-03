@@ -286,7 +286,7 @@ aztec compile --workspace --force
 # Deploy FPC (manual)
 # operator_pubkey_x/y are the operator Schnorr signing pubkey coordinates.
 aztec deploy \
-  --artifact target/fpc-FPC.json \
+  --artifact target/fpc-FPCMultiAsset.json \
   --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
 ```
 

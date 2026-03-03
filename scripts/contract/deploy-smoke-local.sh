@@ -12,13 +12,8 @@ resolve_default_fpc_artifact() {
   fi
 
   local multi_asset_path="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
-  local legacy_path="$REPO_ROOT/target/fpc-FPC.json"
   if [[ -f "$multi_asset_path" ]]; then
     printf "%s\n" "$multi_asset_path"
-    return
-  fi
-  if [[ -f "$legacy_path" ]]; then
-    printf "%s\n" "$legacy_path"
     return
   fi
   printf "%s\n" "$multi_asset_path"

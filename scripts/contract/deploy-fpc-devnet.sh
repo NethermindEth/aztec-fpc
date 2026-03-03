@@ -37,13 +37,8 @@ resolve_default_fpc_artifact() {
   fi
 
   local multi_asset_path="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
-  local legacy_path="$REPO_ROOT/target/fpc-FPC.json"
   if [[ -f "$multi_asset_path" ]]; then
     printf "%s\n" "$multi_asset_path"
-    return
-  fi
-  if [[ -f "$legacy_path" ]]; then
-    printf "%s\n" "$legacy_path"
     return
   fi
   printf "%s\n" "$multi_asset_path"
@@ -57,7 +52,7 @@ case "${FPC_VARIANT:-}" in
     FPC_ARTIFACT="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
     ;;
   credit)
-    FPC_ARTIFACT="$REPO_ROOT/target/credit_fpc-CreditFPC.json"
+    FPC_ARTIFACT="$REPO_ROOT/target/credit_fpc-BackedCreditFPC.json"
     ;;
   *)
     echo "ERROR: FPC_VARIANT must be 'fpc' or 'credit' (got '${FPC_VARIANT}')" >&2
@@ -72,7 +67,7 @@ fi
 
 cd "${REPO_ROOT}"
 
-if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-BackedCreditFPC.json || ( ! -f target/fpc-FPCMultiAsset.json && ! -f target/fpc-FPC.json ) ]]; then
+if [[ ! -f target/token_contract-Token.json || ! -f target/credit_fpc-BackedCreditFPC.json || ! -f target/fpc-FPCMultiAsset.json ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force
   if [[ -z "${FPC_VARIANT:-}" ]]; then

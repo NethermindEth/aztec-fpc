@@ -27,7 +27,7 @@ CreditFPC has a separate lifecycle and requirement set documented in `docs/e2e-t
   - `aztec start --local-network`
 - Contracts compiled (`aztec compile --workspace --force`) including:
   - `target/token_contract-Token.json`
-  - `target/fpc-FPC.json`
+  - `target/fpc-FPCMultiAsset.json`
 - Attestation and topup services buildable/runnable from this repo
 
 ## Asset Model And Wiring
@@ -35,7 +35,7 @@ Two different assets are involved and must not be conflated:
 
 1. `accepted_asset` (L2 token used to charge the user)
 - This is a test token deployed on Aztec L2 (`token_contract-Token`).
-- It is passed to the FPC constructor as `accepted_asset`.
+- It is chosen per quote (`accepted_asset`) at runtime for `fee_entrypoint`.
 - Attestation must return this exact address in `/quote.accepted_asset`.
 - No L1 token wiring is required for this asset in this E2E.
 
@@ -76,7 +76,6 @@ Use this runbook when local E2E fails with address or wiring symptoms.
    - `operator = operator Aztec address`
    - `operator_pubkey_x = operator Schnorr pubkey x`
    - `operator_pubkey_y = operator Schnorr pubkey y`
-   - `accepted_asset = deployed L2 token address`
 5. Run FPC scenario:
    - start attestation + topup with generated runtime config:
      - attestation config uses `fpc_address=<FPC>` + `accepted_asset_address`

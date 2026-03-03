@@ -158,6 +158,7 @@ const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const MAX_PORT = 65535;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DIAGNOSTIC_TAIL_LINES = 200;
+// Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_FILE_CANDIDATES = [
   "fpc-FPCMultiAsset.json",
   "fpc-FPC.json",

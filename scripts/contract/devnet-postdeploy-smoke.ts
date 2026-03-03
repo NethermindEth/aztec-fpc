@@ -187,6 +187,7 @@ const DEFAULT_MANIFEST_PATH = path.join(
 );
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+// Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_PATH_CANDIDATES = [
   path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
   path.join(REPO_ROOT, "target", "fpc-FPC.json"),

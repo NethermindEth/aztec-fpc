@@ -69,6 +69,7 @@ const FEE_JUICE_PORTAL_ABI = parseAbi([
   "event DepositToAztecPublic(bytes32 indexed to, uint256 amount, bytes32 secretHash, bytes32 key, uint256 index)",
 ]);
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
+// Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_FILE_CANDIDATES = [
   "fpc-FPCMultiAsset.json",
   "fpc-FPC.json",
