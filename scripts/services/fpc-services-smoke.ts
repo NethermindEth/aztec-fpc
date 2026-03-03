@@ -11,26 +11,21 @@ import { fileURLToPath } from "node:url";
 
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import {
   computeInnerAuthWitHash,
   lookupValidity,
 } from "@aztec/aztec.js/authorization";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
-import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import {
-  FeeJuiceContract,
-  ProtocolContractAddress,
-} from "@aztec/aztec.js/protocol";
+import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import {
   loadContractArtifact,
   loadContractArtifactForPublic,
 } from "@aztec/stdlib/abi";
-import { computeSecretHash } from "@aztec/stdlib/hash";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
@@ -38,7 +33,6 @@ import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import {
   createPublicClient,
   createWalletClient,
-  decodeEventLog,
   type Hex,
   http,
   parseAbi,
@@ -64,10 +58,6 @@ const ERC20_ABI = parseAbi([
   "function mint(address to, uint256 amount)",
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
-const FEE_JUICE_PORTAL_ABI = parseAbi([
-  "function depositToAztecPublic(bytes32 to, uint256 amount, bytes32 secretHash) returns (bytes32, uint256)",
-  "event DepositToAztecPublic(bytes32 indexed to, uint256 amount, bytes32 secretHash, bytes32 key, uint256 index)",
-]);
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_FILE_CANDIDATES = [
@@ -79,8 +69,6 @@ type TopupBridgeOutcome = "confirmed" | "timeout" | "failed";
 type TopupBridgeSubmission = {
   messageHash: Hex;
   messageLeafIndex: bigint;
-  claimSecretHash: Hex;
-  claimSecret?: string;
 };
 
 type SchnorrPoint = Awaited<ReturnType<Schnorr["computePublicKey"]>>;
@@ -401,18 +389,16 @@ async function waitForTopupBridgeSubmission(
 ): Promise<TopupBridgeSubmission> {
   const deadline = Date.now() + timeoutMs;
   const submissionPattern =
-    /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+) claim_secret_hash=(0x[0-9a-fA-F]+)(?: claim_secret=([^\s]+))?/;
+    /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+)/;
 
   while (Date.now() <= deadline) {
     const logs = proc.getLogs();
     const match = submissionPattern.exec(logs);
     if (match) {
-      const [, messageHash, leafIndex, claimSecretHash, claimSecret] = match;
+      const [, messageHash, leafIndex] = match;
       return {
         messageHash: messageHash as Hex,
         messageLeafIndex: BigInt(leafIndex),
-        claimSecretHash: claimSecretHash as Hex,
-        claimSecret,
       };
     }
     if (proc.process.exitCode !== null) {
@@ -470,160 +456,6 @@ async function advanceL2Blocks(
     });
     console.log(`[services-smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`);
   }
-}
-
-async function claimTopupBridgeSubmission(
-  node: ReturnType<typeof createAztecNodeClient>,
-  wallet: EmbeddedWallet,
-  operator: AztecAddress,
-  token: Contract,
-  user: AztecAddress,
-  feePayerAddress: AztecAddress,
-  amount: bigint,
-  bridgeSubmission: TopupBridgeSubmission,
-  relayAdvanceBlocks: number,
-  timeoutMs: number,
-  pollMs: number,
-): Promise<bigint> {
-  if (!bridgeSubmission.claimSecret) {
-    throw new Error(
-      "Cannot claim topup bridge submission: claim secret is missing from topup logs",
-    );
-  }
-
-  await advanceL2Blocks(token, operator, user, relayAdvanceBlocks);
-
-  await waitForL1ToL2MessageReady(
-    node,
-    Fr.fromHexString(bridgeSubmission.messageHash),
-    {
-      timeoutSeconds: Math.max(1, Math.floor(timeoutMs / 1000)),
-      forPublicConsumption: false,
-    },
-  );
-
-  const feeJuice = FeeJuiceContract.at(wallet);
-  await feeJuice.methods
-    .claim(
-      feePayerAddress,
-      amount,
-      Fr.fromString(bridgeSubmission.claimSecret),
-      new Fr(bridgeSubmission.messageLeafIndex),
-    )
-    .send({ from: operator });
-
-  return waitForPositiveFeeJuiceBalance(
-    node,
-    feePayerAddress,
-    timeoutMs,
-    pollMs,
-  );
-}
-
-async function topUpFpcFeeJuiceManually(
-  node: ReturnType<typeof createAztecNodeClient>,
-  wallet: EmbeddedWallet,
-  operator: AztecAddress,
-  token: Contract,
-  user: AztecAddress,
-  feePayerAddress: string,
-  topupWei: bigint,
-  relayAdvanceBlocks: number,
-  l1RpcUrl: string,
-  l1PrivateKey: Hex,
-  timeoutMs: number,
-  pollMs: number,
-): Promise<bigint> {
-  const { tokenAddress: feeJuiceTokenAddress, portalAddress } =
-    await getFeeJuiceL1Addresses(node);
-  const recipientBytes32 =
-    `0x${feePayerAddress.replace("0x", "").padStart(64, "0")}` as Hex;
-
-  const account = privateKeyToAccount(l1PrivateKey);
-  const walletClient = createWalletClient({
-    account,
-    transport: http(l1RpcUrl),
-  });
-  const publicClient = createPublicClient({
-    transport: http(l1RpcUrl),
-  });
-
-  const claimSecret = Fr.random();
-  const claimSecretHash = await computeSecretHash(claimSecret);
-
-  const approveHash = await walletClient.writeContract({
-    address: feeJuiceTokenAddress,
-    abi: ERC20_ABI,
-    functionName: "approve",
-    args: [portalAddress, topupWei],
-  });
-  await publicClient.waitForTransactionReceipt({ hash: approveHash });
-
-  const bridgeHash = await walletClient.writeContract({
-    address: portalAddress,
-    abi: FEE_JUICE_PORTAL_ABI,
-    functionName: "depositToAztecPublic",
-    args: [recipientBytes32, topupWei, claimSecretHash.toString() as Hex],
-  });
-  const bridgeReceipt = await publicClient.waitForTransactionReceipt({
-    hash: bridgeHash,
-  });
-  console.log(`[services-smoke] manual_bridge_tx=${bridgeHash}`);
-
-  let messageLeafIndex: bigint | undefined;
-  let l1ToL2MessageHash: Fr | undefined;
-  for (const log of bridgeReceipt.logs) {
-    if (log.address.toLowerCase() !== portalAddress.toLowerCase()) {
-      continue;
-    }
-    try {
-      const decoded = decodeEventLog({
-        abi: FEE_JUICE_PORTAL_ABI,
-        data: log.data,
-        topics: log.topics,
-      });
-      if (decoded.eventName !== "DepositToAztecPublic") {
-        continue;
-      }
-      messageLeafIndex = decoded.args.index as bigint;
-      l1ToL2MessageHash = Fr.fromHexString(decoded.args.key as string);
-      break;
-    } catch {
-      // Ignore non-matching logs emitted by this contract.
-    }
-  }
-
-  if (messageLeafIndex === undefined || !l1ToL2MessageHash) {
-    throw new Error(
-      "Could not decode DepositToAztecPublic event for fallback bridge",
-    );
-  }
-
-  // Local devnet requires additional L2 blocks before the bridge message
-  // becomes claimable. Use lightweight mock txs to force block production.
-  await advanceL2Blocks(token, operator, user, relayAdvanceBlocks);
-
-  await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
-    timeoutSeconds: Math.max(1, Math.floor(timeoutMs / 1000)),
-    forPublicConsumption: false,
-  });
-
-  const feeJuice = FeeJuiceContract.at(wallet);
-  await feeJuice.methods
-    .claim(
-      AztecAddress.fromString(feePayerAddress),
-      topupWei,
-      claimSecret,
-      new Fr(messageLeafIndex),
-    )
-    .send({ from: operator });
-
-  return waitForPositiveFeeJuiceBalance(
-    node,
-    AztecAddress.fromString(feePayerAddress),
-    timeoutMs,
-    pollMs,
-  );
 }
 
 async function fetchQuote(
@@ -842,7 +674,6 @@ async function runServiceScenario(
   repoRoot: string,
   tmpDir: string,
   node: ReturnType<typeof createAztecNodeClient>,
-  wallet: EmbeddedWallet,
   token: Contract,
   operator: AztecAddress,
   user: AztecAddress,
@@ -962,7 +793,6 @@ async function runServiceScenario(
         env: {
           ...process.env,
           L1_OPERATOR_PRIVATE_KEY: l1PrivateKey,
-          TOPUP_LOG_CLAIM_SECRET: "1",
         },
       },
     );
@@ -1018,53 +848,9 @@ async function runServiceScenario(
           config.topupPollMs,
         );
       } catch (settleError) {
-        if (topupOutcome === "confirmed") {
-          console.log(
-            `${scenarioPrefix} topup reported confirmed but balance stayed zero; claiming submitted bridge message`,
-          );
-        } else {
-          console.log(
-            `${scenarioPrefix} topup did not confirm balance delta; claiming submitted bridge message`,
-          );
-        }
-        try {
-          bridgedFeeJuiceBalance = await claimTopupBridgeSubmission(
-            node,
-            wallet,
-            operator,
-            token,
-            user,
-            feePayerAddress,
-            topupAmount,
-            bridgeSubmission,
-            config.relayAdvanceBlocks,
-            config.topupWaitTimeoutMs,
-            config.topupPollMs,
-          );
-        } catch (claimError) {
-          console.log(
-            `${scenarioPrefix} claim of submitted bridge message failed; running deterministic manual bridge+claim fallback`,
-          );
-          bridgedFeeJuiceBalance = await topUpFpcFeeJuiceManually(
-            node,
-            wallet,
-            operator,
-            token,
-            user,
-            feePayerAddress.toString(),
-            topupAmount,
-            config.relayAdvanceBlocks,
-            config.l1RpcUrl,
-            l1PrivateKey,
-            config.topupWaitTimeoutMs,
-            config.topupPollMs,
-          );
-          if (bridgedFeeJuiceBalance === 0n) {
-            throw new Error(
-              `${scenarioPrefix} fallback bridge+claim completed without positive Fee Juice balance: ${(claimError as Error).message}; ${(settleError as Error).message}`,
-            );
-          }
-        }
+        throw new Error(
+          `${scenarioPrefix} topup service did not auto-claim bridge submission message_hash=${bridgeSubmission.messageHash} leaf_index=${bridgeSubmission.messageLeafIndex} within ${settleTimeoutMs}ms after outcome=${topupOutcome}: ${(settleError as Error).message}`,
+        );
       }
     }
     console.log(
@@ -1550,7 +1336,6 @@ async function main() {
       repoRoot,
       tmpDir,
       node,
-      wallet,
       token,
       operator,
       user,

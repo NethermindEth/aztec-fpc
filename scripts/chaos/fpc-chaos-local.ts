@@ -41,10 +41,7 @@ import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
-import { Fr } from "@aztec/aztec.js/fields";
-import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import {
@@ -71,7 +68,7 @@ const DEFAULT_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
 const BRIDGE_SUBMISSION_RE =
-  /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+) claim_secret_hash=(0x[0-9a-fA-F]+)(?: claim_secret=([^\s]+))?/;
+  /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+)/;
 
 type LocalConfig = {
   nodeUrl: string;
@@ -195,14 +192,12 @@ function loadArtifact(p: string): ContractArtifact {
 function parseBridgeSubmission(logs: string): {
   messageHash: string;
   leafIndex: bigint;
-  claimSecret: string | undefined;
 } | null {
   const m = BRIDGE_SUBMISSION_RE.exec(logs);
   if (!m) return null;
   return {
     messageHash: m[1],
     leafIndex: BigInt(m[2]),
-    claimSecret: m[4],
   };
 }
 
@@ -216,7 +211,6 @@ async function waitForBridgeSubmission(
 ): Promise<{
   messageHash: string;
   leafIndex: bigint;
-  claimSecret: string | undefined;
 }> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -233,6 +227,24 @@ async function waitForBridgeSubmission(
   throw new Error(
     `Timed out waiting for bridge submission from ${proc.name}.\n` +
       proc.getLogs().slice(-3000),
+  );
+}
+
+async function waitForPositiveFeeJuiceBalance(
+  node: ReturnType<typeof createAztecNodeClient>,
+  fpcAddress: AztecAddress,
+  timeoutMs: number,
+): Promise<bigint> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const balance = await getFeeJuiceBalance(fpcAddress, node);
+    if (balance > 0n) {
+      return balance;
+    }
+    await sleep(300);
+  }
+  throw new Error(
+    `Timed out waiting for positive Fee Juice balance on ${fpcAddress.toString()}`,
   );
 }
 
@@ -524,7 +536,6 @@ async function startServicesAndFundFpc(
       env: {
         ...process.env,
         L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
-        TOPUP_LOG_CLAIM_SECRET: "1",
       },
     },
   );
@@ -552,47 +563,17 @@ async function startServicesAndFundFpc(
     );
   }
 
-  // Wait for the L1→L2 message to be consumable, then claim if the topup
-  // service hasn't auto-claimed (can happen on devnet before relay is ready).
   const node = createAztecNodeClient(config.nodeUrl);
-  await waitForL1ToL2MessageReady(
-    node,
-    Fr.fromHexString(bridgeSub.messageHash),
-    {
-      timeoutSeconds: Math.max(1, Math.floor(config.topupWaitMs / 1000)),
-      forPublicConsumption: false,
-    },
-  );
 
   // Wait for topup to log a confirmed outcome
   console.log("[chaos-local] Waiting for bridge confirmation...");
   await waitForBridgeConfirmed(topup, config.topupWaitMs);
 
-  // Verify balance – claim manually if the topup service didn't auto-claim
-  let feeJuiceBalance = await getFeeJuiceBalance(setup.fpcAddress, node);
-  if (feeJuiceBalance === 0n && bridgeSub.claimSecret) {
-    console.log(
-      "[chaos-local] Bridge confirmed but balance still 0; claiming manually...",
-    );
-    const feeJuice = FeeJuiceContract.at(setup.wallet);
-    await feeJuice.methods
-      .claim(
-        setup.fpcAddress,
-        setup.topupAmountWei,
-        Fr.fromString(bridgeSub.claimSecret),
-        new Fr(bridgeSub.leafIndex),
-      )
-      .send({ from: setup.operator });
-
-    feeJuiceBalance = await getFeeJuiceBalance(setup.fpcAddress, node);
-  }
-
-  if (feeJuiceBalance === 0n) {
-    throw new Error(
-      "FPC Fee Juice balance is still 0 after bridge cycle. " +
-        "Cannot run on-chain chaos tests without a funded FPC.",
-    );
-  }
+  const feeJuiceBalance = await waitForPositiveFeeJuiceBalance(
+    node,
+    setup.fpcAddress,
+    config.topupWaitMs,
+  );
 
   console.log(`[chaos-local] FPC funded: feeJuice=${feeJuiceBalance}`);
   return { attestation, topup };
