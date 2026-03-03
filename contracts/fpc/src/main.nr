@@ -1,4 +1,3 @@
-mod fee_math;
 mod test;
 
 use ::aztec::macros::aztec;

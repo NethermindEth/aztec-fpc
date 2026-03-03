@@ -40,7 +40,7 @@ Notes:
 
 ## Wiring to `/contracts/fpc`
 
-Contract reference: `/home/ametel/source/aztec-fpc/contracts/fpc/src/main.nr`
+Contract reference: `contracts/fpc/src/main.nr`
 
 How it connects:
 
@@ -54,7 +54,7 @@ Implication: for `FPC`, clients should request `/quote` with `fj_amount = max_ga
 
 ## Wiring to `/contracts/credit_fpc`
 
-Contract reference: `/home/ametel/source/aztec-fpc/contracts/credit_fpc/src/main.nr`
+Contract reference: `contracts/credit_fpc/src/main.nr`
 
 How it connects:
 

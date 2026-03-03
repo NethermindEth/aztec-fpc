@@ -1,7 +1,7 @@
 # Alpha Ad-Hoc FPC Operator Runbook (30 Minutes)
 
 Date: 2026-03-02  
-Repository root: `/home/ametel/source/aztec-fpc`
+Repository root: `<repo-root>`
 
 ## Alpha Asset Model Decision
 

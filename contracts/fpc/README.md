@@ -71,7 +71,7 @@ Replay protection:
 
 ## Wiring to Attestation Service
 
-Attestation service reference: `/home/ametel/source/aztec-fpc/services/attestation`
+Attestation service reference: `services/attestation`
 
 For `FPC`, attestation must be configured with:
 
@@ -91,7 +91,7 @@ Important:
 
 ## Wiring to Top-up Service
 
-Top-up service reference: `/home/ametel/source/aztec-fpc/services/topup`
+Top-up service reference: `services/topup`
 
 Because `FPC` calls `set_as_fee_payer()`, it must hold Fee Juice on its own contract address.
 
@@ -123,7 +123,7 @@ Internal helpers:
 
 ## Test Coverage Highlights
 
-Contract tests in `/home/ametel/source/aztec-fpc/contracts/fpc/src/test` cover:
+Contract tests in `contracts/fpc/src/test` cover:
 
 - constructor validation (zero `operator` rejected),
 - happy-path transfer accounting,

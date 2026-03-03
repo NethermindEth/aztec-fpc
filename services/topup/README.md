@@ -35,7 +35,7 @@ On each cycle, it:
 
 ## Wiring to `/contracts/fpc`
 
-Contract reference: `/home/ametel/source/aztec-fpc/contracts/fpc/src/main.nr`
+Contract reference: `contracts/fpc/src/main.nr`
 
 How it is wired:
 
@@ -47,7 +47,7 @@ Operationally: if `fpc_address` points to the deployed `FPC`, this service funds
 
 ## Wiring to `/contracts/credit_fpc`
 
-Contract reference: `/home/ametel/source/aztec-fpc/contracts/credit_fpc/src/main.nr`
+Contract reference: `contracts/credit_fpc/src/main.nr`
 
 How it is wired:
 

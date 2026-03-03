@@ -1,7 +1,7 @@
 # AWS Deployment Guide for `services` (Attestation + Topup)
 
 Date: 2026-02-27
-Repo: `/home/ametel/source/aztec-fpc`
+Repo: `<repo-root>`
 Scope: repo-specific settings only (assumes your DevOps team already has AWS/ECS/EKS standards).
 
 ## 1. Contracts and Network This Deployment Must Target
@@ -140,7 +140,7 @@ If topup is not ready, first checks are usually:
 If contracts are redeployed later, regenerate both service configs from the new manifest:
 
 ```bash
-cd /home/ametel/source/aztec-fpc
+cd <repo-root>
 bun run generate:configs
 ```
 

@@ -10,7 +10,6 @@
 /// - Switched CreditFPC quotes to exact quoted credit/payment amounts
 /// - Switched CreditFPC to multi-asset pay_and_mint (asset chosen per quote)
 
-mod fee_math;
 mod test;
 
 use ::aztec::macros::aztec;
