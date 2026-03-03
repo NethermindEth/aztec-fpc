@@ -51,6 +51,9 @@ describe("confirm", () => {
     assert.equal(result.messageCheckAttempted, true);
     assert.equal(result.messageReady, false);
     assert.equal(result.messageCheckFailed, false);
+    assert.equal(result.messageReadyActionAttempted, false);
+    assert.equal(result.messageReadyActionSucceeded, false);
+    assert.equal(result.messageReadyActionFailed, false);
   });
 
   it("falls back to balance polling when message check fails", async () => {
@@ -91,9 +94,12 @@ describe("confirm", () => {
     assert.equal(result.messageCheckAttempted, true);
     assert.equal(result.messageReady, false);
     assert.equal(result.messageCheckFailed, true);
+    assert.equal(result.messageReadyActionAttempted, false);
+    assert.equal(result.messageReadyActionSucceeded, false);
+    assert.equal(result.messageReadyActionFailed, false);
   });
 
-  it("confirms when message becomes ready even without a balance delta", async () => {
+  it("times out when message is ready but no balance delta is observed", async () => {
     const result = await waitForFeeJuiceBridgeConfirmation(
       {
         balanceReader: {
@@ -120,14 +126,17 @@ describe("confirm", () => {
       },
     );
 
-    assert.equal(result.status, "confirmed");
+    assert.equal(result.status, "timeout");
     assert.equal(result.observedDelta, 0n);
     assert.equal(result.messageCheckAttempted, true);
     assert.equal(result.messageReady, true);
     assert.equal(result.messageCheckFailed, false);
+    assert.equal(result.messageReadyActionAttempted, false);
+    assert.equal(result.messageReadyActionSucceeded, false);
+    assert.equal(result.messageReadyActionFailed, false);
   });
 
-  it("does not throw when balance reads fail but message readiness confirms", async () => {
+  it("returns timeout when balance reads fail despite message readiness", async () => {
     await assert.doesNotReject(async () => {
       const result = await waitForFeeJuiceBridgeConfirmation(
         {
@@ -157,9 +166,51 @@ describe("confirm", () => {
         },
       );
 
-      assert.equal(result.status, "confirmed");
+      assert.equal(result.status, "timeout");
       assert.equal(result.messageReady, true);
     });
+  });
+
+  it("executes onMessageReady action and confirms once balance increases", async () => {
+    let actionRuns = 0;
+    let actionCompleted = false;
+    const result = await waitForFeeJuiceBridgeConfirmation(
+      {
+        balanceReader: {
+          feeJuiceAddress: AztecAddress.zero(),
+          addressSource: "node_info",
+          getBalance: async () => (actionCompleted ? 12n : 10n),
+        },
+        fpcAddress: FPC,
+        baselineBalance: 10n,
+        timeoutMs: 400,
+        initialPollMs: 1,
+        maxPollMs: 5,
+        messageContext: {
+          node: {} as Pick<
+            AztecNode,
+            "getBlockNumber" | "getL1ToL2MessageBlock"
+          >,
+          messageHash: MESSAGE_HASH,
+          forPublicConsumption: false,
+        },
+        onMessageReady: async () => {
+          actionRuns += 1;
+          actionCompleted = true;
+        },
+      },
+      {
+        waitForL1ToL2MessageReady: async () => true,
+      },
+    );
+
+    assert.equal(actionRuns, 1);
+    assert.equal(result.status, "confirmed");
+    assert.equal(result.observedDelta, 2n);
+    assert.equal(result.messageReady, true);
+    assert.equal(result.messageReadyActionAttempted, true);
+    assert.equal(result.messageReadyActionSucceeded, true);
+    assert.equal(result.messageReadyActionFailed, false);
   });
 
   it("returns aborted when abort signal is triggered", async () => {

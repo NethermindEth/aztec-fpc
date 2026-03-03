@@ -99,15 +99,15 @@ export function createTopupChecker(
       await deps.onBridgeSettled?.(balance, result, confirmation);
       if (confirmation.status === "confirmed") {
         logger.log(
-          `Bridge confirmation outcome=confirmed delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} current=${confirmation.lastObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} message_ready=${confirmation.messageReady} message_check_attempted=${confirmation.messageCheckAttempted} message_check_failed=${confirmation.messageCheckFailed} elapsed_ms=${confirmation.elapsedMs}`,
+          `Bridge confirmation outcome=confirmed delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} current=${confirmation.lastObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} message_ready=${confirmation.messageReady} message_check_attempted=${confirmation.messageCheckAttempted} message_check_failed=${confirmation.messageCheckFailed} message_action_attempted=${confirmation.messageReadyActionAttempted} message_action_succeeded=${confirmation.messageReadyActionSucceeded} message_action_failed=${confirmation.messageReadyActionFailed} elapsed_ms=${confirmation.elapsedMs}`,
         );
       } else if (confirmation.status === "aborted") {
         logger.warn(
-          `Bridge confirmation outcome=aborted delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} current=${confirmation.lastObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} message_ready=${confirmation.messageReady} message_check_attempted=${confirmation.messageCheckAttempted} message_check_failed=${confirmation.messageCheckFailed} elapsed_ms=${confirmation.elapsedMs}`,
+          `Bridge confirmation outcome=aborted delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} current=${confirmation.lastObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} message_ready=${confirmation.messageReady} message_check_attempted=${confirmation.messageCheckAttempted} message_check_failed=${confirmation.messageCheckFailed} message_action_attempted=${confirmation.messageReadyActionAttempted} message_action_succeeded=${confirmation.messageReadyActionSucceeded} message_action_failed=${confirmation.messageReadyActionFailed} elapsed_ms=${confirmation.elapsedMs}`,
         );
       } else {
         logger.warn(
-          `Bridge confirmation outcome=timeout delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} max_observed=${confirmation.maxObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} message_ready=${confirmation.messageReady} message_check_attempted=${confirmation.messageCheckAttempted} message_check_failed=${confirmation.messageCheckFailed} elapsed_ms=${confirmation.elapsedMs}`,
+          `Bridge confirmation outcome=timeout delta=${confirmation.observedDelta} baseline=${confirmation.baselineBalance} max_observed=${confirmation.maxObservedBalance} attempts=${confirmation.attempts} poll_errors=${confirmation.pollErrors} message_ready=${confirmation.messageReady} message_check_attempted=${confirmation.messageCheckAttempted} message_check_failed=${confirmation.messageCheckFailed} message_action_attempted=${confirmation.messageReadyActionAttempted} message_action_succeeded=${confirmation.messageReadyActionSucceeded} message_action_failed=${confirmation.messageReadyActionFailed} elapsed_ms=${confirmation.elapsedMs}`,
         );
       }
     } catch (err) {
