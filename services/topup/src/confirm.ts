@@ -21,6 +21,7 @@ export interface BridgeConfirmationOptions {
   initialPollMs: number;
   maxPollMs: number;
   messageContext?: BridgeMessageContext;
+  onMessageReady?: () => Promise<void> | void;
   abortSignal?: AbortSignal;
 }
 
@@ -40,6 +41,9 @@ export interface BridgeConfirmationResult {
   messageCheckAttempted: boolean;
   messageReady: boolean;
   messageCheckFailed: boolean;
+  messageReadyActionAttempted: boolean;
+  messageReadyActionSucceeded: boolean;
+  messageReadyActionFailed: boolean;
 }
 
 function sleep(ms: number, abortSignal?: AbortSignal): Promise<void> {
@@ -98,6 +102,9 @@ export async function waitForFeeJuiceBridgeConfirmation(
   let messageCheckAttempted = false;
   let messageReady = false;
   let messageCheckFailed = false;
+  let messageReadyActionAttempted = false;
+  let messageReadyActionSucceeded = false;
+  let messageReadyActionFailed = false;
   let messageWaitPromise: Promise<void> | undefined;
 
   if (options.messageContext) {
@@ -152,6 +159,9 @@ export async function waitForFeeJuiceBridgeConfirmation(
       messageCheckAttempted,
       messageReady,
       messageCheckFailed,
+      messageReadyActionAttempted,
+      messageReadyActionSucceeded,
+      messageReadyActionFailed,
     };
   }
 
@@ -166,8 +176,20 @@ export async function waitForFeeJuiceBridgeConfirmation(
 
     attempts += 1;
     await settleMessageCheckNonBlocking();
-    if (messageReady) {
-      return buildResult("confirmed");
+
+    if (
+      messageReady &&
+      options.onMessageReady &&
+      !messageReadyActionSucceeded
+    ) {
+      messageReadyActionAttempted = true;
+      try {
+        await options.onMessageReady();
+        messageReadyActionSucceeded = true;
+      } catch (error) {
+        messageReadyActionFailed = true;
+        console.warn("Message-ready action failed; retrying", error);
+      }
     }
 
     try {
@@ -203,11 +225,11 @@ export async function waitForFeeJuiceBridgeConfirmation(
   }
 
   await settleMessageCheckNonBlocking();
-  if (messageReady) {
-    return buildResult("confirmed");
-  }
 
   if (successfulReads === 0) {
+    if (messageReady) {
+      return buildResult("timeout");
+    }
     throw new Error(
       `Unable to read Fee Juice balance during confirmation polling after ${attempts} attempt(s)`,
     );

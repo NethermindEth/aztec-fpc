@@ -12,6 +12,7 @@
 
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { createTopupAutoClaimer } from "./autoclaim.js";
 import { bridgeFeeJuice } from "./bridge.js";
 import { createTopupChecker } from "./checker.js";
 import { loadConfig } from "./config.js";
@@ -72,8 +73,12 @@ async function main() {
   const threshold = BigInt(config.threshold);
   const topUpAmount = BigInt(config.top_up_amount);
   const logClaimSecret = process.env.TOPUP_LOG_CLAIM_SECRET === "1";
+  const autoClaimEnabled = process.env.TOPUP_AUTOCLAIM_ENABLED !== "0";
   const bridgeStateStore = createBridgeStateStore(config.bridge_state_path);
   const balanceReader = await createFeeJuiceBalanceReader(pxe);
+  const autoClaimer = autoClaimEnabled
+    ? await createTopupAutoClaimer(pxe)
+    : null;
   const shutdownController = new AbortController();
   const opsState = new TopupOpsState({
     checkIntervalMs: config.check_interval_ms,
@@ -102,6 +107,13 @@ async function main() {
     console.warn(
       "TOPUP_LOG_CLAIM_SECRET=1 enabled: bridge claim secrets will be printed to logs (for local smoke/debug only)",
     );
+  }
+  if (autoClaimer) {
+    console.log(
+      `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()})`,
+    );
+  } else {
+    console.warn("  Auto-claim: disabled (TOPUP_AUTOCLAIM_ENABLED=0)");
   }
 
   let intervalHandle: NodeJS.Timeout | undefined;
@@ -147,6 +159,24 @@ async function main() {
             messageHash: bridgeResult.messageHash,
             forPublicConsumption: false,
           },
+          onMessageReady: autoClaimer
+            ? async () => {
+                const txHash = await autoClaimer.claim({
+                  recipient: fpcAddress,
+                  amount: bridgeResult.amount,
+                  claimSecret: bridgeResult.claimSecret,
+                  messageLeafIndex: bridgeResult.messageLeafIndex,
+                  messageHash: bridgeResult.messageHash,
+                  waitTimeoutSeconds: Math.max(
+                    30,
+                    Math.floor(config.confirmation_timeout_ms / 1000),
+                  ),
+                });
+                console.log(
+                  `Auto-claim submitted message_hash=${bridgeResult.messageHash} tx_hash=${txHash}`,
+                );
+              }
+            : undefined,
         }),
       onBridgeSubmitted: async (baselineBalance, bridgeResult) => {
         opsState.recordBridgeEvent("submitted");
