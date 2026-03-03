@@ -822,7 +822,9 @@ async function main() {
     });
 
   const creditAfterPayWithCreditExact = BigInt(
-    (await creditFpc.methods.balance_of(user).simulate({ from: user })).toString(),
+    (
+      await creditFpc.methods.balance_of(user).simulate({ from: user })
+    ).toString(),
   );
   const totalsAfterPayWithCreditExact = BigInt(
     (await creditFpc.methods.totals().simulate({ from: user })).toString(),
@@ -834,9 +836,13 @@ async function main() {
         .simulate({ from: operator })
     ).toString(),
   );
-  const exactTxFee = BigInt(payWithCreditExactReceipt.transactionFee.toString());
-  const exactCreditDelta = creditBeforePayWithCreditExact - creditAfterPayWithCreditExact;
-  const exactTotalsDelta = totalsBeforePayWithCreditExact - totalsAfterPayWithCreditExact;
+  const exactTxFee = BigInt(
+    payWithCreditExactReceipt.transactionFee.toString(),
+  );
+  const exactCreditDelta =
+    creditBeforePayWithCreditExact - creditAfterPayWithCreditExact;
+  const exactTotalsDelta =
+    totalsBeforePayWithCreditExact - totalsAfterPayWithCreditExact;
 
   console.log(
     `[credit-smoke] pay_with_credit_exact_tx_fee_juice=${payWithCreditExactReceipt.transactionFee}`,
@@ -858,7 +864,10 @@ async function main() {
       `Exact totals delta mismatch. expected_tx_fee=${exactTxFee} got_totals_delta=${exactTotalsDelta}`,
     );
   }
-  if (operatorTokenAfterPayWithCreditExact !== operatorTokenBeforePayWithCreditExact) {
+  if (
+    operatorTokenAfterPayWithCreditExact !==
+    operatorTokenBeforePayWithCreditExact
+  ) {
     throw new Error(
       `Operator token balance changed during pay_with_credit_exact-only tx. before=${operatorTokenBeforePayWithCreditExact} after=${operatorTokenAfterPayWithCreditExact}`,
     );
@@ -890,10 +899,14 @@ async function main() {
   const currentTotals = BigInt(
     (await creditFpc.methods.totals().simulate({ from: operator })).toString(),
   );
-  const currentFeeJuiceBalance = await getFeeJuiceBalance(creditFpc.address, node);
+  const currentFeeJuiceBalance = await getFeeJuiceBalance(
+    creditFpc.address,
+    node,
+  );
   const requiredFeeJuiceBalance = currentTotals + overdraftFjCreditAmount;
   if (currentFeeJuiceBalance < requiredFeeJuiceBalance) {
-    const topupDelta = requiredFeeJuiceBalance - currentFeeJuiceBalance + 1_000_000n;
+    const topupDelta =
+      requiredFeeJuiceBalance - currentFeeJuiceBalance + 1_000_000n;
     console.log(
       `[credit-smoke] overdraft_fee_juice_topup_delta=${topupDelta} current_balance=${currentFeeJuiceBalance} required_balance=${requiredFeeJuiceBalance}`,
     );
@@ -915,7 +928,9 @@ async function main() {
   await token.methods
     .mint_to_private(userOverdraft, overdraftAaPaymentAmount + 1_000_000n)
     .send({ from: operator });
-  await token.methods.mint_to_public(userOverdraft, 10n).send({ from: operator });
+  await token.methods
+    .mint_to_public(userOverdraft, 10n)
+    .send({ from: operator });
 
   const overdraftQuoteBlock = await node.getBlock("latest");
   if (!overdraftQuoteBlock) {
@@ -923,7 +938,8 @@ async function main() {
       "Could not read latest L2 block while building overdraft quote validity window",
     );
   }
-  const overdraftValidUntil = overdraftQuoteBlock.timestamp + config.quoteTtlSeconds;
+  const overdraftValidUntil =
+    overdraftQuoteBlock.timestamp + config.quoteTtlSeconds;
   const overdraftQuoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     creditFpc.address.toField(),
@@ -1044,7 +1060,12 @@ async function main() {
     ["Balance too low or note insufficient", "credit underflow"],
     () =>
       token.methods
-        .transfer_public_to_public(userOverdraft, userOverdraft, 1n, Fr.random())
+        .transfer_public_to_public(
+          userOverdraft,
+          userOverdraft,
+          1n,
+          Fr.random(),
+        )
         .send({
           from: userOverdraft,
           fee: {
