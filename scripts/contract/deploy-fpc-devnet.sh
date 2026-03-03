@@ -117,6 +117,13 @@ fi
 cmd+=("$@")
 "${cmd[@]}"
 
+# ── Verify deployment ────────────────────────────────────────────────────────
+if [[ "${FPC_DEVNET_SKIP_VERIFY:-0}" != "1" && "${FPC_DEVNET_PREFLIGHT_ONLY:-0}" != "1" ]]; then
+  echo "[deploy-fpc-devnet] Running post-deployment verification..."
+  bun run scripts/contract/verify-fpc-devnet-deployment.ts \
+    --manifest "${OUT_PATH}"
+fi
+
 # ── Generate service configs from manifest + master config ────────────────────
 FPC_DEPLOY_MANIFEST="$OUT_PATH" \
   FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}" \
