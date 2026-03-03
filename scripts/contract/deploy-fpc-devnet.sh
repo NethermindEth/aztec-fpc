@@ -92,7 +92,6 @@ if [[ "$MODE" == "local" ]]; then
 
     local cmd=(
       bunx tsx scripts/contract/deploy-fpc-devnet.ts
-      --environment local
       --node-url "${NODE_URL}"
       --l1-rpc-url "${L1_RPC_URL}"
       --deployer-alias "${DEPLOYER_ALIAS}"
@@ -171,7 +170,6 @@ fi
 
 cmd=(
   bunx tsx scripts/contract/deploy-fpc-devnet.ts
-  --environment devnet
   --node-url "${NODE_URL}"
   --sponsored-fpc-address "${SPONSORED_FPC_ADDRESS}"
   --deployer-alias "${DEPLOYER_ALIAS}"
