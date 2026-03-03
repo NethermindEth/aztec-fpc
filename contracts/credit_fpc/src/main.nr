@@ -204,7 +204,7 @@ pub contract BackedCreditFPC {
         self.enqueue_self._deduct_credits(max_gas_cost);
     }
 
-    // creates an extra note per-usage compared to pay_with_credit, 
+    // creates an extra note per-usage compared to pay_with_credit,
     // more expensive than pay_with_credit()
     // may be appropriate for some users, especially if big diff between actual_fee and max_fee
 
