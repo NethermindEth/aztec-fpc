@@ -12,7 +12,27 @@ set -euo pipefail
 #   FPC_MASTER_CONFIG  — path to master config YAML  (default: ./fpc-config.yaml)
 #   FPC_CONFIGS_OUT    — output directory             (default: ./configs)
 
+<<<<<<< HEAD
 FPC_DEPLOY_MANIFEST="${FPC_DEPLOY_MANIFEST:-./deployments/devnet-manifest-v2.json}"
+=======
+# Manifest resolution priority:
+# 1) explicit FPC_DEPLOY_MANIFEST
+# 2) FPC_LOCAL_OUT (used by local deploy scripts/compose deploy service)
+# 3) ./configs/deploy-manifest.json (compose output in this repo)
+# 4) ./deployments/devnet-manifest-v2.json (devnet workflow default)
+# 5) legacy fallback ./tmp/deploy-fpc-local-manifest.json
+if [ -n "${FPC_DEPLOY_MANIFEST:-}" ]; then
+  FPC_DEPLOY_MANIFEST="${FPC_DEPLOY_MANIFEST}"
+elif [ -n "${FPC_LOCAL_OUT:-}" ]; then
+  FPC_DEPLOY_MANIFEST="${FPC_LOCAL_OUT}"
+elif [ -f "./configs/deploy-manifest.json" ]; then
+  FPC_DEPLOY_MANIFEST="./configs/deploy-manifest.json"
+elif [ -f "./deployments/devnet-manifest-v2.json" ]; then
+  FPC_DEPLOY_MANIFEST="./deployments/devnet-manifest-v2.json"
+else
+  FPC_DEPLOY_MANIFEST="./tmp/deploy-fpc-local-manifest.json"
+fi
+>>>>>>> c22604c (compose: auto-sync service configs and fund L1 topup operators)
 FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}"
 FPC_CONFIGS_OUT="${FPC_CONFIGS_OUT:-./configs}"
 
@@ -46,7 +66,10 @@ fi
 # ── Read deploy manifest ───────────────────────────────────────────────────────
 
 export FPC_ADDRESS=$(jq -r '.contracts.fpc // .fpc_address // empty' "$FPC_DEPLOY_MANIFEST")
+export CREDIT_FPC_ADDRESS=$(jq -r '.contracts.credit_fpc // .credit_fpc_address // empty' "$FPC_DEPLOY_MANIFEST")
 export ACCEPTED_ASSET=$(jq -r '.contracts.accepted_asset // .accepted_asset // empty' "$FPC_DEPLOY_MANIFEST")
+export CREDIT_ATTESTATION_PORT="${CREDIT_ATTESTATION_PORT:-3002}"
+export TOPUP_CREDIT_OPS_PORT="${TOPUP_CREDIT_OPS_PORT:-3003}"
 
 for var in FPC_ADDRESS ACCEPTED_ASSET; do
   val="${!var}"
@@ -55,6 +78,11 @@ for var in FPC_ADDRESS ACCEPTED_ASSET; do
     exit 1
   fi
 done
+
+if [ -z "$CREDIT_FPC_ADDRESS" ] || [ "$CREDIT_FPC_ADDRESS" = "null" ]; then
+  CREDIT_FPC_ADDRESS="$FPC_ADDRESS"
+  echo "WARN: contracts.credit_fpc missing in manifest; attestation-credit will use fpc address ($FPC_ADDRESS)." >&2
+fi
 
 # ── Generate attestation config ───────────────────────────────────────────────
 
@@ -67,6 +95,18 @@ yq '.attestation' "$FPC_MASTER_CONFIG" \
   ' \
   > "$FPC_CONFIGS_OUT/attestation/config.yaml"
 
+# ── Generate credit attestation config ────────────────────────────────────────
+
+mkdir -p "$FPC_CONFIGS_OUT/attestation-credit"
+
+yq '.attestation' "$FPC_MASTER_CONFIG" \
+  | yq '
+    .fpc_address = strenv(CREDIT_FPC_ADDRESS) | .fpc_address style="double"
+    | .accepted_asset_address = strenv(ACCEPTED_ASSET) | .accepted_asset_address style="double"
+    | .port = (strenv(CREDIT_ATTESTATION_PORT) | tonumber)
+  ' \
+  > "$FPC_CONFIGS_OUT/attestation-credit/config.yaml"
+
 # ── Generate topup config ─────────────────────────────────────────────────────
 
 mkdir -p "$FPC_CONFIGS_OUT/topup"
@@ -77,11 +117,25 @@ yq '.topup' "$FPC_MASTER_CONFIG" \
   ' \
   > "$FPC_CONFIGS_OUT/topup/config.yaml"
 
+# ── Generate credit topup config ──────────────────────────────────────────────
+
+mkdir -p "$FPC_CONFIGS_OUT/topup-credit"
+
+yq '.topup' "$FPC_MASTER_CONFIG" \
+  | yq '
+    .fpc_address = strenv(CREDIT_FPC_ADDRESS) | .fpc_address style="double"
+    | .ops_port = (strenv(TOPUP_CREDIT_OPS_PORT) | tonumber)
+  ' \
+  > "$FPC_CONFIGS_OUT/topup-credit/config.yaml"
+
 # ── Summary ────────────────────────────────────────────────────────────────────
 
 echo "Service configs generated:"
 echo "  attestation: $FPC_CONFIGS_OUT/attestation/config.yaml"
+echo "  attestation-credit: $FPC_CONFIGS_OUT/attestation-credit/config.yaml"
 echo "  topup:       $FPC_CONFIGS_OUT/topup/config.yaml"
+echo "  topup-credit:$FPC_CONFIGS_OUT/topup-credit/config.yaml"
 echo ""
 echo "  fpc_address:     $FPC_ADDRESS"
+echo "  credit_fpc:      $CREDIT_FPC_ADDRESS"
 echo "  accepted_asset:  $ACCEPTED_ASSET"
