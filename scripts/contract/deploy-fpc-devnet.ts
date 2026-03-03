@@ -136,6 +136,7 @@ const WALLET_SPONSORED_FPC_ALIAS = "sponsoredfpc";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
+// Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_PATH_CANDIDATES = [
   path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
   path.join(REPO_ROOT, "target", "fpc-FPC.json"),
