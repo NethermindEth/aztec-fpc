@@ -1,117 +1,192 @@
 # AWS Deployment Guide for `services` (Attestation + Topup)
 
-Date: 2026-02-27
-Repo: `<repo-root>`
-Scope: repo-specific settings only (assumes your DevOps team already has AWS/ECS/EKS standards).
+Date: 2026-03-04  
+Repo: `<repo-root>`  
+Scope: repo-specific runtime and env wiring for AWS (ECS/EKS), aligned to current `contracts/`, `services/`, and `docker-compose.yaml`.
 
-## 1. Contracts and Network This Deployment Must Target
+## 1. Source of Truth: Deployment Manifest
 
-Use `deployments/devnet-manifest-v2.json` as source of truth.
+Use `deployments/devnet-manifest-v2.json` as the source of truth for deployed addresses.
 
-- `aztec_node_url`: `https://v4-devnet-2.aztec-labs.com/`
-- `l1_chain_id`: `11155111` (Sepolia)
-- `fpc_address`: `0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5`
-- `accepted_asset`: `0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a`
-- `operator_address`: `0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8`
+Quick check:
+
+```bash
+MANIFEST=./deployments/devnet-manifest-v2.json
+jq '{
+  node_url: .network.node_url,
+  l1_chain_id: .network.l1_chain_id,
+  fpc: .contracts.fpc,
+  accepted_asset: .contracts.accepted_asset,
+  faucet: .contracts.faucet,
+  counter: .contracts.counter,
+  operator: .operator.address,
+  fpc_artifact: .fpc_artifact.name
+}' "$MANIFEST"
+```
+
+Current contract state relevant to services:
+
+- Fee contract is `FPCMultiAsset` (`contracts/fpc/src/main.nr`).
+- Attestation still needs a default `accepted_asset_address` in config and can publish additional assets via `supported_assets`.
+- `counter` is now deployed by the devnet deploy script, but attestation/topup do not consume it.
 
 ## 2. Docker Images
 
-Use the existing service images:
+Use service images:
 
 - `nethermind/aztec-fpc-attestation:<tag>`
 - `nethermind/aztec-fpc-topup:<tag>`
 
-(If your org mirrors images to ECR, keep the same repo suffixes and only swap registry prefix/tag policy.)
+If mirroring to ECR, keep repo suffixes and change only registry/tag policy.
 
 ## 3. Config Files To Mount
 
-These services require YAML config files. Keep them external and mount read-only.
+Mount service YAML files read-only:
 
-- Attestation config path in container: `/app/configs/attestation/config.yaml`
-- Topup config path in container: `/app/configs/topup/config.yaml`
+- Attestation: `/app/configs/attestation/config.yaml`
+- Topup: `/app/configs/topup/config.yaml`
 
-Entrypoints expect `config.yaml` in cwd by default, so pass command args in AWS:
+Container args:
 
-- Attestation args: `--config /app/configs/attestation/config.yaml`
-- Topup args: `--config /app/configs/topup/config.yaml`
+- Attestation: `--config /app/configs/attestation/config.yaml`
+- Topup: `--config /app/configs/topup/config.yaml`
 
-Start from current repo files:
+Generate these from manifest + master config:
 
-- `services/attestation/config.yaml`
-- `services/topup/config.yaml`
+```bash
+cd <repo-root>
+FPC_DEPLOY_MANIFEST=./deployments/devnet-manifest-v2.json \
+FPC_MASTER_CONFIG=./fpc-config.yaml \
+FPC_CONFIGS_OUT=./configs \
+bash scripts/config/generate-service-configs.sh
+```
 
-For production, update both configs:
+For production:
 
-- set `runtime_profile: "production"`
-- remove plaintext key fields from files:
+- Set `runtime_profile: "production"` in both YAMLs (or set `FPC_RUNTIME_PROFILE=production`).
+- Remove plaintext secrets from YAML:
   - attestation: remove `operator_secret_key`
   - topup: remove `l1_operator_private_key`
 
-Important repo detail: several fields are config-only (not env-overridable), so keep them correct in YAML.
+Config-only fields (no env override in current code):
 
-- Attestation config-only: `fpc_address`, `accepted_asset_address`, `accepted_asset_name`, `market_rate_num`, `market_rate_den`, `fee_bips`, `operator_address`, `quote_validity_seconds`, `port`
-- Topup config-only: `fpc_address`, `threshold`, `top_up_amount`, `check_interval_ms`, `confirmation_*`
+- Attestation:
+  - `network_id`, `fpc_address`, `contract_variant`, `quote_base_url`, `quote_validity_seconds`, `port`
+  - `accepted_asset_address`, `accepted_asset_name`, `supported_assets`
+  - `market_rate_num`, `market_rate_den`, `fee_bips`, `quote_format`
+  - `operator_address`, `pxe_data_directory`
+- Topup:
+  - `fpc_address`, `threshold`, `top_up_amount`
+  - `check_interval_ms`, `confirmation_timeout_ms`, `confirmation_poll_initial_ms`, `confirmation_poll_max_ms`
 
-## 4. Environment Variables To Set
+## 4. Env Vars (Runtime-Supported)
 
-### 4.1 Shared
+This section is the exact env surface consumed by `services/attestation/src` and `services/topup/src`.
 
-- `AZTEC_NODE_URL=https://v4-devnet-2.aztec-labs.com/`
-- `FPC_RUNTIME_PROFILE=production`
+Shared:
 
-Provider note: `kms`/`hsm` secret providers in this repo require custom adapter wiring in code. With current images, use `*_SECRET_PROVIDER=env`.
+- `AZTEC_NODE_URL=<https://...>`
+- `FPC_RUNTIME_PROFILE=<development|test|production>`
 
-### 4.2 Attestation (required/recommended)
+Secret-provider note:
 
-Required:
+- `kms`/`hsm` providers require adapter wiring in code.
+- With current images, use `*_SECRET_PROVIDER=env` unless you ship a custom build with adapters.
+
+### 4.1 Attestation
+
+Required in production:
 
 - `OPERATOR_SECRET_PROVIDER=env`
-- `OPERATOR_SECRET_KEY=<secret>`
+- `OPERATOR_SECRET_KEY=<0x...32-byte-hex>`
 - `QUOTE_AUTH_MODE=<api_key|trusted_header|api_key_or_trusted_header|api_key_and_trusted_header>`
 
-If using API key modes:
+Conditional:
 
-- `QUOTE_AUTH_API_KEY=<secret>`
-- Optional `QUOTE_AUTH_API_KEY_HEADER` (default `x-api-key`)
+- API-key modes need `QUOTE_AUTH_API_KEY`.
+- Optional API-key header override: `QUOTE_AUTH_API_KEY_HEADER` (default `x-api-key`).
+- Trusted-header modes need:
+  - `QUOTE_AUTH_TRUSTED_HEADER_NAME`
+  - `QUOTE_AUTH_TRUSTED_HEADER_VALUE`
 
-If using trusted header modes:
+Optional:
 
-- `QUOTE_AUTH_TRUSTED_HEADER_NAME=<header-name>`
-- `QUOTE_AUTH_TRUSTED_HEADER_VALUE=<secret-value>`
+- `OPERATOR_SECRET_REF` (used when provider is `kms`/`hsm`).
+- `QUOTE_RATE_LIMIT_ENABLED`
+- `QUOTE_RATE_LIMIT_MAX_REQUESTS`
+- `QUOTE_RATE_LIMIT_WINDOW_SECONDS`
+- `QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS`
 
-Recommended tuning:
+Important:
 
-- `QUOTE_RATE_LIMIT_ENABLED=true`
-- `QUOTE_RATE_LIMIT_MAX_REQUESTS=60`
-- `QUOTE_RATE_LIMIT_WINDOW_SECONDS=60`
-- `QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS=10000`
+- `QUOTE_AUTH_MODE=disabled` is rejected when runtime profile is `production`.
 
-### 4.3 Topup (required/recommended)
+### 4.2 Topup
 
 Required:
 
-- `L1_RPC_URL=<sepolia_rpc_https_url>`
+- `L1_RPC_URL=<https://...>`
 - `L1_OPERATOR_SECRET_PROVIDER=env`
-- `L1_OPERATOR_PRIVATE_KEY=<secret>`
+- `L1_OPERATOR_PRIVATE_KEY=<0x...32-byte-hex>`
 
 Recommended:
 
 - `TOPUP_OPS_PORT=3001`
 - `TOPUP_BRIDGE_STATE_PATH=/var/lib/aztec-fpc/topup-bridge-state.json`
+- `TOPUP_AUTOCLAIM_ENABLED=0`
 
-Optional debug only (do not enable in prod):
+Conditional:
+
+- `L1_OPERATOR_SECRET_REF` (used when provider is `kms`/`hsm`).
+- `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX` only matters if auto-claim is enabled.
+
+Debug only (do not enable in production):
 
 - `TOPUP_LOG_CLAIM_SECRET=1`
 
-## 5. AWS Runtime Settings (Repo-Specific)
+## 5. Compose-Parity Service Env Blocks
+
+`docker-compose.yaml` currently wires these service envs:
+
+Attestation compose parity:
+
+```yaml
+environment:
+  AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
+  OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x...}"
+```
+
+Topup compose parity:
+
+```yaml
+environment:
+  AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
+  L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
+  L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0x...}"
+  TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
+  TOPUP_BRIDGE_STATE_PATH: "${TOPUP_BRIDGE_STATE_PATH:-/tmp/.topup-bridge-state.json}"
+  TOPUP_AUTOCLAIM_ENABLED: "${TOPUP_AUTOCLAIM_ENABLED:-1}"
+  TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX: "${TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX:-0}"
+```
+
+AWS production delta from compose parity:
+
+- Add `FPC_RUNTIME_PROFILE=production`.
+- Add secret provider envs:
+  - `OPERATOR_SECRET_PROVIDER=env`
+  - `L1_OPERATOR_SECRET_PROVIDER=env`
+- Set `TOPUP_AUTOCLAIM_ENABLED=0` unless you intentionally run local-network-style test accounts.
+- Replace local defaults (`http://aztec-node:8080`, `http://anvil:8545`) with real endpoints.
+
+## 6. AWS Runtime Settings
 
 - Expose attestation on container port `3000` (`/.well-known/fpc.json`, `/health`, `/metrics`, `/quote`, `/asset`).
 - Expose topup ops on `TOPUP_OPS_PORT` (default `3001`) (`/health`, `/ready`, `/metrics`).
-- Add writable storage for topup bridge state path (`TOPUP_BRIDGE_STATE_PATH`).
-- Run topup as a singleton (`replicas=1`) unless you add external leader election.
+- Mount writable storage for `TOPUP_BRIDGE_STATE_PATH`.
+- Run topup as singleton (`replicas=1`) unless you add leader election/distributed locking.
 - Attestation can be horizontally scaled.
 
-## 6. Validation After Deploy
+## 7. Validation After Deploy
 
 Attestation:
 
@@ -128,19 +203,20 @@ curl -fsS "https://<topup-host>/health"
 curl -fsS "https://<topup-host>/ready"
 ```
 
-If topup is not ready, first checks are usually:
+If topup readiness is failing, first check:
 
-- `L1_RPC_URL` chain mismatch (must match Aztec node `l1_chain_id=11155111`)
-- missing/invalid `L1_OPERATOR_PRIVATE_KEY`
-- bad `fpc_address` in mounted topup config
+- `L1_RPC_URL` chain ID matches manifest `network.l1_chain_id`.
+- `L1_OPERATOR_PRIVATE_KEY` is present and valid.
+- topup config `fpc_address` matches deployed contract.
+- `TOPUP_AUTOCLAIM_ENABLED` is not accidentally left at `1` in non-local environments.
 
-## 7. Fast Config Regeneration From Manifest (Optional)
+## 8. Regenerate Service Configs After Contract Redeploy
 
-If contracts are redeployed later, regenerate both service configs from the new manifest:
+When contracts are redeployed:
 
 ```bash
 cd <repo-root>
 bun run generate:configs
 ```
 
-Then re-apply your secret removal/secret-ref policy in the generated YAML before rollout.
+Then re-apply your secret policy (remove plaintext keys / wire env or secret refs) before rollout.
