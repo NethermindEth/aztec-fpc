@@ -181,8 +181,10 @@ For AWS, prefer a writable mounted path for durability (for example `/var/lib/az
 Conditional:
 
 - `L1_OPERATOR_SECRET_REF` (used when provider is `kms`/`hsm`).
-- `TOPUP_AUTOCLAIM_SECRET_KEY` (claimer key for auto-claim mode; falls back to `OPERATOR_SECRET_KEY`).
+- `TOPUP_AUTOCLAIM_SECRET_KEY` (claimer key for auto-claim mode).
+- `TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY=1` (optional legacy fallback: use `OPERATOR_SECRET_KEY` when `TOPUP_AUTOCLAIM_SECRET_KEY` is unset).
 - `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` (recommended when auto-claim is enabled; uses sponsored fee payment for claim txs).
+- `TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT=1` (recommended/default; fail fast unless the claimer account is publicly deployed on the connected Aztec node).
 - fallback aliases for sponsor address: `FPC_DEVNET_SPONSORED_FPC_ADDRESS`, `SPONSORED_FPC_ADDRESS`.
 - `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX` only matters if auto-claim is enabled.
 
@@ -238,8 +240,10 @@ environment:
   L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
   L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0x...}"
   OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x...}"
-  TOPUP_AUTOCLAIM_SECRET_KEY: "${TOPUP_AUTOCLAIM_SECRET_KEY:-${OPERATOR_SECRET_KEY:-0x...}}"
+  TOPUP_AUTOCLAIM_SECRET_KEY: "${TOPUP_AUTOCLAIM_SECRET_KEY:-}"
+  TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY: "${TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY:-0}"
   TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: "${TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS:-${FPC_DEVNET_SPONSORED_FPC_ADDRESS:-${SPONSORED_FPC_ADDRESS:-}}}"
+  TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "${TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT:-1}"
   TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
   TOPUP_BRIDGE_STATE_PATH: "${TOPUP_BRIDGE_STATE_PATH:-/tmp/.topup-bridge-state.json}"
   TOPUP_AUTOCLAIM_ENABLED: "${TOPUP_AUTOCLAIM_ENABLED:-1}"
@@ -253,7 +257,9 @@ AWS production delta from compose parity:
   - `OPERATOR_SECRET_PROVIDER=env`
   - `L1_OPERATOR_SECRET_PROVIDER=env`
 - Set `TOPUP_AUTOCLAIM_ENABLED=0` unless you intentionally run auto-claim in production.
-- If auto-claim is enabled in production, set `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` (or equivalent alias) so claim tx fees are sponsored.
+- If auto-claim is enabled in production, either:
+  - set `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` (or equivalent alias), or
+  - ensure the claimer account has enough L2 FeeJuice.
 - Replace local defaults (`http://aztec-node:8080`, `http://anvil:8545`) with real endpoints.
 
 ## 6. Local Services-Only Devnet Compose
@@ -268,6 +274,18 @@ Start command (auto-generates service configs from devnet manifest):
 
 ```bash
 bun run compose:services:devnet -- -d
+```
+
+Optional standalone preflight (same check run by `compose:services:devnet` when auto-claim is enabled):
+
+```bash
+bun run preflight:topup:autoclaim -- --manifest ./deployments/devnet-manifest-v2.json
+```
+
+Optional claimer bootstrap helper (deploy/register the claimer account before preflight):
+
+```bash
+bun run bootstrap:topup:autoclaim-account -- --manifest ./deployments/devnet-manifest-v2.json
 ```
 
 Equivalent manual sequence:
@@ -292,10 +310,17 @@ Defaults in `docker-compose.services-devnet.yaml`:
 
 - `TOPUP_BRIDGE_STATE_PATH=/tmp/.topup-bridge-state.json`
 - `TOPUP_AUTOCLAIM_ENABLED=1`
-- auto-claim claimer key source: `TOPUP_AUTOCLAIM_SECRET_KEY`, else `OPERATOR_SECRET_KEY`, else test account index.
+- auto-claim claimer key source: `TOPUP_AUTOCLAIM_SECRET_KEY`; if unset, topup uses test account index.
+- optional legacy fallback: set `TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY=1` to use `OPERATOR_SECRET_KEY` when `TOPUP_AUTOCLAIM_SECRET_KEY` is unset.
 - sponsored auto-claim address source: `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS`, else `FPC_DEVNET_SPONSORED_FPC_ADDRESS`, else `SPONSORED_FPC_ADDRESS`.
+- optional bootstrap toggle for compose mode: `TOPUP_AUTOCLAIM_BOOTSTRAP_ACCOUNT=1` (runs claimer bootstrap before preflight).
+- optional bootstrap payment override: `TOPUP_AUTOCLAIM_BOOTSTRAP_PAYMENT_MODE=auto|sponsored|fee_juice|register_only` (default `auto`).
+- published-account guard: `TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT=1` by default; topup will fail startup if claimer is not publicly deployed.
 - topup auto-registers `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` in embedded PXE using the `SponsoredFPC` artifact before claim attempts.
 - `scripts/services/compose-mode.sh services-devnet` auto-exports `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` from `deployments/devnet-manifest-v2.json` when available.
+- `scripts/services/compose-mode.sh services-devnet` sets `TOPUP_AUTOCLAIM_SECRET_KEY` from `deployment_accounts.l2_deployer.private_key` in `deployments/devnet-manifest-v2.json` only when `TOPUP_AUTOCLAIM_SECRET_KEY` is not already set.
+- if `TOPUP_AUTOCLAIM_BOOTSTRAP_ACCOUNT=1` and `TOPUP_AUTOCLAIM_ENABLED=1`, `scripts/services/compose-mode.sh services-devnet` runs `bootstrap-topup-autoclaim-account.ts` before preflight.
+- when `TOPUP_AUTOCLAIM_ENABLED=1`, `scripts/services/compose-mode.sh services-devnet` runs a preflight to verify the resolved claimer account is publicly deployed before starting containers.
 
 ## 7. AWS Runtime Settings
 
@@ -330,6 +355,8 @@ If topup readiness is failing, first check:
 - `TOPUP_AUTOCLAIM_ENABLED` is not accidentally left at `1` in non-local environments.
 - if auto-claim is enabled: `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` points to a valid sponsored FPC contract; otherwise the claimer account must have enough FeeJuice to pay claim tx fees.
 - if logs show `Unknown contract <sponsor-address>: add it to PXE`, verify the running topup image includes sponsor registration support and that `<sponsor-address>` is a `SponsoredFPC` instance on the connected Aztec network.
+- if logs show `Disabling sponsored auto-claim for this process due to proving/runtime failure`, sponsored mode is not usable on this network/runtime for the current process and topup will fallback to claimer FeeJuice payment.
+- if logs show `Sponsored auto-claim failed ... retrying with claimer Fee Juice payment`, the sponsor path failed for that attempt and topup retried with regular FeeJuice payment.
 
 ## 9. Regenerate Service Configs After Contract Redeploy
 

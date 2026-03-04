@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  resolveAutoClaimRequirePublishedAccountFromEnv,
   resolveAutoClaimSecretKeyFromEnv,
   resolveAutoClaimSponsoredFpcFromEnv,
 } from "../src/autoclaim.js";
@@ -25,16 +26,24 @@ describe("resolveAutoClaimSecretKeyFromEnv", () => {
     assert.equal(resolved, VALID_SECRET_A);
   });
 
-  it("falls back to OPERATOR_SECRET_KEY when TOPUP_AUTOCLAIM_SECRET_KEY is unset", () => {
+  it("returns null when TOPUP_AUTOCLAIM_SECRET_KEY is unset", () => {
     const resolved = resolveAutoClaimSecretKeyFromEnv({
       OPERATOR_SECRET_KEY: VALID_SECRET_B,
     });
-    assert.equal(resolved, VALID_SECRET_B);
+    assert.equal(resolved, null);
   });
 
-  it("falls back to OPERATOR_SECRET_KEY when TOPUP_AUTOCLAIM_SECRET_KEY is blank", () => {
+  it("returns null when TOPUP_AUTOCLAIM_SECRET_KEY is blank", () => {
     const resolved = resolveAutoClaimSecretKeyFromEnv({
       TOPUP_AUTOCLAIM_SECRET_KEY: "   ",
+      OPERATOR_SECRET_KEY: VALID_SECRET_B,
+    });
+    assert.equal(resolved, null);
+  });
+
+  it("can opt-in to OPERATOR_SECRET_KEY fallback", () => {
+    const resolved = resolveAutoClaimSecretKeyFromEnv({
+      TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY: "1",
       OPERATOR_SECRET_KEY: VALID_SECRET_B,
     });
     assert.equal(resolved, VALID_SECRET_B);
@@ -101,6 +110,53 @@ describe("resolveAutoClaimSponsoredFpcFromEnv", () => {
           TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: "0x1234",
         }),
       /Invalid sponsored FPC address/,
+    );
+  });
+});
+
+describe("resolveAutoClaimRequirePublishedAccountFromEnv", () => {
+  it("defaults to true when unset", () => {
+    const resolved = resolveAutoClaimRequirePublishedAccountFromEnv({});
+    assert.equal(resolved, true);
+  });
+
+  it("accepts false-like values", () => {
+    assert.equal(
+      resolveAutoClaimRequirePublishedAccountFromEnv({
+        TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "0",
+      }),
+      false,
+    );
+    assert.equal(
+      resolveAutoClaimRequirePublishedAccountFromEnv({
+        TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "false",
+      }),
+      false,
+    );
+  });
+
+  it("accepts true-like values", () => {
+    assert.equal(
+      resolveAutoClaimRequirePublishedAccountFromEnv({
+        TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "1",
+      }),
+      true,
+    );
+    assert.equal(
+      resolveAutoClaimRequirePublishedAccountFromEnv({
+        TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "yes",
+      }),
+      true,
+    );
+  });
+
+  it("throws on invalid value", () => {
+    assert.throws(
+      () =>
+        resolveAutoClaimRequirePublishedAccountFromEnv({
+          TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "maybe",
+        }),
+      /Invalid TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT/,
     );
   });
 });

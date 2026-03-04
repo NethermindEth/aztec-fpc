@@ -48,6 +48,8 @@
 
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
     "generate:configs:devnet": "FPC_DEPLOY_MANIFEST=./deployments/devnet-manifest-v2.json bash scripts/config/generate-service-configs.sh",
+    "bootstrap:topup:autoclaim-account": "bunx tsx scripts/services/bootstrap-topup-autoclaim-account.ts",
+    "preflight:topup:autoclaim": "bunx tsx scripts/services/preflight-topup-autoclaim.ts",
     "fund:l1:fee-juice": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; bunx tsx scripts/services/fund-l1-fee-juice.ts \"$@\"' --",
     "manual:fpc:sponsored:devnet": "bunx tsx scripts/manual-fpc-sponsored-user-tx-devnet.ts",
     "deploy:fpc": "bash scripts/contract/deploy-fpc.sh",

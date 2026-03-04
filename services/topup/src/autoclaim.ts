@@ -11,6 +11,8 @@ import type { Hex } from "viem";
 
 const DEFAULT_ACCOUNT_INDEX = 0;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
+const FALSE_ENV_VALUES = new Set(["0", "false", "no", "off"]);
 
 export interface AutoClaimRequest {
   recipient: AztecAddress;
@@ -27,6 +29,16 @@ export interface TopupAutoClaimer {
   paymentMode: "sponsored" | "fee_juice";
   sponsoredFpcAddress: AztecAddress | null;
   claim: (request: AutoClaimRequest) => Promise<string>;
+}
+
+function isSponsoredProofFailure(error: unknown): boolean {
+  const message = String(error);
+  return (
+    message.includes("Invalid tx: Invalid proof") ||
+    message.includes("Circuit execution failed") ||
+    message.includes("Missing return value for index") ||
+    message.includes("Cannot enter the revertible phase twice")
+  );
 }
 
 function parseOptionalSecretKey(value: string | undefined): string | null {
@@ -57,7 +69,32 @@ export function resolveAutoClaimSecretKeyFromEnv(
   if (explicitSecretKey) {
     return explicitSecretKey;
   }
-  return parseOptionalSecretKey(env.OPERATOR_SECRET_KEY);
+  if (env.TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY === "1") {
+    return parseOptionalSecretKey(env.OPERATOR_SECRET_KEY);
+  }
+  return null;
+}
+
+export function resolveAutoClaimRequirePublishedAccountFromEnv(
+  env: NodeJS.ProcessEnv,
+): boolean {
+  const rawValue = env.TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT;
+  if (rawValue === undefined) {
+    return true;
+  }
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return true;
+  }
+  if (TRUE_ENV_VALUES.has(normalized)) {
+    return true;
+  }
+  if (FALSE_ENV_VALUES.has(normalized)) {
+    return false;
+  }
+  throw new Error(
+    "Invalid TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT. Expected one of: 1/0, true/false, yes/no, on/off",
+  );
 }
 
 function parseOptionalAztecAddress(
@@ -120,11 +157,28 @@ async function registerSponsoredFpcContract(
   );
 }
 
+async function assertPublishedClaimerAccount(
+  node: AztecNode,
+  claimerAddress: AztecAddress,
+  claimerSource: "secret_key" | "test_account",
+): Promise<void> {
+  const publishedAccount = await node.getContract(claimerAddress);
+  if (publishedAccount) {
+    return;
+  }
+
+  throw new Error(
+    `Auto-claim claimer ${claimerAddress.toString()} (source=${claimerSource}) is not publicly deployed on the connected Aztec node. Configure TOPUP_AUTOCLAIM_SECRET_KEY to a publicly deployed account (or deploy this account first).`,
+  );
+}
+
 export async function createTopupAutoClaimer(
   node: AztecNode,
 ): Promise<TopupAutoClaimer> {
   const wallet = await EmbeddedWallet.create(node, { ephemeral: true });
   const explicitSecretKey = resolveAutoClaimSecretKeyFromEnv(process.env);
+  const requirePublishedClaimer =
+    resolveAutoClaimRequirePublishedAccountFromEnv(process.env);
   const sponsoredFpcAddress = resolveAutoClaimSponsoredFpcFromEnv(process.env);
   if (sponsoredFpcAddress) {
     try {
@@ -175,7 +229,12 @@ export async function createTopupAutoClaimer(
     claimerSource = "test_account";
   }
 
+  if (requirePublishedClaimer) {
+    await assertPublishedClaimerAccount(node, claimerAddress, claimerSource);
+  }
+
   const feeJuice = FeeJuiceContract.at(wallet);
+  let sponsoredModeDisabled = false;
 
   return {
     claimerAddress,
@@ -183,10 +242,13 @@ export async function createTopupAutoClaimer(
     paymentMode: sponsoredPaymentMethod ? "sponsored" : "fee_juice",
     sponsoredFpcAddress,
     async claim(request: AutoClaimRequest): Promise<string> {
-      try {
-        const feeOption = sponsoredPaymentMethod
-          ? { paymentMethod: sponsoredPaymentMethod }
-          : undefined;
+      const sendClaim = async (
+        fee:
+          | {
+              paymentMethod: SponsoredFeePaymentMethod;
+            }
+          | undefined,
+      ) => {
         const receipt = await feeJuice.methods
           .claim(
             request.recipient,
@@ -196,10 +258,34 @@ export async function createTopupAutoClaimer(
           )
           .send({
             from: claimerAddress,
-            fee: feeOption,
+            fee,
             wait: { timeout: request.waitTimeoutSeconds },
           });
         return receipt.txHash.toString();
+      };
+
+      try {
+        if (!sponsoredPaymentMethod || sponsoredModeDisabled) {
+          return await sendClaim(undefined);
+        }
+
+        try {
+          return await sendClaim({ paymentMethod: sponsoredPaymentMethod });
+        } catch (sponsoredError) {
+          if (isSponsoredProofFailure(sponsoredError)) {
+            sponsoredModeDisabled = true;
+            console.warn(
+              `Disabling sponsored auto-claim for this process due to proving/runtime failure (sponsor=${sponsoredFpcAddress?.toString()}). Falling back to claimer Fee Juice payment.`,
+              String(sponsoredError),
+            );
+          }
+          const sponsoredErrorDetails = String(sponsoredError);
+          console.warn(
+            `Sponsored auto-claim failed for message_hash=${request.messageHash}; retrying with claimer Fee Juice payment (sponsor=${sponsoredFpcAddress?.toString()})`,
+            sponsoredErrorDetails,
+          );
+          return await sendClaim(undefined);
+        }
       } catch (error) {
         const errorDetails = String(error);
         const insufficientBalanceHint = errorDetails.includes(

@@ -41,6 +41,7 @@ infra)
 services-devnet)
   (
     cd "$REPO_ROOT"
+    require_cmd bun
     manifest_path="${FPC_DEPLOY_MANIFEST:-./deployments/devnet-manifest-v2.json}"
     FPC_DEPLOY_MANIFEST="$manifest_path" \
       FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}" \
@@ -53,6 +54,28 @@ services-devnet)
         export TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS="$sponsored_fpc_address"
         echo "[compose-mode] using TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS=$sponsored_fpc_address (from $manifest_path)"
       fi
+    fi
+
+    if [[ -f "$manifest_path" ]]; then
+      if [[ -n "${TOPUP_AUTOCLAIM_SECRET_KEY:-}" ]]; then
+        echo "[compose-mode] using caller-provided TOPUP_AUTOCLAIM_SECRET_KEY (manifest deployment_accounts.l2_deployer.private_key ignored)"
+      else
+        l2_deployer_private_key="$(jq -r '.deployment_accounts.l2_deployer.private_key // empty' "$manifest_path")"
+        if [[ -n "$l2_deployer_private_key" ]]; then
+          echo "[compose-mode] using TOPUP_AUTOCLAIM_SECRET_KEY from deployment_accounts.l2_deployer.private_key (from $manifest_path)"
+          export TOPUP_AUTOCLAIM_SECRET_KEY="$l2_deployer_private_key"
+        fi
+      fi
+    fi
+
+    if [[ "${TOPUP_AUTOCLAIM_ENABLED:-1}" != "0" && "${TOPUP_AUTOCLAIM_BOOTSTRAP_ACCOUNT:-0}" == "1" ]]; then
+      echo "[compose-mode] bootstrapping auto-claim claimer account before preflight"
+      bunx tsx scripts/services/bootstrap-topup-autoclaim-account.ts --manifest "$manifest_path"
+    fi
+
+    if [[ "${TOPUP_AUTOCLAIM_ENABLED:-1}" != "0" ]]; then
+      echo "[compose-mode] running auto-claim claimer preflight"
+      bunx tsx scripts/services/preflight-topup-autoclaim.ts --manifest "$manifest_path"
     fi
 
     docker compose -f docker-compose.services-devnet.yaml up "${EXTRA_ARGS[@]}"
