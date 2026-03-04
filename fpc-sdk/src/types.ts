@@ -1,6 +1,9 @@
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { Wallet as AccountWallet } from "@aztec/aztec.js/wallet";
+
 export type CreateSponsoredCounterClientInput = {
-  wallet: unknown;
-  account: string;
+  wallet: AccountWallet;
+  account: AztecAddress | string;
 };
 
 export type SponsoredIncrementResult = {
