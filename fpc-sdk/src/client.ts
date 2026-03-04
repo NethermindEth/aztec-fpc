@@ -1,6 +1,7 @@
 import { connectAndAttachContracts } from "./internal/contracts";
 import { SDK_DEFAULTS } from "./defaults";
 import { SponsoredSdkError, SponsoredTxFailedError } from "./errors";
+import { ensurePrivateBalance } from "./internal/balance-bootstrap";
 import { fetchAndValidateQuote } from "./internal/quote";
 import type {
   CreateSponsoredCounterClientInput,
@@ -22,10 +23,20 @@ export async function createSponsoredCounterClient(
         const fjAmount =
           BigInt(SDK_DEFAULTS.daGasLimit) * minFees.feePerDaGas +
           BigInt(SDK_DEFAULTS.l2GasLimit) * minFees.feePerL2Gas;
-        await fetchAndValidateQuote({
+        const quote = await fetchAndValidateQuote({
           acceptedAsset: context.addresses.token,
           attestationBaseUrl: SDK_DEFAULTS.attestationBaseUrl,
           fjAmount,
+          user: context.addresses.user,
+        });
+        await ensurePrivateBalance({
+          faucet: context.faucet as never,
+          from: context.addresses.user,
+          maxFaucetAttempts: SDK_DEFAULTS.maxFaucetAttempts,
+          minimumPrivateAcceptedAsset:
+            quote.aaPaymentAmount + SDK_DEFAULTS.minimumPrivateBalanceBuffer,
+          token: context.token as never,
+          txWaitTimeoutSeconds: SDK_DEFAULTS.txWaitTimeoutSeconds,
           user: context.addresses.user,
         });
 
