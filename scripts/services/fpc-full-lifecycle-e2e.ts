@@ -1759,6 +1759,8 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
       env: {
         ...process.env,
         L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
+        // Prevent host env from redirecting isolated scenario top-ups.
+        TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: isolatedFpc.address.toString(),
       },
     },
   );
@@ -1958,6 +1960,8 @@ async function orchestrateServicesAndAssertBridgeCycles(
         env: {
           ...process.env,
           L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
+          // Keep this harness deterministic even when host env sets a recipient.
+          TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: result.fpc.address.toString(),
           TOPUP_AUTOCLAIM_SECRET_KEY: result.operatorSecretHex,
           TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "0",
         },
