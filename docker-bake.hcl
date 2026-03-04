@@ -81,11 +81,21 @@ target "deps" {
   platforms  = PLATFORMS
 }
 
+target "contract" {
+  context    = "."
+  dockerfile = "scripts/contract/Dockerfile.deploy"
+  target     = "compile"
+  platforms  = ["linux/amd64"]
+}
+
 target "deploy" {
   inherits   = ["_labels"]
   context    = "."
   dockerfile = "scripts/contract/Dockerfile.deploy"
-  contexts   = { deps = "target:deps" }
+  contexts   = {
+    deps     = "target:deps"
+    contract = "target:contract"
+  }
   platforms  = PLATFORMS
   target     = "deploy"
   tags = compact([
