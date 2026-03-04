@@ -2,11 +2,13 @@ import { connectAndAttachContracts } from "./internal/contracts";
 import { SDK_DEFAULTS } from "./defaults";
 import { SponsoredSdkError, SponsoredTxFailedError } from "./errors";
 import { ensurePrivateBalance } from "./internal/balance-bootstrap";
+import { createSponsoredPaymentMethod } from "./internal/fee-payment";
 import { fetchAndValidateQuote } from "./internal/quote";
 import type {
   CreateSponsoredCounterClientInput,
   SponsoredCounterClient,
 } from "./types";
+import { Gas, GasFees } from "@aztec/stdlib/gas";
 
 export async function createSponsoredCounterClient(
   input: CreateSponsoredCounterClientInput,
@@ -39,12 +41,51 @@ export async function createSponsoredCounterClient(
           txWaitTimeoutSeconds: SDK_DEFAULTS.txWaitTimeoutSeconds,
           user: context.addresses.user,
         });
+        const { paymentMethod } = await createSponsoredPaymentMethod({
+          aaPaymentAmount: quote.aaPaymentAmount,
+          fpc: context.fpc as never,
+          fjAmount,
+          operatorAddress: context.addresses.operator,
+          quoteSignatureBytes: quote.signatureBytes,
+          quoteValidUntil: quote.validUntil,
+          token: context.token as never,
+          tokenAddress: context.addresses.token,
+          user: context.addresses.user,
+          wallet: input.wallet,
+        });
+
+        const gasLimits = new Gas(SDK_DEFAULTS.daGasLimit, SDK_DEFAULTS.l2GasLimit);
+        const teardownGasLimits = new Gas(0, 0);
+        const maxFeesPerGas = new GasFees(
+          minFees.feePerDaGas,
+          minFees.feePerL2Gas,
+        );
+
+        let receipt: { txHash: { toString(): string } };
+        try {
+          receipt = await context.counter.methods.increment(context.addresses.user).send({
+            fee: {
+              gasSettings: { gasLimits, maxFeesPerGas, teardownGasLimits },
+              paymentMethod,
+            },
+            from: context.addresses.user,
+            wait: { timeout: SDK_DEFAULTS.txWaitTimeoutSeconds },
+          });
+        } catch (error) {
+          throw new SponsoredTxFailedError(
+            "Sponsored transaction submission failed.",
+            {
+              cause: error instanceof Error ? error.message : String(error),
+            },
+          );
+        }
 
         throw new SponsoredTxFailedError(
-          "SDK scaffold only: increment() is not implemented yet.",
+          "SDK scaffold only: post-state checks are not implemented yet.",
           {
             account: context.addresses.user.toString(),
-            phase: "step-5-scaffold",
+            phase: "step-8-scaffold",
+            txHash: receipt.txHash.toString(),
           },
         );
       } catch (error) {
