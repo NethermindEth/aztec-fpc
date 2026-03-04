@@ -48,6 +48,18 @@ async function main() {
   if (fpcAddress.isZero()) {
     throw new Error("Invalid fpc_address: zero address is not allowed");
   }
+  const topupTargetAddressEnv =
+    process.env.TOPUP_FEE_JUICE_RECIPIENT_ADDRESS?.trim() ?? "";
+  const topupTargetAddressRaw =
+    topupTargetAddressEnv.length > 0
+      ? topupTargetAddressEnv
+      : config.fpc_address;
+  const topupTargetAddress = AztecAddress.fromString(topupTargetAddressRaw);
+  if (topupTargetAddress.isZero()) {
+    throw new Error(
+      "Invalid TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: zero address is not allowed",
+    );
+  }
   const nodeInfo = await pxe.getNodeInfo();
   const l1ChainId = nodeInfo.l1ChainId;
   if (!Number.isInteger(l1ChainId) || l1ChainId <= 0) {
@@ -101,6 +113,15 @@ async function main() {
 
   console.log(`Top-up service started`);
   console.log(`  FPC address:   ${config.fpc_address}`);
+  console.log(`  Top-up target: ${topupTargetAddress.toString()}`);
+  if (
+    topupTargetAddress.toString().toLowerCase() !==
+    fpcAddress.toString().toLowerCase()
+  ) {
+    console.warn(
+      `  Top-up target differs from FPC address; monitoring and claims will target ${topupTargetAddress.toString()}`,
+    );
+  }
   console.log(`  Threshold:     ${threshold} wei`);
   console.log(`  Top-up amount: ${topUpAmount} wei`);
   console.log(`  Bridge state file: ${bridgeStateStore.filePath}`);
@@ -159,7 +180,7 @@ async function main() {
     {
       getBalance: async () => {
         try {
-          const balance = await balanceReader.getBalance(fpcAddress);
+          const balance = await balanceReader.getBalance(topupTargetAddress);
           opsState.recordBalanceCheckSuccess();
           return balance;
         } catch (error) {
@@ -173,13 +194,13 @@ async function main() {
           config.l1_rpc_url,
           l1ChainId,
           config.l1_operator_private_key,
-          fpcAddress,
+          topupTargetAddress,
           amount,
         ),
       confirm: (baselineBalance, bridgeResult) =>
         waitForFeeJuiceBridgeConfirmation({
           balanceReader,
-          fpcAddress,
+          fpcAddress: topupTargetAddress,
           baselineBalance,
           timeoutMs: config.confirmation_timeout_ms,
           initialPollMs: config.confirmation_poll_initial_ms,
@@ -195,7 +216,7 @@ async function main() {
           onMessageReady: autoClaimer
             ? async () => {
                 const txHash = await autoClaimer.claim({
-                  recipient: fpcAddress,
+                  recipient: topupTargetAddress,
                   amount: bridgeResult.amount,
                   claimSecret: bridgeResult.claimSecret,
                   messageLeafIndex: bridgeResult.messageLeafIndex,
@@ -312,7 +333,7 @@ async function main() {
       stateStore: bridgeStateStore,
       balanceReader,
       node: pxe,
-      fpcAddress,
+      fpcAddress: topupTargetAddress,
       timeoutMs: config.confirmation_timeout_ms,
       initialPollMs: config.confirmation_poll_initial_ms,
       maxPollMs: config.confirmation_poll_max_ms,
