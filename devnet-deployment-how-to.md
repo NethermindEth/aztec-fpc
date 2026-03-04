@@ -76,9 +76,9 @@ export FPC_OUT="./deployments/devnet-manifest-v2.json"
 Deployer key material (set exactly one):
 
 ```bash
-export FPC_DEPLOYER_PRIVATE_KEY="0x..."
+export FPC_DEPLOYER_SECRET_KEY="0x..."
 # or
-export FPC_DEPLOYER_PRIVATE_KEY_REF="secret-manager://devnet/l2-deployer"
+export FPC_DEPLOYER_SECRET_KEY_REF="secret-manager://devnet/l2-deployer"
 ```
 
 Operator key material (set exactly one):
@@ -123,7 +123,7 @@ bunx tsx scripts/contract/deploy-fpc-devnet.ts \
   --node-url "https://v4-devnet-2.aztec-labs.com/" \
   --sponsored-fpc-address "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2" \
   --deployer-alias "my-wallet" \
-  --deployer-private-key "0x..." \
+  --deployer-secret-key "0x..." \
   --operator-secret-key "0x..." \
   --out "./deployments/devnet-manifest-v2.json"
 ```
