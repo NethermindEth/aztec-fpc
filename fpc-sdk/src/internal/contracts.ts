@@ -27,7 +27,28 @@ const currentDir =
   typeof __dirname !== "undefined"
     ? __dirname
     : path.dirname(fileURLToPath(import.meta.url));
-const artifactsDir = path.resolve(currentDir, "..", "..", "artifacts");
+
+function resolveArtifactsDir(): string {
+  const hasArtifacts = (dir: string): boolean =>
+    existsSync(path.join(dir, "token_contract-Token.json")) &&
+    existsSync(path.join(dir, "fpc-FPCMultiAsset.json")) &&
+    existsSync(path.join(dir, "faucet-Faucet.json")) &&
+    existsSync(path.join(dir, "mock_counter-Counter.json"));
+
+  const sourceLayout = path.resolve(currentDir, "..", "..", "artifacts");
+  if (hasArtifacts(sourceLayout)) {
+    return sourceLayout;
+  }
+
+  const distLayout = path.resolve(currentDir, "..", "artifacts");
+  if (hasArtifacts(distLayout)) {
+    return distLayout;
+  }
+
+  return distLayout;
+}
+
+const artifactsDir = resolveArtifactsDir();
 
 type ArtifactDescriptor = {
   filename: string;

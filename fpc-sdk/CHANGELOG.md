@@ -31,3 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Root workspace quality gates now include `fpc-sdk` formatting, linting, typecheck, and tests.
+
+### Fixed
+- Artifact resolution now verifies required artifact files and falls back to the package `artifacts` directory when a repository-level `artifacts/` directory exists but does not contain SDK artifacts.
