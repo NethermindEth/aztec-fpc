@@ -579,7 +579,9 @@ async function main() {
     }
     console.log(`[manual-fpc-devnet-v2] manifest=${cfg.manifestPath}`);
     console.log(`[manual-fpc-devnet-v2] user=${user.toString()}`);
-    console.log(`[manual-fpc-devnet-v2] operator=${operatorAddress.toString()}`);
+    console.log(
+      `[manual-fpc-devnet-v2] operator=${operatorAddress.toString()}`,
+    );
     console.log(`[manual-fpc-devnet-v2] token=${tokenAddress.toString()}`);
     console.log(`[manual-fpc-devnet-v2] fpc=${fpcAddress.toString()}`);
     console.log(`[manual-fpc-devnet-v2] faucet=${faucetAddress.toString()}`);
@@ -680,7 +682,12 @@ async function main() {
 
     const nonce = Fr.random();
     const transferCall = await token.methods
-      .transfer_private_to_private(user, operatorAddress, aaPaymentAmount, nonce)
+      .transfer_private_to_private(
+        user,
+        operatorAddress,
+        aaPaymentAmount,
+        nonce,
+      )
       .getFunctionCall();
     const transferAuthwit = await wallet.createAuthWit(user, {
       caller: fpcAddress,
@@ -761,7 +768,10 @@ async function main() {
       );
     }
 
-    if (!sameAddress(user, operatorAddress) && userDebited !== aaPaymentAmount) {
+    if (
+      !sameAddress(user, operatorAddress) &&
+      userDebited !== aaPaymentAmount
+    ) {
       throw new Error(
         `Accounting mismatch. expected user_debited=${aaPaymentAmount} got=${userDebited}`,
       );
