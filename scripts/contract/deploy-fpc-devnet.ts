@@ -128,6 +128,12 @@ const WALLET_ACCOUNT_PREFIX = "accounts:";
 const WALLET_CONTRACT_PREFIX = "contracts:";
 const WALLET_SPONSORED_FPC_ALIAS = "sponsoredfpc";
 
+const DEVNET_DEFAULT_NODE_URL = "https://v4-devnet-2.aztec-labs.com/";
+const DEVNET_DEFAULT_DEPLOYER_ALIAS = "my-wallet";
+const DEVNET_DEFAULT_OUT_PATH = "./deployments/devnet-manifest-v2.json";
+const DEVNET_DEFAULT_TEST_KEY =
+  "0x1111111111111111111111111111111111111111111111111111111111111111";
+
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
@@ -150,19 +156,46 @@ class CliError extends Error {
 function usage(): string {
   return [
     "Usage:",
-    "  bunx tsx scripts/contract/deploy-fpc-devnet.ts \\",
-    "    --node-url <url> \\",
-    "    --deployer-alias <alias> \\",
-    "    --deployer-private-key <hex32> | --deployer-private-key-ref <ref> \\",
-    "    --operator-secret-key <hex32> | --operator-secret-key-ref <ref> \\",
-    "    --fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json> \\",
-    "    --out <path.json> \\",
-    "    [--l1-rpc-url <url>] \\",
-    "    [--operator <aztec_address>] \\",
-    "    [--sponsored-fpc-address <aztec_address>] \\",
-    "    [--validate-topup-path] \\",
-    "    [--accepted-asset <aztec_address>] \\",
-    "    [--preflight-only]",
+    "  bunx tsx scripts/contract/deploy-fpc-devnet.ts [options]",
+    "",
+    "Options:",
+    "  --node-url <url>                 Aztec node URL",
+    "  --l1-rpc-url <url>               L1 RPC URL (required with --validate-topup-path)",
+    "  --deployer-alias <alias>         Wallet alias for the deployer account",
+    "  --deployer-private-key <hex32>   Deployer private key (mutually exclusive with -ref)",
+    "  --deployer-private-key-ref <ref> Deployer key reference (e.g. secret-manager://...)",
+    "  --operator-secret-key <hex32>    Operator secret key (mutually exclusive with -ref)",
+    "  --operator-secret-key-ref <ref>  Operator key reference",
+    "  --operator <aztec_address>       Operator address (derived from key if omitted)",
+    "  --fpc-artifact <path>            Path to FPC artifact JSON",
+    "  --out <path.json>                Output manifest path",
+    "  --sponsored-fpc-address <addr>   Use sponsored FPC payment mode",
+    "  --accepted-asset <addr>          Reuse existing token (skip Token deployment)",
+    "  --validate-topup-path            Enforce L1 chain-id matching",
+    "  --preflight-only                 Run checks only, do not deploy",
+    "  --help, -h                       Show this help",
+    "",
+    "Defaults:",
+    `  --node-url            ${DEVNET_DEFAULT_NODE_URL}`,
+    `  --deployer-alias      ${DEVNET_DEFAULT_DEPLOYER_ALIAS}`,
+    `  --out                 ${DEVNET_DEFAULT_OUT_PATH}`,
+    "  --deployer-private-key / --operator-secret-key: devnet test key when unset",
+    "",
+    "Environment variables (CLI args take precedence):",
+    "  FPC_NODE_URL / AZTEC_NODE_URL              --node-url",
+    "  FPC_L1_RPC_URL / L1_RPC_URL                --l1-rpc-url",
+    "  FPC_DEPLOYER_ALIAS                         --deployer-alias",
+    "  FPC_DEPLOYER_PRIVATE_KEY                   --deployer-private-key",
+    "  FPC_DEPLOYER_PRIVATE_KEY_REF               --deployer-private-key-ref",
+    "  FPC_OPERATOR_SECRET_KEY                    --operator-secret-key",
+    "  FPC_OPERATOR_SECRET_KEY_REF                --operator-secret-key-ref",
+    "  FPC_OPERATOR                               --operator",
+    "  FPC_SPONSORED_FPC_ADDRESS                  --sponsored-fpc-address",
+    "  FPC_ACCEPTED_ASSET                         --accepted-asset",
+    "  FPC_ARTIFACT                               --fpc-artifact",
+    "  FPC_OUT                                    --out",
+    "  FPC_VALIDATE_TOPUP_PATH=1                  --validate-topup-path",
+    "  FPC_PREFLIGHT_ONLY=1                       --preflight-only",
     "",
     "Notes:",
     "  - --sponsored-fpc-address determines payment mode: if provided, contracts are deployed with",
@@ -247,9 +280,6 @@ function parseSecretPair(
       `Ambiguous key input: provide only one of ${valueFlag} or ${refFlag}`,
     );
   }
-  if (!rawValue && !rawRef) {
-    throw new CliError(`Missing required ${valueFlag} or ${refFlag}`);
-  }
   return {
     value: rawValue,
     ref: rawRef,
@@ -257,30 +287,31 @@ function parseSecretPair(
 }
 
 function parseCliArgs(argv: string[]): CliParseResult {
-  let nodeUrl: string | null =
-    process.env.FPC_DEVNET_NODE_URL ?? process.env.AZTEC_NODE_URL ?? null;
+  let nodeUrl: string =
+    process.env.FPC_NODE_URL ??
+    process.env.AZTEC_NODE_URL ??
+    DEVNET_DEFAULT_NODE_URL;
   let l1RpcUrl: string | null =
-    process.env.FPC_DEVNET_L1_RPC_URL ?? process.env.L1_RPC_URL ?? null;
-  let validateTopupPath = process.env.FPC_DEVNET_VALIDATE_TOPUP_PATH === "1";
+    process.env.FPC_L1_RPC_URL ?? process.env.L1_RPC_URL ?? null;
+  let validateTopupPath = process.env.FPC_VALIDATE_TOPUP_PATH === "1";
   let sponsoredFpcAddress: string | null =
-    process.env.FPC_DEVNET_SPONSORED_FPC_ADDRESS ?? null;
-  let deployerAlias: string | null =
-    process.env.FPC_DEVNET_DEPLOYER_ALIAS ?? null;
+    process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
+  let deployerAlias: string =
+    process.env.FPC_DEPLOYER_ALIAS ?? DEVNET_DEFAULT_DEPLOYER_ALIAS;
   let deployerPrivateKey: string | null =
-    process.env.FPC_DEVNET_DEPLOYER_PRIVATE_KEY ?? null;
+    process.env.FPC_DEPLOYER_PRIVATE_KEY ?? null;
   let deployerPrivateKeyRef: string | null =
-    process.env.FPC_DEVNET_DEPLOYER_PRIVATE_KEY_REF ?? null;
+    process.env.FPC_DEPLOYER_PRIVATE_KEY_REF ?? null;
   let operatorSecretKey: string | null =
-    process.env.FPC_DEVNET_OPERATOR_SECRET_KEY ?? null;
+    process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null =
-    process.env.FPC_DEVNET_OPERATOR_SECRET_KEY_REF ?? null;
-  let operator: string | null = null;
-  let acceptedAsset: string | null =
-    process.env.FPC_DEVNET_ACCEPTED_ASSET ?? null;
+    process.env.FPC_OPERATOR_SECRET_KEY_REF ?? null;
+  let operator: string | null = process.env.FPC_OPERATOR ?? null;
+  let acceptedAsset: string | null = process.env.FPC_ACCEPTED_ASSET ?? null;
   let fpcArtifact: string =
-    process.env.FPC_FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
-  let out: string | null = process.env.FPC_DEVNET_OUT ?? null;
-  let preflightOnly = false;
+    process.env.FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
+  let out: string = process.env.FPC_OUT ?? DEVNET_DEFAULT_OUT_PATH;
+  let preflightOnly = process.env.FPC_PREFLIGHT_ONLY === "1";
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -348,15 +379,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
     }
   }
 
-  if (!nodeUrl) {
-    throw new CliError("Missing required --node-url");
-  }
-  if (!out) {
-    throw new CliError("Missing required --out");
-  }
-  if (!deployerAlias) {
-    throw new CliError("Missing required --deployer-alias");
-  }
   if (validateTopupPath && !l1RpcUrl) {
     throw new CliError(
       "Topup-path validation requested, but --l1-rpc-url is missing",
@@ -375,6 +397,20 @@ function parseCliArgs(argv: string[]): CliParseResult {
     "--operator-secret-key",
     "--operator-secret-key-ref",
   );
+
+  if (!parsedDeployer.value && !parsedDeployer.ref) {
+    console.warn(
+      "WARN: No deployer key provided. Using default devnet test key.",
+    );
+    parsedDeployer.value = DEVNET_DEFAULT_TEST_KEY;
+  }
+  if (!parsedOperatorSecret.value && !parsedOperatorSecret.ref) {
+    parsedOperatorSecret.value =
+      parsedDeployer.value ?? DEVNET_DEFAULT_TEST_KEY;
+    console.warn(
+      "WARN: No operator key provided. Using deployer key as operator key for devnet.",
+    );
+  }
 
   const parsedNodeUrl = parseHttpUrl(nodeUrl, "--node-url");
   const parsedL1Rpc = l1RpcUrl ? parseHttpUrl(l1RpcUrl, "--l1-rpc-url") : null;
@@ -816,6 +852,20 @@ function stripAnsi(value: string): string {
   return result;
 }
 
+const SECRET_CLI_FLAGS = new Set(["--secret-key", "--private-key"]);
+
+function redactCommandArgs(args: readonly string[]): string {
+  const redacted: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    redacted.push(args[i]);
+    if (SECRET_CLI_FLAGS.has(args[i]) && i + 1 < args.length) {
+      redacted.push("[REDACTED]");
+      i += 1;
+    }
+  }
+  return redacted.join(" ");
+}
+
 function runAztecWalletCommand(
   nodeUrl: string,
   args: string[],
@@ -824,7 +874,7 @@ function runAztecWalletCommand(
   const walletBin = process.env.AZTEC_WALLET_BIN ?? "aztec-wallet";
   const walletDataDir =
     process.env.AZTEC_WALLET_DATA_DIR ??
-    process.env.FPC_DEVNET_WALLET_DATA_DIR ??
+    process.env.FPC_WALLET_DATA_DIR ??
     null;
   const commandArgs = [
     ...(walletDataDir ? ["--data-dir", walletDataDir] : []),
@@ -848,7 +898,7 @@ function runAztecWalletCommand(
       const stdout = String((error as { stdout?: unknown }).stdout ?? "");
       const stderr = String((error as { stderr?: unknown }).stderr ?? "");
       throw new CliError(
-        `Failed to ${description} via '${walletBin} ${commandArgs.join(" ")}'.\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+        `Failed to ${description} via '${walletBin} ${redactCommandArgs(commandArgs)}'.\nstdout:\n${stdout}\nstderr:\n${stderr}`,
       );
     }
     throw new CliError(
@@ -1735,14 +1785,14 @@ async function main(): Promise<void> {
   if (!args.operatorSecretKey) {
     if (args.preflightOnly) {
       console.log(
-        `[deploy-fpc-devnet] operator secret key reference detected (${args.operatorSecretKeyRef}); pubkey derivation is deferred in preflight-only mode`,
+        "[deploy-fpc-devnet] operator secret key reference detected; pubkey derivation is deferred in preflight-only mode",
       );
       console.log("[deploy-fpc-devnet] step 3 preflight checks passed");
       console.log("[deploy-fpc-devnet] preflight-only requested; exiting");
       return;
     }
     throw new CliError(
-      `Operator pubkey derivation requires --operator-secret-key. The provided --operator-secret-key-ref (${args.operatorSecretKeyRef}) cannot be resolved by this script yet.`,
+      "Operator pubkey derivation requires --operator-secret-key. The provided --operator-secret-key-ref cannot be resolved by this script yet.",
     );
   }
 
