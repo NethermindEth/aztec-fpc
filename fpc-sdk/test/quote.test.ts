@@ -21,7 +21,9 @@ describe("quote url", () => {
     });
     expect(url).toContain("/v2/quote?");
     expect(url).toContain(`user=${encodeURIComponent(USER.toString())}`);
-    expect(url).toContain(`accepted_asset=${encodeURIComponent(TOKEN.toString())}`);
+    expect(url).toContain(
+      `accepted_asset=${encodeURIComponent(TOKEN.toString())}`,
+    );
     expect(url).toContain("fj_amount=123");
   });
 });

@@ -1,4 +1,5 @@
-import { connectAndAttachContracts } from "./internal/contracts";
+import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { Gas, GasFees } from "@aztec/stdlib/gas";
 import { SDK_DEFAULTS } from "./defaults";
 import {
   InsufficientFpcFeeJuiceError,
@@ -6,20 +7,22 @@ import {
   SponsoredTxFailedError,
 } from "./errors";
 import { ensurePrivateBalance } from "./internal/balance-bootstrap";
+import { connectAndAttachContracts } from "./internal/contracts";
 import { createSponsoredPaymentMethod } from "./internal/fee-payment";
 import { fetchAndValidateQuote } from "./internal/quote";
 import type {
   CreateSponsoredCounterClientInput,
   SponsoredCounterClient,
 } from "./types";
-import { Gas, GasFees } from "@aztec/stdlib/gas";
-import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 
 function toBigInt(value: { toString(): string } | bigint): bigint {
   return typeof value === "bigint" ? value : BigInt(value.toString());
 }
 
-function sameAddress(a: { toString(): string }, b: { toString(): string }): boolean {
+function sameAddress(
+  a: { toString(): string },
+  b: { toString(): string },
+): boolean {
   return a.toString().toLowerCase() === b.toString().toLowerCase();
 }
 
@@ -92,7 +95,10 @@ export async function createSponsoredCounterClient(
           wallet: input.wallet,
         });
 
-        const gasLimits = new Gas(SDK_DEFAULTS.daGasLimit, SDK_DEFAULTS.l2GasLimit);
+        const gasLimits = new Gas(
+          SDK_DEFAULTS.daGasLimit,
+          SDK_DEFAULTS.l2GasLimit,
+        );
         const teardownGasLimits = new Gas(0, 0);
         const maxFeesPerGas = new GasFees(
           minFees.feePerDaGas,
@@ -104,14 +110,16 @@ export async function createSponsoredCounterClient(
           txHash: { toString(): string };
         };
         try {
-          receipt = await context.counter.methods.increment(context.addresses.user).send({
-            fee: {
-              gasSettings: { gasLimits, maxFeesPerGas, teardownGasLimits },
-              paymentMethod,
-            },
-            from: context.addresses.user,
-            wait: { timeout: SDK_DEFAULTS.txWaitTimeoutSeconds },
-          });
+          receipt = await context.counter.methods
+            .increment(context.addresses.user)
+            .send({
+              fee: {
+                gasSettings: { gasLimits, maxFeesPerGas, teardownGasLimits },
+                paymentMethod,
+              },
+              from: context.addresses.user,
+              wait: { timeout: SDK_DEFAULTS.txWaitTimeoutSeconds },
+            });
         } catch (error) {
           throw new SponsoredTxFailedError(
             "Sponsored transaction submission failed.",
@@ -133,10 +141,13 @@ export async function createSponsoredCounterClient(
         const userDebited = userPrivateBefore - userPrivateAfter;
 
         if (counterAfter !== counterBefore + 1n) {
-          throw new SponsoredTxFailedError("Counter increment invariant failed.", {
-            counterAfter: counterAfter.toString(),
-            counterBefore: counterBefore.toString(),
-          });
+          throw new SponsoredTxFailedError(
+            "Counter increment invariant failed.",
+            {
+              counterAfter: counterAfter.toString(),
+              counterBefore: counterBefore.toString(),
+            },
+          );
         }
         if (
           !sameAddress(context.addresses.user, context.addresses.operator) &&

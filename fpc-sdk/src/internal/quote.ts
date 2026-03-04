@@ -1,4 +1,4 @@
-import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 
 import { QuoteValidationError } from "../errors";
 
@@ -103,9 +103,12 @@ export function validateQuote(input: {
   try {
     validUntil = BigInt(input.quote.valid_until);
   } catch {
-    throw new QuoteValidationError("Quote valid_until is not a valid integer.", {
-      value: input.quote.valid_until,
-    });
+    throw new QuoteValidationError(
+      "Quote valid_until is not a valid integer.",
+      {
+        value: input.quote.valid_until,
+      },
+    );
   }
 
   const signatureBytes = decodeSignature(input.quote.signature);

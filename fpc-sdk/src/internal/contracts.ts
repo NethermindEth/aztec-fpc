@@ -3,18 +3,25 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  type ContractArtifact,
   loadContractArtifact,
   loadContractArtifactForPublic,
-  type ContractArtifact,
   type NoirCompiledContract,
 } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
-import { createAztecNodeClient, type AztecNode, waitForNode } from "@aztec/aztec.js/node";
+import {
+  type AztecNode,
+  createAztecNodeClient,
+  waitForNode,
+} from "@aztec/aztec.js/node";
 import type { Wallet as AccountWallet } from "@aztec/aztec.js/wallet";
 
 import { SDK_DEFAULTS } from "../defaults";
-import { PublishedAccountRequiredError, SponsoredTxFailedError } from "../errors";
+import {
+  PublishedAccountRequiredError,
+  SponsoredTxFailedError,
+} from "../errors";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,14 +63,19 @@ function parseAddress(name: string, raw: string): AztecAddress {
   try {
     return AztecAddress.fromString(raw);
   } catch {
-    throw new SponsoredTxFailedError(`Invalid ${name} address in SDK defaults.`, {
-      address: raw,
-      name,
-    });
+    throw new SponsoredTxFailedError(
+      `Invalid ${name} address in SDK defaults.`,
+      {
+        address: raw,
+        name,
+      },
+    );
   }
 }
 
-export function parseAccountAddress(account: AztecAddress | string): AztecAddress {
+export function parseAccountAddress(
+  account: AztecAddress | string,
+): AztecAddress {
   if (typeof account !== "string") {
     return account;
   }
@@ -76,7 +88,9 @@ export function parseAccountAddress(account: AztecAddress | string): AztecAddres
   }
 }
 
-export function resolveRuntimeAddresses(account: AztecAddress | string): RuntimeAddresses {
+export function resolveRuntimeAddresses(
+  account: AztecAddress | string,
+): RuntimeAddresses {
   return {
     counter: parseAddress("counter", SDK_DEFAULTS.counterAddress),
     faucet: parseAddress("faucet", SDK_DEFAULTS.faucetAddress),
@@ -96,13 +110,17 @@ function loadArtifact(filename: string, label: string): ContractArtifact {
     });
   }
 
-  const parsed = JSON.parse(readFileSync(artifactPath, "utf8")) as NoirCompiledContract;
+  const parsed = JSON.parse(
+    readFileSync(artifactPath, "utf8"),
+  ) as NoirCompiledContract;
   try {
     return loadContractArtifact(parsed);
   } catch (error) {
     if (
       error instanceof Error &&
-      error.message.includes("Contract's public bytecode has not been transpiled")
+      error.message.includes(
+        "Contract's public bytecode has not been transpiled",
+      )
     ) {
       return loadContractArtifactForPublic(parsed);
     }
@@ -129,10 +147,13 @@ async function attachRegisteredContract(
 ): Promise<Contract> {
   const instance = await node.getContract(address);
   if (!instance) {
-    throw new SponsoredTxFailedError(`Missing ${label} contract instance on node.`, {
-      address: address.toString(),
-      label,
-    });
+    throw new SponsoredTxFailedError(
+      `Missing ${label} contract instance on node.`,
+      {
+        address: address.toString(),
+        label,
+      },
+    );
   }
 
   await wallet.registerContract(instance, artifact);
@@ -172,7 +193,13 @@ export async function connectAndAttachContracts(input: {
       artifacts.token,
       "accepted_asset",
     ),
-    attachRegisteredContract(input.wallet, node, addresses.fpc, artifacts.fpc, "fpc"),
+    attachRegisteredContract(
+      input.wallet,
+      node,
+      addresses.fpc,
+      artifacts.fpc,
+      "fpc",
+    ),
     attachRegisteredContract(
       input.wallet,
       node,

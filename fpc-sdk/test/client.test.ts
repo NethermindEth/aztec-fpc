@@ -6,7 +6,10 @@ import * as contracts from "../src/internal/contracts";
 vi.mock("../src/internal/contracts", () => ({
   connectAndAttachContracts: vi.fn(async () => ({
     addresses: {
-      user: { toString: () => "0x0000000000000000000000000000000000000000000000000000000000000000" },
+      user: {
+        toString: () =>
+          "0x0000000000000000000000000000000000000000000000000000000000000000",
+      },
     },
   })),
 }));

@@ -52,7 +52,9 @@ describe("payment", () => {
       wallet: wallet as never,
     });
 
-    expect(await out.paymentMethod.getAsset()).toBe(ProtocolContractAddress.FeeJuice);
+    expect(await out.paymentMethod.getAsset()).toBe(
+      ProtocolContractAddress.FeeJuice,
+    );
     expect(await out.paymentMethod.getFeePayer()).toBe(FPC);
     expect(out.paymentMethod.getGasSettings()).toBeUndefined();
     expect(wallet.createAuthWit).toHaveBeenCalledTimes(1);

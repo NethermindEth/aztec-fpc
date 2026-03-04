@@ -1,7 +1,9 @@
-import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { FunctionCall } from "@aztec/aztec.js/abi";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import type { Wallet as AccountWallet } from "@aztec/aztec.js/wallet";
+import type { AuthWitness } from "@aztec/stdlib/auth-witness";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 
 import { SponsoredTxFailedError } from "../errors";
@@ -14,10 +16,10 @@ export type SponsoredPaymentMethod = {
 };
 
 export type SponsoredPaymentBuildResult = {
-  feeEntrypointCall: any;
+  feeEntrypointCall: FunctionCall;
   nonce: Fr;
   paymentMethod: SponsoredPaymentMethod;
-  transferAuthwit: any;
+  transferAuthwit: AuthWitness;
 };
 
 export async function createSponsoredPaymentMethod(input: {
@@ -32,7 +34,7 @@ export async function createSponsoredPaymentMethod(input: {
         aaAmount: bigint,
         validUntil: bigint,
         sig: number[],
-      ) => { getFunctionCall: () => Promise<any> };
+      ) => { getFunctionCall: () => Promise<FunctionCall> };
     };
   };
   fjAmount: bigint;
@@ -46,7 +48,7 @@ export async function createSponsoredPaymentMethod(input: {
         to: AztecAddress,
         amount: bigint,
         nonce: Fr,
-      ) => { getFunctionCall: () => Promise<any> };
+      ) => { getFunctionCall: () => Promise<FunctionCall> };
     };
   };
   tokenAddress: AztecAddress;
@@ -84,8 +86,8 @@ export async function createSponsoredPaymentMethod(input: {
       getAsset: async () => ProtocolContractAddress.FeeJuice,
       getExecutionPayload: async () =>
         new ExecutionPayload(
-          [feeEntrypointCall],
-          [transferAuthwit],
+          [feeEntrypointCall as never],
+          [transferAuthwit as never],
           [],
           [],
           input.fpc.address,
@@ -101,8 +103,11 @@ export async function createSponsoredPaymentMethod(input: {
       transferAuthwit,
     };
   } catch (error) {
-    throw new SponsoredTxFailedError("Failed to build sponsored payment method.", {
-      cause: error instanceof Error ? error.message : String(error),
-    });
+    throw new SponsoredTxFailedError(
+      "Failed to build sponsored payment method.",
+      {
+        cause: error instanceof Error ? error.message : String(error),
+      },
+    );
   }
 }

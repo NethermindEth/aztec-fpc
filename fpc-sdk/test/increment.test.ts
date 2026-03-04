@@ -1,13 +1,15 @@
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import * as feeJuiceUtils from "@aztec/aztec.js/utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-import { SponsoredTxFailedError } from "../src/errors";
+import {
+  InsufficientFpcFeeJuiceError,
+  SponsoredTxFailedError,
+} from "../src/errors";
 import { createSponsoredCounterClient } from "../src/index";
 import * as balanceBootstrap from "../src/internal/balance-bootstrap";
 import * as contracts from "../src/internal/contracts";
 import * as feePayment from "../src/internal/fee-payment";
 import * as quote from "../src/internal/quote";
-import * as feeJuiceUtils from "@aztec/aztec.js/utils";
 
 vi.mock("../src/internal/contracts", () => ({
   connectAndAttachContracts: vi.fn(),
@@ -45,9 +47,16 @@ const FPC = AztecAddress.fromString(
   "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b",
 );
 
-function buildContext(counterAfter: bigint): unknown {
-  const counterValues = [0n, counterAfter];
-  const privateValues = [100n, 90n];
+function buildContext(input: {
+  counterAfter: bigint;
+  privateAfter?: bigint;
+  privateBefore?: bigint;
+}): unknown {
+  const counterValues = [0n, input.counterAfter];
+  const privateValues = [
+    input.privateBefore ?? 100n,
+    input.privateAfter ?? 90n,
+  ];
 
   return {
     addresses: {
@@ -59,7 +68,7 @@ function buildContext(counterAfter: bigint): unknown {
     counter: {
       methods: {
         get_counter: () => ({
-          simulate: async () => counterValues.shift() ?? counterAfter,
+          simulate: async () => counterValues.shift() ?? input.counterAfter,
         }),
         increment: () => ({
           send: async () => ({
@@ -104,11 +113,12 @@ describe("increment", () => {
       validUntil: 999n,
       valid_until: "999",
     });
+    vi.mocked(feeJuiceUtils.getFeeJuiceBalance).mockResolvedValue(999_999_999n);
   });
 
   it("returns result payload when increment invariants hold", async () => {
     vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(
-      buildContext(1n) as never,
+      buildContext({ counterAfter: 1n }) as never,
     );
 
     const client = await createSponsoredCounterClient({
@@ -131,7 +141,7 @@ describe("increment", () => {
 
   it("throws when counter invariant fails", async () => {
     vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(
-      buildContext(2n) as never,
+      buildContext({ counterAfter: 2n }) as never,
     );
 
     const client = await createSponsoredCounterClient({
@@ -139,6 +149,43 @@ describe("increment", () => {
       wallet: {} as never,
     });
 
-    await expect(client.increment()).rejects.toBeInstanceOf(SponsoredTxFailedError);
+    await expect(client.increment()).rejects.toBeInstanceOf(
+      SponsoredTxFailedError,
+    );
+  });
+
+  it("throws when debit/accounting invariant fails", async () => {
+    vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(
+      buildContext({
+        counterAfter: 1n,
+        privateAfter: 95n,
+        privateBefore: 100n,
+      }) as never,
+    );
+
+    const client = await createSponsoredCounterClient({
+      account: USER.toString(),
+      wallet: {} as never,
+    });
+
+    await expect(client.increment()).rejects.toBeInstanceOf(
+      SponsoredTxFailedError,
+    );
+  });
+
+  it("throws typed error when fpc fee juice is insufficient", async () => {
+    vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(
+      buildContext({ counterAfter: 1n }) as never,
+    );
+    vi.mocked(feeJuiceUtils.getFeeJuiceBalance).mockResolvedValue(1n);
+
+    const client = await createSponsoredCounterClient({
+      account: USER,
+      wallet: {} as never,
+    });
+
+    await expect(client.increment()).rejects.toBeInstanceOf(
+      InsufficientFpcFeeJuiceError,
+    );
   });
 });

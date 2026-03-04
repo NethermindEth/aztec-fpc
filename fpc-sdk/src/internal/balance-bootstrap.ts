@@ -5,9 +5,12 @@ import { BalanceBootstrapError } from "../errors";
 export type BalanceBootstrapInput = {
   faucet: {
     methods: {
-      drip: (
-        user: unknown,
-      ) => { send: (args: { from: unknown; wait: { timeout: number } }) => Promise<unknown> };
+      drip: (user: unknown) => {
+        send: (args: {
+          from: unknown;
+          wait: { timeout: number };
+        }) => Promise<unknown>;
+      };
     };
   };
   from: unknown;
@@ -15,18 +18,27 @@ export type BalanceBootstrapInput = {
   minimumPrivateAcceptedAsset: bigint;
   token: {
     methods: {
-      balance_of_private: (
-        user: unknown,
-      ) => { simulate: (args: { from: unknown }) => Promise<{ toString(): string } | bigint> };
-      balance_of_public: (
-        user: unknown,
-      ) => { simulate: (args: { from: unknown }) => Promise<{ toString(): string } | bigint> };
+      balance_of_private: (user: unknown) => {
+        simulate: (args: {
+          from: unknown;
+        }) => Promise<{ toString(): string } | bigint>;
+      };
+      balance_of_public: (user: unknown) => {
+        simulate: (args: {
+          from: unknown;
+        }) => Promise<{ toString(): string } | bigint>;
+      };
       transfer_public_to_private: (
         from: unknown,
         to: unknown,
         amount: bigint,
         secret: Fr,
-      ) => { send: (args: { from: unknown; wait: { timeout: number } }) => Promise<unknown> };
+      ) => {
+        send: (args: {
+          from: unknown;
+          wait: { timeout: number };
+        }) => Promise<unknown>;
+      };
     };
   };
   txWaitTimeoutSeconds: number;
@@ -37,9 +49,13 @@ function toBigInt(value: { toString(): string } | bigint): bigint {
   return typeof value === "bigint" ? value : BigInt(value.toString());
 }
 
-export async function ensurePrivateBalance(input: BalanceBootstrapInput): Promise<bigint> {
+export async function ensurePrivateBalance(
+  input: BalanceBootstrapInput,
+): Promise<bigint> {
   let userPrivateBalance = toBigInt(
-    await input.token.methods.balance_of_private(input.user).simulate({ from: input.from }),
+    await input.token.methods
+      .balance_of_private(input.user)
+      .simulate({ from: input.from }),
   );
 
   for (
@@ -59,7 +75,9 @@ export async function ensurePrivateBalance(input: BalanceBootstrapInput): Promis
     }
 
     let userPublicBalance = toBigInt(
-      await input.token.methods.balance_of_public(input.user).simulate({ from: input.from }),
+      await input.token.methods
+        .balance_of_public(input.user)
+        .simulate({ from: input.from }),
     );
 
     if (userPublicBalance === 0n) {
@@ -69,7 +87,9 @@ export async function ensurePrivateBalance(input: BalanceBootstrapInput): Promis
       });
 
       userPublicBalance = toBigInt(
-        await input.token.methods.balance_of_public(input.user).simulate({ from: input.from }),
+        await input.token.methods
+          .balance_of_public(input.user)
+          .simulate({ from: input.from }),
       );
     }
 
@@ -83,14 +103,21 @@ export async function ensurePrivateBalance(input: BalanceBootstrapInput): Promis
     }
 
     await input.token.methods
-      .transfer_public_to_private(input.user, input.user, userPublicBalance, Fr.random())
+      .transfer_public_to_private(
+        input.user,
+        input.user,
+        userPublicBalance,
+        Fr.random(),
+      )
       .send({
         from: input.from,
         wait: { timeout: input.txWaitTimeoutSeconds },
       });
 
     userPrivateBalance = toBigInt(
-      await input.token.methods.balance_of_private(input.user).simulate({ from: input.from }),
+      await input.token.methods
+        .balance_of_private(input.user)
+        .simulate({ from: input.from }),
     );
   }
 
