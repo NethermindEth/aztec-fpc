@@ -48,7 +48,10 @@ services-devnet)
       FPC_CONFIGS_OUT="${FPC_CONFIGS_OUT:-./configs}" \
       bash scripts/config/generate-service-configs.sh
 
-    if [[ -z "${TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS:-}" && -f "$manifest_path" ]]; then
+    if [[ "${TOPUP_AUTOCLAIM_USE_SPONSORED:-1}" == "0" ]]; then
+      export TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS=" "
+      echo "[compose-mode] TOPUP_AUTOCLAIM_USE_SPONSORED=0; disabling sponsored auto-claim (fee_juice only)"
+    elif [[ -z "${TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS:-}" && -f "$manifest_path" ]]; then
       sponsored_fpc_address="$(jq -r '.aztec_required_addresses.sponsored_fpc_address // empty' "$manifest_path")"
       if [[ -n "$sponsored_fpc_address" ]]; then
         export TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS="$sponsored_fpc_address"

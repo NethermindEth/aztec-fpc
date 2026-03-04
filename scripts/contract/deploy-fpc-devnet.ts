@@ -1683,6 +1683,16 @@ function loadFpcArtifactSelection(
       `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC" or "FPCMultiAsset".`,
     );
   }
+  const transpiledValue = (parsed as { transpiled?: unknown }).transpiled;
+  if (transpiledValue !== true) {
+    const renderedValue =
+      transpiledValue === undefined
+        ? "<missing>"
+        : JSON.stringify(transpiledValue);
+    throw new CliError(
+      `Invalid --fpc-artifact at ${artifactPath}: contract artifact is not transpiled (transpiled=${renderedValue}). Run 'aztec compile --workspace --force' and retry.`,
+    );
+  }
   return { artifactPath, name };
 }
 

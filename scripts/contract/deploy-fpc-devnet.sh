@@ -30,6 +30,20 @@ ensure_tool_on_path() {
   return 1
 }
 
+artifact_is_transpiled() {
+  local artifact_path="$1"
+  bun -e '
+    const fs = require("node:fs");
+    const artifactPath = process.argv[1];
+    try {
+      const parsed = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
+      process.exit(parsed?.transpiled === true ? 0 : 1);
+    } catch {
+      process.exit(1);
+    }
+  ' "$artifact_path" >/dev/null 2>&1
+}
+
 resolve_default_fpc_artifact() {
   if [[ -n "${FPC_FPC_ARTIFACT:-}" ]]; then
     printf "%s\n" "${FPC_FPC_ARTIFACT}"
@@ -53,8 +67,32 @@ fi
 
 cd "${REPO_ROOT}"
 
-if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPCMultiAsset.json || ! -f target/mock_counter-Counter.json ]]; then
-  echo "Compiling Aztec workspace artifacts..."
+artifacts_require_compile=0
+required_artifacts=(
+  "target/token_contract-Token.json"
+  "${FPC_ARTIFACT}"
+  "target/faucet-Faucet.json"
+  "target/mock_counter-Counter.json"
+)
+
+for artifact_path in "${required_artifacts[@]}"; do
+  if [[ ! -f "$artifact_path" ]]; then
+    echo "[deploy-fpc-devnet] missing compiled artifact: $artifact_path"
+    artifacts_require_compile=1
+  fi
+done
+
+if [[ "$artifacts_require_compile" -eq 0 ]]; then
+  for artifact_path in "${required_artifacts[@]}"; do
+    if ! artifact_is_transpiled "$artifact_path"; then
+      echo "[deploy-fpc-devnet] non-transpiled artifact detected: $artifact_path"
+      artifacts_require_compile=1
+    fi
+  done
+fi
+
+if [[ "$artifacts_require_compile" -eq 1 ]]; then
+  echo "Compiling Aztec workspace artifacts (transpiled output required)..."
   aztec compile --workspace --force
   FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 fi
