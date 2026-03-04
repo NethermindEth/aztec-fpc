@@ -431,3 +431,42 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 - **`fj_amount` must match tx gas settings (FPC).** Wallets must request a quote with `fj_amount = max_gas_cost_no_teardown` for the exact gas settings used at submission. If they diverge, `fee_entrypoint` rejects with quoted-fee mismatch.
 - **No oracle integration.** Rates are set manually in config. A service restart reloads from config.yaml.
 - **Top-up service confirmation now combines message readiness + balance checks.** If message checks fail transiently, the balance-delta fallback still prevents blind success reporting.
+
+---
+
+## 10. MultiCall Onboarding Pattern
+
+New users face a bootstrapping problem: claiming L2 tokens or deploying an account requires Fee Juice, but obtaining Fee Juice requires an L2 transaction. The MultiCall onboarding pattern solves this with a single atomic transaction routed through the pre-deployed `MultiCallEntrypoint` (protocol address `0x04`).
+
+### Transaction structure
+
+```
+TX origin: MultiCallEntrypoint
+  |
+  +-- [1] Deploy Account Contract (class + instance + constructor)
+  |
+  +-- [2] AC.entrypoint(inner_payload, EXTERNAL, cancellable)
+        |
+        +-- [2a] TokenBridge.claim_private(token, recipient, amount, secret, leafIndex)
+        |         -- consumes L1->L2 message, mints private notes via Token.mint_to_private
+        |
+        +-- [2b] FPC.fee_entrypoint(token, nonce, fj_amount, aa_amount, valid_until, sig)
+                  -- transfers TKN from AC to operator, sets FPC as fee payer
+```
+
+The user must first bridge ERC20 tokens from L1 via the `TokenPortal.depositToAztecPrivate` function, then wait for the L1-to-L2 message to be consumable on L2. The multicall transaction uses `deployer: AztecAddress.ZERO` which routes through a `SignerlessAccount` backed by the `DefaultMultiCallEntrypoint`, requiring no pre-deployed account or Fee Juice balance.
+
+### Contracts involved
+
+| Contract | Role |
+|---|---|
+| `TokenBridge` (L2) | Consumes L1-to-L2 messages and calls `Token.mint_to_private` |
+| `TokenPortal` (L1) | Accepts ERC20 deposits and sends L1-to-L2 messages |
+| `Token` (L2) | Mints private notes; bridge must be set as minter |
+| `FPCMultiAsset` (L2) | Pays transaction fees in Fee Juice using TKN from the user |
+
+The bridge contract is modified to support deferred token initialization (constructor takes only the L1 portal address; `set_token` is called separately) to break the circular dependency between Token and Bridge addresses at deployment time.
+
+### Reference implementation
+
+See `scripts/multicall-fpc-deploy.ts` for the full end-to-end test script.
