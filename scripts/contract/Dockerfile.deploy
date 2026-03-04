@@ -1,4 +1,5 @@
 ARG AZTEC_VERSION=4.0.0-devnet.2-patch.2
+ARG COMPILE_PLATFORM=linux/amd64
 
 # ══════════════════════════════════════════════════════════════
 # Stage 1: aztec — base image with aztec toolchain
@@ -21,7 +22,7 @@ ENV PATH="/root/.aztec/versions/${AZTEC_VERSION}/bin:/root/.aztec/versions/${AZT
 # have the AVM Transpiler enabled on arm64.  Contract artifacts
 # are platform-independent JSON, so cross-copy is safe.
 # ══════════════════════════════════════════════════════════════
-FROM --platform=linux/amd64 aztec AS compile
+FROM --platform=$COMPILE_PLATFORM aztec AS compile
 
 WORKDIR /app
 
