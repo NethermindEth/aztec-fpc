@@ -13,10 +13,10 @@ in `profiling/benchmarks/` plus human-readable console summaries.
 
 ## Prerequisites
 
-- **Aztec CLI (profiling pin)** — `4.0.0-devnet.2-patch.1`
+- **Aztec CLI (profiling pin)** — `4.0.0-devnet.2-patch.3`
 
 ```bash
-VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.1)
+VERSION=4.0.0-devnet.2-patch.3 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.3)
 ```
 
 - **Node.js >=20** (usually bundled with the Aztec toolchain)
@@ -177,9 +177,9 @@ To switch to Wonderland's default runner for hardware parity, change
 
 ## Version Pinning
 
-`profiling/package.json` and `profiling/setup.sh` are pinned to
-`4.0.0-devnet.2-patch.1` (independent from repo `.aztecrc`) because
-`@defi-wonderland/aztec-benchmark` is not yet published for patch.2.
+`profiling/package.json` and `profiling/setup.sh` are intentionally pinned to
+`4.0.0-devnet.2-patch.3` (independent from repo `.aztecrc`) because
+`@defi-wonderland/aztec-benchmark` is only published up to this patch line.
 
 ## Gotchas
 
