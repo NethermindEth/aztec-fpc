@@ -16,8 +16,12 @@ ENV PATH="/root/.aztec/versions/${AZTEC_VERSION}/bin:/root/.aztec/versions/${AZT
 
 # ══════════════════════════════════════════════════════════════
 # Stage 2: compile — contract compilation only
+#
+# Pinned to linux/amd64 because the Aztec bb binary does not
+# have the AVM Transpiler enabled on arm64.  Contract artifacts
+# are platform-independent JSON, so cross-copy is safe.
 # ══════════════════════════════════════════════════════════════
-FROM aztec AS compile
+FROM --platform=linux/amd64 aztec AS compile
 
 WORKDIR /app
 
