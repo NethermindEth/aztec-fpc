@@ -591,7 +591,10 @@ async function deployWithAztecJsFallback(params: {
 
   const node = createAztecNodeClient(params.nodeUrl);
   await waitForNode(node);
-  const wallet = await EmbeddedWallet.create(node, { ephemeral: true });
+  const wallet = await EmbeddedWallet.create(node, {
+    ephemeral: true,
+    pxeConfig: { proverEnabled: true },
+  });
 
   const secret = Fr.fromHexString(params.secretKey);
   const signingKey = deriveSigningKey(secret);

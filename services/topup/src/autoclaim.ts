@@ -175,7 +175,10 @@ async function assertPublishedClaimerAccount(
 export async function createTopupAutoClaimer(
   node: AztecNode,
 ): Promise<TopupAutoClaimer> {
-  const wallet = await EmbeddedWallet.create(node, { ephemeral: true });
+  const wallet = await EmbeddedWallet.create(node, {
+    ephemeral: true,
+    pxeConfig: { proverEnabled: true },
+  });
   const explicitSecretKey = resolveAutoClaimSecretKeyFromEnv(process.env);
   const requirePublishedClaimer =
     resolveAutoClaimRequirePublishedAccountFromEnv(process.env);
