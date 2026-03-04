@@ -110,7 +110,7 @@ async function main() {
   }
   if (autoClaimer) {
     console.log(
-      `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()})`,
+      `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()} source=${autoClaimer.claimerSource})`,
     );
   } else {
     console.warn("  Auto-claim: disabled (TOPUP_AUTOCLAIM_ENABLED=0)");
@@ -180,10 +180,17 @@ async function main() {
         }),
       onBridgeSubmitted: async (baselineBalance, bridgeResult) => {
         opsState.recordBridgeEvent("submitted");
-        await bridgeStateStore.write(baselineBalance, bridgeResult);
-        console.log(
-          `Persisted in-flight bridge metadata message_hash=${bridgeResult.messageHash} leaf_index=${bridgeResult.messageLeafIndex}`,
-        );
+        try {
+          await bridgeStateStore.write(baselineBalance, bridgeResult);
+          console.log(
+            `Persisted in-flight bridge metadata message_hash=${bridgeResult.messageHash} leaf_index=${bridgeResult.messageLeafIndex}`,
+          );
+        } catch (error) {
+          console.warn(
+            `Failed to persist in-flight bridge metadata message_hash=${bridgeResult.messageHash}; continuing with in-memory confirmation only`,
+            error,
+          );
+        }
       },
       onBridgeSettled: async (_baselineBalance, bridgeResult, confirmation) => {
         opsState.recordBridgeEvent(confirmation.status);
@@ -193,10 +200,17 @@ async function main() {
           );
           return;
         }
-        await bridgeStateStore.clear();
-        console.log(
-          `Cleared persisted bridge metadata message_hash=${bridgeResult.messageHash} outcome=${confirmation.status}`,
-        );
+        try {
+          await bridgeStateStore.clear();
+          console.log(
+            `Cleared persisted bridge metadata message_hash=${bridgeResult.messageHash} outcome=${confirmation.status}`,
+          );
+        } catch (error) {
+          console.warn(
+            `Failed to clear persisted bridge metadata message_hash=${bridgeResult.messageHash} after confirmed bridge`,
+            error,
+          );
+        }
       },
       onBridgeFailed: () => {
         opsState.recordBridgeEvent("failed");

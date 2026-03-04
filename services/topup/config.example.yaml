@@ -57,5 +57,7 @@ confirmation_poll_max_ms: 15000
 
 # Auto-claim is enabled by default via env:
 #   TOPUP_AUTOCLAIM_ENABLED=1
-# It uses a local-network test account to submit FeeJuice.claim on L2:
+# Prefer setting a real claimer key (for devnet/testnet):
+#   TOPUP_AUTOCLAIM_SECRET_KEY=<0x...32-byte-hex>
+# If unset, it falls back to local-network test account mode:
 #   TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX=0
