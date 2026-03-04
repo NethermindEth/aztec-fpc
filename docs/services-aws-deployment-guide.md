@@ -132,12 +132,15 @@ Required:
 Recommended:
 
 - `TOPUP_OPS_PORT=3001`
-- `TOPUP_BRIDGE_STATE_PATH=/var/lib/aztec-fpc/topup-bridge-state.json`
+- `TOPUP_BRIDGE_STATE_PATH=/tmp/.topup-bridge-state.json` (local default)
 - `TOPUP_AUTOCLAIM_ENABLED=0`
+
+For AWS, prefer a writable mounted path for durability (for example `/var/lib/aztec-fpc/topup-bridge-state.json`).
 
 Conditional:
 
 - `L1_OPERATOR_SECRET_REF` (used when provider is `kms`/`hsm`).
+- `TOPUP_AUTOCLAIM_SECRET_KEY` (preferred claimer key for auto-claim mode).
 - `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX` only matters if auto-claim is enabled.
 
 Debug only (do not enable in production):
@@ -206,7 +209,45 @@ AWS production delta from compose parity:
 - Set `TOPUP_AUTOCLAIM_ENABLED=0` unless you intentionally run local-network-style test accounts.
 - Replace local defaults (`http://aztec-node:8080`, `http://anvil:8545`) with real endpoints.
 
-## 6. AWS Runtime Settings
+## 6. Local Services-Only Devnet Compose
+
+For local-only service execution against live devnet deployments, use:
+
+- `docker-compose.services-devnet.yaml` (attestation + topup only)
+- `.env` for runtime secrets/endpoints
+- `deployments/devnet-manifest-v2.json` as contract source of truth
+
+Start command (auto-generates service configs from devnet manifest):
+
+```bash
+bun run compose:services:devnet -- -d
+```
+
+Equivalent manual sequence:
+
+```bash
+FPC_DEPLOY_MANIFEST=./deployments/devnet-manifest-v2.json \
+FPC_MASTER_CONFIG=./fpc-config.yaml \
+FPC_CONFIGS_OUT=./configs \
+bash scripts/config/generate-service-configs.sh
+
+docker compose -f docker-compose.services-devnet.yaml up -d
+```
+
+Required `.env` values for this mode:
+
+- `AZTEC_NODE_URL` (devnet URL)
+- `L1_RPC_URL` (Sepolia or target L1 RPC)
+- `OPERATOR_SECRET_KEY` (attestation signer key)
+- `L1_OPERATOR_PRIVATE_KEY` (topup L1 bridge key)
+
+Defaults in `docker-compose.services-devnet.yaml`:
+
+- `TOPUP_BRIDGE_STATE_PATH=/tmp/.topup-bridge-state.json`
+- `TOPUP_AUTOCLAIM_ENABLED=1`
+- auto-claim claimer key source: `TOPUP_AUTOCLAIM_SECRET_KEY`, else `OPERATOR_SECRET_KEY`, else test account index.
+
+## 7. AWS Runtime Settings
 
 - Expose attestation on container port `3000` (`/.well-known/fpc.json`, `/health`, `/metrics`, `/quote`, `/asset`).
 - Expose topup ops on `TOPUP_OPS_PORT` (default `3001`) (`/health`, `/ready`, `/metrics`).
@@ -214,7 +255,7 @@ AWS production delta from compose parity:
 - Run topup as singleton (`replicas=1`) unless you add leader election/distributed locking.
 - Attestation can be horizontally scaled.
 
-## 7. Validation After Deploy
+## 8. Validation After Deploy
 
 Attestation:
 
@@ -238,7 +279,7 @@ If topup readiness is failing, first check:
 - topup config `fpc_address` matches deployed contract.
 - `TOPUP_AUTOCLAIM_ENABLED` is not accidentally left at `1` in non-local environments.
 
-## 8. Regenerate Service Configs After Contract Redeploy
+## 9. Regenerate Service Configs After Contract Redeploy
 
 When contracts are redeployed:
 

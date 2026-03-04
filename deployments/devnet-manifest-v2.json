@@ -1,6 +1,6 @@
 {
   "status": "deploy_ok",
-  "generated_at": "2026-03-03T22:19:26.134Z",
+  "generated_at": "2026-03-04T01:06:15.820Z",
   "network": {
     "node_url": "https://v4-devnet-2.aztec-labs.com/",
     "node_version": "4.0.0-devnet.2-patch.3",
@@ -33,10 +33,10 @@
     }
   },
   "contracts": {
-    "accepted_asset": "0x2b3f14450d63238ec8d603877c7ab56aef3d33808dcf1cd31e76720c90b8cd9c",
-    "fpc": "0x2b2787b2f678e613a437aa50b2ced5416c686b3446bd464ce8ee807b09e6e976",
-    "faucet": "0x235a97e3f236e3f67f18e28dc191832aed390c26693644dd3f22618a7a822e08",
-    "counter": "0x2551d6930557e2128198af7d5d0053aa5cb8d9111fa0252e2120b9b675202c09"
+    "accepted_asset": "0x10f81873fd0989a147dfdfde5dcac8548c8c8c5be21b946132c7c5ce984bc0eb",
+    "fpc": "0x2d08e8bdc343c3c91a4e238ae3623200ca8fba484f784660b35e19529862b88b",
+    "faucet": "0x0e7ad173e3c5c5b49128d584a5fb659310651c6c6fe01c020627c150fc773f0c",
+    "counter": "0x2ce0874a546c6f12cd41263d51c34a08a3c75ff7240d30d15e6caae649f53724"
   },
   "fpc_artifact": {
     "name": "FPCMultiAsset",
@@ -48,10 +48,10 @@
     "pubkey_y": "0x1769d06eb4e55894f84223efe6cdc0068438e717b4707dfedb5e3348de662d11"
   },
   "tx_hashes": {
-    "accepted_asset_deploy": "0x2551d95dbfa4bbbf8b9dd48dfd0db7e58eb08f1a70fdbc7ada573b81165bd004",
-    "fpc_deploy": "0x2572b07e2ea4b4ebfd429598a4fb4215dad8a1e1e563c163874afe6f6a4dafc6",
-    "faucet_deploy": "0x073f5ff921996f956319296c139c9948d2ea92cf3da79e039de2a0af0f7e330b",
-    "counter_deploy": "0x23281b5cd169d570cc690588d38a341a5b0c7fa8594a6628ea8549e5c3b023a9"
+    "accepted_asset_deploy": "0x155ae06a3f6bc50c90f46039a679dfcd39fb3ce9f7434da123efdacd5b329cbd",
+    "fpc_deploy": "0x24ee8d52a969a027d5ee9db2e958743540c9aa2f90a2c6648fd4765f26fcce07",
+    "faucet_deploy": "0x174309fdc7aebe1e5b97f6f7269a1ec8016d43cf4c9ef399f33d73d69e7da23e",
+    "counter_deploy": "0x19207bddee14c255f12176da1a83c2f7f6b4921d7e6956efca874b3df6360d41"
   },
   "faucet_config": {
     "drip_amount": "1000000000000000000",
