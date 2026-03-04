@@ -1,5 +1,7 @@
 import { connectAndAttachContracts } from "./internal/contracts";
+import { SDK_DEFAULTS } from "./defaults";
 import { SponsoredSdkError, SponsoredTxFailedError } from "./errors";
+import { fetchAndValidateQuote } from "./internal/quote";
 import type {
   CreateSponsoredCounterClientInput,
   SponsoredCounterClient,
@@ -16,6 +18,17 @@ export async function createSponsoredCounterClient(
   return {
     async increment() {
       try {
+        const minFees = await context.node.getCurrentMinFees();
+        const fjAmount =
+          BigInt(SDK_DEFAULTS.daGasLimit) * minFees.feePerDaGas +
+          BigInt(SDK_DEFAULTS.l2GasLimit) * minFees.feePerL2Gas;
+        await fetchAndValidateQuote({
+          acceptedAsset: context.addresses.token,
+          attestationBaseUrl: SDK_DEFAULTS.attestationBaseUrl,
+          fjAmount,
+          user: context.addresses.user,
+        });
+
         throw new SponsoredTxFailedError(
           "SDK scaffold only: increment() is not implemented yet.",
           {
