@@ -53,6 +53,7 @@
     "fund:l1:fee-juice": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; bunx tsx scripts/services/fund-l1-fee-juice.ts \"$@\"' --",
     "fund:l2:claimer:fee-juice": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; bun run --filter @aztec-fpc/topup fund:claimer:l2 -- \"$@\"' --",
     "manual:fpc:sponsored:devnet": "bunx tsx scripts/manual-fpc-sponsored-user-tx-devnet.ts",
+    "manual:fpc:sponsored:devnet:v2:sdk": "bunx tsx scripts/manual-fpc-sponsored-user-tx-devnet-attestation-v2-sdk.ts",
     "deploy:fpc": "bash scripts/contract/deploy-fpc.sh",
     "deploy:fpc:devnet": "bash scripts/contract/deploy-fpc-devnet.sh",
     "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/manifest.json",
