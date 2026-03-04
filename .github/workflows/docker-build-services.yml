@@ -57,13 +57,19 @@ jobs:
             echo "TAG=latest" >> $GITHUB_ENV
           fi
 
-      - name: Build and push with bake
+      - name: Build all images
+        uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6.10.0
         env:
           REGISTRY: ${{ env.DOCKER_REGISTRY }}/
           TAG: ${{ env.TAG }}
           GIT_SHA: ${{ github.sha }}
           PLATFORMS: 'linux/amd64,linux/arm64'
-        run: docker buildx bake services --push
+        with:
+          source: .
+          push: true
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
 
       - name: Summary
         run: |

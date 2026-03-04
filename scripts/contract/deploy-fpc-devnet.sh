@@ -118,7 +118,7 @@ if [[ "$MODE" == "local" ]]; then
   OUT_PATH="${FPC_LOCAL_OUT:-./tmp/deploy-fpc-local-manifest.json}"
   # Defaults match aztec local-network TEST_ACCOUNTS account #0.
   DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
-  DEPLOYER_PRIVATE_KEY="${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+  DEPLOYER_SECRET_KEY="${FPC_LOCAL_DEPLOYER_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
   OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
 
   run_local_deploy_variant() {
@@ -133,7 +133,7 @@ if [[ "$MODE" == "local" ]]; then
       --node-url "${NODE_URL}"
       --l1-rpc-url "${L1_RPC_URL}"
       --deployer-alias "${DEPLOYER_ALIAS}"
-      --deployer-private-key "${DEPLOYER_PRIVATE_KEY}"
+      --deployer-secret-key "${DEPLOYER_SECRET_KEY}"
       --operator-secret-key "${OPERATOR_SECRET_KEY}"
       --fpc-artifact "${artifact_path}"
       --out "${out_path}"
@@ -180,17 +180,17 @@ DEPLOYER_ALIAS="${FPC_DEVNET_DEPLOYER_ALIAS:-my-wallet}"
 OUT_PATH="${FPC_DEVNET_OUT:-./deployments/devnet-manifest-v2.json}"
 DEFAULT_TEST_KEY="0x1111111111111111111111111111111111111111111111111111111111111111"
 
-DEPLOYER_PRIVATE_KEY="${FPC_DEVNET_DEPLOYER_PRIVATE_KEY:-}"
-DEPLOYER_PRIVATE_KEY_REF="${FPC_DEVNET_DEPLOYER_PRIVATE_KEY_REF:-}"
+DEPLOYER_SECRET_KEY="${FPC_DEVNET_DEPLOYER_SECRET_KEY:-}"
+DEPLOYER_SECRET_KEY_REF="${FPC_DEVNET_DEPLOYER_SECRET_KEY_REF:-}"
 OPERATOR_SECRET_KEY="${FPC_DEVNET_OPERATOR_SECRET_KEY:-}"
 OPERATOR_SECRET_KEY_REF="${FPC_DEVNET_OPERATOR_SECRET_KEY_REF:-}"
 
-if [[ -n "${DEPLOYER_PRIVATE_KEY}" && -n "${DEPLOYER_PRIVATE_KEY_REF}" ]]; then
-  echo "ERROR: Set only one of FPC_DEVNET_DEPLOYER_PRIVATE_KEY or FPC_DEVNET_DEPLOYER_PRIVATE_KEY_REF" >&2
+if [[ -n "${DEPLOYER_SECRET_KEY}" && -n "${DEPLOYER_SECRET_KEY_REF}" ]]; then
+  echo "ERROR: Set only one of FPC_DEVNET_DEPLOYER_SECRET_KEY or FPC_DEVNET_DEPLOYER_SECRET_KEY_REF" >&2
   exit 1
 fi
-if [[ -z "${DEPLOYER_PRIVATE_KEY}" && -z "${DEPLOYER_PRIVATE_KEY_REF}" ]]; then
-  DEPLOYER_PRIVATE_KEY="${DEFAULT_TEST_KEY}"
+if [[ -z "${DEPLOYER_SECRET_KEY}" && -z "${DEPLOYER_SECRET_KEY_REF}" ]]; then
+  DEPLOYER_SECRET_KEY="${DEFAULT_TEST_KEY}"
   echo "WARN: No deployer key provided. Using default devnet test key." >&2
 fi
 if [[ -n "${OPERATOR_SECRET_KEY}" && -n "${OPERATOR_SECRET_KEY_REF}" ]]; then
@@ -198,8 +198,8 @@ if [[ -n "${OPERATOR_SECRET_KEY}" && -n "${OPERATOR_SECRET_KEY_REF}" ]]; then
   exit 1
 fi
 if [[ -z "${OPERATOR_SECRET_KEY}" && -z "${OPERATOR_SECRET_KEY_REF}" ]]; then
-  if [[ -n "${DEPLOYER_PRIVATE_KEY}" ]]; then
-    OPERATOR_SECRET_KEY="${DEPLOYER_PRIVATE_KEY}"
+  if [[ -n "${DEPLOYER_SECRET_KEY}" ]]; then
+    OPERATOR_SECRET_KEY="${DEPLOYER_SECRET_KEY}"
   else
     OPERATOR_SECRET_KEY="${DEFAULT_TEST_KEY}"
   fi
@@ -215,10 +215,10 @@ cmd=(
   --out "${OUT_PATH}"
 )
 
-if [[ -n "${DEPLOYER_PRIVATE_KEY}" ]]; then
-  cmd+=(--deployer-private-key "${DEPLOYER_PRIVATE_KEY}")
+if [[ -n "${DEPLOYER_SECRET_KEY}" ]]; then
+  cmd+=(--deployer-secret-key "${DEPLOYER_SECRET_KEY}")
 else
-  cmd+=(--deployer-private-key-ref "${DEPLOYER_PRIVATE_KEY_REF}")
+  cmd+=(--deployer-secret-key-ref "${DEPLOYER_SECRET_KEY_REF}")
 fi
 
 if [[ -n "${OPERATOR_SECRET_KEY}" ]]; then

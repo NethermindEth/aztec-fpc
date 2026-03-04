@@ -266,9 +266,9 @@ bun run smoke:deploy:fpc:devnet
 
 Manifest secret-handling warning:
 
-- `deployments/devnet-manifest-v2.json` can contain raw private keys if you use `FPC_DEVNET_DEPLOYER_PRIVATE_KEY` or `L1_OPERATOR_PRIVATE_KEY`.
+- `deployments/devnet-manifest-v2.json` can contain raw private keys if you use `FPC_DEVNET_DEPLOYER_SECRET_KEY` or `L1_OPERATOR_PRIVATE_KEY`.
 - Treat the manifest as secret material and do not commit it to public repos.
-- Prefer key reference inputs (`*_PRIVATE_KEY_REF`, `*_SECRET_REF`) where supported.
+- Prefer key reference inputs (`*_SECRET_KEY_REF`, `*_SECRET_REF`) where supported.
 
 ### 9. Deploy contracts manually (alternative)
 

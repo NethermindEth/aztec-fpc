@@ -13,8 +13,8 @@ type CliArgs = {
   validateTopupPath: boolean;
   sponsoredFpcAddress: string | null;
   deployerAlias: string;
-  deployerPrivateKey: string | null;
-  deployerPrivateKeyRef: string | null;
+  deployerSecretKey: string | null;
+  deployerSecretKeyRef: string | null;
   operatorSecretKey: string | null;
   operatorSecretKeyRef: string | null;
   operator: string | null;
@@ -77,8 +77,8 @@ type DeployerAccountResolution = {
   alias: string;
   walletAlias: string;
   address: string;
-  privateKey: string | null;
-  privateKeyRef: string | null;
+  secretKey: string | null;
+  secretKeyRef: string | null;
   source: "existing" | "created" | "imported";
 };
 
@@ -162,8 +162,8 @@ function usage(): string {
     "All arguments are optional. CLI args take precedence over env vars.",
     "",
     "Credentials (prefer env vars to avoid leaking secrets in shell history):",
-    "  --deployer-private-key <hex32>   Deployer private key (default: devnet test key) [env: FPC_DEPLOYER_PRIVATE_KEY]",
-    "  --deployer-private-key-ref <ref> Deployer key reference [env: FPC_DEPLOYER_PRIVATE_KEY_REF]",
+    "  --deployer-secret-key <hex32>   Deployer secret key (default: devnet test key) [env: FPC_DEPLOYER_SECRET_KEY]",
+    "  --deployer-secret-key-ref <ref> Deployer key reference [env: FPC_DEPLOYER_SECRET_KEY_REF]",
     "  --operator-secret-key <hex32>    Operator secret key (default: deployer key) [env: FPC_OPERATOR_SECRET_KEY]",
     "  --operator-secret-key-ref <ref>  Operator key reference [env: FPC_OPERATOR_SECRET_KEY_REF]",
     "",
@@ -283,10 +283,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
     process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
   let deployerAlias: string =
     process.env.FPC_DEPLOYER_ALIAS ?? DEVNET_DEFAULT_DEPLOYER_ALIAS;
-  let deployerPrivateKey: string | null =
-    process.env.FPC_DEPLOYER_PRIVATE_KEY ?? null;
-  let deployerPrivateKeyRef: string | null =
-    process.env.FPC_DEPLOYER_PRIVATE_KEY_REF ?? null;
+  let deployerSecretKey: string | null =
+    process.env.FPC_DEPLOYER_SECRET_KEY ?? null;
+  let deployerSecretKeyRef: string | null =
+    process.env.FPC_DEPLOYER_SECRET_KEY_REF ?? null;
   let operatorSecretKey: string | null =
     process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null =
@@ -322,12 +322,12 @@ function parseCliArgs(argv: string[]): CliParseResult {
         deployerAlias = nextArg(argv, i, arg);
         i += 1;
         break;
-      case "--deployer-private-key":
-        deployerPrivateKey = nextArg(argv, i, arg);
+      case "--deployer-secret-key":
+        deployerSecretKey = nextArg(argv, i, arg);
         i += 1;
         break;
-      case "--deployer-private-key-ref":
-        deployerPrivateKeyRef = nextArg(argv, i, arg);
+      case "--deployer-secret-key-ref":
+        deployerSecretKeyRef = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--operator-secret-key":
@@ -382,10 +382,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
   }
 
   const parsedDeployer = parseSecretPair(
-    deployerPrivateKey,
-    deployerPrivateKeyRef,
-    "--deployer-private-key",
-    "--deployer-private-key-ref",
+    deployerSecretKey,
+    deployerSecretKeyRef,
+    "--deployer-secret-key",
+    "--deployer-secret-key-ref",
   );
   const parsedOperatorSecret = parseSecretPair(
     operatorSecretKey,
@@ -423,11 +423,11 @@ function parseCliArgs(argv: string[]): CliParseResult {
         ? parseAztecAddress(sponsoredFpcAddress, "--sponsored-fpc-address")
         : null,
       deployerAlias: parseNonEmptyString(deployerAlias, "--deployer-alias"),
-      deployerPrivateKey: parsedDeployer.value
-        ? parseHex32(parsedDeployer.value, "--deployer-private-key")
+      deployerSecretKey: parsedDeployer.value
+        ? parseHex32(parsedDeployer.value, "--deployer-secret-key")
         : null,
-      deployerPrivateKeyRef: parsedDeployer.ref
-        ? parseNonEmptyString(parsedDeployer.ref, "--deployer-private-key-ref")
+      deployerSecretKeyRef: parsedDeployer.ref
+        ? parseNonEmptyString(parsedDeployer.ref, "--deployer-secret-key-ref")
         : null,
       operatorSecretKey: parsedOperatorSecret.value
         ? parseHex32(parsedOperatorSecret.value, "--operator-secret-key")
@@ -1076,15 +1076,15 @@ function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
       alias: alias.bareAlias,
       walletAlias: alias.walletAlias,
       address: existing,
-      privateKey: args.deployerPrivateKey,
-      privateKeyRef: args.deployerPrivateKeyRef,
+      secretKey: args.deployerSecretKey,
+      secretKeyRef: args.deployerSecretKeyRef,
       source: "existing",
     };
   }
 
-  if (!args.deployerPrivateKey) {
+  if (!args.deployerSecretKey) {
     throw new CliError(
-      `Deployer account alias ${alias.walletAlias} was not found, and --deployer-private-key was not provided. Use --deployer-private-key to create/import the account, or pre-create alias ${alias.walletAlias} before retrying.`,
+      `Deployer account alias ${alias.walletAlias} was not found, and --deployer-secret-key was not provided. Use --deployer-secret-key to create/import the account, or pre-create alias ${alias.walletAlias} before retrying.`,
     );
   }
 
@@ -1097,7 +1097,7 @@ function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
         "--alias",
         alias.bareAlias,
         "--secret-key",
-        args.deployerPrivateKey,
+        args.deployerSecretKey,
       ],
       `register deployer account alias ${alias.walletAlias} in wallet (register-only path)`,
     );
@@ -1111,8 +1111,8 @@ function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
       alias: alias.bareAlias,
       walletAlias: alias.walletAlias,
       address: imported,
-      privateKey: args.deployerPrivateKey,
-      privateKeyRef: args.deployerPrivateKeyRef,
+      secretKey: args.deployerSecretKey,
+      secretKeyRef: args.deployerSecretKeyRef,
       source: "imported",
     };
   }
@@ -1125,7 +1125,7 @@ function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
         "--alias",
         alias.bareAlias,
         "--secret-key",
-        args.deployerPrivateKey,
+        args.deployerSecretKey,
         "--payment",
         `method=fpc-sponsored,fpc=${args.sponsoredFpcAddress}`,
       ],
@@ -1147,7 +1147,7 @@ function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
         "--alias",
         alias.bareAlias,
         "--secret-key",
-        args.deployerPrivateKey,
+        args.deployerSecretKey,
       ],
       `import existing deployer account alias ${alias.walletAlias} after create-account conflict`,
     );
@@ -1164,8 +1164,8 @@ function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
     alias: alias.bareAlias,
     walletAlias: alias.walletAlias,
     address: resolved,
-    privateKey: args.deployerPrivateKey,
-    privateKeyRef: args.deployerPrivateKeyRef,
+    secretKey: args.deployerSecretKey,
+    secretKeyRef: args.deployerSecretKeyRef,
     source: "created",
   };
 }
@@ -1809,7 +1809,7 @@ async function main(): Promise<void> {
 
   const deployer = resolveDeployerAccount(args);
   console.log(
-    `[deploy-fpc-devnet] deployer account resolved. alias=${deployer.alias} wallet_alias=${deployer.walletAlias} address=${deployer.address} source=${deployer.source} key_material=${deployer.privateKey ? "inline" : "ref"}`,
+    `[deploy-fpc-devnet] deployer account resolved. alias=${deployer.alias} wallet_alias=${deployer.walletAlias} address=${deployer.address} source=${deployer.source} key_material=${deployer.secretKey ? "inline" : "ref"}`,
   );
 
   if (!args.operatorSecretKey) {
@@ -2026,9 +2026,9 @@ async function main(): Promise<void> {
       l2_deployer: {
         alias: deployer.alias,
         address: deployer.address,
-        ...(deployer.privateKey
-          ? { private_key: deployer.privateKey }
-          : { private_key_ref: deployer.privateKeyRef }),
+        ...(deployer.secretKey
+          ? { private_key: deployer.secretKey }
+          : { private_key_ref: deployer.secretKeyRef }),
       },
     },
     contracts: {

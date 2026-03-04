@@ -70,7 +70,13 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
       - name: Build all images
-        run: docker buildx bake --load
+        uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6.10.0
+        with:
+          source: .
+          load: true
+          set: |
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
 
       - name: Start services
         if: github.event_name == 'pull_request'
@@ -79,6 +85,20 @@ jobs:
       - name: Smoke tests
         if: github.event_name != 'pull_request'
         run: bash scripts/services/compose-mode.sh full
+
+      - name: Deploy to devnet
+        env:
+          FPC_DEPLOYER_SECRET_KEY: ${{ secrets.FPC_DEPLOYER_SECRET_KEY }}
+          FPC_OPERATOR_SECRET_KEY: ${{ secrets.FPC_OPERATOR_SECRET_KEY }}
+          FPC_ACCEPTED_ASSET: ${{ vars.FPC_ACCEPTED_ASSET }}
+        run: |
+          docker run \
+            -e FPC_DEPLOYER_SECRET_KEY \
+            -e FPC_OPERATOR_SECRET_KEY \
+            -e FPC_ACCEPTED_ASSET \
+            -e FPC_SKIP_CONFIG_GEN=1 \
+            -v ${{ github.workspace }}/deployments:/app/data \
+            nethermind/aztec-fpc-contract-deployment:local
 
       - name: Tear down
         if: always()
