@@ -113,13 +113,12 @@ function normalizeHexAddress(value: unknown, fieldName: string): Hex {
 }
 
 async function advanceL2Blocks(
-  token: Contract,
+  noop: Contract,
   operator: AztecAddress,
-  target: AztecAddress,
   blocks: number,
 ): Promise<void> {
   for (let i = 0; i < blocks; i += 1) {
-    await token.methods.mint_to_private(target, 1n).send({
+    await noop.methods.noop().send({
       from: operator,
       wait: { timeout: 180 },
     });
@@ -131,8 +130,7 @@ async function topUpFpcFeeJuice(
   node: ReturnType<typeof createAztecNodeClient>,
   wallet: EmbeddedWallet,
   operator: AztecAddress,
-  token: Contract,
-  dummyTarget: AztecAddress,
+  noop: Contract,
   fpcAddress: AztecAddress,
   topupWei: bigint,
   l1RpcUrl: string,
@@ -219,7 +217,7 @@ async function topUpFpcFeeJuice(
     throw new Error("Could not decode DepositToAztecPublic event");
   }
 
-  await advanceL2Blocks(token, operator, dummyTarget, 2);
+  await advanceL2Blocks(noop, operator, 2);
   await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
     timeoutSeconds: 120,
     forPublicConsumption: false,
@@ -249,7 +247,6 @@ async function main() {
   const rateNum = 10_200n;
   const rateDen = 10_000_000n;
   const quoteTtlSeconds = 3600n;
-  const bridgeAmount = 10_000_000_000n;
 
   const repoRoot = path.resolve(import.meta.dirname, "..");
   const tokenArtifactPath = path.join(
@@ -267,10 +264,12 @@ async function main() {
     "target",
     "token_bridge_contract-TokenBridge.json",
   );
+  const noopArtifactPath = path.join(repoRoot, "target", "noop-Noop.json");
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
   const bridgeArtifact = loadArtifact(bridgeArtifactPath);
+  const noopArtifact = loadArtifact(noopArtifactPath);
 
   console.log(`[multicall] connecting to ${nodeUrl}`);
   const node = createAztecNodeClient(nodeUrl);
@@ -284,6 +283,14 @@ async function main() {
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas;
   const feePerL2Gas = minFees.feePerL2Gas;
+
+  const maxGasCost =
+    BigInt(daGasLimit) * feePerDaGas + BigInt(l2GasLimit) * feePerL2Gas;
+  const aaPaymentAmount = ceilDiv(maxGasCost * rateNum, rateDen);
+  const bridgeAmount = aaPaymentAmount * 2n;
+  console.log(
+    `[multicall] feePerDaGas=${feePerDaGas} feePerL2Gas=${feePerL2Gas} maxGasCost=${maxGasCost} aaPaymentAmount=${aaPaymentAmount} bridgeAmount=${bridgeAmount}`,
+  );
 
   const testAccounts = await getInitialTestAccountsData();
   const [operatorAccount, newUserAccount] = await Promise.all([
@@ -380,6 +387,12 @@ async function main() {
   await l1PublicClient.waitForTransactionReceipt({ hash: initHash });
   console.log("[multicall] token_portal_initialized");
 
+  console.log("[multicall] deploying Noop (for block advancement)...");
+  const noop = await Contract.deploy(wallet, noopArtifact, []).send({
+    from: operator,
+  });
+  console.log(`[multicall] noop=${noop.address}`);
+
   console.log("[multicall] deploying FPC...");
   const fpc = await Contract.deploy(wallet, fpcArtifact, [
     operator,
@@ -388,8 +401,6 @@ async function main() {
   ]).send({ from: operator });
   console.log(`[multicall] fpc=${fpc.address}`);
 
-  const maxGasCost =
-    BigInt(daGasLimit) * feePerDaGas + BigInt(l2GasLimit) * feePerL2Gas;
   const feeJuiceTopup =
     maxGasCost * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER + 1_000_000n;
   console.log("[multicall] topping up FPC with Fee Juice...");
@@ -397,8 +408,7 @@ async function main() {
     node,
     wallet,
     operator,
-    token,
-    newUser,
+    noop,
     fpc.address,
     feeJuiceTopup,
     l1RpcUrl,
@@ -507,7 +517,7 @@ async function main() {
   );
 
   console.log("[multicall] waiting for L1->L2 message readiness...");
-  await advanceL2Blocks(token, operator, operator, 2);
+  await advanceL2Blocks(noop, operator, 2);
   await waitForL1ToL2MessageReady(node, messageHash, {
     timeoutSeconds: 120,
     forPublicConsumption: false,
@@ -516,9 +526,7 @@ async function main() {
 
   console.log("[multicall] building multicall transaction...");
 
-  const expectedCharge = ceilDiv(maxGasCost * rateNum, rateDen);
   const fjFeeAmount = maxGasCost;
-  const aaPaymentAmount = expectedCharge;
 
   const latestBlock = await node.getBlock("latest");
   if (!latestBlock) throw new Error("Could not read latest L2 block");
@@ -574,28 +582,44 @@ async function main() {
     )
     .getFunctionCall();
 
-  // AccountEntrypointMetaPaymentMethod wraps these calls through the AC entrypoint,
-  // producing: AC.entrypoint([claim_private, fee_entrypoint], EXTERNAL, cancellable)
-  const fpcPaymentMethod = {
-    getAsset: async () => ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [claimPrivateCall, feeEntrypointCall],
-        [transferAuthwit],
-        [],
-        [],
-        fpc.address,
-      ),
-    getFeePayer: async () => fpc.address,
-    getGasSettings: () => undefined,
-  };
+  const feeExecutionPayload = new ExecutionPayload(
+    [claimPrivateCall, feeEntrypointCall],
+    [transferAuthwit],
+    [],
+    [],
+    fpc.address,
+  );
 
   console.log("[multicall] sending multicall transaction...");
   const deployMethod = await newUserAccount.getDeployMethod();
-  const deployReceipt = await deployMethod.send({
+  const deployPayload = await deployMethod.request({
+    from: newUser,
     deployer: AztecAddress.ZERO,
+  } as any);
+
+  // Manually merge deploy and fee payloads, overriding feePayer to FPC.
+  // DeployMethod.request() sets the deployer as feePayer, which conflicts
+  // with our FPC feePayer, so we construct a combined payload ourselves.
+  const mergedPayload = new ExecutionPayload(
+    [...feeExecutionPayload.calls, ...deployPayload.calls],
+    [
+      ...(feeExecutionPayload.authWitnesses ?? []),
+      ...(deployPayload.authWitnesses ?? []),
+    ],
+    [
+      ...(feeExecutionPayload.capsules ?? []),
+      ...(deployPayload.capsules ?? []),
+    ],
+    [
+      ...(feeExecutionPayload.extraHashedArgs ?? []),
+      ...(deployPayload.extraHashedArgs ?? []),
+    ],
+    fpc.address,
+  );
+
+  const deployReceipt = await wallet.sendTx(mergedPayload, {
+    from: newUser,
     fee: {
-      paymentMethod: fpcPaymentMethod,
       gasSettings: {
         gasLimits: { daGas: daGasLimit, l2Gas: l2GasLimit },
         teardownGasLimits: { daGas: 0, l2Gas: 0 },
