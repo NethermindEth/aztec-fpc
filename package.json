@@ -46,7 +46,7 @@
     "compose:teardown": "docker compose down -v --remove-orphans || true",
 
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
-    "deploy:fpc:devnet": "bash scripts/contract/deploy-fpc-devnet.sh",
+    "deploy:fpc": "bash scripts/contract/deploy-fpc.sh",
     "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/devnet-manifest-v2.json",
     "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
 

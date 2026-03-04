@@ -6,8 +6,8 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/deploy-smoke-local.XXXXXX")"
 source "$REPO_ROOT/scripts/common/node-setup.sh"
 
 resolve_default_fpc_artifact() {
-  if [[ -n "${FPC_FPC_ARTIFACT:-}" ]]; then
-    printf "%s\n" "${FPC_FPC_ARTIFACT}"
+  if [[ -n "${FPC_ARTIFACT:-}" ]]; then
+    printf "%s\n" "${FPC_ARTIFACT}"
     return
   fi
 
