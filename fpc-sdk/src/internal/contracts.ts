@@ -23,9 +23,11 @@ import {
   SponsoredTxFailedError,
 } from "../errors";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const artifactsDir = path.resolve(__dirname, "..", "..", "artifacts");
+const currentDir =
+  typeof __dirname !== "undefined"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
+const artifactsDir = path.resolve(currentDir, "..", "..", "artifacts");
 
 type ArtifactDescriptor = {
   filename: string;
