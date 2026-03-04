@@ -18,7 +18,8 @@ NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
 PID_FILE="$SCRIPT_DIR/.aztec-network.pid"
 
 # Prerequisite checks
-PROFILING_DEFAULT_AZTEC_VERSION="4.0.0-devnet.2-patch.2"
+# Pinned to patch.1 — @defi-wonderland/aztec-benchmark is not yet published for patch.2.
+PROFILING_DEFAULT_AZTEC_VERSION="4.0.0-devnet.2-patch.1"
 AZTEC_VERSION="${PROFILING_AZTEC_VERSION:-$PROFILING_DEFAULT_AZTEC_VERSION}"
 REPO_AZTEC_VERSION="$(tr -d '\n' < "$REPO_ROOT/.aztecrc")"
 
