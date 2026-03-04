@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { L2AmountClaim } from "@aztec/aztec.js/ethereum";
 import { L1FeeJuicePortalManager } from "@aztec/aztec.js/ethereum";
+import { FeeJuicePaymentMethodWithClaim } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -67,14 +69,7 @@ type PartialManifest = {
   };
 };
 
-type BridgeClaim = {
-  claimAmount: bigint;
-  claimSecret: {
-    toString: () => string;
-  };
-  messageHash: Hex;
-  messageLeafIndex: bigint;
-};
+type BridgeClaim = L2AmountClaim;
 
 function usage(): string {
   return [
@@ -482,10 +477,10 @@ async function main(): Promise<void> {
   );
 
   console.log(`${LOG_PREFIX} bridging FeeJuice to claimer...`);
-  const bridgeClaim = (await portalManager.bridgeTokensPublic(
+  const bridgeClaim = await portalManager.bridgeTokensPublic(
     claimerAddress,
     args.amountWei,
-  )) as BridgeClaim;
+  ) as BridgeClaim;
 
   console.log(
     `${LOG_PREFIX} bridge submitted message_hash=${bridgeClaim.messageHash} leaf_index=${bridgeClaim.messageLeafIndex} claim_secret_hash=<hidden>`,
@@ -518,14 +513,34 @@ async function main(): Promise<void> {
   );
   const feePayerAddress = feePayerAccount.address;
 
+  // Register claimer account in wallet for self-pay fallback when fee payer has no balance.
+  let claimerWalletAddress = feePayerAddress;
+  if (claimerSecretKey && claimerSecretKey !== feePayerSecretKey) {
+    const claimerSecret = Fr.fromHexString(claimerSecretKey);
+    const claimerSigningKey = deriveSigningKey(claimerSecret);
+    const claimerAccount = await wallet.createSchnorrAccount(
+      claimerSecret,
+      Fr.ZERO,
+      claimerSigningKey,
+    );
+    claimerWalletAddress = claimerAccount.address;
+  }
+
   const claimerBalanceBefore = await getFeeJuiceBalance(claimerAddress, node);
   const feePayerBalanceBefore = await getFeeJuiceBalance(feePayerAddress, node);
   console.log(
     `${LOG_PREFIX} pre-claim balances claimer=${claimerBalanceBefore} fee_payer=${feePayerBalanceBefore}`,
   );
-  if (feePayerBalanceBefore <= 0n) {
+
+  // Self-pay with the claim when fee payer has no balance and we have the claimer key.
+  const useSelfPay = feePayerBalanceBefore <= 0n && claimerSecretKey != null;
+  if (useSelfPay) {
+    console.log(
+      `${LOG_PREFIX} fee payer has no balance — using FeeJuicePaymentMethodWithClaim (self-pay)`,
+    );
+  } else if (feePayerBalanceBefore <= 0n) {
     throw new Error(
-      `Fee payer ${feePayerAddress.toString()} has zero L2 FeeJuice. Fund it first, then retry.`,
+      `Fee payer ${feePayerAddress.toString()} has zero L2 FeeJuice. Fund it first or provide --claimer-secret-key for self-pay.`,
     );
   }
 
@@ -535,15 +550,20 @@ async function main(): Promise<void> {
 
   for (let attempt = 1; attempt <= args.claimRetries; attempt += 1) {
     try {
+      const sendFrom = useSelfPay ? claimerWalletAddress : feePayerAddress;
+      const sendFee = useSelfPay
+        ? { paymentMethod: new FeeJuicePaymentMethodWithClaim(claimerAddress, bridgeClaim) }
+        : undefined;
       const receipt = await feeJuice.methods
         .claim(
           claimerAddress,
           bridgeClaim.claimAmount,
-          Fr.fromString(bridgeClaim.claimSecret.toString()),
+          bridgeClaim.claimSecret,
           new Fr(bridgeClaim.messageLeafIndex),
         )
         .send({
-          from: feePayerAddress,
+          from: sendFrom,
+          fee: sendFee,
           wait: { timeout: args.claimTimeoutSeconds },
         });
 
