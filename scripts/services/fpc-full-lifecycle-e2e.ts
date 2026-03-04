@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -1902,73 +1901,6 @@ async function runStep7NegativeScenarios(
   };
 }
 
-function bootstrapTopupAutoclaimAccount(
-  repoRoot: string,
-  nodeUrl: string,
-  claimerSecretKey: string,
-): void {
-  const timeoutRaw = process.env.TOPUP_AUTOCLAIM_BOOTSTRAP_TIMEOUT_MS?.trim();
-  const timeoutMs =
-    timeoutRaw && timeoutRaw.length > 0
-      ? Number.parseInt(timeoutRaw, 10)
-      : 180_000;
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error(
-      "[full-lifecycle-e2e] invalid TOPUP_AUTOCLAIM_BOOTSTRAP_TIMEOUT_MS; expected positive integer milliseconds",
-    );
-  }
-  const scriptPath = path.join(
-    repoRoot,
-    "scripts",
-    "services",
-    "bootstrap-topup-autoclaim-account.ts",
-  );
-  console.log(
-    `[full-lifecycle-e2e] bootstrapping topup auto-claim claimer on ${nodeUrl}`,
-  );
-  try {
-    execFileSync(
-      "bun",
-      [
-        "run",
-        scriptPath,
-        "--node-url",
-        nodeUrl,
-        "--secret-key",
-        claimerSecretKey,
-        "--alias",
-        "full-e2e-autoclaim",
-      ],
-      {
-        cwd: repoRoot,
-        env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: timeoutMs,
-        killSignal: "SIGTERM",
-      },
-    );
-  } catch (error) {
-    const stdout =
-      error && typeof error === "object" && "stdout" in error
-        ? String((error as { stdout?: unknown }).stdout ?? "")
-        : "";
-    const stderr =
-      error && typeof error === "object" && "stderr" in error
-        ? String((error as { stderr?: unknown }).stderr ?? "")
-        : "";
-    const message =
-      error && typeof error === "object" && "message" in error
-        ? String((error as { message?: unknown }).message ?? "")
-        : "";
-    const timeoutHint = message.toLowerCase().includes("timed out")
-      ? `\nbootstrap timeout: ${timeoutMs}ms`
-      : "";
-    throw new Error(
-      `[full-lifecycle-e2e] failed to bootstrap topup auto-claim claimer.${timeoutHint}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
-    );
-  }
-}
-
 async function orchestrateServicesAndAssertBridgeCycles(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
@@ -2012,12 +1944,6 @@ async function orchestrateServicesAndAssertBridgeCycles(
     await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
     console.log("[full-lifecycle-e2e] PASS: attestation /health");
 
-    bootstrapTopupAutoclaimAccount(
-      result.repoRoot,
-      config.nodeUrl,
-      result.operatorSecretHex,
-    );
-
     topup = startManagedProcess(
       "full-e2e-topup",
       "bun",
@@ -2033,6 +1959,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
           ...process.env,
           L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
           TOPUP_AUTOCLAIM_SECRET_KEY: result.operatorSecretHex,
+          TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "0",
         },
       },
     );
