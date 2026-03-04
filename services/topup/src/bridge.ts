@@ -176,10 +176,7 @@ export async function bridgeFeeJuice(
       break;
     } catch (error) {
       lastError = error;
-      if (
-        !isNonceConflictError(error) ||
-        attempt >= MAX_NONCE_RETRY_ATTEMPTS
-      ) {
+      if (!isNonceConflictError(error) || attempt >= MAX_NONCE_RETRY_ATTEMPTS) {
         throw error;
       }
       console.warn(

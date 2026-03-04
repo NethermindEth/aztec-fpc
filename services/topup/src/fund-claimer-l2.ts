@@ -184,7 +184,8 @@ function nextArg(argv: string[], index: number, flag: string): string {
 
 function parseCliArgs(argv: string[]): CliArgs {
   let amountWeiRaw = parseOptionalEnv("TOPUP_AUTOCLAIM_FUND_AMOUNT_WEI");
-  let manifestPath = parseOptionalEnv("FPC_DEPLOY_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
+  let manifestPath =
+    parseOptionalEnv("FPC_DEPLOY_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
   let nodeUrl = parseOptionalEnv("AZTEC_NODE_URL");
   let l1RpcUrl = parseOptionalEnv("L1_RPC_URL");
   let l1PrivateKey = parseOptionalHex32(
@@ -252,7 +253,10 @@ function parseCliArgs(argv: string[]): CliArgs {
         i += 1;
         break;
       case "--message-ready-timeout-seconds":
-        messageReadyTimeoutSeconds = parsePositiveInt(arg, nextArg(argv, i, arg));
+        messageReadyTimeoutSeconds = parsePositiveInt(
+          arg,
+          nextArg(argv, i, arg),
+        );
         i += 1;
         break;
       case "--claim-retries":
@@ -274,7 +278,9 @@ function parseCliArgs(argv: string[]): CliArgs {
   }
 
   if (!amountWeiRaw) {
-    throw new Error("Missing --amount-wei (or TOPUP_AUTOCLAIM_FUND_AMOUNT_WEI)");
+    throw new Error(
+      "Missing --amount-wei (or TOPUP_AUTOCLAIM_FUND_AMOUNT_WEI)",
+    );
   }
   if (!DECIMAL_UINT_PATTERN.test(amountWeiRaw)) {
     throw new Error("--amount-wei must be a non-negative integer in wei");
@@ -308,11 +314,15 @@ function readManifest(manifestPath: string): PartialManifest {
     const raw = readFileSync(manifestPath, "utf8");
     return JSON.parse(raw) as PartialManifest;
   } catch (error) {
-    throw new Error(`Failed to read manifest ${manifestPath}: ${String(error)}`);
+    throw new Error(
+      `Failed to read manifest ${manifestPath}: ${String(error)}`,
+    );
   }
 }
 
-async function deriveAddressFromSecret(secretKey: string): Promise<AztecAddress> {
+async function deriveAddressFromSecret(
+  secretKey: string,
+): Promise<AztecAddress> {
   const secret = Fr.fromHexString(secretKey);
   return getSchnorrAccountContractAddress(secret, Fr.ZERO);
 }
@@ -409,7 +419,9 @@ async function main(): Promise<void> {
     const derived = await deriveAddressFromSecret(claimerSecretKey);
     if (args.claimerAddress) {
       const explicit = AztecAddress.fromString(args.claimerAddress);
-      if (explicit.toString().toLowerCase() !== derived.toString().toLowerCase()) {
+      if (
+        explicit.toString().toLowerCase() !== derived.toString().toLowerCase()
+      ) {
         throw new Error(
           `--claimer-address ${explicit.toString()} does not match address derived from claimer secret key ${derived.toString()}.`,
         );
@@ -477,17 +489,19 @@ async function main(): Promise<void> {
   );
 
   console.log(`${LOG_PREFIX} bridging FeeJuice to claimer...`);
-  const bridgeClaim = await portalManager.bridgeTokensPublic(
+  const bridgeClaim = (await portalManager.bridgeTokensPublic(
     claimerAddress,
     args.amountWei,
-  ) as BridgeClaim;
+  )) as BridgeClaim;
 
   console.log(
     `${LOG_PREFIX} bridge submitted message_hash=${bridgeClaim.messageHash} leaf_index=${bridgeClaim.messageLeafIndex} claim_secret_hash=<hidden>`,
   );
 
   if (args.skipClaim) {
-    console.log(`${LOG_PREFIX} skip-claim enabled; stopping after bridge submission`);
+    console.log(
+      `${LOG_PREFIX} skip-claim enabled; stopping after bridge submission`,
+    );
     return;
   }
 
@@ -503,7 +517,10 @@ async function main(): Promise<void> {
     );
   }
 
-  const wallet = await EmbeddedWallet.create(node, { ephemeral: true });
+  const wallet = await EmbeddedWallet.create(node, {
+    ephemeral: true,
+    pxeConfig: { proverEnabled: true },
+  });
   const feePayerSecret = Fr.fromHexString(feePayerSecretKey as string);
   const feePayerSigningKey = deriveSigningKey(feePayerSecret);
   const feePayerAccount = await wallet.createSchnorrAccount(
@@ -552,7 +569,12 @@ async function main(): Promise<void> {
     try {
       const sendFrom = useSelfPay ? claimerWalletAddress : feePayerAddress;
       const sendFee = useSelfPay
-        ? { paymentMethod: new FeeJuicePaymentMethodWithClaim(claimerAddress, bridgeClaim) }
+        ? {
+            paymentMethod: new FeeJuicePaymentMethodWithClaim(
+              claimerAddress,
+              bridgeClaim,
+            ),
+          }
         : undefined;
       const receipt = await feeJuice.methods
         .claim(
