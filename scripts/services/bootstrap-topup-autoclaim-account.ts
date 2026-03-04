@@ -15,6 +15,7 @@ import { EmbeddedWallet } from "@aztec/wallets/embedded";
 const LOG_PREFIX = "[topup-autoclaim-bootstrap]";
 const DEFAULT_MANIFEST_PATH = "./deployments/devnet-manifest-v2.json";
 const DEFAULT_ALIAS_PREFIX = "topup-autoclaim";
+const DEFAULT_AZTEC_WALLET_TIMEOUT_MS = 90_000;
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
@@ -382,6 +383,20 @@ function shouldAttemptExistingAccountPublicDeployFallback(
   );
 }
 
+function resolveAztecWalletTimeoutMs(): number {
+  const raw = parseOptionalEnv("TOPUP_AUTOCLAIM_BOOTSTRAP_WALLET_TIMEOUT_MS");
+  if (!raw) {
+    return DEFAULT_AZTEC_WALLET_TIMEOUT_MS;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new CliError(
+      "Invalid TOPUP_AUTOCLAIM_BOOTSTRAP_WALLET_TIMEOUT_MS. Expected a positive integer (milliseconds).",
+    );
+  }
+  return parsed;
+}
+
 function runAztecWalletCommand(
   nodeUrl: string,
   args: string[],
@@ -398,11 +413,14 @@ function runAztecWalletCommand(
     nodeUrl,
     ...args,
   ];
+  const timeoutMs = resolveAztecWalletTimeoutMs();
   try {
     return execFileSync(walletBin, commandArgs, {
       cwd: process.cwd(),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      killSignal: "SIGTERM",
     });
   } catch (error) {
     if (
@@ -413,8 +431,18 @@ function runAztecWalletCommand(
     ) {
       const stdout = String((error as { stdout?: unknown }).stdout ?? "");
       const stderr = String((error as { stderr?: unknown }).stderr ?? "");
+      const message =
+        "message" in error
+          ? String((error as { message?: unknown }).message)
+          : "";
+      const timedOut =
+        message.toLowerCase().includes("timed out") ||
+        ("killed" in error && (error as { killed?: unknown }).killed === true);
+      const timeoutSuffix = timedOut
+        ? `\nCommand exceeded timeout (${timeoutMs}ms). Set TOPUP_AUTOCLAIM_BOOTSTRAP_WALLET_TIMEOUT_MS to adjust.`
+        : "";
       throw new CliError(
-        `Failed to ${description} via '${walletBin} ${commandArgs.join(" ")}'.\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+        `Failed to ${description} via '${walletBin} ${commandArgs.join(" ")}'.${timeoutSuffix}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
       );
     }
     throw new CliError(`Failed to ${description}: ${String(error)}`);
@@ -649,6 +677,18 @@ async function deployWithAztecJsFallback(params: {
       return;
     } catch (error) {
       const message = String(error);
+      // "Existing nullifier" means the contract's deployment nullifier already
+      // exists in state (e.g. genesis-deployed test accounts on a local network).
+      // The instance IS deployed even though getContract() doesn't index it.
+      if (
+        message.includes("Existing nullifier") ||
+        message.includes("existing nullifier")
+      ) {
+        console.log(
+          `${LOG_PREFIX} aztec.js fallback got "Existing nullifier" with mode=${mode} — account already deployed; treating as success`,
+        );
+        return;
+      }
       failures.push(`${mode}: ${message}`);
       console.warn(
         `${LOG_PREFIX} aztec.js fallback deployment failed with mode=${mode}`,
@@ -731,10 +771,14 @@ async function main(): Promise<void> {
         sponsoredFpcAddress,
         claimerAddress,
       });
+      // Fallback returned without throwing — account is deployed (or was already
+      // deployed per "Existing nullifier"); trust the result rather than re-checking
+      // via getContract(), which may not index genesis-deployed accounts.
+      publishedAfterBootstrap = true;
     } catch (error) {
       aztecJsFallbackError = String(error);
+      publishedAfterBootstrap = await isPublished(nodeUrl, claimerAddress);
     }
-    publishedAfterBootstrap = await isPublished(nodeUrl, claimerAddress);
   }
 
   if (!publishedAfterBootstrap) {

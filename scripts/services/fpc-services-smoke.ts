@@ -389,6 +389,16 @@ function bootstrapTopupAutoclaimAccount(
   nodeUrl: string,
   claimerSecretKey: string,
 ): void {
+  const timeoutRaw = process.env.TOPUP_AUTOCLAIM_BOOTSTRAP_TIMEOUT_MS?.trim();
+  const timeoutMs =
+    timeoutRaw && timeoutRaw.length > 0
+      ? Number.parseInt(timeoutRaw, 10)
+      : 180_000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(
+      "[services-smoke] invalid TOPUP_AUTOCLAIM_BOOTSTRAP_TIMEOUT_MS; expected positive integer milliseconds",
+    );
+  }
   const scriptPath = path.join(
     repoRoot,
     "scripts",
@@ -415,6 +425,8 @@ function bootstrapTopupAutoclaimAccount(
         cwd: repoRoot,
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
+        timeout: timeoutMs,
+        killSignal: "SIGTERM",
       },
     );
   } catch (error) {
@@ -426,8 +438,15 @@ function bootstrapTopupAutoclaimAccount(
       error && typeof error === "object" && "stderr" in error
         ? String((error as { stderr?: unknown }).stderr ?? "")
         : "";
+    const message =
+      error && typeof error === "object" && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : "";
+    const timeoutHint = message.toLowerCase().includes("timed out")
+      ? `\nbootstrap timeout: ${timeoutMs}ms`
+      : "";
     throw new Error(
-      `[services-smoke] failed to bootstrap topup auto-claim claimer.\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+      `[services-smoke] failed to bootstrap topup auto-claim claimer.${timeoutHint}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
     );
   }
 }
