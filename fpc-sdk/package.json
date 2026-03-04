@@ -14,7 +14,12 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist", "artifacts", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "artifacts",
+    "README.md",
+    "LICENSE"
+  ],
   "sideEffects": false,
   "publishConfig": {
     "access": "public"

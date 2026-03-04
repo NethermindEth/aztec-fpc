@@ -1,3 +1,4 @@
+export { createSponsoredCounterClient } from "./client";
 export {
   BalanceBootstrapError,
   InsufficientFpcFeeJuiceError,
@@ -5,7 +6,6 @@ export {
   QuoteValidationError,
   SponsoredTxFailedError,
 } from "./errors";
-export { createSponsoredCounterClient } from "./client";
 export type {
   CreateSponsoredCounterClientInput,
   SponsoredCounterClient,

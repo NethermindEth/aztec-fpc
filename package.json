@@ -17,14 +17,14 @@
     "ci": "bun run format && bun run biome:ci && bun run lint && bun run typecheck && bun run test:ts && bun run test:contracts",
     "biome:check": "biome check --write",
     "biome:ci": "biome ci",
-    "format": "biome format --write package.json tsconfig.base.json services scripts",
-    "lint": "biome lint package.json tsconfig.base.json services scripts",
+    "format": "biome format --write package.json tsconfig.base.json services scripts fpc-sdk",
+    "lint": "biome lint package.json tsconfig.base.json services scripts fpc-sdk",
     "check:docs:quote-schema": "bash scripts/check-docs-quote-schema.sh",
     "build": "bun run --workspaces --if-present build",
     "typecheck": "bun run --workspaces --if-present typecheck",
 
     "test": "bun run test:contracts && bun run test:ts",
-    "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test",
+    "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test && bun run --filter @aztec-fpc/sponsored-counter-sdk --if-present test",
     "test:services": "bun run test:ts",
     "test:contracts": "aztec compile --workspace --force && aztec test --package fpc",
 
@@ -75,6 +75,7 @@
   },
   "workspaces": [
     "scripts",
-    "services/*"
+    "services/*",
+    "fpc-sdk"
   ]
 }
