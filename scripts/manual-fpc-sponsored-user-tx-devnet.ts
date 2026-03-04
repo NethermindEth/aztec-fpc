@@ -34,6 +34,7 @@ type Config = {
   manifestPath: string;
   tokenArtifactPath: string;
   fpcArtifactPath: string;
+  faucetArtifactPath: string;
   counterArtifactPath: string;
   counterAddress: string | null;
   operatorSecretKey: string;
@@ -54,6 +55,7 @@ type Manifest = {
   contracts?: {
     fpc?: string;
     accepted_asset?: string;
+    faucet?: string;
     counter?: string;
   };
   operator?: {
@@ -100,7 +102,7 @@ function usage(): string {
     "  --node-url from AZTEC_NODE_URL or manifest.network.node_url",
     "  --quote-base-url http://localhost:3000",
     "  --operator-secret-key from FPC_DEVNET_OPERATOR_SECRET_KEY | OPERATOR_SECRET_KEY | manifest.deployment_accounts.l2_deployer.private_key",
-    "  --user-secret-key from FPC_DEVNET_USER_SECRET_KEY | USER_SECRET_KEY | operator-secret-key",
+    "  --user-secret-key from FPC_DEVNET_USER_SECRET_KEY | USER_SECRET_KEY | L2_PRIVATE_KEY | operator-secret-key",
     `  --operator-salt ${ZERO_SALT_HEX}`,
     `  --user-salt ${ZERO_SALT_HEX}`,
     "  --da-gas-limit 1000000",
@@ -236,6 +238,9 @@ function readConfig(argv: string[]): Config {
   const fpcArtifactPath =
     parseOptionalEnv("FPC_ARTIFACT_PATH") ??
     path.join(repoRoot, "target", "fpc-FPCMultiAsset.json");
+  const faucetArtifactPath =
+    parseOptionalEnv("FAUCET_ARTIFACT_PATH") ??
+    path.join(repoRoot, "target", "faucet-Faucet.json");
   const counterArtifactPath =
     parseOptionalEnv("COUNTER_ARTIFACT_PATH") ??
     path.join(repoRoot, "target", "mock_counter-Counter.json");
@@ -246,7 +251,8 @@ function readConfig(argv: string[]): Config {
     parseOptionalEnv("OPERATOR_SECRET_KEY");
   let userSecretKeyRaw =
     parseOptionalEnv("FPC_DEVNET_USER_SECRET_KEY") ??
-    parseOptionalEnv("USER_SECRET_KEY");
+    parseOptionalEnv("USER_SECRET_KEY") ??
+    parseOptionalEnv("L2_PRIVATE_KEY");
   let operatorSaltRaw =
     parseOptionalEnv("FPC_DEVNET_OPERATOR_SALT") ?? ZERO_SALT_HEX;
   let userSaltRaw = parseOptionalEnv("FPC_DEVNET_USER_SALT") ?? ZERO_SALT_HEX;
@@ -357,6 +363,7 @@ function readConfig(argv: string[]): Config {
     manifestPath: path.resolve(manifestPath),
     tokenArtifactPath: path.resolve(tokenArtifactPath),
     fpcArtifactPath: path.resolve(fpcArtifactPath),
+    faucetArtifactPath: path.resolve(faucetArtifactPath),
     counterArtifactPath: path.resolve(counterArtifactPath),
     counterAddress,
     operatorSecretKey,
@@ -437,7 +444,11 @@ async function fetchQuote(
   acceptedAsset: AztecAddress,
   fjAmount: bigint,
 ): Promise<QuoteResponse> {
-  const quoteUrl = new URL(`${quoteBaseUrl}/quote`);
+  const quoteUrl = new URL(quoteBaseUrl);
+  const normalizedPath = quoteUrl.pathname.replace(/\/+$/u, "");
+  quoteUrl.pathname = normalizedPath.endsWith("/quote")
+    ? normalizedPath
+    : `${normalizedPath}/quote`;
   quoteUrl.searchParams.set("user", user.toString());
   quoteUrl.searchParams.set("accepted_asset", acceptedAsset.toString());
   quoteUrl.searchParams.set("fj_amount", fjAmount.toString());
@@ -494,6 +505,10 @@ async function main() {
     "contracts.accepted_asset",
     manifest.contracts?.accepted_asset,
   );
+  const faucetAddress = requireManifestAddress(
+    "contracts.faucet",
+    manifest.contracts?.faucet,
+  );
   const counterAddress = requireManifestAddress(
     "counter address",
     cfg.counterAddress ?? manifest.contracts?.counter,
@@ -505,12 +520,14 @@ async function main() {
 
   const tokenArtifact = loadArtifact(cfg.tokenArtifactPath);
   const fpcArtifact = loadArtifact(cfg.fpcArtifactPath);
+  const faucetArtifact = loadArtifact(cfg.faucetArtifactPath);
   const counterArtifact = loadArtifact(cfg.counterArtifactPath);
 
   const node = createAztecNodeClient(cfg.nodeUrl);
   await waitForNode(node);
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: cfg.ephemeralWallet,
+    pxeConfig: { proverEnabled: true },
   });
 
   const operatorSecret = Fr.fromHexString(cfg.operatorSecretKey);
@@ -559,6 +576,13 @@ async function main() {
     fpcArtifact,
     "fpc",
   );
+  const faucet = await attachRegisteredContract(
+    wallet,
+    node,
+    faucetAddress,
+    faucetArtifact,
+    "faucet",
+  );
   const counter = await attachRegisteredContract(
     wallet,
     node,
@@ -581,6 +605,7 @@ async function main() {
   console.log(`[manual-fpc-devnet] user=${user.toString()}`);
   console.log(`[manual-fpc-devnet] token=${tokenAddress.toString()}`);
   console.log(`[manual-fpc-devnet] fpc=${fpcAddress.toString()}`);
+  console.log(`[manual-fpc-devnet] faucet=${faucetAddress.toString()}`);
   console.log(`[manual-fpc-devnet] counter=${counter.address.toString()}`);
 
   const fpcFeeJuiceBalance = await waitForFeeJuice({
@@ -619,10 +644,47 @@ async function main() {
   const quoteSigBytes = Array.from(
     Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
   );
+  const minimumPrivateAcceptedAsset = aaPaymentAmount + 1_000_000n;
 
-  await token.methods
-    .mint_to_private(user, aaPaymentAmount + 1_000_000n)
-    .send({ from: operator });
+  let userPrivateBalance = BigInt(
+    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+  );
+
+  for (let attempt = 1; userPrivateBalance < minimumPrivateAcceptedAsset; attempt += 1) {
+    if (attempt > 3) {
+      throw new Error(
+        `Unable to reach required private accepted-asset balance after faucet attempts. required=${minimumPrivateAcceptedAsset} current=${userPrivateBalance}`,
+      );
+    }
+
+    let userPublicBalance = BigInt(
+      (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
+    );
+
+    if (userPublicBalance === 0n) {
+      console.log(
+        `[manual-fpc-devnet] user private accepted_asset=${userPrivateBalance} (< ${minimumPrivateAcceptedAsset}); requesting faucet drip attempt=${attempt}`,
+      );
+      await faucet.methods.drip(user).send({ from: user });
+      userPublicBalance = BigInt(
+        (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
+      );
+    }
+
+    if (userPublicBalance === 0n) {
+      throw new Error(
+        "Faucet drip did not credit user public balance; cannot shield funds for fee payment.",
+      );
+    }
+
+    await token.methods
+      .transfer_public_to_private(user, user, userPublicBalance, Fr.random())
+      .send({ from: user });
+
+    userPrivateBalance = BigInt(
+      (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+    );
+  }
 
   const nonce = Fr.random();
   const transferCall = await token.methods
