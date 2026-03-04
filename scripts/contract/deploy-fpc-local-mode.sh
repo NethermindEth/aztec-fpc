@@ -10,7 +10,8 @@
 #   FPC_LOCAL_DEPLOYER_ALIAS          default: test0
 #   FPC_LOCAL_DEPLOYER_PRIVATE_KEY    default: sandbox test account #0
 #   FPC_LOCAL_OPERATOR_SECRET_KEY     default: sandbox test account #0
-#   FPC_LOCAL_OUT                     default: ./tmp/deploy-fpc-local-manifest.json
+#   FPC_LOCAL_DATA_DIR                default: ./tmp/local-deploy
+#   FPC_LOCAL_OUT                     manifest output override (default: $FPC_LOCAL_DATA_DIR/manifest.json)
 #   FPC_LOCAL_ACCEPTED_ASSET          skip Token deploy if set
 #   FPC_LOCAL_STRICT_CONFIG_GEN       set to 1 to fail if config gen fails
 #   PXE_PROVER                        default: wasm
@@ -71,7 +72,8 @@ export FPC_L1_RPC_URL="${L1_RPC_URL}"
 export FPC_DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
 export FPC_DEPLOYER_PRIVATE_KEY="${FPC_LOCAL_DEPLOYER_PRIVATE_KEY:-$LOCAL_TEST_KEY}"
 export FPC_OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-$LOCAL_TEST_KEY}"
-export FPC_OUT="${FPC_LOCAL_OUT:-./tmp/deploy-fpc-local-manifest.json}"
+export FPC_DATA_DIR="${FPC_LOCAL_DATA_DIR:-./tmp/local-deploy}"
+export FPC_OUT="${FPC_LOCAL_OUT:-$FPC_DATA_DIR/manifest.json}"
 
 if [[ -n "${FPC_LOCAL_ACCEPTED_ASSET:-}" ]]; then
   export FPC_ACCEPTED_ASSET="${FPC_LOCAL_ACCEPTED_ASSET}"
@@ -82,13 +84,13 @@ FPC_SKIP_CONFIG_GEN=1 bash "$SCRIPT_DIR/deploy-fpc.sh" "$@"
 
 # ── Config generation (best-effort unless strict) ──
 OUT_PATH="${FPC_OUT}"
-FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}"
+FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-$FPC_DATA_DIR/fpc-config.yaml}"
 
 if [[ -f "$OUT_PATH" && -f "$FPC_MASTER_CONFIG" ]]; then
   if ensure_tool_on_path jq && ensure_tool_on_path yq; then
-    if ! FPC_DEPLOY_MANIFEST="$OUT_PATH" \
+    if ! FPC_DATA_DIR="$FPC_DATA_DIR" \
+      FPC_DEPLOY_MANIFEST="$OUT_PATH" \
       FPC_MASTER_CONFIG="$FPC_MASTER_CONFIG" \
-      FPC_CONFIGS_OUT="${FPC_CONFIGS_OUT:-./configs}" \
       bash scripts/config/generate-service-configs.sh; then
       if [[ "${FPC_LOCAL_STRICT_CONFIG_GEN:-0}" == "1" ]]; then
         echo "[deploy-fpc-local] ERROR: service config generation failed and strict mode is enabled (FPC_LOCAL_STRICT_CONFIG_GEN=1)" >&2

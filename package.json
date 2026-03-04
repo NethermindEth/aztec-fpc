@@ -47,8 +47,8 @@
 
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
     "deploy:fpc": "bash scripts/contract/deploy-fpc.sh",
-    "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/devnet-manifest-v2.json",
-    "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
+    "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/manifest.json",
+    "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/manifest.json",
 
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-smoke-local.sh",
     "smoke:fee-entrypoint:local": "bash scripts/contract/fee-entrypoint-local-smoke.sh",

@@ -178,7 +178,7 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
 const DEFAULT_MANIFEST_PATH = path.join(
   REPO_ROOT,
   "deployments",
-  "devnet-manifest-v2.json",
+  "manifest.json",
 );
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";

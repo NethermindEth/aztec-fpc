@@ -130,7 +130,7 @@ const WALLET_SPONSORED_FPC_ALIAS = "sponsoredfpc";
 
 const DEVNET_DEFAULT_NODE_URL = "https://v4-devnet-2.aztec-labs.com/";
 const DEVNET_DEFAULT_DEPLOYER_ALIAS = "my-wallet";
-const DEVNET_DEFAULT_OUT_PATH = "./deployments/devnet-manifest-v2.json";
+const DEVNET_DEFAULT_DATA_DIR = "./deployments";
 const DEVNET_DEFAULT_TEST_KEY =
   "0x1111111111111111111111111111111111111111111111111111111111111111";
 
@@ -180,7 +180,8 @@ function usage(): string {
     "  --preflight-only                 Run checks only, do not deploy [env: FPC_PREFLIGHT_ONLY=1]",
     "",
     "Outputs:",
-    `  --out <path.json>                Output manifest path (default: ${DEVNET_DEFAULT_OUT_PATH}) [env: FPC_OUT]`,
+    `  --data-dir <dir>                 Data directory for artifacts (default: ${DEVNET_DEFAULT_DATA_DIR}) [env: FPC_DATA_DIR]`,
+    "  --out <path.json>                Output manifest path (default: $FPC_DATA_DIR/manifest.json) [env: FPC_OUT]",
     "",
     "  --help, -h                       Show this help",
     "",
@@ -293,7 +294,9 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let acceptedAsset: string | null = process.env.FPC_ACCEPTED_ASSET ?? null;
   let fpcArtifact: string =
     process.env.FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
-  let out: string = process.env.FPC_OUT ?? DEVNET_DEFAULT_OUT_PATH;
+  let dataDir: string = process.env.FPC_DATA_DIR ?? DEVNET_DEFAULT_DATA_DIR;
+  let outExplicit = !!process.env.FPC_OUT;
+  let out: string = process.env.FPC_OUT ?? path.join(dataDir, "manifest.json");
   let preflightOnly = process.env.FPC_PREFLIGHT_ONLY === "1";
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -346,8 +349,13 @@ function parseCliArgs(argv: string[]): CliParseResult {
         fpcArtifact = nextArg(argv, i, arg);
         i += 1;
         break;
+      case "--data-dir":
+        dataDir = nextArg(argv, i, arg);
+        i += 1;
+        break;
       case "--out":
         out = nextArg(argv, i, arg);
+        outExplicit = true;
         i += 1;
         break;
       case "--preflight-only":
@@ -360,6 +368,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
       default:
         throw new CliError(`Unknown argument: ${arg}`);
     }
+  }
+
+  if (!outExplicit) {
+    out = path.join(dataDir, "manifest.json");
   }
 
   if (validateTopupPath && !l1RpcUrl) {
