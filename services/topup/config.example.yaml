@@ -57,6 +57,10 @@ confirmation_poll_max_ms: 15000
 
 # Auto-claim is enabled by default via env:
 #   TOPUP_AUTOCLAIM_ENABLED=1
+# Prefer sponsored auto-claim when available:
+#   TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS=<0x...32-byte-hex Aztec address>
+# Fallback aliases also supported:
+#   FPC_DEVNET_SPONSORED_FPC_ADDRESS or SPONSORED_FPC_ADDRESS
 # Prefer setting a real claimer key (for devnet/testnet):
 #   TOPUP_AUTOCLAIM_SECRET_KEY=<0x...32-byte-hex>
 # If unset, it falls back to local-network test account mode:

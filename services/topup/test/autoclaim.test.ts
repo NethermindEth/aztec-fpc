@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { resolveAutoClaimSecretKeyFromEnv } from "../src/autoclaim.js";
+import {
+  resolveAutoClaimSecretKeyFromEnv,
+  resolveAutoClaimSponsoredFpcFromEnv,
+} from "../src/autoclaim.js";
 
 const VALID_SECRET_A =
   "0x1111111111111111111111111111111111111111111111111111111111111111";
 const VALID_SECRET_B =
   "0x2222222222222222222222222222222222222222222222222222222222222222";
+const VALID_AZTEC_ADDRESS_A =
+  "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2";
+const VALID_AZTEC_ADDRESS_B =
+  "0x2d08e8bdc343c3c91a4e238ae3623200ca8fba484f784660b35e19529862b88b";
+const VALID_AZTEC_ADDRESS_C =
+  "0x10f81873fd0989a147dfdfde5dcac8548c8c8c5be21b946132c7c5ce984bc0eb";
 
 describe("resolveAutoClaimSecretKeyFromEnv", () => {
   it("prefers TOPUP_AUTOCLAIM_SECRET_KEY when set", () => {
@@ -47,6 +56,51 @@ describe("resolveAutoClaimSecretKeyFromEnv", () => {
           OPERATOR_SECRET_KEY: VALID_SECRET_B,
         }),
       /Invalid auto-claim secret key/,
+    );
+  });
+});
+
+describe("resolveAutoClaimSponsoredFpcFromEnv", () => {
+  it("prefers TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS when set", () => {
+    const resolved = resolveAutoClaimSponsoredFpcFromEnv({
+      TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: VALID_AZTEC_ADDRESS_A,
+      FPC_DEVNET_SPONSORED_FPC_ADDRESS: VALID_AZTEC_ADDRESS_B,
+      SPONSORED_FPC_ADDRESS: VALID_AZTEC_ADDRESS_C,
+    });
+    assert.equal(resolved?.toString(), VALID_AZTEC_ADDRESS_A);
+  });
+
+  it("falls back to FPC_DEVNET_SPONSORED_FPC_ADDRESS", () => {
+    const resolved = resolveAutoClaimSponsoredFpcFromEnv({
+      FPC_DEVNET_SPONSORED_FPC_ADDRESS: VALID_AZTEC_ADDRESS_B,
+      SPONSORED_FPC_ADDRESS: VALID_AZTEC_ADDRESS_C,
+    });
+    assert.equal(resolved?.toString(), VALID_AZTEC_ADDRESS_B);
+  });
+
+  it("falls back to SPONSORED_FPC_ADDRESS", () => {
+    const resolved = resolveAutoClaimSponsoredFpcFromEnv({
+      SPONSORED_FPC_ADDRESS: VALID_AZTEC_ADDRESS_C,
+    });
+    assert.equal(resolved?.toString(), VALID_AZTEC_ADDRESS_C);
+  });
+
+  it("returns null when sponsored address env vars are unset/blank", () => {
+    const resolved = resolveAutoClaimSponsoredFpcFromEnv({
+      TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: " ",
+      FPC_DEVNET_SPONSORED_FPC_ADDRESS: "",
+      SPONSORED_FPC_ADDRESS: "   ",
+    });
+    assert.equal(resolved, null);
+  });
+
+  it("throws on invalid sponsored address", () => {
+    assert.throws(
+      () =>
+        resolveAutoClaimSponsoredFpcFromEnv({
+          TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: "0x1234",
+        }),
+      /Invalid sponsored FPC address/,
     );
   });
 });

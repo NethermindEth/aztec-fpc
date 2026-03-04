@@ -1,8 +1,10 @@
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
-import type { AztecAddress } from "@aztec/aztec.js/addresses";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
+import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import type { Hex } from "viem";
@@ -22,6 +24,8 @@ export interface AutoClaimRequest {
 export interface TopupAutoClaimer {
   claimerAddress: AztecAddress;
   claimerSource: "secret_key" | "test_account";
+  paymentMode: "sponsored" | "fee_juice";
+  sponsoredFpcAddress: AztecAddress | null;
   claim: (request: AutoClaimRequest) => Promise<string>;
 }
 
@@ -56,6 +60,35 @@ export function resolveAutoClaimSecretKeyFromEnv(
   return parseOptionalSecretKey(env.OPERATOR_SECRET_KEY);
 }
 
+function parseOptionalAztecAddress(
+  value: string | undefined,
+): AztecAddress | null {
+  if (value === undefined) {
+    return null;
+  }
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    return null;
+  }
+  try {
+    return AztecAddress.fromString(normalized);
+  } catch {
+    throw new Error(
+      `Invalid sponsored FPC address: "${normalized}". Expected 32-byte 0x-prefixed Aztec address`,
+    );
+  }
+}
+
+export function resolveAutoClaimSponsoredFpcFromEnv(
+  env: NodeJS.ProcessEnv,
+): AztecAddress | null {
+  return (
+    parseOptionalAztecAddress(env.TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS) ??
+    parseOptionalAztecAddress(env.FPC_DEVNET_SPONSORED_FPC_ADDRESS) ??
+    parseOptionalAztecAddress(env.SPONSORED_FPC_ADDRESS)
+  );
+}
+
 function parseAccountIndex(value: string | undefined): number {
   if (value === undefined) {
     return DEFAULT_ACCOUNT_INDEX;
@@ -69,11 +102,43 @@ function parseAccountIndex(value: string | undefined): number {
   return parsed;
 }
 
+async function registerSponsoredFpcContract(
+  wallet: EmbeddedWallet,
+  node: AztecNode,
+  sponsoredFpcAddress: AztecAddress,
+): Promise<void> {
+  const sponsoredFpcInstance = await node.getContract(sponsoredFpcAddress);
+  if (!sponsoredFpcInstance) {
+    throw new Error(
+      `Sponsored FPC contract instance not found on node at ${sponsoredFpcAddress.toString()}`,
+    );
+  }
+
+  await wallet.registerContract(
+    sponsoredFpcInstance,
+    SponsoredFPCContractArtifact,
+  );
+}
+
 export async function createTopupAutoClaimer(
   node: AztecNode,
 ): Promise<TopupAutoClaimer> {
   const wallet = await EmbeddedWallet.create(node, { ephemeral: true });
   const explicitSecretKey = resolveAutoClaimSecretKeyFromEnv(process.env);
+  const sponsoredFpcAddress = resolveAutoClaimSponsoredFpcFromEnv(process.env);
+  if (sponsoredFpcAddress) {
+    try {
+      await registerSponsoredFpcContract(wallet, node, sponsoredFpcAddress);
+    } catch (error) {
+      throw new Error(
+        `Failed to register sponsored FPC contract ${sponsoredFpcAddress.toString()} in PXE. Ensure TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS points to a SponsoredFPC contract on the connected network.`,
+        { cause: error },
+      );
+    }
+  }
+  const sponsoredPaymentMethod = sponsoredFpcAddress
+    ? new SponsoredFeePaymentMethod(sponsoredFpcAddress)
+    : null;
 
   let claimerAddress: AztecAddress;
   let claimerSource: "secret_key" | "test_account";
@@ -115,8 +180,13 @@ export async function createTopupAutoClaimer(
   return {
     claimerAddress,
     claimerSource,
+    paymentMode: sponsoredPaymentMethod ? "sponsored" : "fee_juice",
+    sponsoredFpcAddress,
     async claim(request: AutoClaimRequest): Promise<string> {
       try {
+        const feeOption = sponsoredPaymentMethod
+          ? { paymentMethod: sponsoredPaymentMethod }
+          : undefined;
         const receipt = await feeJuice.methods
           .claim(
             request.recipient,
@@ -126,12 +196,21 @@ export async function createTopupAutoClaimer(
           )
           .send({
             from: claimerAddress,
+            fee: feeOption,
             wait: { timeout: request.waitTimeoutSeconds },
           });
         return receipt.txHash.toString();
       } catch (error) {
+        const errorDetails = String(error);
+        const insufficientBalanceHint = errorDetails.includes(
+          "Insufficient fee payer balance",
+        )
+          ? sponsoredPaymentMethod
+            ? ` Hint: sponsored auto-claim is enabled via ${sponsoredFpcAddress?.toString()} but fee sponsorship failed or the sponsor is not funded.`
+            : ` Hint: claimer ${claimerAddress.toString()} has insufficient L2 Fee Juice to pay tx fees. Set TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS (recommended) or pre-fund this claimer.`
+          : "";
         throw new Error(
-          `Auto-claim failed for message_hash=${request.messageHash}`,
+          `Auto-claim failed for message_hash=${request.messageHash}.${insufficientBalanceHint}`,
           { cause: error },
         );
       }

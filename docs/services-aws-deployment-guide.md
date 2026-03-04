@@ -30,6 +30,47 @@ Current contract state relevant to services:
 - Attestation still needs a default `accepted_asset_address` in config and can publish additional assets via `supported_assets`.
 - `counter` is now deployed by the devnet deploy script, but attestation/topup do not consume it.
 
+### 1.1 Where To Find Addresses In This Repo
+
+Primary file (all deployed addresses):  
+`/home/ametel/source/aztec-fpc/deployments/devnet-manifest-v2.json`
+
+Key paths in that manifest:
+
+- Service-facing L2 addresses:
+  - FPC: `.contracts.fpc`
+  - accepted asset: `.contracts.accepted_asset`
+  - faucet/counter (if needed): `.contracts.faucet`, `.contracts.counter`
+- Operator/deployer identity:
+  - operator address + pubkeys: `.operator`
+  - L2 deployer account: `.deployment_accounts.l2_deployer`
+- Sponsored fee contract:
+  - `.aztec_required_addresses.sponsored_fpc_address`
+- L1 addresses:
+  - `.aztec_required_addresses.l1_contract_addresses`
+- Protocol contract addresses:
+  - `.aztec_required_addresses.protocol_contract_addresses`
+
+Useful extraction commands:
+
+```bash
+MANIFEST=./deployments/devnet-manifest-v2.json
+
+# All contract + operator + sponsor addresses
+jq '{
+  contracts: .contracts,
+  operator: .operator,
+  l2_deployer: .deployment_accounts.l2_deployer,
+  sponsored_fpc: .aztec_required_addresses.sponsored_fpc_address
+}' "$MANIFEST"
+
+# L1 + protocol addresses used by topup/bridge flows
+jq '{
+  l1: .aztec_required_addresses.l1_contract_addresses,
+  protocol: .aztec_required_addresses.protocol_contract_addresses
+}' "$MANIFEST"
+```
+
 ## 2. Docker Images
 
 Use service images:
@@ -140,7 +181,9 @@ For AWS, prefer a writable mounted path for durability (for example `/var/lib/az
 Conditional:
 
 - `L1_OPERATOR_SECRET_REF` (used when provider is `kms`/`hsm`).
-- `TOPUP_AUTOCLAIM_SECRET_KEY` (preferred claimer key for auto-claim mode).
+- `TOPUP_AUTOCLAIM_SECRET_KEY` (claimer key for auto-claim mode; falls back to `OPERATOR_SECRET_KEY`).
+- `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` (recommended when auto-claim is enabled; uses sponsored fee payment for claim txs).
+- fallback aliases for sponsor address: `FPC_DEVNET_SPONSORED_FPC_ADDRESS`, `SPONSORED_FPC_ADDRESS`.
 - `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX` only matters if auto-claim is enabled.
 
 Debug only (do not enable in production):
@@ -156,7 +199,7 @@ bun run fund:l1:fee-juice -- \
   --l1-rpc-url "$L1_RPC_URL" \
   --node-url "$AZTEC_NODE_URL" \
   --operator-private-key "$L1_OPERATOR_PRIVATE_KEY" \
-  --target-balance-wei "1000000000000000000000"
+  --target-balance-wei "10000000000000000000000"
 ```
 
 Expected behavior:
@@ -194,6 +237,9 @@ environment:
   AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
   L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
   L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0x...}"
+  OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x...}"
+  TOPUP_AUTOCLAIM_SECRET_KEY: "${TOPUP_AUTOCLAIM_SECRET_KEY:-${OPERATOR_SECRET_KEY:-0x...}}"
+  TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: "${TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS:-${FPC_DEVNET_SPONSORED_FPC_ADDRESS:-${SPONSORED_FPC_ADDRESS:-}}}"
   TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
   TOPUP_BRIDGE_STATE_PATH: "${TOPUP_BRIDGE_STATE_PATH:-/tmp/.topup-bridge-state.json}"
   TOPUP_AUTOCLAIM_ENABLED: "${TOPUP_AUTOCLAIM_ENABLED:-1}"
@@ -206,7 +252,8 @@ AWS production delta from compose parity:
 - Add secret provider envs:
   - `OPERATOR_SECRET_PROVIDER=env`
   - `L1_OPERATOR_SECRET_PROVIDER=env`
-- Set `TOPUP_AUTOCLAIM_ENABLED=0` unless you intentionally run local-network-style test accounts.
+- Set `TOPUP_AUTOCLAIM_ENABLED=0` unless you intentionally run auto-claim in production.
+- If auto-claim is enabled in production, set `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` (or equivalent alias) so claim tx fees are sponsored.
 - Replace local defaults (`http://aztec-node:8080`, `http://anvil:8545`) with real endpoints.
 
 ## 6. Local Services-Only Devnet Compose
@@ -246,6 +293,9 @@ Defaults in `docker-compose.services-devnet.yaml`:
 - `TOPUP_BRIDGE_STATE_PATH=/tmp/.topup-bridge-state.json`
 - `TOPUP_AUTOCLAIM_ENABLED=1`
 - auto-claim claimer key source: `TOPUP_AUTOCLAIM_SECRET_KEY`, else `OPERATOR_SECRET_KEY`, else test account index.
+- sponsored auto-claim address source: `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS`, else `FPC_DEVNET_SPONSORED_FPC_ADDRESS`, else `SPONSORED_FPC_ADDRESS`.
+- topup auto-registers `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` in embedded PXE using the `SponsoredFPC` artifact before claim attempts.
+- `scripts/services/compose-mode.sh services-devnet` auto-exports `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` from `deployments/devnet-manifest-v2.json` when available.
 
 ## 7. AWS Runtime Settings
 
@@ -278,6 +328,8 @@ If topup readiness is failing, first check:
 - `L1_OPERATOR_PRIVATE_KEY` is present and valid.
 - topup config `fpc_address` matches deployed contract.
 - `TOPUP_AUTOCLAIM_ENABLED` is not accidentally left at `1` in non-local environments.
+- if auto-claim is enabled: `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` points to a valid sponsored FPC contract; otherwise the claimer account must have enough FeeJuice to pay claim tx fees.
+- if logs show `Unknown contract <sponsor-address>: add it to PXE`, verify the running topup image includes sponsor registration support and that `<sponsor-address>` is a `SponsoredFPC` instance on the connected Aztec network.
 
 ## 9. Regenerate Service Configs After Contract Redeploy
 

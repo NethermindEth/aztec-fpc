@@ -51,6 +51,7 @@
         "@aztec/bb.js": "4.0.0-devnet.2-patch.2",
         "@aztec/ethereum": "4.0.0-devnet.2-patch.2",
         "@aztec/foundation": "4.0.0-devnet.2-patch.2",
+        "@aztec/noir-contracts.js": "4.0.0-devnet.2-patch.2",
         "@aztec/stdlib": "4.0.0-devnet.2-patch.2",
         "@aztec/wallets": "4.0.0-devnet.2-patch.2",
         "pino": "^10.3.1",
@@ -181,6 +182,8 @@
     "@aztec/native": ["@aztec/native@4.0.0-devnet.2-patch.2", "", { "dependencies": { "@aztec/bb.js": "4.0.0-devnet.2-patch.2", "@aztec/foundation": "4.0.0-devnet.2-patch.2", "msgpackr": "^1.11.2" } }, "sha512-JQlWqFbBsNtbZo4H6aFGe9AKRSDq2DqLGFfJDAFVtgBsAP+mpA6lJGLcq1GznsFcxRsXstLpiRGC8lDo96eB+g=="],
 
     "@aztec/noir-acvm_js": ["@aztec/noir-acvm_js@4.0.0-devnet.2-patch.2", "", {}, "sha512-E7aJxNASXvDkzZ7sQXXqePP496HYGWP8yPxkl1RA3l4ddxe0E3LmNxhFFNZdl4QcWr4FMooHTeSO+hgDurRdvw=="],
+
+    "@aztec/noir-contracts.js": ["@aztec/noir-contracts.js@4.0.0-devnet.2-patch.2", "", { "dependencies": { "@aztec/aztec.js": "4.0.0-devnet.2-patch.2", "tslib": "^2.4.0" } }, "sha512-aZlEsHVGZSTd0QwUVaRxLx+hIknlSzwwWZDJgr8YoffSFiPGqHF9vuIghCS425pWzOwrmIqEWYpmdCfjzyHZ6g=="],
 
     "@aztec/noir-noir_codegen": ["@aztec/noir-noir_codegen@4.0.0-devnet.2-patch.2", "", { "dependencies": { "@aztec/noir-types": "4.0.0-devnet.2-patch.2", "glob": "^13.0.0", "ts-command-line-args": "^2.5.1" }, "bin": { "noir-codegen": "lib/main.js" } }, "sha512-U+gZTtd4ntiONtyOFD8OrLDtLJhJAbUkBta7IiEjsSABDXEzkkY1h9zDSWotqjX5SPxvnKoNlJszMTvVm6B3uQ=="],
 

@@ -79,6 +79,19 @@ async function main() {
   const autoClaimer = autoClaimEnabled
     ? await createTopupAutoClaimer(pxe)
     : null;
+  let autoClaimerFeeJuiceBalance: bigint | null = null;
+  if (autoClaimer) {
+    try {
+      autoClaimerFeeJuiceBalance = await balanceReader.getBalance(
+        autoClaimer.claimerAddress,
+      );
+    } catch (error) {
+      console.warn(
+        `Could not read auto-claim claimer Fee Juice balance for ${autoClaimer.claimerAddress.toString()}`,
+        error,
+      );
+    }
+  }
   const shutdownController = new AbortController();
   const opsState = new TopupOpsState({
     checkIntervalMs: config.check_interval_ms,
@@ -110,8 +123,26 @@ async function main() {
   }
   if (autoClaimer) {
     console.log(
-      `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()} source=${autoClaimer.claimerSource})`,
+      `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()} source=${autoClaimer.claimerSource} payment=${autoClaimer.paymentMode})`,
     );
+    if (autoClaimer.sponsoredFpcAddress) {
+      console.log(
+        `  Auto-claim sponsor contract: ${autoClaimer.sponsoredFpcAddress.toString()}`,
+      );
+    }
+    if (autoClaimerFeeJuiceBalance !== null) {
+      console.log(
+        `  Auto-claim claimer Fee Juice balance: ${autoClaimerFeeJuiceBalance} wei`,
+      );
+      if (
+        autoClaimer.paymentMode === "fee_juice" &&
+        autoClaimerFeeJuiceBalance <= 0n
+      ) {
+        console.warn(
+          "  Auto-claim warning: claimer has zero Fee Juice. Claims will fail unless this account is funded on L2.",
+        );
+      }
+    }
   } else {
     console.warn("  Auto-claim: disabled (TOPUP_AUTOCLAIM_ENABLED=0)");
   }
