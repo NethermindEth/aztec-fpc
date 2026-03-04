@@ -158,44 +158,31 @@ function usage(): string {
     "Usage:",
     "  bunx tsx scripts/contract/deploy-fpc-devnet.ts [options]",
     "",
+    "All arguments are optional. CLI args take precedence over env vars.",
+    "",
+    "Credentials (prefer env vars to avoid leaking secrets in shell history):",
+    "  --deployer-private-key <hex32>   Deployer private key (default: devnet test key) [env: FPC_DEPLOYER_PRIVATE_KEY]",
+    "  --deployer-private-key-ref <ref> Deployer key reference [env: FPC_DEPLOYER_PRIVATE_KEY_REF]",
+    "  --operator-secret-key <hex32>    Operator secret key (default: deployer key) [env: FPC_OPERATOR_SECRET_KEY]",
+    "  --operator-secret-key-ref <ref>  Operator key reference [env: FPC_OPERATOR_SECRET_KEY_REF]",
+    "",
+    "Network:",
+    `  --node-url <url>                 Aztec node URL (default: ${DEVNET_DEFAULT_NODE_URL}) [env: FPC_NODE_URL]`,
+    "  --l1-rpc-url <url>               L1 RPC URL [env: FPC_L1_RPC_URL]",
+    "",
     "Options:",
-    "  --node-url <url>                 Aztec node URL",
-    "  --l1-rpc-url <url>               L1 RPC URL (required with --validate-topup-path)",
-    "  --deployer-alias <alias>         Wallet alias for the deployer account",
-    "  --deployer-private-key <hex32>   Deployer private key (mutually exclusive with -ref)",
-    "  --deployer-private-key-ref <ref> Deployer key reference (e.g. secret-manager://...)",
-    "  --operator-secret-key <hex32>    Operator secret key (mutually exclusive with -ref)",
-    "  --operator-secret-key-ref <ref>  Operator key reference",
-    "  --operator <aztec_address>       Operator address (derived from key if omitted)",
-    "  --fpc-artifact <path>            Path to FPC artifact JSON",
-    "  --out <path.json>                Output manifest path",
-    "  --sponsored-fpc-address <addr>   Use sponsored FPC payment mode",
-    "  --accepted-asset <addr>          Reuse existing token (skip Token deployment)",
-    "  --validate-topup-path            Enforce L1 chain-id matching",
-    "  --preflight-only                 Run checks only, do not deploy",
+    `  --deployer-alias <alias>         Wallet alias for deployer (default: ${DEVNET_DEFAULT_DEPLOYER_ALIAS}) [env: FPC_DEPLOYER_ALIAS]`,
+    "  --operator <aztec_address>       Operator address (default: derived from key) [env: FPC_OPERATOR]",
+    "  --fpc-artifact <path>            Path to FPC artifact JSON (default: auto-detected) [env: FPC_ARTIFACT]",
+    "  --sponsored-fpc-address <addr>   Use sponsored FPC payment mode [env: FPC_SPONSORED_FPC_ADDRESS]",
+    "  --accepted-asset <addr>          Reuse existing token [env: FPC_ACCEPTED_ASSET]",
+    "  --validate-topup-path            Enforce L1 chain-id matching [env: FPC_VALIDATE_TOPUP_PATH=1]",
+    "  --preflight-only                 Run checks only, do not deploy [env: FPC_PREFLIGHT_ONLY=1]",
+    "",
+    "Outputs:",
+    `  --out <path.json>                Output manifest path (default: ${DEVNET_DEFAULT_OUT_PATH}) [env: FPC_OUT]`,
+    "",
     "  --help, -h                       Show this help",
-    "",
-    "Defaults:",
-    `  --node-url            ${DEVNET_DEFAULT_NODE_URL}`,
-    `  --deployer-alias      ${DEVNET_DEFAULT_DEPLOYER_ALIAS}`,
-    `  --out                 ${DEVNET_DEFAULT_OUT_PATH}`,
-    "  --deployer-private-key / --operator-secret-key: devnet test key when unset",
-    "",
-    "Environment variables (CLI args take precedence):",
-    "  FPC_NODE_URL / AZTEC_NODE_URL              --node-url",
-    "  FPC_L1_RPC_URL / L1_RPC_URL                --l1-rpc-url",
-    "  FPC_DEPLOYER_ALIAS                         --deployer-alias",
-    "  FPC_DEPLOYER_PRIVATE_KEY                   --deployer-private-key",
-    "  FPC_DEPLOYER_PRIVATE_KEY_REF               --deployer-private-key-ref",
-    "  FPC_OPERATOR_SECRET_KEY                    --operator-secret-key",
-    "  FPC_OPERATOR_SECRET_KEY_REF                --operator-secret-key-ref",
-    "  FPC_OPERATOR                               --operator",
-    "  FPC_SPONSORED_FPC_ADDRESS                  --sponsored-fpc-address",
-    "  FPC_ACCEPTED_ASSET                         --accepted-asset",
-    "  FPC_ARTIFACT                               --fpc-artifact",
-    "  FPC_OUT                                    --out",
-    "  FPC_VALIDATE_TOPUP_PATH=1                  --validate-topup-path",
-    "  FPC_PREFLIGHT_ONLY=1                       --preflight-only",
     "",
     "Notes:",
     "  - --sponsored-fpc-address determines payment mode: if provided, contracts are deployed with",
@@ -287,12 +274,8 @@ function parseSecretPair(
 }
 
 function parseCliArgs(argv: string[]): CliParseResult {
-  let nodeUrl: string =
-    process.env.FPC_NODE_URL ??
-    process.env.AZTEC_NODE_URL ??
-    DEVNET_DEFAULT_NODE_URL;
-  let l1RpcUrl: string | null =
-    process.env.FPC_L1_RPC_URL ?? process.env.L1_RPC_URL ?? null;
+  let nodeUrl: string = process.env.FPC_NODE_URL ?? DEVNET_DEFAULT_NODE_URL;
+  let l1RpcUrl: string | null = process.env.FPC_L1_RPC_URL ?? null;
   let validateTopupPath = process.env.FPC_VALIDATE_TOPUP_PATH === "1";
   let sponsoredFpcAddress: string | null =
     process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
