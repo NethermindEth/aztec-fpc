@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -383,6 +384,54 @@ async function waitForTopupBridgeOutcome(
   );
 }
 
+function bootstrapTopupAutoclaimAccount(
+  repoRoot: string,
+  nodeUrl: string,
+  claimerSecretKey: string,
+): void {
+  const scriptPath = path.join(
+    repoRoot,
+    "scripts",
+    "services",
+    "bootstrap-topup-autoclaim-account.ts",
+  );
+  console.log(
+    `[services-smoke] bootstrapping topup auto-claim claimer on ${nodeUrl}`,
+  );
+  try {
+    execFileSync(
+      "bun",
+      [
+        "run",
+        scriptPath,
+        "--node-url",
+        nodeUrl,
+        "--secret-key",
+        claimerSecretKey,
+        "--alias",
+        "services-smoke-autoclaim",
+      ],
+      {
+        cwd: repoRoot,
+        env: process.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+  } catch (error) {
+    const stdout =
+      error && typeof error === "object" && "stdout" in error
+        ? String((error as { stdout?: unknown }).stdout ?? "")
+        : "";
+    const stderr =
+      error && typeof error === "object" && "stderr" in error
+        ? String((error as { stderr?: unknown }).stderr ?? "")
+        : "";
+    throw new Error(
+      `[services-smoke] failed to bootstrap topup auto-claim claimer.\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+    );
+  }
+}
+
 async function waitForTopupBridgeSubmission(
   proc: ManagedProcess,
   timeoutMs: number,
@@ -726,6 +775,9 @@ async function runServiceScenario(
         `confirmation_timeout_ms: ${config.topupConfirmTimeoutMs}`,
         `confirmation_poll_initial_ms: ${config.topupConfirmPollInitialMs}`,
         `confirmation_poll_max_ms: ${config.topupConfirmPollMaxMs}`,
+        // Isolate bridge state per run so stale state from a previous run does
+        // not block reconciliation on a fresh local network.
+        `bridge_state_path: "${path.join(tmpDir, "topup-bridge-state.json")}"`,
       ].join("\n")}\n`,
       "utf8",
     );
@@ -793,6 +845,11 @@ async function runServiceScenario(
         env: {
           ...process.env,
           L1_OPERATOR_PRIVATE_KEY: l1PrivateKey,
+          // Prevent host env from redirecting smoke top-ups to another address.
+          TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: feePayerAddress.toString(),
+          // Keep smoke deterministic: use the already deployed local operator
+          // account as auto-claim claimer, regardless of host env overrides.
+          TOPUP_AUTOCLAIM_SECRET_KEY: operatorSecretHex,
         },
       },
     );
@@ -804,7 +861,7 @@ async function runServiceScenario(
     await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
     await waitForLog(
       topup,
-      "FPC Fee Juice balance:",
+      "Top-up target Fee Juice balance:",
       config.topupWaitTimeoutMs,
     );
     await waitForHealth(`${topupOpsBaseUrl}/ready`, config.topupWaitTimeoutMs);
@@ -953,7 +1010,10 @@ async function runServiceScenario(
       );
     }
     const topupLogs = topup.getLogs();
-    if (!topupLogs.includes("FPC Fee Juice balance:")) {
+    if (
+      !topupLogs.includes("Top-up target Fee Juice balance:") &&
+      !topupLogs.includes("FPC Fee Juice balance:")
+    ) {
       throw new Error(
         `${scenarioPrefix} top-up service logs did not include Fee Juice balance read`,
       );
@@ -1283,22 +1343,20 @@ async function main() {
       throw new Error("Expected at least 2 initial test accounts");
     }
 
-    const [operator, user] = await Promise.all([
-      wallet
-        .createSchnorrAccount(
-          operatorData.secret,
-          operatorData.salt,
-          operatorData.signingKey,
-        )
-        .then((account) => account.address),
-      wallet
-        .createSchnorrAccount(
-          userData.secret,
-          userData.salt,
-          userData.signingKey,
-        )
-        .then((account) => account.address),
+    const [operatorAccount, userAccount] = await Promise.all([
+      wallet.createSchnorrAccount(
+        operatorData.secret,
+        operatorData.salt,
+        operatorData.signingKey,
+      ),
+      wallet.createSchnorrAccount(
+        userData.secret,
+        userData.salt,
+        userData.signingKey,
+      ),
     ]);
+    const operator = operatorAccount.address;
+    const user = userAccount.address;
 
     console.log(`[services-smoke] operator=${operator.toString()}`);
     console.log(`[services-smoke] user=${user.toString()}`);
@@ -1330,6 +1388,16 @@ async function main() {
 
     const operatorSecretHex = operatorData.secret.toString();
     assertPrivateKeyHex(operatorSecretHex, "operator secret");
+    bootstrapTopupAutoclaimAccount(repoRoot, config.nodeUrl, operatorSecretHex);
+    const publishedOperator = await node.getContract(operator);
+    if (!publishedOperator) {
+      throw new Error(
+        `[services-smoke] operator auto-claim claimer was not publicly deployed (${operator.toString()})`,
+      );
+    }
+    console.log(
+      `[services-smoke] operator_account_publicly_deployed=${operator.toString()}`,
+    );
 
     const quote = await runServiceScenario(
       config,
