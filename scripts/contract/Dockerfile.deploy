@@ -1,4 +1,4 @@
-ARG AZTEC_VERSION=4.0.0-devnet.2-patch.2
+ARG AZTEC_VERSION=4.0.0-devnet.2-patch.3
 ARG COMPILE_PLATFORM=linux/amd64
 
 # ══════════════════════════════════════════════════════════════

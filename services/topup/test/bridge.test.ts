@@ -138,4 +138,68 @@ describe("bridge", () => {
       /Invalid top_up_amount/,
     );
   });
+
+  it("retries bridge submission on nonce conflicts", async () => {
+    let attempts = 0;
+    const deps = makeDeps({
+      createPortalManager: async () =>
+        ({
+          bridgeTokensPublic: async (_to: AztecAddress, amount: bigint) => {
+            attempts += 1;
+            if (attempts === 1) {
+              throw new Error("nonce too low");
+            }
+            return {
+              claimAmount: amount,
+              claimSecret: new Fr(11n),
+              claimSecretHash: new Fr(22n),
+              messageHash: MESSAGE_HASH,
+              messageLeafIndex: 99n,
+            };
+          },
+        }) as never,
+    });
+
+    const result = await bridgeFeeJuice(
+      makeNode(),
+      "http://localhost:8545",
+      31337,
+      PRIVATE_KEY,
+      FPC,
+      321n,
+      deps,
+    );
+
+    assert.equal(attempts, 2);
+    assert.equal(result.amount, 321n);
+    assert.equal(result.messageLeafIndex, 99n);
+  });
+
+  it("fails after exhausting nonce conflict retries", async () => {
+    let attempts = 0;
+    const deps = makeDeps({
+      createPortalManager: async () =>
+        ({
+          bridgeTokensPublic: async () => {
+            attempts += 1;
+            throw new Error("nonce too low");
+          },
+        }) as never,
+    });
+
+    await assert.rejects(
+      () =>
+        bridgeFeeJuice(
+          makeNode(),
+          "http://localhost:8545",
+          31337,
+          PRIVATE_KEY,
+          FPC,
+          1n,
+          deps,
+        ),
+      /nonce too low/,
+    );
+    assert.equal(attempts, 3);
+  });
 });

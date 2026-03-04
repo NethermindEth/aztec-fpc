@@ -51,6 +51,18 @@ function makeBridgeLogger(): Logger {
   return createLogger("topup:bridge");
 }
 
+const MAX_NONCE_RETRY_ATTEMPTS = 3;
+
+function isNonceConflictError(error: unknown): boolean {
+  const normalized = String(error).toLowerCase();
+  return (
+    normalized.includes("replacementnotallowed") ||
+    normalized.includes("replacement not allowed") ||
+    normalized.includes("nonce too low") ||
+    normalized.includes("already known")
+  );
+}
+
 export interface BridgeDeps {
   createWalletClient: typeof createWalletClient;
   defineChain: typeof defineChain;
@@ -141,21 +153,43 @@ export async function bridgeFeeJuice(
   const deps: BridgeDeps = { ...DEFAULT_BRIDGE_DEPS, ...depsOverride };
   const chain = resolveL1Chain(l1ChainId, l1RpcUrl, deps);
   const account = deps.privateKeyToAccount(privateKey as Hex);
-  const walletClient = deps.createWalletClient({
-    account,
-    chain,
-    transport: deps.http(l1RpcUrl),
-  });
-  const extendedClient = walletClient.extend(
-    publicActions,
-  ) as unknown as ExtendedWalletClient;
-  const portalManager = await deps.createPortalManager(
-    node,
-    extendedClient,
-    deps.createLogger(),
-  );
+  const logger = deps.createLogger();
+  let lastError: unknown;
+  let claim: L2AmountClaim | undefined;
 
-  const claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
+  for (let attempt = 1; attempt <= MAX_NONCE_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const walletClient = deps.createWalletClient({
+        account,
+        chain,
+        transport: deps.http(l1RpcUrl),
+      });
+      const extendedClient = walletClient.extend(
+        publicActions,
+      ) as unknown as ExtendedWalletClient;
+      const portalManager = await deps.createPortalManager(
+        node,
+        extendedClient,
+        logger,
+      );
+      claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
+      break;
+    } catch (error) {
+      lastError = error;
+      if (!isNonceConflictError(error) || attempt >= MAX_NONCE_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      console.warn(
+        `Bridge nonce conflict detected; retrying bridge submission attempt=${attempt + 1}/${MAX_NONCE_RETRY_ATTEMPTS}`,
+        error,
+      );
+    }
+  }
+  if (!claim) {
+    throw new Error(
+      `Failed to submit bridge after nonce retry attempts. Last error: ${String(lastError)}`,
+    );
+  }
 
   return {
     amount: claim.claimAmount,

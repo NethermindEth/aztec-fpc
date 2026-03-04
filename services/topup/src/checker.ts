@@ -66,7 +66,7 @@ export function createTopupChecker(
     }
 
     logger.log(
-      `FPC Fee Juice balance: ${balance} wei (threshold: ${config.threshold})`,
+      `Top-up target Fee Juice balance: ${balance} wei (threshold: ${config.threshold})`,
     );
 
     if (balance >= config.threshold) {

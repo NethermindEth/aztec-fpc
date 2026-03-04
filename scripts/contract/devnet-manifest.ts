@@ -58,6 +58,7 @@ export type DevnetDeployManifest = {
     accepted_asset: string;
     fpc: string;
     faucet?: string;
+    counter?: string;
   };
   fpc_artifact?: {
     name: FpcArtifactName;
@@ -72,6 +73,7 @@ export type DevnetDeployManifest = {
     accepted_asset_deploy: string | null;
     fpc_deploy: string | null;
     faucet_deploy?: string | null;
+    counter_deploy?: string | null;
   };
   faucet_config?: {
     drip_amount: string;
@@ -475,6 +477,9 @@ function parseManifest(input: unknown): DevnetDeployManifest {
   const faucetAddressRaw = hasOwn(contractsRaw, "faucet")
     ? requireString(contractsRaw, "faucet", "manifest.contracts")
     : undefined;
+  const counterAddressRaw = hasOwn(contractsRaw, "counter")
+    ? requireString(contractsRaw, "counter", "manifest.contracts")
+    : undefined;
   const contracts = {
     accepted_asset: parseAztecAddress(
       requireString(contractsRaw, "accepted_asset", "manifest.contracts"),
@@ -489,6 +494,14 @@ function parseManifest(input: unknown): DevnetDeployManifest {
           faucet: parseAztecAddress(
             faucetAddressRaw,
             "manifest.contracts.faucet",
+          ),
+        }
+      : {}),
+    ...(counterAddressRaw !== undefined
+      ? {
+          counter: parseAztecAddress(
+            counterAddressRaw,
+            "manifest.contracts.counter",
           ),
         }
       : {}),
@@ -549,6 +562,14 @@ function parseManifest(input: unknown): DevnetDeployManifest {
           faucet_deploy: parseTxHashOrNull(
             txHashesRaw.faucet_deploy,
             "manifest.tx_hashes.faucet_deploy",
+          ),
+        }
+      : {}),
+    ...(hasOwn(txHashesRaw, "counter_deploy")
+      ? {
+          counter_deploy: parseTxHashOrNull(
+            txHashesRaw.counter_deploy,
+            "manifest.tx_hashes.counter_deploy",
           ),
         }
       : {}),
@@ -657,7 +678,7 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
     generated_at: "2026-03-02T00:00:00.000Z",
     network: {
       node_url: "https://v4-devnet-2.aztec-labs.com/",
-      node_version: "4.0.0-devnet.2-patch.2",
+      node_version: "4.0.0-devnet.2-patch.3",
       l1_chain_id: 11155111,
       rollup_version: 615022430,
     },
@@ -696,6 +717,8 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
       accepted_asset:
         "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       fpc: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      counter:
+        "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     },
     fpc_artifact: {
       name: "FPCMultiAsset",
@@ -712,6 +735,8 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
         "0x1111111111111111111111111111111111111111111111111111111111111111",
       fpc_deploy:
         "0x2222222222222222222222222222222222222222222222222222222222222222",
+      counter_deploy:
+        "0x3333333333333333333333333333333333333333333333333333333333333333",
     },
     payment_mode: "fpc-sponsored",
   };

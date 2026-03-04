@@ -48,6 +48,18 @@ async function main() {
   if (fpcAddress.isZero()) {
     throw new Error("Invalid fpc_address: zero address is not allowed");
   }
+  const topupTargetAddressEnv =
+    process.env.TOPUP_FEE_JUICE_RECIPIENT_ADDRESS?.trim() ?? "";
+  const topupTargetAddressRaw =
+    topupTargetAddressEnv.length > 0
+      ? topupTargetAddressEnv
+      : config.fpc_address;
+  const topupTargetAddress = AztecAddress.fromString(topupTargetAddressRaw);
+  if (topupTargetAddress.isZero()) {
+    throw new Error(
+      "Invalid TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: zero address is not allowed",
+    );
+  }
   const nodeInfo = await pxe.getNodeInfo();
   const l1ChainId = nodeInfo.l1ChainId;
   if (!Number.isInteger(l1ChainId) || l1ChainId <= 0) {
@@ -79,6 +91,19 @@ async function main() {
   const autoClaimer = autoClaimEnabled
     ? await createTopupAutoClaimer(pxe)
     : null;
+  let autoClaimerFeeJuiceBalance: bigint | null = null;
+  if (autoClaimer) {
+    try {
+      autoClaimerFeeJuiceBalance = await balanceReader.getBalance(
+        autoClaimer.claimerAddress,
+      );
+    } catch (error) {
+      console.warn(
+        `Could not read auto-claim claimer Fee Juice balance for ${autoClaimer.claimerAddress.toString()}`,
+        error,
+      );
+    }
+  }
   const shutdownController = new AbortController();
   const opsState = new TopupOpsState({
     checkIntervalMs: config.check_interval_ms,
@@ -88,6 +113,15 @@ async function main() {
 
   console.log(`Top-up service started`);
   console.log(`  FPC address:   ${config.fpc_address}`);
+  console.log(`  Top-up target: ${topupTargetAddress.toString()}`);
+  if (
+    topupTargetAddress.toString().toLowerCase() !==
+    fpcAddress.toString().toLowerCase()
+  ) {
+    console.warn(
+      `  Top-up target differs from FPC address; monitoring and claims will target ${topupTargetAddress.toString()}`,
+    );
+  }
   console.log(`  Threshold:     ${threshold} wei`);
   console.log(`  Top-up amount: ${topUpAmount} wei`);
   console.log(`  Bridge state file: ${bridgeStateStore.filePath}`);
@@ -110,8 +144,26 @@ async function main() {
   }
   if (autoClaimer) {
     console.log(
-      `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()})`,
+      `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()} source=${autoClaimer.claimerSource} payment=${autoClaimer.paymentMode})`,
     );
+    if (autoClaimer.sponsoredFpcAddress) {
+      console.log(
+        `  Auto-claim sponsor contract: ${autoClaimer.sponsoredFpcAddress.toString()}`,
+      );
+    }
+    if (autoClaimerFeeJuiceBalance !== null) {
+      console.log(
+        `  Auto-claim claimer Fee Juice balance: ${autoClaimerFeeJuiceBalance} wei`,
+      );
+      if (
+        autoClaimer.paymentMode === "fee_juice" &&
+        autoClaimerFeeJuiceBalance <= 0n
+      ) {
+        console.warn(
+          "  Auto-claim warning: claimer has zero Fee Juice. Claims will fail unless this account is funded on L2.",
+        );
+      }
+    }
   } else {
     console.warn("  Auto-claim: disabled (TOPUP_AUTOCLAIM_ENABLED=0)");
   }
@@ -128,7 +180,7 @@ async function main() {
     {
       getBalance: async () => {
         try {
-          const balance = await balanceReader.getBalance(fpcAddress);
+          const balance = await balanceReader.getBalance(topupTargetAddress);
           opsState.recordBalanceCheckSuccess();
           return balance;
         } catch (error) {
@@ -142,13 +194,13 @@ async function main() {
           config.l1_rpc_url,
           l1ChainId,
           config.l1_operator_private_key,
-          fpcAddress,
+          topupTargetAddress,
           amount,
         ),
       confirm: (baselineBalance, bridgeResult) =>
         waitForFeeJuiceBridgeConfirmation({
           balanceReader,
-          fpcAddress,
+          fpcAddress: topupTargetAddress,
           baselineBalance,
           timeoutMs: config.confirmation_timeout_ms,
           initialPollMs: config.confirmation_poll_initial_ms,
@@ -157,12 +209,14 @@ async function main() {
           messageContext: {
             node: pxe,
             messageHash: bridgeResult.messageHash,
+            // Keep false here: SDK readiness with true may resolve one block
+            // earlier and trigger premature claim attempts.
             forPublicConsumption: false,
           },
           onMessageReady: autoClaimer
             ? async () => {
                 const txHash = await autoClaimer.claim({
-                  recipient: fpcAddress,
+                  recipient: topupTargetAddress,
                   amount: bridgeResult.amount,
                   claimSecret: bridgeResult.claimSecret,
                   messageLeafIndex: bridgeResult.messageLeafIndex,
@@ -180,10 +234,17 @@ async function main() {
         }),
       onBridgeSubmitted: async (baselineBalance, bridgeResult) => {
         opsState.recordBridgeEvent("submitted");
-        await bridgeStateStore.write(baselineBalance, bridgeResult);
-        console.log(
-          `Persisted in-flight bridge metadata message_hash=${bridgeResult.messageHash} leaf_index=${bridgeResult.messageLeafIndex}`,
-        );
+        try {
+          await bridgeStateStore.write(baselineBalance, bridgeResult);
+          console.log(
+            `Persisted in-flight bridge metadata message_hash=${bridgeResult.messageHash} leaf_index=${bridgeResult.messageLeafIndex}`,
+          );
+        } catch (error) {
+          console.warn(
+            `Failed to persist in-flight bridge metadata message_hash=${bridgeResult.messageHash}; continuing with in-memory confirmation only`,
+            error,
+          );
+        }
       },
       onBridgeSettled: async (_baselineBalance, bridgeResult, confirmation) => {
         opsState.recordBridgeEvent(confirmation.status);
@@ -193,10 +254,17 @@ async function main() {
           );
           return;
         }
-        await bridgeStateStore.clear();
-        console.log(
-          `Cleared persisted bridge metadata message_hash=${bridgeResult.messageHash} outcome=${confirmation.status}`,
-        );
+        try {
+          await bridgeStateStore.clear();
+          console.log(
+            `Cleared persisted bridge metadata message_hash=${bridgeResult.messageHash} outcome=${confirmation.status}`,
+          );
+        } catch (error) {
+          console.warn(
+            `Failed to clear persisted bridge metadata message_hash=${bridgeResult.messageHash} after confirmed bridge`,
+            error,
+          );
+        }
       },
       onBridgeFailed: () => {
         opsState.recordBridgeEvent("failed");
@@ -265,7 +333,7 @@ async function main() {
       stateStore: bridgeStateStore,
       balanceReader,
       node: pxe,
-      fpcAddress,
+      fpcAddress: topupTargetAddress,
       timeoutMs: config.confirmation_timeout_ms,
       initialPollMs: config.confirmation_poll_initial_ms,
       maxPollMs: config.confirmation_poll_max_ms,
