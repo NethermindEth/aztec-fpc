@@ -62,7 +62,7 @@ async function main() {
   const nodeUrl = process.env.AZTEC_NODE_URL ?? "http://localhost:8080";
   const manifestPath =
     process.env.MANIFEST_PATH ??
-    path.join(repoRoot, "configs", "deploy-manifest.json");
+    path.join(repoRoot, "deployments", "manifest.json");
   const tokenArtifactPath =
     process.env.TOKEN_ARTIFACT_PATH ??
     path.join(repoRoot, "target", "token_contract-Token.json");

@@ -78,7 +78,7 @@ function readConfig(): Config {
     quoteBaseUrl: process.env.QUOTE_BASE_URL ?? "http://localhost:3000",
     manifestPath:
       process.env.MANIFEST_PATH ??
-      path.join(repoRoot, "configs", "deploy-manifest.json"),
+      path.join(repoRoot, "deployments", "manifest.json"),
     tokenArtifactPath:
       process.env.TOKEN_ARTIFACT_PATH ??
       path.join(repoRoot, "target", "token_contract-Token.json"),

@@ -47,7 +47,7 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
 const DEFAULT_MANIFEST_PATH = path.join(
   REPO_ROOT,
   "deployments",
-  "devnet-manifest-v2.json",
+  "manifest.json",
 );
 
 class CliError extends Error {

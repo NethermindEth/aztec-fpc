@@ -8,30 +8,17 @@ set -euo pipefail
 # injected.
 #
 # Environment variables (all optional, with defaults):
-#   FPC_DEPLOY_MANIFEST — path to deploy manifest JSON
-#   FPC_MASTER_CONFIG  — path to master config YAML  (default: ./fpc-config.yaml)
-#   FPC_CONFIGS_OUT    — output directory             (default: ./configs)
+#   FPC_DATA_DIR            — root directory for generated artifacts  (default: ./deployments)
+#   FPC_DEPLOY_MANIFEST     — path to deploy manifest JSON           (default: $FPC_DATA_DIR/manifest.json)
+#   FPC_MASTER_CONFIG       — path to master config YAML             (default: $FPC_DATA_DIR/fpc-config.yaml)
+#   FPC_ATTESTATION_CONFIG  — attestation config output path         (default: $FPC_DATA_DIR/attestation/config.yaml)
+#   FPC_TOPUP_CONFIG        — topup config output path               (default: $FPC_DATA_DIR/topup/config.yaml)
 
-# Manifest resolution priority:
-# 1) explicit FPC_DEPLOY_MANIFEST
-# 2) FPC_LOCAL_OUT (used by local deploy scripts/compose deploy service)
-# 3) ./configs/deploy-manifest.json (compose output in this repo)
-# 4) ./deployments/devnet-manifest-v2.json (devnet workflow default)
-# 5) legacy fallback ./tmp/deploy-fpc-local-manifest.json
-if [ -n "${FPC_DEPLOY_MANIFEST:-}" ]; then
-  FPC_DEPLOY_MANIFEST="${FPC_DEPLOY_MANIFEST}"
-elif [ -n "${FPC_LOCAL_OUT:-}" ]; then
-  FPC_DEPLOY_MANIFEST="${FPC_LOCAL_OUT}"
-elif [ -f "./configs/deploy-manifest.json" ]; then
-  FPC_DEPLOY_MANIFEST="./configs/deploy-manifest.json"
-elif [ -f "./deployments/devnet-manifest-v2.json" ]; then
-  FPC_DEPLOY_MANIFEST="./deployments/devnet-manifest-v2.json"
-else
-  FPC_DEPLOY_MANIFEST="./tmp/deploy-fpc-local-manifest.json"
-fi
-
-FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}"
-FPC_CONFIGS_OUT="${FPC_CONFIGS_OUT:-./configs}"
+FPC_DATA_DIR="${FPC_DATA_DIR:-./deployments}"
+FPC_DEPLOY_MANIFEST="${FPC_DEPLOY_MANIFEST:-$FPC_DATA_DIR/manifest.json}"
+FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-$FPC_DATA_DIR/fpc-config.yaml}"
+FPC_ATTESTATION_CONFIG="${FPC_ATTESTATION_CONFIG:-$FPC_DATA_DIR/attestation/config.yaml}"
+FPC_TOPUP_CONFIG="${FPC_TOPUP_CONFIG:-$FPC_DATA_DIR/topup/config.yaml}"
 
 # ── Dependency checks ──────────────────────────────────────────────────────────
 
@@ -75,30 +62,30 @@ done
 
 # ── Generate attestation config ───────────────────────────────────────────────
 
-mkdir -p "$FPC_CONFIGS_OUT/attestation"
+mkdir -p "$(dirname "$FPC_ATTESTATION_CONFIG")"
 
 yq '.attestation' "$FPC_MASTER_CONFIG" \
   | yq '
     .fpc_address = strenv(FPC_ADDRESS) | .fpc_address style="double"
     | .accepted_asset_address = strenv(ACCEPTED_ASSET) | .accepted_asset_address style="double"
   ' \
-  > "$FPC_CONFIGS_OUT/attestation/config.yaml"
+  > "$FPC_ATTESTATION_CONFIG"
 
 # ── Generate topup config ─────────────────────────────────────────────────────
 
-mkdir -p "$FPC_CONFIGS_OUT/topup"
+mkdir -p "$(dirname "$FPC_TOPUP_CONFIG")"
 
 yq '.topup' "$FPC_MASTER_CONFIG" \
   | yq '
     .fpc_address = strenv(FPC_ADDRESS) | .fpc_address style="double"
   ' \
-  > "$FPC_CONFIGS_OUT/topup/config.yaml"
+  > "$FPC_TOPUP_CONFIG"
 
 # ── Summary ────────────────────────────────────────────────────────────────────
 
 echo "Service configs generated:"
-echo "  attestation: $FPC_CONFIGS_OUT/attestation/config.yaml"
-echo "  topup:       $FPC_CONFIGS_OUT/topup/config.yaml"
+echo "  attestation: $FPC_ATTESTATION_CONFIG"
+echo "  topup:       $FPC_TOPUP_CONFIG"
 echo ""
 echo "  fpc_address:     $FPC_ADDRESS"
 echo "  accepted_asset:  $ACCEPTED_ASSET"
