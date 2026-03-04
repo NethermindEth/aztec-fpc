@@ -1,8 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSponsoredCounterClient } from "../src/index";
+import * as contracts from "../src/internal/contracts";
+
+vi.mock("../src/internal/contracts", () => ({
+  connectAndAttachContracts: vi.fn(async () => ({
+    addresses: {
+      user: { toString: () => "0x0000000000000000000000000000000000000000000000000000000000000000" },
+    },
+  })),
+}));
 
 describe("createSponsoredCounterClient scaffold", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("returns a client with increment()", async () => {
     const client = await createSponsoredCounterClient({
       wallet: {} as never,
@@ -11,5 +24,6 @@ describe("createSponsoredCounterClient scaffold", () => {
     });
 
     expect(typeof client.increment).toBe("function");
+    expect(contracts.connectAndAttachContracts).toHaveBeenCalledTimes(1);
   });
 });
