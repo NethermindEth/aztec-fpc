@@ -1691,6 +1691,7 @@ function buildFpcConstructorArgs(
 
 function assertRequiredArtifactsExistForDevnet(
   selection: FpcArtifactSelection,
+  deployFaucet: boolean,
 ): void {
   const missing: string[] = [];
   if (!existsSync(REQUIRED_ARTIFACTS.token)) {
@@ -1699,7 +1700,7 @@ function assertRequiredArtifactsExistForDevnet(
   if (!existsSync(selection.artifactPath)) {
     missing.push(selection.artifactPath);
   }
-  if (!existsSync(REQUIRED_ARTIFACTS.faucet)) {
+  if (deployFaucet && !existsSync(REQUIRED_ARTIFACTS.faucet)) {
     missing.push(REQUIRED_ARTIFACTS.faucet);
   }
   if (missing.length > 0) {
@@ -1737,7 +1738,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`,
   );
 
-  assertRequiredArtifactsExistForDevnet(fpcSelection);
+  assertRequiredArtifactsExistForDevnet(fpcSelection, !args.acceptedAsset);
   console.log("[deploy-fpc-devnet] artifact preflight passed");
 
   const nodeState = await assertAztecNodePreflight(args.nodeUrl);
@@ -1873,56 +1874,67 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] fpc deployed. address=${fpcDeploy.address} tx_hash=${fpcDeploy.txHash}`,
   );
 
-  const faucetConfig = readFaucetEnvConfig();
-  console.log(
-    `[deploy-fpc-devnet] deploying Faucet token=${acceptedAssetAddress} admin=${operatorIdentity.address} drip_amount=${faucetConfig.dripAmount} cooldown_seconds=${faucetConfig.cooldownSeconds}`,
-  );
-  const faucetDeploy = await deployContractWithAztecWallet({
-    nodeUrl: args.nodeUrl,
-    fromAlias: deployer.walletAlias,
-    payment: paymentArg,
-    artifactPath: REQUIRED_ARTIFACTS.faucet,
-    alias: `devnet-faucet-${aliasSuffix}`,
-    constructorArgs: [
-      acceptedAssetAddress,
-      operatorIdentity.address,
-      faucetConfig.dripAmount.toString(),
-      faucetConfig.cooldownSeconds.toString(),
-    ],
-    context: "Faucet",
-  });
-  console.log(
-    `[deploy-fpc-devnet] faucet deployed. address=${faucetDeploy.address} tx_hash=${faucetDeploy.txHash}`,
-  );
-
-  const operatorWalletAlias = ensureOperatorAccountInWallet(
-    args.nodeUrl,
-    args.operatorSecretKey,
-    paymentArg,
-    operatorIdentity.address,
-  );
-  console.log(
-    `[deploy-fpc-devnet] funding faucet: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorWalletAlias}`,
-  );
-  try {
-    await callContractSendWithAztecWallet({
+  let faucetDeploy: { address: string; txHash: string } | undefined;
+  let faucetConfig: ReturnType<typeof readFaucetEnvConfig> | undefined;
+  if (!args.acceptedAsset) {
+    faucetConfig = readFaucetEnvConfig();
+    console.log(
+      `[deploy-fpc-devnet] deploying Faucet token=${acceptedAssetAddress} admin=${operatorIdentity.address} drip_amount=${faucetConfig.dripAmount} cooldown_seconds=${faucetConfig.cooldownSeconds}`,
+    );
+    faucetDeploy = await deployContractWithAztecWallet({
       nodeUrl: args.nodeUrl,
-      fromAlias: operatorWalletAlias,
+      fromAlias: deployer.walletAlias,
       payment: paymentArg,
-      contractAddress: acceptedAssetAddress,
-      artifactPath: REQUIRED_ARTIFACTS.token,
-      method: "mint_to_public",
-      methodArgs: [faucetDeploy.address, faucetConfig.initialSupply.toString()],
-      context: "Token.mint_to_public for Faucet funding",
+      artifactPath: REQUIRED_ARTIFACTS.faucet,
+      alias: `devnet-faucet-${aliasSuffix}`,
+      constructorArgs: [
+        acceptedAssetAddress,
+        operatorIdentity.address,
+        faucetConfig.dripAmount.toString(),
+        faucetConfig.cooldownSeconds.toString(),
+      ],
+      context: "Faucet",
     });
-  } catch (error) {
-    throw new CliError(
-      `Faucet funding failed: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorIdentity.address} failed. Ensure the operator is the token minter. Underlying error: ${String(error)}`,
+    console.log(
+      `[deploy-fpc-devnet] faucet deployed. address=${faucetDeploy.address} tx_hash=${faucetDeploy.txHash}`,
+    );
+
+    const operatorWalletAlias = ensureOperatorAccountInWallet(
+      args.nodeUrl,
+      args.operatorSecretKey,
+      paymentArg,
+      operatorIdentity.address,
+    );
+    console.log(
+      `[deploy-fpc-devnet] funding faucet: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorWalletAlias}`,
+    );
+    try {
+      await callContractSendWithAztecWallet({
+        nodeUrl: args.nodeUrl,
+        fromAlias: operatorWalletAlias,
+        payment: paymentArg,
+        contractAddress: acceptedAssetAddress,
+        artifactPath: REQUIRED_ARTIFACTS.token,
+        method: "mint_to_public",
+        methodArgs: [
+          faucetDeploy.address,
+          faucetConfig.initialSupply.toString(),
+        ],
+        context: "Token.mint_to_public for Faucet funding",
+      });
+    } catch (error) {
+      throw new CliError(
+        `Faucet funding failed: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorIdentity.address} failed. Ensure the operator is the token minter. Underlying error: ${String(error)}`,
+      );
+    }
+    console.log(
+      `[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`,
+    );
+  } else {
+    console.log(
+      "[deploy-fpc-devnet] faucet deployment skipped (reusing existing token)",
     );
   }
-  console.log(
-    `[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`,
-  );
 
   const manifest = writeDevnetDeployManifest(args.out, {
     status: "deploy_ok",
@@ -1968,7 +1980,7 @@ async function main(): Promise<void> {
     contracts: {
       accepted_asset: acceptedAssetAddress,
       fpc: fpcDeploy.address,
-      faucet: faucetDeploy.address,
+      ...(faucetDeploy ? { faucet: faucetDeploy.address } : {}),
     },
     fpc_artifact: {
       name: fpcSelection.name,
@@ -1982,13 +1994,17 @@ async function main(): Promise<void> {
     tx_hashes: {
       accepted_asset_deploy: acceptedAssetDeployTxHash,
       fpc_deploy: fpcDeploy.txHash,
-      faucet_deploy: faucetDeploy.txHash,
+      ...(faucetDeploy ? { faucet_deploy: faucetDeploy.txHash } : {}),
     },
-    faucet_config: {
-      drip_amount: faucetConfig.dripAmount.toString(),
-      cooldown_seconds: faucetConfig.cooldownSeconds,
-      initial_supply: faucetConfig.initialSupply.toString(),
-    },
+    ...(faucetConfig
+      ? {
+          faucet_config: {
+            drip_amount: faucetConfig.dripAmount.toString(),
+            cooldown_seconds: faucetConfig.cooldownSeconds,
+            initial_supply: faucetConfig.initialSupply.toString(),
+          },
+        }
+      : {}),
     payment_mode: paymentMode,
   });
 
