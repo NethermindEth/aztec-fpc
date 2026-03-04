@@ -1,6 +1,10 @@
 import { connectAndAttachContracts } from "./internal/contracts";
 import { SDK_DEFAULTS } from "./defaults";
-import { SponsoredSdkError, SponsoredTxFailedError } from "./errors";
+import {
+  InsufficientFpcFeeJuiceError,
+  SponsoredSdkError,
+  SponsoredTxFailedError,
+} from "./errors";
 import { ensurePrivateBalance } from "./internal/balance-bootstrap";
 import { createSponsoredPaymentMethod } from "./internal/fee-payment";
 import { fetchAndValidateQuote } from "./internal/quote";
@@ -9,6 +13,15 @@ import type {
   SponsoredCounterClient,
 } from "./types";
 import { Gas, GasFees } from "@aztec/stdlib/gas";
+import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+
+function toBigInt(value: { toString(): string } | bigint): bigint {
+  return typeof value === "bigint" ? value : BigInt(value.toString());
+}
+
+function sameAddress(a: { toString(): string }, b: { toString(): string }): boolean {
+  return a.toString().toLowerCase() === b.toString().toLowerCase();
+}
 
 export async function createSponsoredCounterClient(
   input: CreateSponsoredCounterClientInput,
@@ -25,6 +38,20 @@ export async function createSponsoredCounterClient(
         const fjAmount =
           BigInt(SDK_DEFAULTS.daGasLimit) * minFees.feePerDaGas +
           BigInt(SDK_DEFAULTS.l2GasLimit) * minFees.feePerL2Gas;
+        const fpcFeeJuiceBalance = await getFeeJuiceBalance(
+          context.addresses.fpc,
+          context.node,
+        );
+        if (fpcFeeJuiceBalance < fjAmount) {
+          throw new InsufficientFpcFeeJuiceError(
+            "FPC FeeJuice balance is below required amount.",
+            {
+              current: fpcFeeJuiceBalance.toString(),
+              required: fjAmount.toString(),
+            },
+          );
+        }
+
         const quote = await fetchAndValidateQuote({
           acceptedAsset: context.addresses.token,
           attestationBaseUrl: SDK_DEFAULTS.attestationBaseUrl,
@@ -41,6 +68,17 @@ export async function createSponsoredCounterClient(
           txWaitTimeoutSeconds: SDK_DEFAULTS.txWaitTimeoutSeconds,
           user: context.addresses.user,
         });
+        const counterBefore = toBigInt(
+          await context.counter.methods
+            .get_counter(context.addresses.user)
+            .simulate({ from: context.addresses.user }),
+        );
+        const userPrivateBefore = toBigInt(
+          await context.token.methods
+            .balance_of_private(context.addresses.user)
+            .simulate({ from: context.addresses.user }),
+        );
+
         const { paymentMethod } = await createSponsoredPaymentMethod({
           aaPaymentAmount: quote.aaPaymentAmount,
           fpc: context.fpc as never,
@@ -61,7 +99,10 @@ export async function createSponsoredCounterClient(
           minFees.feePerL2Gas,
         );
 
-        let receipt: { txHash: { toString(): string } };
+        let receipt: {
+          transactionFee: { toString(): string } | bigint;
+          txHash: { toString(): string };
+        };
         try {
           receipt = await context.counter.methods.increment(context.addresses.user).send({
             fee: {
@@ -79,15 +120,43 @@ export async function createSponsoredCounterClient(
             },
           );
         }
-
-        throw new SponsoredTxFailedError(
-          "SDK scaffold only: post-state checks are not implemented yet.",
-          {
-            account: context.addresses.user.toString(),
-            phase: "step-8-scaffold",
-            txHash: receipt.txHash.toString(),
-          },
+        const counterAfter = toBigInt(
+          await context.counter.methods
+            .get_counter(context.addresses.user)
+            .simulate({ from: context.addresses.user }),
         );
+        const userPrivateAfter = toBigInt(
+          await context.token.methods
+            .balance_of_private(context.addresses.user)
+            .simulate({ from: context.addresses.user }),
+        );
+        const userDebited = userPrivateBefore - userPrivateAfter;
+
+        if (counterAfter !== counterBefore + 1n) {
+          throw new SponsoredTxFailedError("Counter increment invariant failed.", {
+            counterAfter: counterAfter.toString(),
+            counterBefore: counterBefore.toString(),
+          });
+        }
+        if (
+          !sameAddress(context.addresses.user, context.addresses.operator) &&
+          userDebited !== quote.aaPaymentAmount
+        ) {
+          throw new SponsoredTxFailedError("Accounting invariant failed.", {
+            expectedCharge: quote.aaPaymentAmount.toString(),
+            userDebited: userDebited.toString(),
+          });
+        }
+
+        return {
+          counterAfter,
+          counterBefore,
+          expectedCharge: quote.aaPaymentAmount,
+          quoteValidUntil: quote.validUntil,
+          txFeeJuice: toBigInt(receipt.transactionFee),
+          txHash: receipt.txHash.toString(),
+          userDebited,
+        };
       } catch (error) {
         if (error instanceof SponsoredSdkError) {
           throw error;

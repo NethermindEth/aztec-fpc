@@ -1,0 +1,144 @@
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { SponsoredTxFailedError } from "../src/errors";
+import { createSponsoredCounterClient } from "../src/index";
+import * as balanceBootstrap from "../src/internal/balance-bootstrap";
+import * as contracts from "../src/internal/contracts";
+import * as feePayment from "../src/internal/fee-payment";
+import * as quote from "../src/internal/quote";
+import * as feeJuiceUtils from "@aztec/aztec.js/utils";
+
+vi.mock("../src/internal/contracts", () => ({
+  connectAndAttachContracts: vi.fn(),
+}));
+vi.mock("../src/internal/quote", () => ({
+  fetchAndValidateQuote: vi.fn(),
+}));
+vi.mock("../src/internal/balance-bootstrap", () => ({
+  ensurePrivateBalance: vi.fn(async () => 0n),
+}));
+vi.mock("../src/internal/fee-payment", () => ({
+  createSponsoredPaymentMethod: vi.fn(async () => ({
+    paymentMethod: {
+      getAsset: async () => undefined,
+      getExecutionPayload: async () => undefined,
+      getFeePayer: async () => undefined,
+      getGasSettings: () => undefined,
+    },
+  })),
+}));
+vi.mock("@aztec/aztec.js/utils", () => ({
+  getFeeJuiceBalance: vi.fn(async () => 999_999_999n),
+}));
+
+const USER = AztecAddress.fromString(
+  "0x226762b1e122bd46054de3fd21a19f0500ebe072aeac35fe0bb82d43b85f94fd",
+);
+const TOKEN = AztecAddress.fromString(
+  "0x10600e2f256b6500de5a79367d70b4c7d8121c408a2127dbcba995a1abc0d6f8",
+);
+const OPERATOR = AztecAddress.fromString(
+  "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
+);
+const FPC = AztecAddress.fromString(
+  "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b",
+);
+
+function buildContext(counterAfter: bigint): unknown {
+  const counterValues = [0n, counterAfter];
+  const privateValues = [100n, 90n];
+
+  return {
+    addresses: {
+      fpc: FPC,
+      operator: OPERATOR,
+      token: TOKEN,
+      user: USER,
+    },
+    counter: {
+      methods: {
+        get_counter: () => ({
+          simulate: async () => counterValues.shift() ?? counterAfter,
+        }),
+        increment: () => ({
+          send: async () => ({
+            transactionFee: 123n,
+            txHash: { toString: () => "0xabc" },
+          }),
+        }),
+      },
+    },
+    faucet: {},
+    fpc: {
+      address: FPC,
+      methods: {},
+    },
+    node: {
+      getCurrentMinFees: async () => ({
+        feePerDaGas: 1n,
+        feePerL2Gas: 1n,
+      }),
+    },
+    token: {
+      methods: {
+        balance_of_private: () => ({
+          simulate: async () => privateValues.shift() ?? 90n,
+        }),
+      },
+    },
+  };
+}
+
+describe("increment", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(quote.fetchAndValidateQuote).mockResolvedValue({
+      aaPaymentAmount: 10n,
+      accepted_asset: TOKEN.toString(),
+      fjAmount: 2_000_000n,
+      fj_amount: "2000000",
+      quoteSignatureBytes: [1, 2, 3],
+      signature: "0x",
+      signatureBytes: [1, 2, 3],
+      validUntil: 999n,
+      valid_until: "999",
+    });
+  });
+
+  it("returns result payload when increment invariants hold", async () => {
+    vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(
+      buildContext(1n) as never,
+    );
+
+    const client = await createSponsoredCounterClient({
+      account: USER,
+      wallet: {} as never,
+    });
+    const out = await client.increment();
+
+    expect(out.txHash).toBe("0xabc");
+    expect(out.txFeeJuice).toBe(123n);
+    expect(out.counterBefore).toBe(0n);
+    expect(out.counterAfter).toBe(1n);
+    expect(out.expectedCharge).toBe(10n);
+    expect(out.userDebited).toBe(10n);
+    expect(quote.fetchAndValidateQuote).toHaveBeenCalledTimes(1);
+    expect(balanceBootstrap.ensurePrivateBalance).toHaveBeenCalledTimes(1);
+    expect(feePayment.createSponsoredPaymentMethod).toHaveBeenCalledTimes(1);
+    expect(feeJuiceUtils.getFeeJuiceBalance).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when counter invariant fails", async () => {
+    vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(
+      buildContext(2n) as never,
+    );
+
+    const client = await createSponsoredCounterClient({
+      account: USER.toString(),
+      wallet: {} as never,
+    });
+
+    await expect(client.increment()).rejects.toBeInstanceOf(SponsoredTxFailedError);
+  });
+});
