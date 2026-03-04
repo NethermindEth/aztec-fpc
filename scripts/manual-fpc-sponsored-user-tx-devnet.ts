@@ -647,10 +647,16 @@ async function main() {
   const minimumPrivateAcceptedAsset = aaPaymentAmount + 1_000_000n;
 
   let userPrivateBalance = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+    (
+      await token.methods.balance_of_private(user).simulate({ from: user })
+    ).toString(),
   );
 
-  for (let attempt = 1; userPrivateBalance < minimumPrivateAcceptedAsset; attempt += 1) {
+  for (
+    let attempt = 1;
+    userPrivateBalance < minimumPrivateAcceptedAsset;
+    attempt += 1
+  ) {
     if (attempt > 3) {
       throw new Error(
         `Unable to reach required private accepted-asset balance after faucet attempts. required=${minimumPrivateAcceptedAsset} current=${userPrivateBalance}`,
@@ -658,7 +664,9 @@ async function main() {
     }
 
     let userPublicBalance = BigInt(
-      (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
+      (
+        await token.methods.balance_of_public(user).simulate({ from: user })
+      ).toString(),
     );
 
     if (userPublicBalance === 0n) {
@@ -667,7 +675,9 @@ async function main() {
       );
       await faucet.methods.drip(user).send({ from: user });
       userPublicBalance = BigInt(
-        (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
+        (
+          await token.methods.balance_of_public(user).simulate({ from: user })
+        ).toString(),
       );
     }
 
@@ -682,7 +692,9 @@ async function main() {
       .send({ from: user });
 
     userPrivateBalance = BigInt(
-      (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+      (
+        await token.methods.balance_of_private(user).simulate({ from: user })
+      ).toString(),
     );
   }
 
