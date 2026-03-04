@@ -42,6 +42,13 @@ services-devnet)
   (
     cd "$REPO_ROOT"
     require_cmd bun
+    # Keep preflight env resolution aligned with docker compose runtime values.
+    if [[ -f ./.env ]]; then
+      set -a
+      # shellcheck disable=SC1091
+      source ./.env
+      set +a
+    fi
     manifest_path="${FPC_DEPLOY_MANIFEST:-./deployments/devnet-manifest-v2.json}"
     FPC_DEPLOY_MANIFEST="$manifest_path" \
       FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}" \
@@ -59,9 +66,14 @@ services-devnet)
       fi
     fi
 
+    export TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY="${TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY:-1}"
+
     if [[ -f "$manifest_path" ]]; then
       if [[ -n "${TOPUP_AUTOCLAIM_SECRET_KEY:-}" ]]; then
         echo "[compose-mode] using caller-provided TOPUP_AUTOCLAIM_SECRET_KEY (manifest deployment_accounts.l2_deployer.private_key ignored)"
+      elif [[ "${TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY}" == "1" && -n "${OPERATOR_SECRET_KEY:-}" ]]; then
+        export TOPUP_AUTOCLAIM_SECRET_KEY="$OPERATOR_SECRET_KEY"
+        echo "[compose-mode] using TOPUP_AUTOCLAIM_SECRET_KEY from OPERATOR_SECRET_KEY (.env)"
       else
         l2_deployer_private_key="$(jq -r '.deployment_accounts.l2_deployer.private_key // empty' "$manifest_path")"
         if [[ -n "$l2_deployer_private_key" ]]; then
