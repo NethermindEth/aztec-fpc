@@ -1,5 +1,4 @@
 ARG AZTEC_VERSION=4.0.0-devnet.2-patch.3
-ARG COMPILE_PLATFORM=linux/amd64
 
 # ══════════════════════════════════════════════════════════════
 # Stage 1: aztec — base image with aztec toolchain
@@ -18,11 +17,12 @@ ENV PATH="/root/.aztec/versions/${AZTEC_VERSION}/bin:/root/.aztec/versions/${AZT
 # ══════════════════════════════════════════════════════════════
 # Stage 2: compile — contract compilation only
 #
-# Pinned to linux/amd64 because the Aztec bb binary does not
-# have the AVM Transpiler enabled on arm64.  Contract artifacts
-# are platform-independent JSON, so cross-copy is safe.
+# The compile-base context is the aztec stage pinned to
+# linux/amd64 via docker-bake.hcl, because the Aztec bb binary
+# does not have the AVM Transpiler enabled on arm64.  Contract
+# artifacts are platform-independent JSON, so cross-copy is safe.
 # ══════════════════════════════════════════════════════════════
-FROM --platform=$COMPILE_PLATFORM aztec AS compile
+FROM aztec AS compile
 
 WORKDIR /app
 
@@ -54,7 +54,7 @@ COPY --from=deps /app/node_modules node_modules/
 COPY --from=deps /app/scripts/node_modules scripts/node_modules/
 
 # ── Pull compiled contract artifacts from compile stage ──
-COPY --from=compile /app/target/ target/
+COPY --from=contract /app/target/ target/
 
 # ══════════════════════════════════════════════════════════════
 # Stage 4: deploy — deploying compiled contracts
