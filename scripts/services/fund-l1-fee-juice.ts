@@ -46,6 +46,7 @@ const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const UINT_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 const DEFAULT_TARGET_BALANCE_WEI = "1000000000000000000000";
 const DEFAULT_MANIFEST_PATH = "./deployments/devnet-manifest-v2.json";
+const MAX_NONCE_RETRY_ATTEMPTS = 3;
 
 const ERC20_BALANCE_ABI = [
   {
@@ -92,6 +93,74 @@ class CliError extends Error {
     super(message);
     this.name = "CliError";
   }
+}
+
+function isNonceConflictError(error: unknown): boolean {
+  const normalized = String(error).toLowerCase();
+  return (
+    normalized.includes("replacementnotallowed") ||
+    normalized.includes("replacement not allowed") ||
+    normalized.includes("nonce too low") ||
+    normalized.includes("already known")
+  );
+}
+
+function normalizeNonce(value: number | bigint): bigint {
+  return typeof value === "bigint" ? value : BigInt(value);
+}
+
+async function readPendingNonce(params: {
+  publicClient: ReturnType<typeof createPublicClient>;
+  accountAddress: Address;
+}): Promise<bigint> {
+  try {
+    const pendingNonce = await params.publicClient.getTransactionCount({
+      address: params.accountAddress,
+      blockTag: "pending",
+    });
+    return normalizeNonce(pendingNonce);
+  } catch {
+    const latestNonce = await params.publicClient.getTransactionCount({
+      address: params.accountAddress,
+    });
+    return normalizeNonce(latestNonce);
+  }
+}
+
+async function sendWithManagedNonce(params: {
+  publicClient: ReturnType<typeof createPublicClient>;
+  accountAddress: Address;
+  initialNonce?: bigint;
+  send: (nonce: bigint) => Promise<`0x${string}`>;
+}): Promise<{ hash: `0x${string}`; nextNonce: bigint }> {
+  let nonce =
+    params.initialNonce ??
+    (await readPendingNonce({
+      publicClient: params.publicClient,
+      accountAddress: params.accountAddress,
+    }));
+
+  for (let attempt = 1; attempt <= MAX_NONCE_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const hash = await params.send(nonce);
+      return { hash, nextNonce: nonce + 1n };
+    } catch (error) {
+      if (!isNonceConflictError(error) || attempt >= MAX_NONCE_RETRY_ATTEMPTS) {
+        throw error;
+      }
+
+      const refreshedNonce = await readPendingNonce({
+        publicClient: params.publicClient,
+        accountAddress: params.accountAddress,
+      });
+      console.warn(
+        `[fund-l1-fee-juice] nonce conflict detected; retrying with refreshed_nonce=${refreshedNonce} attempt=${attempt + 1}/${MAX_NONCE_RETRY_ATTEMPTS}`,
+      );
+      nonce = refreshedNonce;
+    }
+  }
+
+  throw new CliError("Failed to send transaction after nonce retry attempts");
 }
 
 function usage(): string {
@@ -528,12 +597,18 @@ async function tryDirectMint(params: {
   const publicClient = createPublicClient({ transport: http(params.l1RpcUrl) });
 
   try {
-    const hash = await walletClient.writeContract({
-      chain: null,
-      address: params.tokenAddress,
-      abi: ERC20_MINT_ABI,
-      functionName: "mint",
-      args: [params.recipient, params.amount],
+    const { hash } = await sendWithManagedNonce({
+      publicClient,
+      accountAddress: funder.address,
+      send: (nonce) =>
+        walletClient.writeContract({
+          chain: null,
+          address: params.tokenAddress,
+          abi: ERC20_MINT_ABI,
+          functionName: "mint",
+          args: [params.recipient, params.amount],
+          nonce,
+        }),
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") {
@@ -586,14 +661,24 @@ async function mintViaFeeAssetHandler(params: {
   });
 
   let mintCount = 0;
+  let nextNonce: bigint | undefined;
   while (balance < params.targetBalanceWei) {
-    const hash = await walletClient.writeContract({
-      chain: null,
-      address: params.handlerAddress,
-      abi: FEE_ASSET_HANDLER_ABI,
-      functionName: "mint",
-      args: [params.recipient],
+    const mintTx = await sendWithManagedNonce({
+      publicClient,
+      accountAddress: funder.address,
+      initialNonce: nextNonce,
+      send: (nonce) =>
+        walletClient.writeContract({
+          chain: null,
+          address: params.handlerAddress,
+          abi: FEE_ASSET_HANDLER_ABI,
+          functionName: "mint",
+          args: [params.recipient],
+          nonce,
+        }),
     });
+    nextNonce = mintTx.nextNonce;
+    const hash = mintTx.hash;
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") {
       throw new CliError(
