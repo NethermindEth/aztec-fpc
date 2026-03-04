@@ -1761,6 +1761,8 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
         L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
         // Prevent host env from redirecting isolated scenario top-ups.
         TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: isolatedFpc.address.toString(),
+        TOPUP_AUTOCLAIM_SECRET_KEY: result.operatorSecretHex,
+        TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "0",
       },
     },
   );
