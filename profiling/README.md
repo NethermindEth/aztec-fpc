@@ -177,9 +177,9 @@ To switch to Wonderland's default runner for hardware parity, change
 
 ## Version Pinning
 
-`profiling/package.json` and `profiling/setup.sh` are intentionally pinned to
+`profiling/package.json` and `profiling/setup.sh` are pinned to
 `4.0.0-devnet.2-patch.1` (independent from repo `.aztecrc`) because
-`@defi-wonderland/aztec-benchmark` is only published up to this patch line.
+`@defi-wonderland/aztec-benchmark` is not yet published for patch.2.
 
 ## Gotchas
 

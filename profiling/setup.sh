@@ -17,8 +17,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
 PID_FILE="$SCRIPT_DIR/.aztec-network.pid"
 
-# ── Prerequisite checks ──────────────────────────────────────────────────────
-# Profiling is intentionally pinned to patch.1 due aztec-benchmark package availability.
+# Prerequisite checks
+# Pinned to patch.1 — @defi-wonderland/aztec-benchmark is not yet published for patch.2.
 PROFILING_DEFAULT_AZTEC_VERSION="4.0.0-devnet.2-patch.1"
 AZTEC_VERSION="${PROFILING_AZTEC_VERSION:-$PROFILING_DEFAULT_AZTEC_VERSION}"
 REPO_AZTEC_VERSION="$(tr -d '\n' < "$REPO_ROOT/.aztecrc")"
@@ -46,12 +46,12 @@ if ! aztec-up use "$AZTEC_VERSION" >/dev/null 2>&1; then
   aztec-up use "$AZTEC_VERSION" >/dev/null
 fi
 
-# ── Step 1: Initialize git submodules (vendor/aztec-standards) ────────────────
+# Step 1: Initialize git submodules (vendor/aztec-standards)
 echo "[setup] Initializing git submodules..."
 (cd "$REPO_ROOT" && git submodule update --init)
 echo "[setup] Submodules initialized."
 
-# ── Step 2: Install profiling npm dependencies ────────────────────────────────
+# Step 2: Install profiling npm dependencies
 AZTEC_PKGS=(
   "@aztec/aztec.js"
   "@aztec/accounts"
@@ -105,7 +105,7 @@ else
   echo "[setup] Aztec SDK packages up to date ($AZTEC_VERSION)"
 fi
 
-# ── Step 3: Start Aztec local network ────────────────────────────────────────
+# Step 3: Start Aztec local network
 node_is_up() {
   local code
   code=$(curl -s --max-time 3 --connect-timeout 2 -o /dev/null -w "%{http_code}" "$NODE_URL" 2>/dev/null)
