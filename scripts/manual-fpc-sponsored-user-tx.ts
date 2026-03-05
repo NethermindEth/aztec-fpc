@@ -10,10 +10,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
-import {
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
+import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { Gas, GasFees } from "@aztec/stdlib/gas";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
@@ -73,15 +70,11 @@ function readConfig(): Config {
   return {
     nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
     quoteBaseUrl: process.env.QUOTE_BASE_URL ?? "http://localhost:3000",
-    manifestPath:
-      process.env.MANIFEST_PATH ??
-      path.join(repoRoot, "deployments", "manifest.json"),
+    manifestPath: process.env.MANIFEST_PATH ?? path.join(repoRoot, "deployments", "manifest.json"),
     tokenArtifactPath:
-      process.env.TOKEN_ARTIFACT_PATH ??
-      path.join(repoRoot, "target", "token_contract-Token.json"),
+      process.env.TOKEN_ARTIFACT_PATH ?? path.join(repoRoot, "target", "token_contract-Token.json"),
     fpcArtifactPath:
-      process.env.FPC_ARTIFACT_PATH ??
-      path.join(repoRoot, "target", "fpc-FPCMultiAsset.json"),
+      process.env.FPC_ARTIFACT_PATH ?? path.join(repoRoot, "target", "fpc-FPCMultiAsset.json"),
     counterArtifactPath:
       process.env.COUNTER_ARTIFACT_PATH ??
       path.join(repoRoot, "target", "mock_counter-Counter.json"),
@@ -101,9 +94,7 @@ function assertPositiveInt(name: string, value: number): void {
 }
 
 function loadArtifact(artifactPath: string): ContractArtifact {
-  const parsed = JSON.parse(
-    fs.readFileSync(artifactPath, "utf8"),
-  ) as NoirCompiledContract;
+  const parsed = JSON.parse(fs.readFileSync(artifactPath, "utf8")) as NoirCompiledContract;
   try {
     return loadContractArtifact(parsed);
   } catch (err) {
@@ -172,18 +163,14 @@ async function attachRegisteredContract(
 ): Promise<Contract> {
   const instance = await node.getContract(address);
   if (!instance) {
-    throw new Error(
-      `Missing ${label} contract instance on node at ${address.toString()}`,
-    );
+    throw new Error(`Missing ${label} contract instance on node at ${address.toString()}`);
   }
   await wallet.registerContract(instance, artifact);
   return Contract.at(address, artifact, wallet);
 }
 
 async function main() {
-  const deployCounterOnly = process.argv
-    .slice(2)
-    .includes("--deploy-counter-only");
+  const deployCounterOnly = process.argv.slice(2).includes("--deploy-counter-only");
   const cfg = readConfig();
   assertPositiveInt("DA_GAS_LIMIT", cfg.daGasLimit);
   assertPositiveInt("L2_GAS_LIMIT", cfg.l2GasLimit);
@@ -195,12 +182,8 @@ async function main() {
     operator: { address: string };
   };
   const fpcAddress = AztecAddress.fromString(manifest.contracts.fpc);
-  const tokenAddress = AztecAddress.fromString(
-    manifest.contracts.accepted_asset,
-  );
-  const operatorFromManifest = AztecAddress.fromString(
-    manifest.operator.address,
-  );
+  const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
+  const operatorFromManifest = AztecAddress.fromString(manifest.operator.address);
 
   const tokenArtifact = loadArtifact(cfg.tokenArtifactPath);
   const fpcArtifact = loadArtifact(cfg.fpcArtifactPath);
@@ -218,19 +201,12 @@ async function main() {
   const testAccounts = await getInitialTestAccountsData();
   const [operator, user] = await Promise.all(
     testAccounts.slice(0, 2).map(async (account) => {
-      return (
-        await wallet.createSchnorrAccount(
-          account.secret,
-          account.salt,
-          account.signingKey,
-        )
-      ).address;
+      return (await wallet.createSchnorrAccount(account.secret, account.salt, account.signingKey))
+        .address;
     }),
   );
   if (!operator.equals(operatorFromManifest)) {
-    throw new Error(
-      `Operator mismatch. manifest=${operatorFromManifest} wallet=${operator}`,
-    );
+    throw new Error(`Operator mismatch. manifest=${operatorFromManifest} wallet=${operator}`);
   }
 
   const token = await attachRegisteredContract(
@@ -240,13 +216,7 @@ async function main() {
     tokenArtifact,
     "accepted_asset",
   );
-  const fpc = await attachRegisteredContract(
-    wallet,
-    node,
-    fpcAddress,
-    fpcArtifact,
-    "fpc",
-  );
+  const fpc = await attachRegisteredContract(wallet, node, fpcAddress, fpcArtifact, "fpc");
   let counter: Contract;
   if (cfg.mockCounterAddress && cfg.mockCounterAddress.length > 0) {
     counter = await attachRegisteredContract(
@@ -258,12 +228,7 @@ async function main() {
     );
   } else {
     // Deploy Counter.initialize(headstart=0, owner=user) for this manual run.
-    counter = await Contract.deploy(
-      wallet,
-      counterArtifact,
-      [0n, user],
-      "initialize",
-    ).send({
+    counter = await Contract.deploy(wallet, counterArtifact, [0n, user], "initialize").send({
       from: user,
     });
   }
@@ -277,8 +242,7 @@ async function main() {
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas;
   const feePerL2Gas = minFees.feePerL2Gas;
-  const fjAmount =
-    BigInt(cfg.daGasLimit) * feePerDaGas + BigInt(cfg.l2GasLimit) * feePerL2Gas;
+  const fjAmount = BigInt(cfg.daGasLimit) * feePerDaGas + BigInt(cfg.l2GasLimit) * feePerL2Gas;
 
   // Step 3: ensure FPC has Fee Juice to sponsor this tx.
   const fpcFeeJuiceBalance = await waitForFeeJuice(
@@ -298,26 +262,15 @@ async function main() {
   // - aa_payment_amount (token charge),
   // - valid_until,
   // - signature bound to (user, asset, fj_amount, aa_payment_amount, valid_until).
-  const quote = await fetchQuote(
-    cfg.quoteBaseUrl,
-    user,
-    tokenAddress,
-    fjAmount,
-  );
-  console.log(
-    `[manual-fpc] attestation_quote_response=${JSON.stringify(quote)}`,
-  );
+  const quote = await fetchQuote(cfg.quoteBaseUrl, user, tokenAddress, fjAmount);
+  console.log(`[manual-fpc] attestation_quote_response=${JSON.stringify(quote)}`);
   const aaPaymentAmount = BigInt(quote.aa_payment_amount);
-  const quoteSigBytes = Array.from(
-    Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
-  );
+  const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace(/^0x/, ""), "hex"));
 
   // Step 5: fund user with:
   // - private token notes for FPC payment transfer.
   // The app call is Counter.increment (private), so no public token balance is needed.
-  await token.methods
-    .mint_to_private(user, aaPaymentAmount + 1_000_000n)
-    .send({ from: operator });
+  await token.methods.mint_to_private(user, aaPaymentAmount + 1_000_000n).send({ from: operator });
 
   // Step 6: create authwit that authorizes FPC to call
   // Token.transfer_private_to_private(user -> operator, aa_payment_amount, nonce).
@@ -332,16 +285,10 @@ async function main() {
 
   // Record balances before tx so we can prove token accounting after.
   const userPrivateBefore = BigInt(
-    (
-      await token.methods.balance_of_private(user).simulate({ from: user })
-    ).toString(),
+    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
   );
   const operatorPrivateBefore = BigInt(
-    (
-      await token.methods
-        .balance_of_private(operator)
-        .simulate({ from: operator })
-    ).toString(),
+    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
   );
 
   // Step 7: build the FPC fee payload manually.
@@ -360,13 +307,7 @@ async function main() {
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [transferAuthwit],
-        [],
-        [],
-        fpcAddress,
-      ),
+      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], fpcAddress),
     getFeePayer: async () => fpcAddress,
     getGasSettings: () => undefined,
   };
@@ -414,16 +355,12 @@ async function main() {
       },
     },
   };
-  console.log(
-    `[manual-fpc] tx_payload_preview=${JSON.stringify(txPayloadPreview)}`,
-  );
+  console.log(`[manual-fpc] tx_payload_preview=${JSON.stringify(txPayloadPreview)}`);
 
   // Step 8: send a normal user call `y.x()` while attaching the FPC payment
   // payload. Here y = Counter and x = increment(owner).
   const counterBefore = BigInt(
-    (
-      await counter.methods.get_counter(user).simulate({ from: user })
-    ).toString(),
+    (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
   );
   const receipt = await counter.methods.increment(user).send({
     from: user,
@@ -434,23 +371,15 @@ async function main() {
     wait: { timeout: 180 },
   });
   const counterAfter = BigInt(
-    (
-      await counter.methods.get_counter(user).simulate({ from: user })
-    ).toString(),
+    (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
   );
 
   // Step 9: verify accounting and print a concise summary.
   const userPrivateAfter = BigInt(
-    (
-      await token.methods.balance_of_private(user).simulate({ from: user })
-    ).toString(),
+    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
   );
   const operatorPrivateAfter = BigInt(
-    (
-      await token.methods
-        .balance_of_private(operator)
-        .simulate({ from: operator })
-    ).toString(),
+    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
   );
 
   const userDebited = userPrivateBefore - userPrivateAfter;
@@ -467,9 +396,7 @@ async function main() {
   console.log(`operator_credited=${operatorCredited}`);
   console.log(`counter_before=${counterBefore}`);
   console.log(`counter_after=${counterAfter}`);
-  console.log(
-    "PASS: sponsored Counter.increment tx via FPCMultiAsset fee_entrypoint",
-  );
+  console.log("PASS: sponsored Counter.increment tx via FPCMultiAsset fee_entrypoint");
 
   if (userDebited !== aaPaymentAmount || operatorCredited !== aaPaymentAmount) {
     throw new Error(

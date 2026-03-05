@@ -23,8 +23,7 @@ import { createTopupOpsServer, TopupOpsState } from "./ops.js";
 import { reconcilePersistedBridgeState } from "./reconcile.js";
 import { createBridgeStateStore } from "./state.js";
 
-const configPath =
-  process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
+const configPath = process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
 
 async function main() {
   const config = loadConfig(configPath);
@@ -48,37 +47,25 @@ async function main() {
   if (fpcAddress.isZero()) {
     throw new Error("Invalid fpc_address: zero address is not allowed");
   }
-  const topupTargetAddressEnv =
-    process.env.TOPUP_FEE_JUICE_RECIPIENT_ADDRESS?.trim() ?? "";
+  const topupTargetAddressEnv = process.env.TOPUP_FEE_JUICE_RECIPIENT_ADDRESS?.trim() ?? "";
   const topupTargetAddressRaw =
-    topupTargetAddressEnv.length > 0
-      ? topupTargetAddressEnv
-      : config.fpc_address;
+    topupTargetAddressEnv.length > 0 ? topupTargetAddressEnv : config.fpc_address;
   const topupTargetAddress = AztecAddress.fromString(topupTargetAddressRaw);
   if (topupTargetAddress.isZero()) {
-    throw new Error(
-      "Invalid TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: zero address is not allowed",
-    );
+    throw new Error("Invalid TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: zero address is not allowed");
   }
   const nodeInfo = await pxe.getNodeInfo();
   const l1ChainId = nodeInfo.l1ChainId;
   if (!Number.isInteger(l1ChainId) || l1ChainId <= 0) {
-    throw new Error(
-      `Node info returned invalid l1ChainId=${String(l1ChainId)}`,
-    );
+    throw new Error(`Node info returned invalid l1ChainId=${String(l1ChainId)}`);
   }
-  const feeJuicePortalAddress =
-    nodeInfo.l1ContractAddresses.feeJuicePortalAddress;
+  const feeJuicePortalAddress = nodeInfo.l1ContractAddresses.feeJuicePortalAddress;
   const feeJuiceAddress = nodeInfo.l1ContractAddresses.feeJuiceAddress;
   if (feeJuicePortalAddress.isZero()) {
-    throw new Error(
-      "Node info returned zero l1ContractAddresses.feeJuicePortalAddress",
-    );
+    throw new Error("Node info returned zero l1ContractAddresses.feeJuicePortalAddress");
   }
   if (feeJuiceAddress.isZero()) {
-    throw new Error(
-      "Node info returned zero l1ContractAddresses.feeJuiceAddress",
-    );
+    throw new Error("Node info returned zero l1ContractAddresses.feeJuiceAddress");
   }
   await assertL1RpcChainIdMatches(config.l1_rpc_url, l1ChainId);
 
@@ -88,15 +75,11 @@ async function main() {
   const autoClaimEnabled = process.env.TOPUP_AUTOCLAIM_ENABLED !== "0";
   const bridgeStateStore = createBridgeStateStore(config.bridge_state_path);
   const balanceReader = await createFeeJuiceBalanceReader(pxe);
-  const autoClaimer = autoClaimEnabled
-    ? await createTopupAutoClaimer(pxe)
-    : null;
+  const autoClaimer = autoClaimEnabled ? await createTopupAutoClaimer(pxe) : null;
   let autoClaimerFeeJuiceBalance: bigint | null = null;
   if (autoClaimer) {
     try {
-      autoClaimerFeeJuiceBalance = await balanceReader.getBalance(
-        autoClaimer.claimerAddress,
-      );
+      autoClaimerFeeJuiceBalance = await balanceReader.getBalance(autoClaimer.claimerAddress);
     } catch (error) {
       console.warn(
         `Could not read auto-claim claimer Fee Juice balance for ${autoClaimer.claimerAddress.toString()}`,
@@ -114,10 +97,7 @@ async function main() {
   console.log(`Top-up service started`);
   console.log(`  FPC address:   ${config.fpc_address}`);
   console.log(`  Top-up target: ${topupTargetAddress.toString()}`);
-  if (
-    topupTargetAddress.toString().toLowerCase() !==
-    fpcAddress.toString().toLowerCase()
-  ) {
+  if (topupTargetAddress.toString().toLowerCase() !== fpcAddress.toString().toLowerCase()) {
     console.warn(
       `  Top-up target differs from FPC address; monitoring and claims will target ${topupTargetAddress.toString()}`,
     );
@@ -147,18 +127,11 @@ async function main() {
       `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()} source=${autoClaimer.claimerSource} payment=${autoClaimer.paymentMode})`,
     );
     if (autoClaimer.sponsoredFpcAddress) {
-      console.log(
-        `  Auto-claim sponsor contract: ${autoClaimer.sponsoredFpcAddress.toString()}`,
-      );
+      console.log(`  Auto-claim sponsor contract: ${autoClaimer.sponsoredFpcAddress.toString()}`);
     }
     if (autoClaimerFeeJuiceBalance !== null) {
-      console.log(
-        `  Auto-claim claimer Fee Juice balance: ${autoClaimerFeeJuiceBalance} wei`,
-      );
-      if (
-        autoClaimer.paymentMode === "fee_juice" &&
-        autoClaimerFeeJuiceBalance <= 0n
-      ) {
+      console.log(`  Auto-claim claimer Fee Juice balance: ${autoClaimerFeeJuiceBalance} wei`);
+      if (autoClaimer.paymentMode === "fee_juice" && autoClaimerFeeJuiceBalance <= 0n) {
         console.warn(
           "  Auto-claim warning: claimer has zero Fee Juice. Claims will fail unless this account is funded on L2.",
         );

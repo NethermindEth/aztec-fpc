@@ -144,9 +144,7 @@ export async function waitForFeeJuiceBridgeConfirmation(
     await Promise.race([messageWaitPromise, sleep(0)]);
   }
 
-  function buildResult(
-    status: BridgeConfirmationStatus,
-  ): BridgeConfirmationResult {
+  function buildResult(status: BridgeConfirmationStatus): BridgeConfirmationResult {
     return {
       status,
       baselineBalance: options.baselineBalance,
@@ -177,11 +175,7 @@ export async function waitForFeeJuiceBridgeConfirmation(
     attempts += 1;
     await settleMessageCheckNonBlocking();
 
-    if (
-      messageReady &&
-      options.onMessageReady &&
-      !messageReadyActionSucceeded
-    ) {
+    if (messageReady && options.onMessageReady && !messageReadyActionSucceeded) {
       messageReadyActionAttempted = true;
       try {
         await options.onMessageReady();
@@ -193,9 +187,7 @@ export async function waitForFeeJuiceBridgeConfirmation(
     }
 
     try {
-      const balance = await options.balanceReader.getBalance(
-        options.fpcAddress,
-      );
+      const balance = await options.balanceReader.getBalance(options.fpcAddress);
       successfulReads += 1;
       lastObservedBalance = balance;
       if (balance > maxObservedBalance) {

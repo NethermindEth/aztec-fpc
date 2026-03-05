@@ -23,6 +23,7 @@ COPY --from=deploy /app/target/ target/
 COPY scripts/ scripts/
 
 # ── Build services ──
-RUN bun run build
+RUN bun run --filter @aztec-fpc/attestation --if-present build && \
+    bun run --filter @aztec-fpc/topup --if-present build
 
 ENTRYPOINT ["bun", "run", "--sequential"]

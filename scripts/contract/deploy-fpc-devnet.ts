@@ -99,10 +99,7 @@ type FpcArtifactSelection = {
 };
 
 type OperatorDerivationDeps = {
-  getSchnorrAccountContractAddress: (
-    secretKey: unknown,
-    salt: unknown,
-  ) => Promise<unknown>;
+  getSchnorrAccountContractAddress: (secretKey: unknown, salt: unknown) => Promise<unknown>;
   Fr: {
     fromHexString: (value: string) => unknown;
     ZERO: unknown;
@@ -224,9 +221,7 @@ function parseHttpUrl(value: string, fieldName: string): string {
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new CliError(
-        `Invalid ${fieldName}: expected http(s) URL, got "${value}"`,
-      );
+      throw new CliError(`Invalid ${fieldName}: expected http(s) URL, got "${value}"`);
     }
     return parsed.toString();
   } catch (error) {
@@ -239,9 +234,7 @@ function parseHttpUrl(value: string, fieldName: string): string {
 
 function parseAztecAddress(value: string, fieldName: string): string {
   if (!AZTEC_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(
-      `Invalid ${fieldName}: expected 32-byte 0x-prefixed Aztec address`,
-    );
+    throw new CliError(`Invalid ${fieldName}: expected 32-byte 0x-prefixed Aztec address`);
   }
   if (ZERO_AZTEC_ADDRESS_PATTERN.test(value)) {
     throw new CliError(`Invalid ${fieldName}: zero address is not allowed`);
@@ -251,9 +244,7 @@ function parseAztecAddress(value: string, fieldName: string): string {
 
 function parseHex32(value: string, fieldName: string): string {
   if (!HEX_32_PATTERN.test(value)) {
-    throw new CliError(
-      `Invalid ${fieldName}: expected 32-byte 0x-prefixed hex value`,
-    );
+    throw new CliError(`Invalid ${fieldName}: expected 32-byte 0x-prefixed hex value`);
   }
   return value;
 }
@@ -265,9 +256,7 @@ function parseSecretPair(
   refFlag: string,
 ): { value: string | null; ref: string | null } {
   if (rawValue && rawRef) {
-    throw new CliError(
-      `Ambiguous key input: provide only one of ${valueFlag} or ${refFlag}`,
-    );
+    throw new CliError(`Ambiguous key input: provide only one of ${valueFlag} or ${refFlag}`);
   }
   return {
     value: rawValue,
@@ -279,22 +268,15 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let nodeUrl: string = process.env.FPC_NODE_URL ?? DEVNET_DEFAULT_NODE_URL;
   let l1RpcUrl: string | null = process.env.FPC_L1_RPC_URL ?? null;
   let validateTopupPath = process.env.FPC_VALIDATE_TOPUP_PATH === "1";
-  let sponsoredFpcAddress: string | null =
-    process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
-  let deployerAlias: string =
-    process.env.FPC_DEPLOYER_ALIAS ?? DEVNET_DEFAULT_DEPLOYER_ALIAS;
-  let deployerSecretKey: string | null =
-    process.env.FPC_DEPLOYER_SECRET_KEY ?? null;
-  let deployerSecretKeyRef: string | null =
-    process.env.FPC_DEPLOYER_SECRET_KEY_REF ?? null;
-  let operatorSecretKey: string | null =
-    process.env.FPC_OPERATOR_SECRET_KEY ?? null;
-  let operatorSecretKeyRef: string | null =
-    process.env.FPC_OPERATOR_SECRET_KEY_REF ?? null;
+  let sponsoredFpcAddress: string | null = process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
+  let deployerAlias: string = process.env.FPC_DEPLOYER_ALIAS ?? DEVNET_DEFAULT_DEPLOYER_ALIAS;
+  let deployerSecretKey: string | null = process.env.FPC_DEPLOYER_SECRET_KEY ?? null;
+  let deployerSecretKeyRef: string | null = process.env.FPC_DEPLOYER_SECRET_KEY_REF ?? null;
+  let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
+  let operatorSecretKeyRef: string | null = process.env.FPC_OPERATOR_SECRET_KEY_REF ?? null;
   let operator: string | null = process.env.FPC_OPERATOR ?? null;
   let acceptedAsset: string | null = process.env.FPC_ACCEPTED_ASSET ?? null;
-  let fpcArtifact: string =
-    process.env.FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
+  let fpcArtifact: string = process.env.FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
   let dataDir: string = process.env.FPC_DATA_DIR ?? DEVNET_DEFAULT_DATA_DIR;
   let outExplicit = !!process.env.FPC_OUT;
   let out: string = process.env.FPC_OUT ?? path.join(dataDir, "manifest.json");
@@ -376,9 +358,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
   }
 
   if (validateTopupPath && !l1RpcUrl) {
-    throw new CliError(
-      "Topup-path validation requested, but --l1-rpc-url is missing",
-    );
+    throw new CliError("Topup-path validation requested, but --l1-rpc-url is missing");
   }
 
   const parsedDeployer = parseSecretPair(
@@ -395,23 +375,17 @@ function parseCliArgs(argv: string[]): CliParseResult {
   );
 
   if (!parsedDeployer.value && !parsedDeployer.ref) {
-    console.warn(
-      "WARN: No deployer key provided. Using default devnet test key.",
-    );
+    console.warn("WARN: No deployer key provided. Using default devnet test key.");
     parsedDeployer.value = DEVNET_DEFAULT_TEST_KEY;
   }
   if (!parsedOperatorSecret.value && !parsedOperatorSecret.ref) {
-    parsedOperatorSecret.value =
-      parsedDeployer.value ?? DEVNET_DEFAULT_TEST_KEY;
-    console.warn(
-      "WARN: No operator key provided. Using deployer key as operator key for devnet.",
-    );
+    parsedOperatorSecret.value = parsedDeployer.value ?? DEVNET_DEFAULT_TEST_KEY;
+    console.warn("WARN: No operator key provided. Using deployer key as operator key for devnet.");
   }
 
   const parsedNodeUrl = parseHttpUrl(nodeUrl, "--node-url");
   const parsedL1Rpc = l1RpcUrl ? parseHttpUrl(l1RpcUrl, "--l1-rpc-url") : null;
-  const parsedOperator =
-    operator !== null ? parseAztecAddress(operator, "--operator") : null;
+  const parsedOperator = operator !== null ? parseAztecAddress(operator, "--operator") : null;
 
   return {
     kind: "args",
@@ -433,15 +407,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
         ? parseHex32(parsedOperatorSecret.value, "--operator-secret-key")
         : null,
       operatorSecretKeyRef: parsedOperatorSecret.ref
-        ? parseNonEmptyString(
-            parsedOperatorSecret.ref,
-            "--operator-secret-key-ref",
-          )
+        ? parseNonEmptyString(parsedOperatorSecret.ref, "--operator-secret-key-ref")
         : null,
       operator: parsedOperator,
-      acceptedAsset: acceptedAsset
-        ? parseAztecAddress(acceptedAsset, "--accepted-asset")
-        : null,
+      acceptedAsset: acceptedAsset ? parseAztecAddress(acceptedAsset, "--accepted-asset") : null,
       fpcArtifact: parseNonEmptyString(fpcArtifact, "--fpc-artifact"),
       out,
       preflightOnly,
@@ -456,9 +425,7 @@ function parseEnvPositiveNumber(name: string, fallback: number): number {
   }
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
-    throw new CliError(
-      `Invalid ${name}=${raw}. Expected a positive integer value.`,
-    );
+    throw new CliError(`Invalid ${name}=${raw}. Expected a positive integer value.`);
   }
   return parsed;
 }
@@ -470,9 +437,7 @@ function parseEnvPositiveBigInt(name: string, fallback: bigint): bigint {
   }
   const trimmed = raw.trim();
   if (!DECIMAL_UINT_PATTERN.test(trimmed) && !HEX_FIELD_PATTERN.test(trimmed)) {
-    throw new CliError(
-      `Invalid ${name}=${raw}. Expected a positive integer value.`,
-    );
+    throw new CliError(`Invalid ${name}=${raw}. Expected a positive integer value.`);
   }
   const parsed = BigInt(trimmed);
   if (parsed <= 0n) {
@@ -536,18 +501,11 @@ async function callContractSendWithAztecWallet(params: {
   ];
 
   const maxAttempts = parseEnvPositiveNumber("FPC_WALLET_SEND_RETRIES", 3);
-  const retryBackoffMs = parseEnvPositiveNumber(
-    "FPC_WALLET_SEND_RETRY_BACKOFF_MS",
-    2_000,
-  );
+  const retryBackoffMs = parseEnvPositiveNumber("FPC_WALLET_SEND_RETRY_BACKOFF_MS", 2_000);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      runAztecWalletCommand(
-        params.nodeUrl,
-        commandArgs,
-        `send ${params.context}`,
-      );
+      runAztecWalletCommand(params.nodeUrl, commandArgs, `send ${params.context}`);
       return;
     } catch (error) {
       if (
@@ -565,9 +523,7 @@ async function callContractSendWithAztecWallet(params: {
     }
   }
 
-  throw new CliError(
-    `Failed to send ${params.context}: exhausted retry attempts.`,
-  );
+  throw new CliError(`Failed to send ${params.context}: exhausted retry attempts.`);
 }
 
 function ensureOperatorAccountInWallet(
@@ -612,14 +568,7 @@ function ensureOperatorAccountInWallet(
   if (!payment) {
     runAztecWalletCommand(
       nodeUrl,
-      [
-        "create-account",
-        "--register-only",
-        "--alias",
-        alias,
-        "--secret-key",
-        operatorSecretKey,
-      ],
+      ["create-account", "--register-only", "--alias", alias, "--secret-key", operatorSecretKey],
       `register operator account alias ${walletAlias} (register-only, no payment method)`,
     );
   } else {
@@ -648,14 +597,7 @@ function ensureOperatorAccountInWallet(
       }
       runAztecWalletCommand(
         nodeUrl,
-        [
-          "create-account",
-          "--register-only",
-          "--alias",
-          alias,
-          "--secret-key",
-          operatorSecretKey,
-        ],
+        ["create-account", "--register-only", "--alias", alias, "--secret-key", operatorSecretKey],
         `import existing operator account alias ${walletAlias} after create-account conflict`,
       );
     }
@@ -689,11 +631,7 @@ function isJsonRpcFailure(payload: unknown): payload is JsonRpcFailure {
   return "error" in payload;
 }
 
-async function rpcCall<T>(
-  url: string,
-  method: string,
-  params: unknown[],
-): Promise<T> {
+async function rpcCall<T>(url: string, method: string, params: unknown[]): Promise<T> {
   const retries = parseEnvPositiveNumber("FPC_RPC_RETRIES", 3);
   const backoffMs = parseEnvPositiveNumber("FPC_RPC_RETRY_BACKOFF_MS", 250);
   let lastError: Error | null = null;
@@ -764,9 +702,7 @@ async function rpcCall<T>(
 
   throw (
     lastError ??
-    new CliError(
-      `RPC request failed for method ${method} at ${url}: exhausted retries`,
-    )
+    new CliError(`RPC request failed for method ${method} at ${url}: exhausted retries`)
   );
 }
 
@@ -822,28 +758,20 @@ function parseNodeVersion(value: unknown): string {
 
 function parseNonZeroL1Address(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || !L1_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(
-      `Aztec node preflight failed: invalid ${fieldName}=${String(value)}`,
-    );
+    throw new CliError(`Aztec node preflight failed: invalid ${fieldName}=${String(value)}`);
   }
   if (ZERO_L1_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(
-      `Aztec node preflight failed: ${fieldName} is zero-address`,
-    );
+    throw new CliError(`Aztec node preflight failed: ${fieldName} is zero-address`);
   }
   return value;
 }
 
 function parseNonZeroAztecAddress(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || !AZTEC_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(
-      `Aztec node preflight failed: invalid ${fieldName}=${String(value)}`,
-    );
+    throw new CliError(`Aztec node preflight failed: invalid ${fieldName}=${String(value)}`);
   }
   if (ZERO_AZTEC_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(
-      `Aztec node preflight failed: ${fieldName} is zero-address`,
-    );
+    throw new CliError(`Aztec node preflight failed: ${fieldName} is zero-address`);
   }
   return value;
 }
@@ -881,16 +809,10 @@ function redactCommandArgs(args: readonly string[]): string {
   return redacted.join(" ");
 }
 
-function runAztecWalletCommand(
-  nodeUrl: string,
-  args: string[],
-  description: string,
-): string {
+function runAztecWalletCommand(nodeUrl: string, args: string[], description: string): string {
   const walletBin = process.env.AZTEC_WALLET_BIN ?? "aztec-wallet";
   const walletDataDir =
-    process.env.AZTEC_WALLET_DATA_DIR ??
-    process.env.FPC_WALLET_DATA_DIR ??
-    null;
+    process.env.AZTEC_WALLET_DATA_DIR ?? process.env.FPC_WALLET_DATA_DIR ?? null;
   const commandArgs = [
     ...(walletDataDir ? ["--data-dir", walletDataDir] : []),
     "--node-url",
@@ -904,21 +826,14 @@ function runAztecWalletCommand(
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "stderr" in error &&
-      "stdout" in error
-    ) {
+    if (error && typeof error === "object" && "stderr" in error && "stdout" in error) {
       const stdout = String((error as { stdout?: unknown }).stdout ?? "");
       const stderr = String((error as { stderr?: unknown }).stderr ?? "");
       throw new CliError(
         `Failed to ${description} via '${walletBin} ${redactCommandArgs(commandArgs)}'.\nstdout:\n${stdout}\nstderr:\n${stderr}`,
       );
     }
-    throw new CliError(
-      `Failed to ${description}: ${String(error)} (wallet binary: ${walletBin})`,
-    );
+    throw new CliError(`Failed to ${description}: ${String(error)} (wallet binary: ${walletBin})`);
   }
 }
 
@@ -948,9 +863,9 @@ function parseWalletAliasMap(output: string): Map<string, string> {
 function parseAliasLookupAddress(output: string, alias: string): string | null {
   const sanitized = stripAnsi(output).replace(/\r\n/g, "\n");
 
-  const directAddressMatches = [
-    ...sanitized.matchAll(/^\s*(0x[0-9a-fA-F]{64})\s*$/gim),
-  ].map((match) => match[1]);
+  const directAddressMatches = [...sanitized.matchAll(/^\s*(0x[0-9a-fA-F]{64})\s*$/gim)].map(
+    (match) => match[1],
+  );
   if (directAddressMatches.length > 0) {
     return directAddressMatches[0];
   }
@@ -967,9 +882,7 @@ function normalizeDeployerAlias(alias: string): {
   if (trimmed.startsWith(WALLET_ACCOUNT_PREFIX)) {
     const bareAlias = trimmed.slice(WALLET_ACCOUNT_PREFIX.length).trim();
     if (bareAlias.length === 0) {
-      throw new CliError(
-        `Invalid --deployer-alias: "${alias}" has empty account alias suffix`,
-      );
+      throw new CliError(`Invalid --deployer-alias: "${alias}" has empty account alias suffix`);
     }
     return {
       walletAlias: `${WALLET_ACCOUNT_PREFIX}${bareAlias}`,
@@ -987,10 +900,7 @@ function normalizeDeployerAlias(alias: string): {
   };
 }
 
-function tryGetWalletAliasAddress(
-  nodeUrl: string,
-  alias: string,
-): string | null {
+function tryGetWalletAliasAddress(nodeUrl: string, alias: string): string | null {
   try {
     const output = runAztecWalletCommand(
       nodeUrl,
@@ -1005,20 +915,14 @@ function tryGetWalletAliasAddress(
     }
     return parseNonZeroAztecAddress(resolved, `wallet alias ${alias}`);
   } catch (error) {
-    if (
-      error instanceof CliError &&
-      error.message.includes(`Could not find alias ${alias}`)
-    ) {
+    if (error instanceof CliError && error.message.includes(`Could not find alias ${alias}`)) {
       return null;
     }
     throw error;
   }
 }
 
-function ensureSponsoredFpcIsRegistered(
-  nodeUrl: string,
-  sponsoredFpcAddress: string,
-): void {
+function ensureSponsoredFpcIsRegistered(nodeUrl: string, sponsoredFpcAddress: string): void {
   const contractAlias = `${WALLET_CONTRACT_PREFIX}${WALLET_SPONSORED_FPC_ALIAS}`;
   const existing = tryGetWalletAliasAddress(nodeUrl, contractAlias);
 
@@ -1048,9 +952,7 @@ function ensureSponsoredFpcIsRegistered(
 
   const resolved = tryGetWalletAliasAddress(nodeUrl, contractAlias);
   if (!resolved) {
-    throw new CliError(
-      `Wallet alias registration failed: ${contractAlias} was not persisted.`,
-    );
+    throw new CliError(`Wallet alias registration failed: ${contractAlias} was not persisted.`);
   }
   if (resolved.toLowerCase() !== sponsoredFpcAddress.toLowerCase()) {
     throw new CliError(
@@ -1132,10 +1034,7 @@ function resolveDeployerAccount(args: CliArgs): DeployerAccountResolution {
       `create deployer account alias ${alias.walletAlias} with sponsored payment`,
     );
   } catch (error) {
-    if (
-      !(error instanceof CliError) ||
-      !isCreateAccountConflict(error.message)
-    ) {
+    if (!(error instanceof CliError) || !isCreateAccountConflict(error.message)) {
       throw error;
     }
 
@@ -1275,10 +1174,7 @@ function collectJsonObjectsFromOutput(output: string): unknown[] {
   return candidates;
 }
 
-function parseDeployCommandResult(
-  rawOutput: string,
-  context: string,
-): ContractDeployResult {
+function parseDeployCommandResult(rawOutput: string, context: string): ContractDeployResult {
   const candidates = collectJsonObjectsFromOutput(rawOutput);
 
   for (let i = candidates.length - 1; i >= 0; i -= 1) {
@@ -1295,10 +1191,7 @@ function parseDeployCommandResult(
     try {
       const txHash = parseTxHash(candidate.hash, `${context} json.hash`);
       const address = parseAztecAddress(
-        stringifyWithToString(
-          contractRaw.address,
-          `${context} json.contract.address`,
-        ),
+        stringifyWithToString(contractRaw.address, `${context} json.contract.address`),
         `${context} contract address`,
       );
 
@@ -1340,10 +1233,7 @@ async function deployContractWithAztecWallet(params: {
   commandArgs.push("--args", ...params.constructorArgs);
 
   const maxAttempts = parseEnvPositiveNumber("FPC_WALLET_DEPLOY_RETRIES", 3);
-  const retryBackoffMs = parseEnvPositiveNumber(
-    "FPC_WALLET_DEPLOY_RETRY_BACKOFF_MS",
-    2_000,
-  );
+  const retryBackoffMs = parseEnvPositiveNumber("FPC_WALLET_DEPLOY_RETRY_BACKOFF_MS", 2_000);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -1370,14 +1260,10 @@ async function deployContractWithAztecWallet(params: {
     }
   }
 
-  throw new CliError(
-    `Failed to deploy ${params.context}: exhausted retry attempts.`,
-  );
+  throw new CliError(`Failed to deploy ${params.context}: exhausted retry attempts.`);
 }
 
-async function importWithWorkspaceFallback(
-  moduleId: string,
-): Promise<Record<string, unknown>> {
+async function importWithWorkspaceFallback(moduleId: string): Promise<Record<string, unknown>> {
   const errors: string[] = [];
   try {
     return (await import(moduleId)) as Record<string, unknown>;
@@ -1394,14 +1280,9 @@ async function importWithWorkspaceFallback(
     try {
       const requireFromWorkspace = createRequire(packageJsonPath);
       const resolved = requireFromWorkspace.resolve(moduleId);
-      return (await import(pathToFileURL(resolved).href)) as Record<
-        string,
-        unknown
-      >;
+      return (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
     } catch (error) {
-      errors.push(
-        `workspace import failed via ${packageJsonPath}: ${String(error)}`,
-      );
+      errors.push(`workspace import failed via ${packageJsonPath}: ${String(error)}`);
     }
   }
 
@@ -1418,8 +1299,7 @@ async function loadOperatorDerivationDeps(): Promise<OperatorDerivationDeps> {
     importWithWorkspaceFallback("@aztec/stdlib/keys"),
   ]);
 
-  const getSchnorrAccountContractAddress =
-    schnorrAccountApi.getSchnorrAccountContractAddress;
+  const getSchnorrAccountContractAddress = schnorrAccountApi.getSchnorrAccountContractAddress;
   const Fr = fieldApi.Fr;
   const Schnorr = schnorrApi.Schnorr;
   const deriveSigningKey = keysApi.deriveSigningKey;
@@ -1440,14 +1320,10 @@ async function loadOperatorDerivationDeps(): Promise<OperatorDerivationDeps> {
     );
   }
   if (typeof Schnorr !== "function") {
-    throw new CliError(
-      "Loaded @aztec/foundation/crypto/schnorr, but Schnorr is not available",
-    );
+    throw new CliError("Loaded @aztec/foundation/crypto/schnorr, but Schnorr is not available");
   }
   if (typeof deriveSigningKey !== "function") {
-    throw new CliError(
-      "Loaded @aztec/stdlib/keys, but deriveSigningKey is not available",
-    );
+    throw new CliError("Loaded @aztec/stdlib/keys, but deriveSigningKey is not available");
   }
 
   return {
@@ -1455,14 +1331,11 @@ async function loadOperatorDerivationDeps(): Promise<OperatorDerivationDeps> {
       getSchnorrAccountContractAddress as OperatorDerivationDeps["getSchnorrAccountContractAddress"],
     Fr: Fr as OperatorDerivationDeps["Fr"],
     Schnorr: Schnorr as OperatorDerivationDeps["Schnorr"],
-    deriveSigningKey:
-      deriveSigningKey as OperatorDerivationDeps["deriveSigningKey"],
+    deriveSigningKey: deriveSigningKey as OperatorDerivationDeps["deriveSigningKey"],
   };
 }
 
-async function deriveOperatorIdentity(
-  operatorSecretKey: string,
-): Promise<OperatorIdentity> {
+async function deriveOperatorIdentity(operatorSecretKey: string): Promise<OperatorIdentity> {
   const deps = await loadOperatorDerivationDeps();
 
   let secretKeyFr: unknown;
@@ -1502,21 +1375,15 @@ async function deriveOperatorIdentity(
   }
 }
 
-async function assertAztecNodePreflight(
-  nodeUrl: string,
-): Promise<NodePreflightState> {
+async function assertAztecNodePreflight(nodeUrl: string): Promise<NodePreflightState> {
   const ready = await rpcCall<boolean>(nodeUrl, "node_isReady", []);
   if (!ready) {
-    throw new CliError(
-      `Aztec node preflight failed: ${nodeUrl} responded but node_isReady=false`,
-    );
+    throw new CliError(`Aztec node preflight failed: ${nodeUrl} responded but node_isReady=false`);
   }
 
   const nodeInfo = await rpcCall<unknown>(nodeUrl, "node_getNodeInfo", []);
   if (!nodeInfo || typeof nodeInfo !== "object") {
-    throw new CliError(
-      "Aztec node preflight failed: node_getNodeInfo returned non-object payload",
-    );
+    throw new CliError("Aztec node preflight failed: node_getNodeInfo returned non-object payload");
   }
 
   const info = nodeInfo as {
@@ -1627,11 +1494,7 @@ async function assertAztecNodePreflight(
 async function assertL1RpcReachable(l1RpcUrl: string): Promise<number> {
   try {
     const chainIdHex = await rpcCall<string>(l1RpcUrl, "eth_chainId", []);
-    return parsePositiveInteger(
-      chainIdHex,
-      "L1 RPC preflight failed: eth_chainId",
-      "hex",
-    );
+    return parsePositiveInteger(chainIdHex, "L1 RPC preflight failed: eth_chainId", "hex");
   } catch (error) {
     if (error instanceof CliError) {
       throw error;
@@ -1642,9 +1505,7 @@ async function assertL1RpcReachable(l1RpcUrl: string): Promise<number> {
   }
 }
 
-function loadFpcArtifactSelection(
-  artifactPathInput: string,
-): FpcArtifactSelection {
+function loadFpcArtifactSelection(artifactPathInput: string): FpcArtifactSelection {
   const artifactPath = path.resolve(artifactPathInput);
   if (!existsSync(artifactPath)) {
     throw new CliError(
@@ -1655,17 +1516,13 @@ function loadFpcArtifactSelection(
   try {
     raw = readFileSync(artifactPath, "utf8");
   } catch (error) {
-    throw new CliError(
-      `Failed to read --fpc-artifact at ${artifactPath}: ${String(error)}`,
-    );
+    throw new CliError(`Failed to read --fpc-artifact at ${artifactPath}: ${String(error)}`);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch (error) {
-    throw new CliError(
-      `FPC artifact at ${artifactPath} is not valid JSON: ${String(error)}`,
-    );
+    throw new CliError(`FPC artifact at ${artifactPath} is not valid JSON: ${String(error)}`);
   }
   if (
     !parsed ||
@@ -1686,9 +1543,7 @@ function loadFpcArtifactSelection(
   const transpiledValue = (parsed as { transpiled?: unknown }).transpiled;
   if (transpiledValue !== true) {
     const renderedValue =
-      transpiledValue === undefined
-        ? "<missing>"
-        : JSON.stringify(transpiledValue);
+      transpiledValue === undefined ? "<missing>" : JSON.stringify(transpiledValue);
     throw new CliError(
       `Invalid --fpc-artifact at ${artifactPath}: contract artifact is not transpiled (transpiled=${renderedValue}). Run 'aztec compile --workspace --force' and retry.`,
     );
@@ -1701,11 +1556,7 @@ function buildFpcConstructorArgs(
   operatorIdentity: OperatorIdentity,
   acceptedAssetAddress: string,
 ): string[] {
-  const baseArgs = [
-    operatorIdentity.address,
-    operatorIdentity.pubkeyX,
-    operatorIdentity.pubkeyY,
-  ];
+  const baseArgs = [operatorIdentity.address, operatorIdentity.pubkeyX, operatorIdentity.pubkeyY];
   // FPCMultiAsset takes only operator/operator_pubkey_x/operator_pubkey_y.
   // Keep legacy single-asset artifact compatibility by appending
   // acceptedAssetAddress only for the legacy "FPC" name.
@@ -1750,22 +1601,16 @@ async function main(): Promise<void> {
 
   console.log("[deploy-fpc-devnet] starting preflight checks");
   console.log(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
-  console.log(
-    `[deploy-fpc-devnet] l1_rpc_url=${args.l1RpcUrl ?? "<not provided>"}`,
-  );
+  console.log(`[deploy-fpc-devnet] l1_rpc_url=${args.l1RpcUrl ?? "<not provided>"}`);
   console.log(
     `[deploy-fpc-devnet] sponsored_fpc_address=${args.sponsoredFpcAddress ?? "<none — fee juice payment>"}`,
   );
   console.log(`[deploy-fpc-devnet] deployer_alias=${args.deployerAlias}`);
-  console.log(
-    `[deploy-fpc-devnet] accepted_asset=${args.acceptedAsset ?? "<deploy token>"}`,
-  );
+  console.log(`[deploy-fpc-devnet] accepted_asset=${args.acceptedAsset ?? "<deploy token>"}`);
   console.log(
     `[deploy-fpc-devnet] fpc_artifact=${fpcSelection.artifactPath} variant=${fpcSelection.name}`,
   );
-  console.log(
-    `[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`,
-  );
+  console.log(`[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`);
 
   assertRequiredArtifactsExistForDevnet(fpcSelection, !args.acceptedAsset);
   console.log("[deploy-fpc-devnet] artifact preflight passed");
@@ -1777,9 +1622,7 @@ async function main(): Promise<void> {
 
   if (args.validateTopupPath || args.l1RpcUrl) {
     if (!args.l1RpcUrl) {
-      throw new CliError(
-        "L1 RPC preflight requested, but --l1-rpc-url was not provided",
-      );
+      throw new CliError("L1 RPC preflight requested, but --l1-rpc-url was not provided");
     }
     const l1RpcChainId = await assertL1RpcReachable(args.l1RpcUrl);
     if (l1RpcChainId !== nodeState.l1ChainId) {
@@ -1787,13 +1630,9 @@ async function main(): Promise<void> {
         `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeState.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
       );
     }
-    console.log(
-      `[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`,
-    );
+    console.log(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
   } else {
-    console.log(
-      "[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)",
-    );
+    console.log("[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)");
   }
 
   if (args.sponsoredFpcAddress) {
@@ -1827,10 +1666,7 @@ async function main(): Promise<void> {
   }
 
   const operatorIdentity = await deriveOperatorIdentity(args.operatorSecretKey);
-  if (
-    args.operator &&
-    args.operator.toLowerCase() !== operatorIdentity.address.toLowerCase()
-  ) {
+  if (args.operator && args.operator.toLowerCase() !== operatorIdentity.address.toLowerCase()) {
     throw new CliError(
       `--operator ${args.operator} does not match address derived from --operator-secret-key: ${operatorIdentity.address}. Remove --operator to use the derived address, or provide the matching secret key.`,
     );
@@ -1892,11 +1728,7 @@ async function main(): Promise<void> {
     payment: paymentArg,
     artifactPath: fpcSelection.artifactPath,
     alias: `devnet-fpc-${aliasSuffix}`,
-    constructorArgs: buildFpcConstructorArgs(
-      fpcSelection,
-      operatorIdentity,
-      acceptedAssetAddress,
-    ),
+    constructorArgs: buildFpcConstructorArgs(fpcSelection, operatorIdentity, acceptedAssetAddress),
     context: fpcSelection.name,
   });
   console.log(
@@ -1953,10 +1785,7 @@ async function main(): Promise<void> {
         contractAddress: acceptedAssetAddress,
         artifactPath: REQUIRED_ARTIFACTS.token,
         method: "mint_to_public",
-        methodArgs: [
-          faucetDeploy.address,
-          faucetConfig.initialSupply.toString(),
-        ],
+        methodArgs: [faucetDeploy.address, faucetConfig.initialSupply.toString()],
         context: "Token.mint_to_public for Faucet funding",
       });
     } catch (error) {
@@ -1964,13 +1793,9 @@ async function main(): Promise<void> {
         `Faucet funding failed: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorIdentity.address} failed. Ensure the operator is the token minter. Underlying error: ${String(error)}`,
       );
     }
-    console.log(
-      `[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`,
-    );
+    console.log(`[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`);
   } else {
-    console.log(
-      "[deploy-fpc-devnet] faucet deployment skipped (reusing existing token)",
-    );
+    console.log("[deploy-fpc-devnet] faucet deployment skipped (reusing existing token)");
   }
 
   console.log(
@@ -2006,21 +1831,16 @@ async function main(): Promise<void> {
         inboxAddress: nodeState.l1ContractAddresses.inboxAddress,
         outboxAddress: nodeState.l1ContractAddresses.outboxAddress,
         feeJuiceAddress: nodeState.l1ContractAddresses.feeJuiceAddress,
-        feeJuicePortalAddress:
-          nodeState.l1ContractAddresses.feeJuicePortalAddress,
-        feeAssetHandlerAddress:
-          nodeState.l1ContractAddresses.feeAssetHandlerAddress,
+        feeJuicePortalAddress: nodeState.l1ContractAddresses.feeJuicePortalAddress,
+        feeAssetHandlerAddress: nodeState.l1ContractAddresses.feeAssetHandlerAddress,
       },
       protocol_contract_addresses: {
         instanceRegistry: nodeState.protocolContractAddresses.instanceRegistry,
         classRegistry: nodeState.protocolContractAddresses.classRegistry,
-        multiCallEntrypoint:
-          nodeState.protocolContractAddresses.multiCallEntrypoint,
+        multiCallEntrypoint: nodeState.protocolContractAddresses.multiCallEntrypoint,
         feeJuice: nodeState.protocolContractAddresses.feeJuice,
       },
-      ...(args.sponsoredFpcAddress
-        ? { sponsored_fpc_address: args.sponsoredFpcAddress }
-        : {}),
+      ...(args.sponsoredFpcAddress ? { sponsored_fpc_address: args.sponsoredFpcAddress } : {}),
     },
     deployment_accounts: {
       l2_deployer: {

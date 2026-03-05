@@ -4,11 +4,7 @@ import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
 import type { FeeJuiceBalanceReader } from "./monitor.js";
 import type { BridgeStateStore } from "./state.js";
 
-export type ReconciliationOutcome =
-  | "none"
-  | "confirmed"
-  | "timeout"
-  | "aborted";
+export type ReconciliationOutcome = "none" | "confirmed" | "timeout" | "aborted";
 
 export interface ReconcileBridgeStateOptions {
   stateStore: BridgeStateStore;

@@ -4,14 +4,9 @@ export type SecretProvider = "auto" | "env" | "config" | "kms" | "hsm";
 export type SecretSource = Exclude<SecretProvider, "auto">;
 export type ExternalSecretProvider = Extract<SecretSource, "kms" | "hsm">;
 
-export type SecretAdapter = (args: {
-  secretRef: string;
-  env: NodeJS.ProcessEnv;
-}) => string;
+export type SecretAdapter = (args: { secretRef: string; env: NodeJS.ProcessEnv }) => string;
 
-export type SecretAdapterRegistry = Partial<
-  Record<ExternalSecretProvider, SecretAdapter>
->;
+export type SecretAdapterRegistry = Partial<Record<ExternalSecretProvider, SecretAdapter>>;
 
 export interface ResolveSecretOptions {
   secretLabel: string;

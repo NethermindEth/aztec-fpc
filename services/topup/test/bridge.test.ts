@@ -10,8 +10,7 @@ import type { BridgeDeps } from "../src/bridge.js";
 import { bridgeFeeJuice } from "../src/bridge.js";
 
 const MESSAGE_HASH = `0x${"ab".repeat(32)}` as `0x${string}`;
-const PRIVATE_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const FPC = AztecAddress.fromString(
   "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
 );
@@ -126,15 +125,7 @@ describe("bridge", () => {
 
   it("fails fast on non-positive top-up amount", async () => {
     await assert.rejects(
-      () =>
-        bridgeFeeJuice(
-          makeNode(),
-          "http://localhost:8545",
-          31337,
-          PRIVATE_KEY,
-          FPC,
-          0n,
-        ),
+      () => bridgeFeeJuice(makeNode(), "http://localhost:8545", 31337, PRIVATE_KEY, FPC, 0n),
       /Invalid top_up_amount/,
     );
   });
@@ -188,16 +179,7 @@ describe("bridge", () => {
     });
 
     await assert.rejects(
-      () =>
-        bridgeFeeJuice(
-          makeNode(),
-          "http://localhost:8545",
-          31337,
-          PRIVATE_KEY,
-          FPC,
-          1n,
-          deps,
-        ),
+      () => bridgeFeeJuice(makeNode(), "http://localhost:8545", 31337, PRIVATE_KEY, FPC, 1n, deps),
       /nonce too low/,
     );
     assert.equal(attempts, 3);

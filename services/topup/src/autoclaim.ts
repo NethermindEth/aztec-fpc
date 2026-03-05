@@ -49,23 +49,15 @@ function parseOptionalSecretKey(value: string | undefined): string | null {
   if (normalized.length === 0) {
     return null;
   }
-  const withPrefix = normalized.startsWith("0x")
-    ? normalized
-    : `0x${normalized}`;
+  const withPrefix = normalized.startsWith("0x") ? normalized : `0x${normalized}`;
   if (!HEX_32_PATTERN.test(withPrefix)) {
-    throw new Error(
-      "Invalid auto-claim secret key. Expected 32-byte 0x-prefixed hex",
-    );
+    throw new Error("Invalid auto-claim secret key. Expected 32-byte 0x-prefixed hex");
   }
   return withPrefix;
 }
 
-export function resolveAutoClaimSecretKeyFromEnv(
-  env: NodeJS.ProcessEnv,
-): string | null {
-  const explicitSecretKey = parseOptionalSecretKey(
-    env.TOPUP_AUTOCLAIM_SECRET_KEY,
-  );
+export function resolveAutoClaimSecretKeyFromEnv(env: NodeJS.ProcessEnv): string | null {
+  const explicitSecretKey = parseOptionalSecretKey(env.TOPUP_AUTOCLAIM_SECRET_KEY);
   if (explicitSecretKey) {
     return explicitSecretKey;
   }
@@ -75,9 +67,7 @@ export function resolveAutoClaimSecretKeyFromEnv(
   return null;
 }
 
-export function resolveAutoClaimRequirePublishedAccountFromEnv(
-  env: NodeJS.ProcessEnv,
-): boolean {
+export function resolveAutoClaimRequirePublishedAccountFromEnv(env: NodeJS.ProcessEnv): boolean {
   const rawValue = env.TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT;
   if (rawValue === undefined) {
     return true;
@@ -97,9 +87,7 @@ export function resolveAutoClaimRequirePublishedAccountFromEnv(
   );
 }
 
-function parseOptionalAztecAddress(
-  value: string | undefined,
-): AztecAddress | null {
+function parseOptionalAztecAddress(value: string | undefined): AztecAddress | null {
   if (value === undefined) {
     return null;
   }
@@ -116,9 +104,7 @@ function parseOptionalAztecAddress(
   }
 }
 
-export function resolveAutoClaimSponsoredFpcFromEnv(
-  env: NodeJS.ProcessEnv,
-): AztecAddress | null {
+export function resolveAutoClaimSponsoredFpcFromEnv(env: NodeJS.ProcessEnv): AztecAddress | null {
   return (
     parseOptionalAztecAddress(env.TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS) ??
     parseOptionalAztecAddress(env.FPC_DEVNET_SPONSORED_FPC_ADDRESS) ??
@@ -132,9 +118,7 @@ function parseAccountIndex(value: string | undefined): number {
   }
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(
-      "Invalid TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX. Expected integer >= 0",
-    );
+    throw new Error("Invalid TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX. Expected integer >= 0");
   }
   return parsed;
 }
@@ -151,10 +135,7 @@ async function registerSponsoredFpcContract(
     );
   }
 
-  await wallet.registerContract(
-    sponsoredFpcInstance,
-    SponsoredFPCContractArtifact,
-  );
+  await wallet.registerContract(sponsoredFpcInstance, SponsoredFPCContractArtifact);
 }
 
 async function assertPublishedClaimerAccount(
@@ -172,16 +153,13 @@ async function assertPublishedClaimerAccount(
   );
 }
 
-export async function createTopupAutoClaimer(
-  node: AztecNode,
-): Promise<TopupAutoClaimer> {
+export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAutoClaimer> {
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: true,
     pxeConfig: { proverEnabled: true },
   });
   const explicitSecretKey = resolveAutoClaimSecretKeyFromEnv(process.env);
-  const requirePublishedClaimer =
-    resolveAutoClaimRequirePublishedAccountFromEnv(process.env);
+  const requirePublishedClaimer = resolveAutoClaimRequirePublishedAccountFromEnv(process.env);
   const sponsoredFpcAddress = resolveAutoClaimSponsoredFpcFromEnv(process.env);
   if (sponsoredFpcAddress) {
     try {
@@ -203,18 +181,12 @@ export async function createTopupAutoClaimer(
   if (explicitSecretKey) {
     const secret = Fr.fromHexString(explicitSecretKey);
     const signingKey = deriveSigningKey(secret);
-    const account = await wallet.createSchnorrAccount(
-      secret,
-      Fr.ZERO,
-      signingKey,
-    );
+    const account = await wallet.createSchnorrAccount(secret, Fr.ZERO, signingKey);
     claimerAddress = account.address;
     claimerSource = "secret_key";
   } else {
     const testAccounts = await getInitialTestAccountsData();
-    const accountIndex = parseAccountIndex(
-      process.env.TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX,
-    );
+    const accountIndex = parseAccountIndex(process.env.TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX);
 
     if (accountIndex >= testAccounts.length) {
       throw new Error(
@@ -291,9 +263,7 @@ export async function createTopupAutoClaimer(
         }
       } catch (error) {
         const errorDetails = String(error);
-        const insufficientBalanceHint = errorDetails.includes(
-          "Insufficient fee payer balance",
-        )
+        const insufficientBalanceHint = errorDetails.includes("Insufficient fee payer balance")
           ? sponsoredPaymentMethod
             ? ` Hint: sponsored auto-claim is enabled via ${sponsoredFpcAddress?.toString()} but fee sponsorship failed or the sponsor is not funded.`
             : ` Hint: claimer ${claimerAddress.toString()} has insufficient L2 Fee Juice to pay tx fees. Set TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS (recommended) or pre-fund this claimer.`

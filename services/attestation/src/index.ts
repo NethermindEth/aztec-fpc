@@ -17,15 +17,11 @@ import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { loadConfig } from "./config.js";
-import {
-  FpcImmutableVerificationError,
-  verifyFpcImmutablesOnStartup,
-} from "./fpc-immutables.js";
+import { FpcImmutableVerificationError, verifyFpcImmutablesOnStartup } from "./fpc-immutables.js";
 import { buildServer } from "./server.js";
 import type { QuoteSchnorrSigner } from "./signer.js";
 
-const configPath =
-  process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
+const configPath = process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
 
 async function main() {
   const config = loadConfig(configPath);
@@ -52,21 +48,13 @@ async function main() {
   // plaintext config secrets and supports env/external providers.
   const secretKey = Fr.fromHexString(config.operator_secret_key);
   const signingKey = deriveSigningKey(secretKey);
-  const derivedOperatorAddress = await getSchnorrAccountContractAddress(
-    secretKey,
-    Fr.ZERO,
-  );
+  const derivedOperatorAddress = await getSchnorrAccountContractAddress(secretKey, Fr.ZERO);
   const operatorAddress = config.operator_address
     ? AztecAddress.fromString(config.operator_address)
     : derivedOperatorAddress;
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
-  const acceptedAssetAddress = AztecAddress.fromString(
-    config.accepted_asset_address,
-  );
-  if (
-    config.operator_address &&
-    !operatorAddress.equals(derivedOperatorAddress)
-  ) {
+  const acceptedAssetAddress = AztecAddress.fromString(config.accepted_asset_address);
+  if (config.operator_address && !operatorAddress.equals(derivedOperatorAddress)) {
     console.warn(
       `[startup] operator_address override is set to ${operatorAddress.toString()} (signer-derived with salt=0 is ${derivedOperatorAddress.toString()})`,
     );
@@ -83,9 +71,7 @@ async function main() {
       operatorPubkeyX: Fr.fromString(operatorPubKey.x.toString()),
       operatorPubkeyY: Fr.fromString(operatorPubKey.y.toString()),
     });
-    console.log(
-      `[startup] On-chain FPC immutables verified for ${fpcAddress.toString()}`,
-    );
+    console.log(`[startup] On-chain FPC immutables verified for ${fpcAddress.toString()}`);
   } catch (error) {
     if (error instanceof FpcImmutableVerificationError) {
       console.error(error.message);
@@ -95,19 +81,14 @@ async function main() {
 
   const quoteSigner: QuoteSchnorrSigner = {
     async signQuoteHash(quoteHash: Fr): Promise<string> {
-      const sig = await schnorrSigner.constructSignature(
-        quoteHash.toBuffer(),
-        signingKey,
-      );
+      const sig = await schnorrSigner.constructSignature(quoteHash.toBuffer(), signingKey);
       return `0x${Buffer.from(sig.toBuffer()).toString("hex")}`;
     },
   };
 
   console.log(`Operator address:  ${operatorAddress.toString()}`);
   if (!operatorAddress.equals(derivedOperatorAddress)) {
-    console.log(
-      `Signer-derived operator address (salt=0): ${derivedOperatorAddress.toString()}`,
-    );
+    console.log(`Signer-derived operator address (salt=0): ${derivedOperatorAddress.toString()}`);
   }
   console.log(`Operator pubkey x: ${operatorPubKey.x.toString()}`);
   console.log(`Operator pubkey y: ${operatorPubKey.y.toString()}`);

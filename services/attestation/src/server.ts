@@ -29,9 +29,7 @@ function isU128(value: bigint): boolean {
   return value >= 0n && value <= U128_MAX;
 }
 
-function parsePositiveU128Decimal(
-  value: string | undefined,
-): bigint | undefined {
+function parsePositiveU128Decimal(value: string | undefined): bigint | undefined {
   const trimmed = value?.trim();
   if (!trimmed) {
     return undefined;
@@ -62,12 +60,8 @@ function headerMatchesSecret(
     return false;
   }
 
-  const expectedDigest = createHash("sha256")
-    .update(expectedValue, "utf8")
-    .digest();
-  const candidateDigest = createHash("sha256")
-    .update(candidateValue, "utf8")
-    .digest();
+  const expectedDigest = createHash("sha256").update(expectedValue, "utf8").digest();
+  const candidateDigest = createHash("sha256").update(candidateValue, "utf8").digest();
   return timingSafeEqual(expectedDigest, candidateDigest);
 }
 
@@ -85,9 +79,7 @@ function isQuoteAuthorized(
     config.quote_auth.apiKey,
   );
   const trustedHeaderAuthorized = headerMatchesSecret(
-    config.quote_auth.trustedHeaderName
-      ? headers[config.quote_auth.trustedHeaderName]
-      : undefined,
+    config.quote_auth.trustedHeaderName ? headers[config.quote_auth.trustedHeaderName] : undefined,
     config.quote_auth.trustedHeaderValue,
   );
 
@@ -113,9 +105,7 @@ function modeUsesApiKey(mode: Config["quote_auth"]["mode"]): boolean {
   );
 }
 
-function firstHeaderValue(
-  value: string | string[] | undefined,
-): string | undefined {
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
   if (typeof value === "string") {
     return value;
   }
@@ -129,9 +119,7 @@ function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/u, "");
 }
 
-function firstCommaSeparatedValue(
-  value: string | undefined,
-): string | undefined {
+function firstCommaSeparatedValue(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
   }
@@ -148,9 +136,7 @@ function resolveQuoteBaseUrl(
     return trimTrailingSlashes(config.quote_base_url);
   }
 
-  const forwardedProto = firstCommaSeparatedValue(
-    firstHeaderValue(headers["x-forwarded-proto"]),
-  );
+  const forwardedProto = firstCommaSeparatedValue(firstHeaderValue(headers["x-forwarded-proto"]));
   const protocol = forwardedProto ?? fallbackProtocol ?? "http";
   const host =
     firstCommaSeparatedValue(firstHeaderValue(headers["x-forwarded-host"])) ??
@@ -173,16 +159,9 @@ function resolveQuoteRateLimitIdentity(
   remoteIp: string,
 ): QuoteRateLimitIdentity {
   if (modeUsesApiKey(config.quote_auth.mode)) {
-    const apiKeyCandidate = firstHeaderValue(
-      headers[config.quote_auth.apiKeyHeader],
-    );
-    if (
-      apiKeyCandidate &&
-      headerMatchesSecret(apiKeyCandidate, config.quote_auth.apiKey)
-    ) {
-      const apiKeyDigest = createHash("sha256")
-        .update(apiKeyCandidate, "utf8")
-        .digest("hex");
+    const apiKeyCandidate = firstHeaderValue(headers[config.quote_auth.apiKeyHeader]);
+    if (apiKeyCandidate && headerMatchesSecret(apiKeyCandidate, config.quote_auth.apiKey)) {
+      const apiKeyDigest = createHash("sha256").update(apiKeyCandidate, "utf8").digest("hex");
       return { cacheKey: `api_key:${apiKeyDigest}`, kind: "api_key" };
     }
   }
@@ -277,8 +256,7 @@ export function buildServer(
     name,
   }));
 
-  const nowUnixSeconds =
-    clock.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000)));
+  const nowUnixSeconds = clock.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000)));
   const rateLimiter = config.quote_rate_limit.enabled
     ? new FixedWindowRateLimiter(
         config.quote_rate_limit.maxRequests,
@@ -301,6 +279,7 @@ export function buildServer(
     endpoints: {
       discovery: "/.well-known/fpc.json",
       health: "/health",
+      accepted_assets: "/accepted-assets",
       asset: "/asset",
       quote: "/quote",
     },
@@ -320,6 +299,8 @@ export function buildServer(
     address: config.accepted_asset_address,
   }));
 
+  app.get("/accepted-assets", async () => supportedAssets);
+
   app.get<{
     Querystring: { user?: string; accepted_asset?: string; fj_amount?: string };
   }>("/quote", async (req, reply) => {
@@ -338,11 +319,7 @@ export function buildServer(
     const nowSeconds = BigInt(await nowUnixSeconds());
 
     if (rateLimiter) {
-      const identity = resolveQuoteRateLimitIdentity(
-        config,
-        req.headers,
-        req.ip,
-      );
+      const identity = resolveQuoteRateLimitIdentity(config, req.headers, req.ip);
       const decision = rateLimiter.consume(identity.cacheKey, nowSeconds);
       if (!decision.allowed) {
         req.log.warn(
@@ -376,9 +353,7 @@ export function buildServer(
     const userAddress = req.query.user?.trim();
     if (!userAddress) {
       observe("bad_request");
-      return reply
-        .code(400)
-        .send(badRequest("Missing required query param: user"));
+      return reply.code(400).send(badRequest("Missing required query param: user"));
     }
     let parsedUserAddress: AztecAddress;
     try {
@@ -395,9 +370,7 @@ export function buildServer(
     const selectedAcceptedAsset = req.query.accepted_asset?.trim();
     if (!selectedAcceptedAsset) {
       observe("bad_request");
-      return reply
-        .code(400)
-        .send(badRequest("Missing required query param: accepted_asset"));
+      return reply.code(400).send(badRequest("Missing required query param: accepted_asset"));
     }
     let parsedAcceptedAsset: AztecAddress;
     try {
@@ -411,10 +384,7 @@ export function buildServer(
       return reply.code(400).send(badRequest("Invalid accepted_asset address"));
     }
 
-    const selectedAssetPolicy = resolveSelectedAssetPolicy(
-      config,
-      parsedAcceptedAsset.toString(),
-    );
+    const selectedAssetPolicy = resolveSelectedAssetPolicy(config, parsedAcceptedAsset.toString());
     if (!selectedAssetPolicy) {
       observe("bad_request");
       return reply.code(400).send(badRequest("Unsupported accepted_asset"));
@@ -423,9 +393,7 @@ export function buildServer(
     const fjFeeAmount = parsePositiveU128Decimal(req.query.fj_amount);
     if (!fjFeeAmount) {
       observe("bad_request");
-      return reply
-        .code(400)
-        .send(badRequest("Missing or invalid query param: fj_amount"));
+      return reply.code(400).send(badRequest("Missing or invalid query param: fj_amount"));
     }
 
     try {
@@ -434,9 +402,7 @@ export function buildServer(
       const aaPaymentAmount = ceilDiv(fjFeeAmount * rate_num, rate_den);
       if (!isU128(aaPaymentAmount) || aaPaymentAmount <= 0n) {
         observe("bad_request");
-        return reply
-          .code(400)
-          .send(badRequest("Computed aa_payment_amount does not fit in u128"));
+        return reply.code(400).send(badRequest("Computed aa_payment_amount does not fit in u128"));
       }
 
       const signature =

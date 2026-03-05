@@ -6,10 +6,8 @@ import { buildServer } from "../src/server.js";
 import type { QuoteSchnorrSigner } from "../src/signer.js";
 import { computeQuoteHash } from "../src/signer.js";
 
-const VALID_USER =
-  "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
-const DEFAULT_ACCEPTED_ASSET =
-  "0x0000000000000000000000000000000000000000000000000000000000000002";
+const VALID_USER = "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
+const DEFAULT_ACCEPTED_ASSET = "0x0000000000000000000000000000000000000000000000000000000000000002";
 const SECONDARY_ACCEPTED_ASSET =
   "0x0000000000000000000000000000000000000000000000000000000000000003";
 const VALID_FJ_AMOUNT = "1000000";
@@ -27,8 +25,7 @@ function quoteUrl(
 const TEST_CONFIG: Config = {
   runtime_profile: "development",
   network_id: "aztec-alpha-local",
-  fpc_address:
-    "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
+  fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
   contract_variant: "fpc-v1",
   quote_base_url: undefined,
   aztec_node_url: "http://localhost:8080",
@@ -49,8 +46,7 @@ const TEST_CONFIG: Config = {
   market_rate_den: 1000,
   fee_bips: 200,
   operator_secret_provider: "auto",
-  operator_secret_key:
-    "0x0000000000000000000000000000000000000000000000000000000000000001",
+  operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001",
   operator_secret_key_source: "config",
   operator_secret_key_provider: "auto",
   operator_secret_key_dual_source: false,
@@ -140,6 +136,7 @@ describe("server", () => {
         endpoints: {
           discovery: "/.well-known/fpc.json",
           health: "/health",
+          accepted_assets: "/accepted-assets",
           asset: "/asset",
           quote: "/quote",
         },
@@ -161,13 +158,11 @@ describe("server", () => {
         ...TEST_CONFIG,
         supported_assets: [
           {
-            address:
-              "0x0000000000000000000000000000000000000000000000000000000000000002",
+            address: "0x0000000000000000000000000000000000000000000000000000000000000002",
             name: "humanUSDC",
           },
           {
-            address:
-              "0x0000000000000000000000000000000000000000000000000000000000000003",
+            address: "0x0000000000000000000000000000000000000000000000000000000000000003",
             name: "ravenETH",
           },
         ],
@@ -182,19 +177,52 @@ describe("server", () => {
       });
       assert.equal(response.statusCode, 200);
       const body = response.json() as {
+        endpoints: { accepted_assets: string };
         supported_assets: Array<{ address: string; name: string }>;
       };
+      assert.equal(body.endpoints.accepted_assets, "/accepted-assets");
       assert.deepEqual(body.supported_assets, [
         {
-          address:
-            "0x0000000000000000000000000000000000000000000000000000000000000002",
+          address: "0x0000000000000000000000000000000000000000000000000000000000000002",
           name: "humanUSDC",
         },
         {
-          address:
-            "0x0000000000000000000000000000000000000000000000000000000000000003",
+          address: "0x0000000000000000000000000000000000000000000000000000000000000003",
           name: "ravenETH",
         },
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns accepted-assets list", async () => {
+    const app = buildServer(
+      {
+        ...TEST_CONFIG,
+        supported_assets: [
+          {
+            address: DEFAULT_ACCEPTED_ASSET,
+            name: "humanUSDC",
+          },
+          {
+            address: SECONDARY_ACCEPTED_ASSET,
+            name: "ravenETH",
+          },
+        ],
+      },
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/accepted-assets",
+      });
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json(), [
+        { address: DEFAULT_ACCEPTED_ASSET, name: "humanUSDC" },
+        { address: SECONDARY_ACCEPTED_ASSET, name: "ravenETH" },
       ]);
     } finally {
       await app.close();
@@ -237,32 +265,14 @@ describe("server", () => {
         url: "/metrics",
       });
       assert.equal(metrics.statusCode, 200);
-      assert.match(
-        metrics.headers["content-type"] ?? "",
-        /^text\/plain; version=0\.0\.4;/,
-      );
+      assert.match(metrics.headers["content-type"] ?? "", /^text\/plain; version=0\.0\.4;/);
 
       const body = metrics.body;
-      assert.match(
-        body,
-        /attestation_quote_requests_total\{outcome="success"\} 1/,
-      );
-      assert.match(
-        body,
-        /attestation_quote_requests_total\{outcome="bad_request"\} 1/,
-      );
-      assert.match(
-        body,
-        /attestation_quote_errors_total\{error_type="bad_request"\} 1/,
-      );
-      assert.match(
-        body,
-        /attestation_quote_latency_seconds_count\{outcome="success"\} 1/,
-      );
-      assert.match(
-        body,
-        /attestation_quote_latency_seconds_count\{outcome="bad_request"\} 1/,
-      );
+      assert.match(body, /attestation_quote_requests_total\{outcome="success"\} 1/);
+      assert.match(body, /attestation_quote_requests_total\{outcome="bad_request"\} 1/);
+      assert.match(body, /attestation_quote_errors_total\{error_type="bad_request"\} 1/);
+      assert.match(body, /attestation_quote_latency_seconds_count\{outcome="success"\} 1/);
+      assert.match(body, /attestation_quote_latency_seconds_count\{outcome="bad_request"\} 1/);
     } finally {
       await app.close();
     }
@@ -304,20 +314,12 @@ describe("server", () => {
       assert.equal(body.rate_den, undefined);
 
       const validUntil = BigInt(body.valid_until);
-      assert.equal(
-        validUntil >= BigInt(nowBefore + TEST_CONFIG.quote_validity_seconds),
-        true,
-      );
-      assert.equal(
-        validUntil <= BigInt(nowAfter + TEST_CONFIG.quote_validity_seconds),
-        true,
-      );
+      assert.equal(validUntil >= BigInt(nowBefore + TEST_CONFIG.quote_validity_seconds), true);
+      assert.equal(validUntil <= BigInt(nowAfter + TEST_CONFIG.quote_validity_seconds), true);
 
       const expectedHash = await computeQuoteHash({
         fpcAddress: AztecAddress.fromString(TEST_CONFIG.fpc_address),
-        acceptedAsset: AztecAddress.fromString(
-          TEST_CONFIG.accepted_asset_address,
-        ),
+        acceptedAsset: AztecAddress.fromString(TEST_CONFIG.accepted_asset_address),
         fjFeeAmount: BigInt(VALID_FJ_AMOUNT),
         aaPaymentAmount: 1020n,
         validUntil,

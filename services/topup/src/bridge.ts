@@ -3,20 +3,10 @@
  */
 
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import {
-  L1FeeJuicePortalManager,
-  type L2AmountClaim,
-} from "@aztec/aztec.js/ethereum";
+import { L1FeeJuicePortalManager, type L2AmountClaim } from "@aztec/aztec.js/ethereum";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import { createLogger, type Logger } from "@aztec/foundation/log";
-import {
-  type Chain,
-  createWalletClient,
-  defineChain,
-  type Hex,
-  http,
-  publicActions,
-} from "viem";
+import { type Chain, createWalletClient, defineChain, type Hex, http, publicActions } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import * as viemChains from "viem/chains";
 
@@ -41,11 +31,8 @@ type CreatePortalManager = (
   logger: Logger,
 ) => Promise<FeeJuicePortalManagerLike>;
 
-const createPortalManager: CreatePortalManager = async (
-  node,
-  extendedClient,
-  logger,
-) => L1FeeJuicePortalManager.new(node, extendedClient, logger);
+const createPortalManager: CreatePortalManager = async (node, extendedClient, logger) =>
+  L1FeeJuicePortalManager.new(node, extendedClient, logger);
 
 function makeBridgeLogger(): Logger {
   return createLogger("topup:bridge");
@@ -103,11 +90,7 @@ function isChain(value: unknown): value is Chain {
   );
 }
 
-function resolveL1Chain(
-  chainId: number,
-  rpcUrl: string,
-  deps: BridgeDeps,
-): Chain {
+function resolveL1Chain(chainId: number, rpcUrl: string, deps: BridgeDeps): Chain {
   const known = deps.knownChains.find((chain) => chain.id === chainId);
   if (known) {
     return {
@@ -164,14 +147,8 @@ export async function bridgeFeeJuice(
         chain,
         transport: deps.http(l1RpcUrl),
       });
-      const extendedClient = walletClient.extend(
-        publicActions,
-      ) as unknown as ExtendedWalletClient;
-      const portalManager = await deps.createPortalManager(
-        node,
-        extendedClient,
-        logger,
-      );
+      const extendedClient = walletClient.extend(publicActions) as unknown as ExtendedWalletClient;
+      const portalManager = await deps.createPortalManager(node, extendedClient, logger);
       claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
       break;
     } catch (error) {

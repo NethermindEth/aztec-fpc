@@ -20,9 +20,7 @@ const ERROR_OUTCOMES: Exclude<QuoteOutcome, "success">[] = [
   "internal_error",
 ];
 
-const LATENCY_BUCKETS_SECONDS = [
-  0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5,
-];
+const LATENCY_BUCKETS_SECONDS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5];
 
 interface QuoteLatencyHistogramState {
   bucketCounts: number[];
@@ -32,10 +30,7 @@ interface QuoteLatencyHistogramState {
 
 function createLatencyState(): QuoteLatencyHistogramState {
   return {
-    bucketCounts: Array.from(
-      { length: LATENCY_BUCKETS_SECONDS.length },
-      () => 0,
-    ),
+    bucketCounts: Array.from({ length: LATENCY_BUCKETS_SECONDS.length }, () => 0),
     count: 0,
     sumSeconds: 0,
   };
@@ -43,14 +38,8 @@ function createLatencyState(): QuoteLatencyHistogramState {
 
 export class AttestationMetrics {
   private readonly quoteRequestsTotal = new Map<QuoteOutcome, number>();
-  private readonly quoteErrorsTotal = new Map<
-    Exclude<QuoteOutcome, "success">,
-    number
-  >();
-  private readonly quoteLatency = new Map<
-    QuoteOutcome,
-    QuoteLatencyHistogramState
-  >();
+  private readonly quoteErrorsTotal = new Map<Exclude<QuoteOutcome, "success">, number>();
+  private readonly quoteLatency = new Map<QuoteOutcome, QuoteLatencyHistogramState>();
 
   constructor() {
     for (const outcome of QUOTE_OUTCOMES) {
@@ -64,16 +53,10 @@ export class AttestationMetrics {
   }
 
   observeQuote(outcome: QuoteOutcome, durationSeconds: number): void {
-    this.quoteRequestsTotal.set(
-      outcome,
-      (this.quoteRequestsTotal.get(outcome) ?? 0) + 1,
-    );
+    this.quoteRequestsTotal.set(outcome, (this.quoteRequestsTotal.get(outcome) ?? 0) + 1);
 
     if (outcome !== "success") {
-      this.quoteErrorsTotal.set(
-        outcome,
-        (this.quoteErrorsTotal.get(outcome) ?? 0) + 1,
-      );
+      this.quoteErrorsTotal.set(outcome, (this.quoteErrorsTotal.get(outcome) ?? 0) + 1);
     }
 
     const latency = this.quoteLatency.get(outcome);

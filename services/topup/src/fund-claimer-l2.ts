@@ -16,13 +16,7 @@ import { createLogger } from "@aztec/foundation/log";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import type { Chain, Hex } from "viem";
-import {
-  createPublicClient,
-  createWalletClient,
-  defineChain,
-  http,
-  publicActions,
-} from "viem";
+import { createPublicClient, createWalletClient, defineChain, http, publicActions } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import * as viemChains from "viem/chains";
 
@@ -31,11 +25,7 @@ const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..", "..");
-const DEFAULT_MANIFEST_PATH = path.join(
-  REPO_ROOT,
-  "deployments",
-  "devnet-manifest-v2.json",
-);
+const DEFAULT_MANIFEST_PATH = path.join(REPO_ROOT, "deployments", "devnet-manifest-v2.json");
 const DEFAULT_CLAIM_TIMEOUT_SECONDS = 120;
 const DEFAULT_MESSAGE_READY_TIMEOUT_SECONDS = 300;
 const DEFAULT_CLAIM_RETRIES = 8;
@@ -140,10 +130,7 @@ function parseAztecAddress(name: string, raw: string): string {
   }
 }
 
-function parseOptionalAztecAddress(
-  name: string,
-  raw: string | null,
-): string | null {
+function parseOptionalAztecAddress(name: string, raw: string | null): string | null {
   if (raw === null) {
     return null;
   }
@@ -184,8 +171,7 @@ function nextArg(argv: string[], index: number, flag: string): string {
 
 function parseCliArgs(argv: string[]): CliArgs {
   let amountWeiRaw = parseOptionalEnv("TOPUP_AUTOCLAIM_FUND_AMOUNT_WEI");
-  let manifestPath =
-    parseOptionalEnv("FPC_DEPLOY_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
+  let manifestPath = parseOptionalEnv("FPC_DEPLOY_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
   let nodeUrl = parseOptionalEnv("AZTEC_NODE_URL");
   let l1RpcUrl = parseOptionalEnv("L1_RPC_URL");
   let l1PrivateKey = parseOptionalHex32(
@@ -253,10 +239,7 @@ function parseCliArgs(argv: string[]): CliArgs {
         i += 1;
         break;
       case "--message-ready-timeout-seconds":
-        messageReadyTimeoutSeconds = parsePositiveInt(
-          arg,
-          nextArg(argv, i, arg),
-        );
+        messageReadyTimeoutSeconds = parsePositiveInt(arg, nextArg(argv, i, arg));
         i += 1;
         break;
       case "--claim-retries":
@@ -278,9 +261,7 @@ function parseCliArgs(argv: string[]): CliArgs {
   }
 
   if (!amountWeiRaw) {
-    throw new Error(
-      "Missing --amount-wei (or TOPUP_AUTOCLAIM_FUND_AMOUNT_WEI)",
-    );
+    throw new Error("Missing --amount-wei (or TOPUP_AUTOCLAIM_FUND_AMOUNT_WEI)");
   }
   if (!DECIMAL_UINT_PATTERN.test(amountWeiRaw)) {
     throw new Error("--amount-wei must be a non-negative integer in wei");
@@ -314,15 +295,11 @@ function readManifest(manifestPath: string): PartialManifest {
     const raw = readFileSync(manifestPath, "utf8");
     return JSON.parse(raw) as PartialManifest;
   } catch (error) {
-    throw new Error(
-      `Failed to read manifest ${manifestPath}: ${String(error)}`,
-    );
+    throw new Error(`Failed to read manifest ${manifestPath}: ${String(error)}`);
   }
 }
 
-async function deriveAddressFromSecret(
-  secretKey: string,
-): Promise<AztecAddress> {
+async function deriveAddressFromSecret(secretKey: string): Promise<AztecAddress> {
   const secret = Fr.fromHexString(secretKey);
   return getSchnorrAccountContractAddress(secret, Fr.ZERO);
 }
@@ -406,8 +383,7 @@ async function main(): Promise<void> {
     "OPERATOR_SECRET_KEY",
     parseOptionalEnv("OPERATOR_SECRET_KEY"),
   );
-  const claimerSecretKey =
-    args.claimerSecretKey ?? fallbackOperatorKey ?? manifestDeployerKey;
+  const claimerSecretKey = args.claimerSecretKey ?? fallbackOperatorKey ?? manifestDeployerKey;
 
   const manifestDeployerAddress = parseOptionalAztecAddress(
     "manifest.deployment_accounts.l2_deployer.address",
@@ -419,9 +395,7 @@ async function main(): Promise<void> {
     const derived = await deriveAddressFromSecret(claimerSecretKey);
     if (args.claimerAddress) {
       const explicit = AztecAddress.fromString(args.claimerAddress);
-      if (
-        explicit.toString().toLowerCase() !== derived.toString().toLowerCase()
-      ) {
+      if (explicit.toString().toLowerCase() !== derived.toString().toLowerCase()) {
         throw new Error(
           `--claimer-address ${explicit.toString()} does not match address derived from claimer secret key ${derived.toString()}.`,
         );
@@ -468,9 +442,7 @@ async function main(): Promise<void> {
   const l1Public = createPublicClient({ transport: http(l1RpcUrl) });
   const rpcChainId = await l1Public.getChainId();
   if (rpcChainId !== l1ChainId) {
-    throw new Error(
-      `L1 chain mismatch. node l1ChainId=${l1ChainId}, rpc chainId=${rpcChainId}`,
-    );
+    throw new Error(`L1 chain mismatch. node l1ChainId=${l1ChainId}, rpc chainId=${rpcChainId}`);
   }
 
   const l1Chain = resolveL1Chain(l1ChainId, l1RpcUrl);
@@ -482,11 +454,7 @@ async function main(): Promise<void> {
   }).extend(publicActions);
 
   const bridgeLogger = createLogger("fund-claimer-l2:bridge");
-  const portalManager = await L1FeeJuicePortalManager.new(
-    node,
-    l1Wallet as never,
-    bridgeLogger,
-  );
+  const portalManager = await L1FeeJuicePortalManager.new(node, l1Wallet as never, bridgeLogger);
 
   console.log(`${LOG_PREFIX} bridging FeeJuice to claimer...`);
   const bridgeClaim = (await portalManager.bridgeTokensPublic(
@@ -499,9 +467,7 @@ async function main(): Promise<void> {
   );
 
   if (args.skipClaim) {
-    console.log(
-      `${LOG_PREFIX} skip-claim enabled; stopping after bridge submission`,
-    );
+    console.log(`${LOG_PREFIX} skip-claim enabled; stopping after bridge submission`);
     return;
   }
 
@@ -570,10 +536,7 @@ async function main(): Promise<void> {
       const sendFrom = useSelfPay ? claimerWalletAddress : feePayerAddress;
       const sendFee = useSelfPay
         ? {
-            paymentMethod: new FeeJuicePaymentMethodWithClaim(
-              claimerAddress,
-              bridgeClaim,
-            ),
+            paymentMethod: new FeeJuicePaymentMethodWithClaim(claimerAddress, bridgeClaim),
           }
         : undefined;
       const receipt = await feeJuice.methods

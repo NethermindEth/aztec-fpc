@@ -77,15 +77,10 @@ function parseBoolean(name: string, raw: string): boolean {
   if (FALSE_ENV_VALUES.has(normalized)) {
     return false;
   }
-  throw new Error(
-    `Invalid ${name}. Expected one of: 1/0, true/false, yes/no, on/off`,
-  );
+  throw new Error(`Invalid ${name}. Expected one of: 1/0, true/false, yes/no, on/off`);
 }
 
-function parseOptionalBoolean(
-  name: string,
-  raw: string | null,
-): boolean | null {
+function parseOptionalBoolean(name: string, raw: string | null): boolean | null {
   if (raw === null) {
     return null;
   }
@@ -98,9 +93,7 @@ function parseOptionalSecretKey(raw: string | null): string | null {
   }
   const withPrefix = raw.startsWith("0x") ? raw : `0x${raw}`;
   if (!HEX_32_PATTERN.test(withPrefix)) {
-    throw new Error(
-      "Invalid secret key. Expected 32-byte 0x-prefixed hex string",
-    );
+    throw new Error("Invalid secret key. Expected 32-byte 0x-prefixed hex string");
   }
   return withPrefix;
 }
@@ -110,9 +103,7 @@ function parseOptionalTestAccountIndex(raw: string | null): number | null {
     return null;
   }
   if (!DECIMAL_UINT_PATTERN.test(raw)) {
-    throw new Error(
-      "Invalid test account index. Expected a non-negative integer",
-    );
+    throw new Error("Invalid test account index. Expected a non-negative integer");
   }
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed)) {
@@ -135,12 +126,9 @@ function parseHttpUrl(name: string, value: string): string {
 }
 
 function parseCliArgs(argv: string[]): CliArgs {
-  let manifestPath =
-    parseOptionalEnv("FPC_DEPLOY_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
+  let manifestPath = parseOptionalEnv("FPC_DEPLOY_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
   let nodeUrl = parseOptionalEnv("AZTEC_NODE_URL");
-  let secretKey = parseOptionalSecretKey(
-    parseOptionalEnv("TOPUP_AUTOCLAIM_SECRET_KEY"),
-  );
+  let secretKey = parseOptionalSecretKey(parseOptionalEnv("TOPUP_AUTOCLAIM_SECRET_KEY"));
   let useOperatorSecretKey = parseOptionalBoolean(
     "TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY",
     parseOptionalEnv("TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY"),
@@ -228,9 +216,7 @@ async function resolveClaimer(params: {
   source: "secret_key" | "test_account";
   detail: string;
 }> {
-  const operatorSecretKey = parseOptionalSecretKey(
-    parseOptionalEnv("OPERATOR_SECRET_KEY"),
-  );
+  const operatorSecretKey = parseOptionalSecretKey(parseOptionalEnv("OPERATOR_SECRET_KEY"));
   const manifestSecretKey = parseOptionalSecretKey(
     params.manifest.deployment_accounts?.l2_deployer?.private_key ?? null,
   );
@@ -261,10 +247,7 @@ async function resolveClaimer(params: {
     );
   }
   const testAccount = testAccounts[params.testAccountIndex];
-  const address = await getSchnorrAccountContractAddress(
-    testAccount.secret,
-    testAccount.salt,
-  );
+  const address = await getSchnorrAccountContractAddress(testAccount.secret, testAccount.salt);
   return {
     address,
     source: "test_account",
@@ -281,9 +264,7 @@ async function main(): Promise<void> {
   const testAccountIndex = args.testAccountIndex ?? DEFAULT_TEST_ACCOUNT_INDEX;
 
   if (!autoClaimEnabled) {
-    console.log(
-      `${LOG_PREFIX} skipping: TOPUP_AUTOCLAIM_ENABLED is false/0 for this run`,
-    );
+    console.log(`${LOG_PREFIX} skipping: TOPUP_AUTOCLAIM_ENABLED is false/0 for this run`);
     return;
   }
 
@@ -326,12 +307,10 @@ async function main(): Promise<void> {
     `${LOG_PREFIX} ok: claimer account is publicly deployed (${claimer.address.toString()})`,
   );
 
-  const manifestDeployerAddress =
-    manifest.deployment_accounts?.l2_deployer?.address ?? null;
+  const manifestDeployerAddress = manifest.deployment_accounts?.l2_deployer?.address ?? null;
   if (
     manifestDeployerAddress &&
-    manifestDeployerAddress.toLowerCase() !==
-      claimer.address.toString().toLowerCase()
+    manifestDeployerAddress.toLowerCase() !== claimer.address.toString().toLowerCase()
   ) {
     console.log(
       `${LOG_PREFIX} note: claimer differs from manifest deployment_accounts.l2_deployer.address (${manifestDeployerAddress})`,

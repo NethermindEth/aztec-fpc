@@ -80,9 +80,10 @@ quote_rate_limit_max_tracked_keys: 10000
 accepted_asset_name: "humanUSDC"
 accepted_asset_address: "0x0000000000000000000000000000000000000000000000000000000000000002"
 
-# Optional discovery-only multi-asset metadata.
-# Use this when publishing wallet discovery entries for a target multi-asset deployment.
-# If omitted, discovery falls back to [{ accepted_asset_address, accepted_asset_name }].
+# Optional multi-asset metadata and quote policy configuration.
+# This powers both discovery `supported_assets` and `GET /accepted-assets`.
+# If omitted, the service falls back to [{ accepted_asset_address, accepted_asset_name }]
+# and legacy `GET /asset` still exposes the single configured accepted asset.
 # supported_assets:
 #   - address: "0x0000000000000000000000000000000000000000000000000000000000000002"
 #     name: "humanUSDC"
