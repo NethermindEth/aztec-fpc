@@ -2,8 +2,11 @@ import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import type { AztecNode } from "@aztec/aztec.js/node";
+import pino from "pino";
 import type { Hex } from "viem";
 import type { FeeJuiceBalanceReader } from "./monitor.js";
+
+const pinoLogger = pino();
 
 export type BridgeConfirmationStatus = "confirmed" | "timeout" | "aborted";
 
@@ -114,9 +117,9 @@ export async function waitForFeeJuiceBridgeConfirmation(
       messageHash = Fr.fromHexString(options.messageContext.messageHash);
     } catch (error) {
       messageCheckFailed = true;
-      console.warn(
+      pinoLogger.warn(
+        { err: error },
         "L1->L2 message hash is not a valid field element; skipping message readiness check",
-        error,
       );
     }
 
@@ -132,7 +135,7 @@ export async function waitForFeeJuiceBridgeConfirmation(
         })
         .catch((error) => {
           messageCheckFailed = true;
-          console.warn("L1->L2 message readiness check failed", error);
+          pinoLogger.warn({ err: error }, "L1->L2 message readiness check failed");
         });
     }
   }
@@ -182,7 +185,7 @@ export async function waitForFeeJuiceBridgeConfirmation(
         messageReadyActionSucceeded = true;
       } catch (error) {
         messageReadyActionFailed = true;
-        console.warn("Message-ready action failed; retrying", error);
+        pinoLogger.warn({ err: error }, "Message-ready action failed; retrying");
       }
     }
 
@@ -201,7 +204,7 @@ export async function waitForFeeJuiceBridgeConfirmation(
       }
     } catch (error) {
       pollErrors += 1;
-      console.warn("Fee Juice confirmation poll failed; retrying", error);
+      pinoLogger.warn({ err: error }, "Fee Juice confirmation poll failed; retrying");
     }
 
     const remainingMs = deadline - Date.now();

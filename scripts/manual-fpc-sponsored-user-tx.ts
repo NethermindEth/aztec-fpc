@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
@@ -232,7 +235,7 @@ async function main() {
       from: user,
     });
   }
-  console.log(`counter=${counter.address.toString()}`);
+  pinoLogger.info(`counter=${counter.address.toString()}`);
   if (deployCounterOnly) {
     return;
   }
@@ -263,7 +266,7 @@ async function main() {
   // - valid_until,
   // - signature bound to (user, asset, fj_amount, aa_payment_amount, valid_until).
   const quote = await fetchQuote(cfg.quoteBaseUrl, user, tokenAddress, fjAmount);
-  console.log(`[manual-fpc] attestation_quote_response=${JSON.stringify(quote)}`);
+  pinoLogger.info(`[manual-fpc] attestation_quote_response=${JSON.stringify(quote)}`);
   const aaPaymentAmount = BigInt(quote.aa_payment_amount);
   const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace(/^0x/, ""), "hex"));
 
@@ -355,7 +358,7 @@ async function main() {
       },
     },
   };
-  console.log(`[manual-fpc] tx_payload_preview=${JSON.stringify(txPayloadPreview)}`);
+  pinoLogger.info(`[manual-fpc] tx_payload_preview=${JSON.stringify(txPayloadPreview)}`);
 
   // Step 8: send a normal user call `y.x()` while attaching the FPC payment
   // payload. Here y = Counter and x = increment(owner).
@@ -385,18 +388,18 @@ async function main() {
   const userDebited = userPrivateBefore - userPrivateAfter;
   const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
 
-  console.log(`operator=${operator}`);
-  console.log(`user=${user}`);
-  console.log(`token=${tokenAddress}`);
-  console.log(`fpc=${fpcAddress}`);
-  console.log(`tx_hash=${receipt.txHash.toString()}`);
-  console.log(`tx_fee_juice=${receipt.transactionFee}`);
-  console.log(`expected_charge=${aaPaymentAmount}`);
-  console.log(`user_debited=${userDebited}`);
-  console.log(`operator_credited=${operatorCredited}`);
-  console.log(`counter_before=${counterBefore}`);
-  console.log(`counter_after=${counterAfter}`);
-  console.log("PASS: sponsored Counter.increment tx via FPCMultiAsset fee_entrypoint");
+  pinoLogger.info(`operator=${operator}`);
+  pinoLogger.info(`user=${user}`);
+  pinoLogger.info(`token=${tokenAddress}`);
+  pinoLogger.info(`fpc=${fpcAddress}`);
+  pinoLogger.info(`tx_hash=${receipt.txHash.toString()}`);
+  pinoLogger.info(`tx_fee_juice=${receipt.transactionFee}`);
+  pinoLogger.info(`expected_charge=${aaPaymentAmount}`);
+  pinoLogger.info(`user_debited=${userDebited}`);
+  pinoLogger.info(`operator_credited=${operatorCredited}`);
+  pinoLogger.info(`counter_before=${counterBefore}`);
+  pinoLogger.info(`counter_after=${counterAfter}`);
+  pinoLogger.info("PASS: sponsored Counter.increment tx via FPCMultiAsset fee_entrypoint");
 
   if (userDebited !== aaPaymentAmount || operatorCredited !== aaPaymentAmount) {
     throw new Error(
@@ -413,10 +416,10 @@ async function main() {
 main().catch((err) => {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("not found when querying world state")) {
-    console.error(
+    pinoLogger.error(
       "HINT: stale embedded wallet state detected. Rerun with default ephemeral mode (EMBEDDED_WALLET_EPHEMERAL unset) or clear local pxe_data_*/wallet_data_* directories.",
     );
   }
-  console.error(`FAIL: ${message}`);
+  pinoLogger.error(`FAIL: ${message}`);
   process.exit(1);
 });

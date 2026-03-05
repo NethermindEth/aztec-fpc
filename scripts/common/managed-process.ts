@@ -1,5 +1,8 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { type createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 export type ManagedProcess = {
   name: string;
@@ -116,7 +119,7 @@ export function installManagedProcessSignalHandlers(logPrefix: string): void {
     }
     shutdownInProgress = true;
     void (async () => {
-      console.error(`[${logPrefix}] Received ${signal}; stopping managed processes...`);
+      pinoLogger.error(`[${logPrefix}] Received ${signal}; stopping managed processes...`);
       await stopAllManagedProcesses();
       process.exit(signal === "SIGINT" ? 130 : 143);
     })();

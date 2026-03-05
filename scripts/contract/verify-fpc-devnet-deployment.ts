@@ -2,11 +2,14 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import pino from "pino";
 import {
   FpcImmutableVerificationError,
   verifyFpcImmutablesOnStartup,
 } from "../../services/attestation/src/fpc-immutables.ts";
 import { type DevnetDeployManifest, validateDevnetDeployManifest } from "./devnet-manifest.ts";
+
+const pinoLogger = pino();
 
 type CliArgs = {
   manifestPath: string;
@@ -132,7 +135,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--help":
       case "-h":
-        console.log(usage());
+        pinoLogger.info(usage());
         return { kind: "help" };
       default:
         throw new CliError(`Unknown argument: ${arg}`);
@@ -422,11 +425,11 @@ async function main(): Promise<void> {
   }
   const args = parseResult.args;
 
-  console.log(
+  pinoLogger.info(
     `[verify-fpc-devnet] manifest=${path.resolve(args.manifestPath)} max_attempts=${args.maxAttempts} poll_ms=${args.pollMs}`,
   );
   const manifest = readManifestFromDisk(args.manifestPath);
-  console.log(
+  pinoLogger.info(
     `[verify-fpc-devnet] loaded manifest for node=${manifest.network.node_url} fpc=${manifest.contracts.fpc}`,
   );
 
@@ -445,7 +448,7 @@ async function main(): Promise<void> {
       ),
     ),
   ]);
-  console.log("[verify-fpc-devnet] node connectivity check passed");
+  pinoLogger.info("[verify-fpc-devnet] node connectivity check passed");
 
   let lastIssues: string[] = [];
 
@@ -461,19 +464,19 @@ async function main(): Promise<void> {
         throw error;
       }
       const delayMs = args.pollMs;
-      console.warn(
+      pinoLogger.warn(
         `[verify-fpc-devnet] transient verification error on attempt ${attempt}/${args.maxAttempts}: ${String(error)}`,
       );
-      console.warn(`[verify-fpc-devnet] retrying in ${delayMs}ms after transient error`);
+      pinoLogger.warn(`[verify-fpc-devnet] retrying in ${delayMs}ms after transient error`);
       await sleep(delayMs);
       continue;
     }
 
     if (lastIssues.length === 0) {
-      console.log(
+      pinoLogger.info(
         `[verify-fpc-devnet] verification passed on attempt ${attempt}/${args.maxAttempts}`,
       );
-      console.log(
+      pinoLogger.info(
         `[verify-fpc-devnet] contracts ready: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc}`,
       );
       return;
@@ -481,10 +484,10 @@ async function main(): Promise<void> {
 
     if (attempt < args.maxAttempts) {
       const delayMs = args.pollMs;
-      console.warn(
+      pinoLogger.warn(
         `[verify-fpc-devnet] verification pending on attempt ${attempt}/${args.maxAttempts}:\n${formatCheckIssues(lastIssues)}`,
       );
-      console.warn(`[verify-fpc-devnet] retrying in ${delayMs}ms while metadata/state settles`);
+      pinoLogger.warn(`[verify-fpc-devnet] retrying in ${delayMs}ms while metadata/state settles`);
       await sleep(delayMs);
     }
   }
@@ -496,11 +499,11 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
   if (error instanceof CliError) {
-    console.error(`[verify-fpc-devnet] ERROR: ${error.message}`);
-    console.error("");
-    console.error(usage());
+    pinoLogger.error(`[verify-fpc-devnet] ERROR: ${error.message}`);
+    pinoLogger.error("");
+    pinoLogger.error(usage());
   } else {
-    console.error("[verify-fpc-devnet] Unexpected error:", error);
+    pinoLogger.error("[verify-fpc-devnet] Unexpected error:", error);
   }
   process.exit(1);
 });

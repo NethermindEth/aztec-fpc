@@ -2,7 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import pino from "pino";
 import { type DevnetDeployManifest, validateDevnetDeployManifest } from "./devnet-manifest.ts";
+
+const pinoLogger = pino();
 
 type CliArgs = {
   manifestPath: string;
@@ -388,7 +391,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--help":
       case "-h":
-        console.log(usage());
+        pinoLogger.info(usage());
         return { kind: "help" };
       default:
         throw new CliError(`Unknown argument: ${arg}`);
@@ -806,7 +809,9 @@ async function topUpFeePayer(params: {
       args: [feeJuicePortalAddress, amount],
     });
     await l1PublicClient.waitForTransactionReceipt({ hash: approveTxHash });
-    console.log(`[devnet-postdeploy-smoke] ${label} approve_tx=${approveTxHash} amount=${amount}`);
+    pinoLogger.info(
+      `[devnet-postdeploy-smoke] ${label} approve_tx=${approveTxHash} amount=${amount}`,
+    );
 
     const recipientBytes32 = `0x${feePayerAddress.toString().replace("0x", "").padStart(64, "0")}`;
     const bridgeTxHash = await l1WalletClient.writeContract({
@@ -818,7 +823,7 @@ async function topUpFeePayer(params: {
     const bridgeReceipt = await l1PublicClient.waitForTransactionReceipt({
       hash: bridgeTxHash,
     });
-    console.log(`[devnet-postdeploy-smoke] ${label} bridge_tx=${bridgeTxHash}`);
+    pinoLogger.info(`[devnet-postdeploy-smoke] ${label} bridge_tx=${bridgeTxHash}`);
 
     let messageLeafIndex: bigint | undefined;
     let l1ToL2MessageHash: unknown | undefined;
@@ -979,13 +984,13 @@ async function runSmoke(args: CliArgs): Promise<void> {
     throw new CliError(`fpc-topup-wei override is below minimum ${fpcMinTopup.toString()}`);
   }
 
-  console.log(
+  pinoLogger.info(
     `[devnet-postdeploy-smoke] manifest=${args.manifestPath} node_url=${manifest.network.node_url}`,
   );
-  console.log(
+  pinoLogger.info(
     `[devnet-postdeploy-smoke] contracts accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${fpcSelection.variant}`,
   );
-  console.log(`[devnet-postdeploy-smoke] topup target fpc=${fpcTopupAmount}`);
+  pinoLogger.info(`[devnet-postdeploy-smoke] topup target fpc=${fpcTopupAmount}`);
 
   const fpcFeeJuiceBalance = await topUpFeePayer({
     deps,
@@ -999,7 +1004,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
     amount: fpcTopupAmount,
     label: fpcSelection.variant.toLowerCase(),
   });
-  console.log(`[devnet-postdeploy-smoke] fpc_fee_juice_balance=${fpcFeeJuiceBalance}`);
+  pinoLogger.info(`[devnet-postdeploy-smoke] fpc_fee_juice_balance=${fpcFeeJuiceBalance}`);
 
   const QUOTE_DOMAIN_SEPARATOR = deps.Fr.fromHexString("0x465043");
   const fpcExpectedCharge = ceilDiv(maxGasCostNoTeardown * args.fpcRateNum, args.fpcRateDen);
@@ -1070,10 +1075,12 @@ async function runSmoke(args: CliArgs): Promise<void> {
       },
       wait: { timeout: 180 },
     });
-  console.log(
+  pinoLogger.info(
     `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
   );
-  console.log(`[devnet-postdeploy-smoke] PASS variant=${fpcSelection.variant} successful_txs=1`);
+  pinoLogger.info(
+    `[devnet-postdeploy-smoke] PASS variant=${fpcSelection.variant} successful_txs=1`,
+  );
 }
 
 async function main(argv: string[]): Promise<void> {
@@ -1089,24 +1096,26 @@ void (async () => {
     await main(process.argv.slice(2));
   } catch (error) {
     if (error instanceof CliError) {
-      console.error(`[devnet-postdeploy-smoke] ERROR: ${error.message}`);
-      console.error("");
-      console.error(usage());
+      pinoLogger.error(`[devnet-postdeploy-smoke] ERROR: ${error.message}`);
+      pinoLogger.error("");
+      pinoLogger.error(usage());
       process.exit(1);
     }
     if (error instanceof OperatorKeyMismatchError) {
-      console.error(
+      pinoLogger.error(
         `[devnet-postdeploy-smoke] FAIL classification=operator_key_drift message=${error.message}`,
       );
       process.exit(1);
     }
     if (error instanceof FundingRuntimeFailure) {
-      console.error(
+      pinoLogger.error(
         `[devnet-postdeploy-smoke] FAIL classification=funding_runtime_failure message=${error.message}`,
       );
       process.exit(1);
     }
-    console.error(`[devnet-postdeploy-smoke] FAIL classification=unknown message=${String(error)}`);
+    pinoLogger.error(
+      `[devnet-postdeploy-smoke] FAIL classification=unknown message=${String(error)}`,
+    );
     process.exit(1);
   }
 })();

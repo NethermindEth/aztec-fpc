@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -211,7 +214,7 @@ function loadDotEnvFileIfPresent(dotenvPath: string): void {
 
 function readConfig(argv: string[]): Config {
   if (argv.includes("--help") || argv.includes("-h")) {
-    console.log(usage());
+    pinoLogger.info(usage());
     process.exit(0);
   }
 
@@ -330,7 +333,7 @@ function readConfig(argv: string[]): Config {
   const userSecretKey = normalizeHex32("user secret key", userSecretKeyRaw ?? operatorSecretKeyRaw);
 
   if (!userSecretKeyRaw) {
-    console.warn(
+    pinoLogger.warn(
       "[manual-fpc-devnet] FPC_DEVNET_USER_SECRET_KEY not set; defaulting user to operator key",
     );
   }
@@ -400,7 +403,7 @@ async function waitForFeeJuice(params: {
 
   while (balance < params.minimumBalance && Date.now() < deadline) {
     polls += 1;
-    console.log(
+    pinoLogger.info(
       `[manual-fpc-devnet] waiting for fee_juice. poll=${polls} balance=${balance} required=${params.minimumBalance}`,
     );
     await sleep(params.pollMs);
@@ -546,16 +549,16 @@ async function main() {
   const feePerL2Gas = minFees.feePerL2Gas;
   const fjAmount = BigInt(cfg.daGasLimit) * feePerDaGas + BigInt(cfg.l2GasLimit) * feePerL2Gas;
 
-  console.log(`[manual-fpc-devnet] env_file=${cfg.envFilePath}`);
-  console.log(`[manual-fpc-devnet] node_url=${cfg.nodeUrl}`);
-  console.log(`[manual-fpc-devnet] quote_base_url=${cfg.quoteBaseUrl}`);
-  console.log(`[manual-fpc-devnet] manifest=${cfg.manifestPath}`);
-  console.log(`[manual-fpc-devnet] operator=${operator.toString()}`);
-  console.log(`[manual-fpc-devnet] user=${user.toString()}`);
-  console.log(`[manual-fpc-devnet] token=${tokenAddress.toString()}`);
-  console.log(`[manual-fpc-devnet] fpc=${fpcAddress.toString()}`);
-  console.log(`[manual-fpc-devnet] faucet=${faucetAddress.toString()}`);
-  console.log(`[manual-fpc-devnet] counter=${counter.address.toString()}`);
+  pinoLogger.info(`[manual-fpc-devnet] env_file=${cfg.envFilePath}`);
+  pinoLogger.info(`[manual-fpc-devnet] node_url=${cfg.nodeUrl}`);
+  pinoLogger.info(`[manual-fpc-devnet] quote_base_url=${cfg.quoteBaseUrl}`);
+  pinoLogger.info(`[manual-fpc-devnet] manifest=${cfg.manifestPath}`);
+  pinoLogger.info(`[manual-fpc-devnet] operator=${operator.toString()}`);
+  pinoLogger.info(`[manual-fpc-devnet] user=${user.toString()}`);
+  pinoLogger.info(`[manual-fpc-devnet] token=${tokenAddress.toString()}`);
+  pinoLogger.info(`[manual-fpc-devnet] fpc=${fpcAddress.toString()}`);
+  pinoLogger.info(`[manual-fpc-devnet] faucet=${faucetAddress.toString()}`);
+  pinoLogger.info(`[manual-fpc-devnet] counter=${counter.address.toString()}`);
 
   const fpcFeeJuiceBalance = await waitForFeeJuice({
     fpcAddress,
@@ -602,7 +605,7 @@ async function main() {
     );
 
     if (userPublicBalance === 0n) {
-      console.log(
+      pinoLogger.info(
         `[manual-fpc-devnet] user private accepted_asset=${userPrivateBalance} (< ${minimumPrivateAcceptedAsset}); requesting faucet drip attempt=${attempt}`,
       );
       await faucet.methods.drip(user).send({ from: user });
@@ -691,13 +694,13 @@ async function main() {
   const userDebited = userPrivateBefore - userPrivateAfter;
   const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
 
-  console.log(`tx_hash=${receipt.txHash.toString()}`);
-  console.log(`tx_fee_juice=${receipt.transactionFee}`);
-  console.log(`expected_charge=${aaPaymentAmount}`);
-  console.log(`user_debited=${userDebited}`);
-  console.log(`operator_credited=${operatorCredited}`);
-  console.log(`counter_before=${counterBefore}`);
-  console.log(`counter_after=${counterAfter}`);
+  pinoLogger.info(`tx_hash=${receipt.txHash.toString()}`);
+  pinoLogger.info(`tx_fee_juice=${receipt.transactionFee}`);
+  pinoLogger.info(`expected_charge=${aaPaymentAmount}`);
+  pinoLogger.info(`user_debited=${userDebited}`);
+  pinoLogger.info(`operator_credited=${operatorCredited}`);
+  pinoLogger.info(`counter_before=${counterBefore}`);
+  pinoLogger.info(`counter_after=${counterAfter}`);
 
   if (counterAfter !== counterBefore + 1n) {
     throw new Error(
@@ -712,14 +715,16 @@ async function main() {
       );
     }
   } else {
-    console.log("[manual-fpc-devnet] user==operator; skipping debit/credit equality assertion");
+    pinoLogger.info("[manual-fpc-devnet] user==operator; skipping debit/credit equality assertion");
   }
 
-  console.log("PASS: sponsored Counter.increment tx via FPCMultiAsset fee_entrypoint on devnet");
+  pinoLogger.info(
+    "PASS: sponsored Counter.increment tx via FPCMultiAsset fee_entrypoint on devnet",
+  );
 }
 
 main().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`FAIL: ${message}`);
+  pinoLogger.error(`FAIL: ${message}`);
   process.exit(1);
 });

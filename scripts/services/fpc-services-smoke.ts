@@ -3,6 +3,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
@@ -334,7 +337,7 @@ function bootstrapTopupAutoclaimAccount(
     "services",
     "bootstrap-topup-autoclaim-account.ts",
   );
-  console.log(`[services-smoke] bootstrapping topup auto-claim claimer on ${nodeUrl}`);
+  pinoLogger.info(`[services-smoke] bootstrapping topup auto-claim claimer on ${nodeUrl}`);
   try {
     execFileSync(
       "bun",
@@ -712,14 +715,14 @@ async function runServiceScenario(
 
     const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
     await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
-    console.log(`${scenarioPrefix} PASS: attestation service health endpoint`);
+    pinoLogger.info(`${scenarioPrefix} PASS: attestation service health endpoint`);
     const badQuoteResponse = await fetch(`${attestationBaseUrl}/quote`);
     if (badQuoteResponse.status !== 400) {
       throw new Error(
         `${scenarioPrefix} expected bad quote request to return 400, got ${badQuoteResponse.status}`,
       );
     }
-    console.log(`${scenarioPrefix} PASS: attestation bad quote request`);
+    pinoLogger.info(`${scenarioPrefix} PASS: attestation bad quote request`);
     const asset = await fetchAsset(`${attestationBaseUrl}/asset`, config.httpTimeoutMs);
     if (asset.name !== "SmokeToken") {
       throw new Error(
@@ -731,7 +734,7 @@ async function runServiceScenario(
         `${scenarioPrefix} asset address mismatch. expected=${token.address.toString()} got=${asset.address}`,
       );
     }
-    console.log(`${scenarioPrefix} PASS: asset endpoint matches deployed token`);
+    pinoLogger.info(`${scenarioPrefix} PASS: asset endpoint matches deployed token`);
 
     const topup = startManagedProcess(
       "topup-fpc",
@@ -758,26 +761,26 @@ async function runServiceScenario(
     managed.push(topup);
     const topupOpsBaseUrl = `http://127.0.0.1:${config.topupOpsPort}`;
     await waitForHealth(`${topupOpsBaseUrl}/health`, config.httpTimeoutMs);
-    console.log(`${scenarioPrefix} PASS: topup service health endpoint`);
+    pinoLogger.info(`${scenarioPrefix} PASS: topup service health endpoint`);
 
     await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
     await waitForLog(topup, "Top-up target Fee Juice balance:", config.topupWaitTimeoutMs);
     await waitForHealth(`${topupOpsBaseUrl}/ready`, config.topupWaitTimeoutMs);
-    console.log(`${scenarioPrefix} PASS: topup service readiness endpoint`);
+    pinoLogger.info(`${scenarioPrefix} PASS: topup service readiness endpoint`);
     const bridgeSubmission = await waitForTopupBridgeSubmission(topup, config.topupWaitTimeoutMs);
 
     const topupOutcome = await waitForTopupBridgeOutcome(topup, config.topupWaitTimeoutMs);
-    console.log(`${scenarioPrefix} topup_confirmation_outcome=${topupOutcome}`);
+    pinoLogger.info(`${scenarioPrefix} topup_confirmation_outcome=${topupOutcome}`);
 
     const initialFeeJuiceBalance = await getFeeJuiceBalance(feePayerAddress, node);
-    console.log(
+    pinoLogger.info(
       `${scenarioPrefix} fee_payer_fee_juice_after_topup_service=${initialFeeJuiceBalance}`,
     );
 
     let bridgedFeeJuiceBalance = initialFeeJuiceBalance;
     if (bridgedFeeJuiceBalance === 0n) {
       const settleTimeoutMs = Math.max(1_000, Math.floor(config.topupWaitTimeoutMs / 2));
-      console.log(
+      pinoLogger.info(
         `${scenarioPrefix} topup balance still zero after outcome=${topupOutcome}; waiting ${settleTimeoutMs}ms for relay settlement`,
       );
       try {
@@ -793,7 +796,7 @@ async function runServiceScenario(
         );
       }
     }
-    console.log(`${scenarioPrefix} fee_payer_fee_juice_after_topup=${bridgedFeeJuiceBalance}`);
+    pinoLogger.info(`${scenarioPrefix} fee_payer_fee_juice_after_topup=${bridgedFeeJuiceBalance}`);
 
     const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
     const quote = await fetchQuote(
@@ -850,7 +853,7 @@ async function runServiceScenario(
       quoteSigBytes,
       scenarioPrefix,
     );
-    console.log(`${scenarioPrefix} PASS: quote signature verification`);
+    pinoLogger.info(`${scenarioPrefix} PASS: quote signature verification`);
 
     const chainNowMin =
       chainNowBeforeQuote < chainNowAfterQuote ? chainNowBeforeQuote : chainNowAfterQuote;
@@ -929,7 +932,7 @@ async function runServiceScenario(
         `${scenarioPrefix} topup metrics missing non-zero ${topupOutcome} bridge count`,
       );
     }
-    console.log(`${scenarioPrefix} PASS: service metrics endpoints`);
+    pinoLogger.info(`${scenarioPrefix} PASS: service metrics endpoints`);
 
     return {
       fjAmount,
@@ -966,7 +969,7 @@ async function runFpcFeeEntrypointScenario(
     );
   }
   const mintAmount = expectedCharge + 1_000_000n;
-  console.log(`[services-smoke:fpc] expected_charge=${expectedCharge}`);
+  pinoLogger.info(`[services-smoke:fpc] expected_charge=${expectedCharge}`);
 
   await token.methods.mint_to_private(user, mintAmount).send({ from: operator });
   await token.methods.mint_to_public(user, 2n).send({ from: operator });
@@ -988,7 +991,7 @@ async function runFpcFeeEntrypointScenario(
     { caller: fpc.address, action: transferCall },
     transferAuthwit,
   );
-  console.log(
+  pinoLogger.info(
     `[services-smoke:fpc] transfer_authwit_valid_private=${transferValidity.isValidInPrivate} transfer_authwit_valid_public=${transferValidity.isValidInPublic}`,
   );
 
@@ -1050,10 +1053,10 @@ async function runFpcFeeEntrypointScenario(
     );
   }
 
-  console.log(
+  pinoLogger.info(
     `[services-smoke:fpc] tx_fee_juice=${receipt.transactionFee} user_debited=${userDebited} operator_credited=${operatorCredited}`,
   );
-  console.log("[services-smoke:fpc] PASS: tx accepted with attestation quote + fee_entrypoint");
+  pinoLogger.info("[services-smoke:fpc] PASS: tx accepted with attestation quote + fee_entrypoint");
 }
 
 async function main() {
@@ -1089,7 +1092,7 @@ async function main() {
     const desiredTopupWei = configuredTopupWei ?? minimumTopupWei;
 
     if (configuredTopupWei !== null && configuredTopupWei < minimumTopupWei) {
-      console.warn(
+      pinoLogger.warn(
         `[services-smoke] configured topup (${configuredTopupWei}) is below computed recommendation (${minimumTopupWei}); continuing with configured value`,
       );
     }
@@ -1097,7 +1100,7 @@ async function main() {
     let l1Balance = await getL1FeeJuiceBalance(node, config.l1RpcUrl, l1PrivateKey as Hex);
     if (l1Balance < desiredTopupWei) {
       const missingWei = desiredTopupWei - l1Balance;
-      console.warn(
+      pinoLogger.warn(
         `[services-smoke] L1 FeeJuice balance (${l1Balance}) is below desired topup budget (${desiredTopupWei}); attempting local mint of ${missingWei}`,
       );
       const mintResult = await tryMintL1FeeJuice(
@@ -1108,16 +1111,16 @@ async function main() {
       );
       l1Balance = mintResult.resultingBalance;
       if (mintResult.minted) {
-        console.log(
+        pinoLogger.info(
           `[services-smoke] minted additional L1 FeeJuice for smoke budget. new_balance=${l1Balance}`,
         );
       } else {
-        console.warn(
+        pinoLogger.warn(
           `[services-smoke] could not mint additional L1 FeeJuice with the configured operator key. balance=${l1Balance}`,
         );
       }
     }
-    console.log(`[services-smoke] l1_operator_fee_juice_balance=${l1Balance}`);
+    pinoLogger.info(`[services-smoke] l1_operator_fee_juice_balance=${l1Balance}`);
 
     let topupAmount = desiredTopupWei;
     if (l1Balance < desiredTopupWei) {
@@ -1130,7 +1133,7 @@ async function main() {
       if (topupAmount <= 0n) {
         throw new Error(`Insufficient L1 FeeJuice for smoke scenario. balance=${l1Balance}`);
       }
-      console.warn(
+      pinoLogger.warn(
         `[services-smoke] auto-scaling topup amount to fit available L1 FeeJuice. scaled_topup_wei=${topupAmount} desired=${desiredTopupWei}`,
       );
     }
@@ -1160,8 +1163,8 @@ async function main() {
     const operator = operatorAccount.address;
     const user = userAccount.address;
 
-    console.log(`[services-smoke] operator=${operator.toString()}`);
-    console.log(`[services-smoke] user=${user.toString()}`);
+    pinoLogger.info(`[services-smoke] operator=${operator.toString()}`);
+    pinoLogger.info(`[services-smoke] user=${user.toString()}`);
 
     const token = await Contract.deploy(
       wallet,
@@ -1169,7 +1172,7 @@ async function main() {
       ["SmokeToken", "SMK", 18, operator, operator],
       "constructor_with_minter",
     ).send({ from: operator });
-    console.log(`[services-smoke] token=${token.address.toString()}`);
+    pinoLogger.info(`[services-smoke] token=${token.address.toString()}`);
 
     // Derive operator signing pubkey for inline Schnorr verification.
     const schnorr = new Schnorr();
@@ -1182,9 +1185,9 @@ async function main() {
       operatorPubKey.y,
       token.address,
     ]).send({ from: operator });
-    console.log(`[services-smoke] fpc=${fpc.address.toString()}`);
+    pinoLogger.info(`[services-smoke] fpc=${fpc.address.toString()}`);
 
-    console.log(
+    pinoLogger.info(
       `[services-smoke] topup_threshold_wei=${topupThreshold} topup_amount_wei=${topupAmount}`,
     );
 
@@ -1197,7 +1200,7 @@ async function main() {
         `[services-smoke] operator auto-claim claimer was not publicly deployed (${operator.toString()})`,
       );
     }
-    console.log(`[services-smoke] operator_account_publicly_deployed=${operator.toString()}`);
+    pinoLogger.info(`[services-smoke] operator_account_publicly_deployed=${operator.toString()}`);
 
     const quote = await runServiceScenario(
       config,
@@ -1235,9 +1238,9 @@ async function main() {
 void (async () => {
   try {
     await main();
-    console.log("[services-smoke] PASS: full services smoke flow succeeded");
+    pinoLogger.info("[services-smoke] PASS: full services smoke flow succeeded");
   } catch (error) {
-    console.error(`[services-smoke] FAIL: ${(error as Error).message}`);
+    pinoLogger.error(`[services-smoke] FAIL: ${(error as Error).message}`);
     process.exit(1);
   }
 })();

@@ -7,7 +7,10 @@ import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
 import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import pino from "pino";
 import type { Hex } from "viem";
+
+const pinoLogger = pino();
 
 const DEFAULT_ACCOUNT_INDEX = 0;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -249,15 +252,15 @@ export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAuto
         } catch (sponsoredError) {
           if (isSponsoredProofFailure(sponsoredError)) {
             sponsoredModeDisabled = true;
-            console.warn(
+            pinoLogger.warn(
+              { err: sponsoredError },
               `Disabling sponsored auto-claim for this process due to proving/runtime failure (sponsor=${sponsoredFpcAddress?.toString()}). Falling back to claimer Fee Juice payment.`,
-              String(sponsoredError),
             );
           }
           const sponsoredErrorDetails = String(sponsoredError);
-          console.warn(
+          pinoLogger.warn(
+            { sponsoredErrorDetails },
             `Sponsored auto-claim failed for message_hash=${request.messageHash}; retrying with claimer Fee Juice payment (sponsor=${sponsoredFpcAddress?.toString()})`,
-            sponsoredErrorDetails,
           );
           return await sendClaim(undefined);
         }

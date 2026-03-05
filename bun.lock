@@ -20,6 +20,7 @@
         "@aztec/foundation": "4.0.0-devnet.2-patch.3",
         "@aztec/stdlib": "4.0.0-devnet.2-patch.3",
         "@aztec/wallets": "4.0.0-devnet.2-patch.3",
+        "pino": "^10.3.1",
         "viem": "^2.18.0",
       },
     },
@@ -29,6 +30,7 @@
       "devDependencies": {
         "@biomejs/biome": "^2.4.4",
         "@types/node": "^20.0.0",
+        "pino": "^10.3.1",
         "tsup": "^8.0.0",
         "typescript": "^5.4.0",
         "vitest": "^2.1.8",

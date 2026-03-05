@@ -1,5 +1,8 @@
+import pino from "pino";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const pinoLogger = pino();
 
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -53,15 +56,15 @@ function logResult(
     quoteValidUntil: bigint;
   },
 ): void {
-  console.log(`user=${user.toString()}`);
-  console.log(`target=${targetAddress.toString()}`);
-  console.log(`method=${targetMethod}`);
-  console.log(`tx_hash=${result.txHash}`);
-  console.log(`tx_fee_juice=${result.txFeeJuice}`);
-  console.log(`expected_charge=${result.expectedCharge}`);
-  console.log(`user_debited=${result.userDebited}`);
-  console.log(`fj_amount=${result.fjAmount}`);
-  console.log(`quote_valid_until=${result.quoteValidUntil}`);
+  pinoLogger.info(`user=${user.toString()}`);
+  pinoLogger.info(`target=${targetAddress.toString()}`);
+  pinoLogger.info(`method=${targetMethod}`);
+  pinoLogger.info(`tx_hash=${result.txHash}`);
+  pinoLogger.info(`tx_fee_juice=${result.txFeeJuice}`);
+  pinoLogger.info(`expected_charge=${result.expectedCharge}`);
+  pinoLogger.info(`user_debited=${result.userDebited}`);
+  pinoLogger.info(`fj_amount=${result.fjAmount}`);
+  pinoLogger.info(`quote_valid_until=${result.quoteValidUntil}`);
 }
 
 async function run(): Promise<void> {
@@ -206,18 +209,18 @@ run()
         details?: unknown;
         message?: string;
       };
-      console.error(
+      pinoLogger.error(
         `FAIL [${sdkError.code}]: ${sdkError.message ?? "Unknown SDK error"}`,
       );
       if (sdkError.details !== undefined) {
-        console.error(`details=${JSON.stringify(sdkError.details)}`);
+        pinoLogger.error(`details=${JSON.stringify(sdkError.details)}`);
       }
       process.exit(1);
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`FAIL: ${message}`);
-    console.error(
+    pinoLogger.error(`FAIL: ${message}`);
+    pinoLogger.error(
       "Hint: copy sdk/example/.env.example to .env and fill L2_ADDRESS + L2_PRIVATE_KEY.",
     );
     process.exit(1);
