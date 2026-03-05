@@ -513,7 +513,7 @@ async function resolveFundingTargets(args: CliArgs): Promise<ResolvedFundingTarg
   };
 }
 
-async function readFeeJuiceBalance(params: {
+function readFeeJuiceBalance(params: {
   l1RpcUrl: string;
   tokenAddress: Address;
   accountAddress: Address;

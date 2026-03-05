@@ -425,7 +425,7 @@ function registerSponsoredFpc(nodeUrl: string, sponsoredFpcAddress: string): voi
   );
 }
 
-async function deriveAddress(secretKey: string): Promise<AztecAddress> {
+function deriveAddress(secretKey: string): AztecAddress {
   const secretFr = Fr.fromHexString(secretKey);
   return getSchnorrAccountContractAddress(secretFr, Fr.ZERO);
 }

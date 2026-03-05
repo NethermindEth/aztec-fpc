@@ -613,7 +613,7 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
   if (feeJuiceBalance < requiredFeeJuice) {
     throw new Error(
       `FPC Fee Juice balance ${feeJuiceBalance} is below required ${requiredFeeJuice} for onchain chaos tests. ` +
-        `Ensure the topup service has funded the FPC before running onchain tests.`,
+        "Ensure the topup service has funded the FPC before running onchain tests.",
     );
   }
 
