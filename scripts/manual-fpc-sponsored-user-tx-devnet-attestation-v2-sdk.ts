@@ -135,23 +135,27 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  if (error && typeof error === "object" && "code" in error) {
-    const sdkError = error as {
-      code: string;
-      details?: unknown;
-      message?: string;
-    };
-    console.error(
-      `FAIL [${sdkError.code}]: ${sdkError.message ?? "Unknown SDK error"}`,
-    );
-    if (sdkError.details !== undefined) {
-      console.error(`details=${JSON.stringify(sdkError.details)}`);
+main()
+  .then(() => {
+    process.exit(0);
+  })
+  .catch((error) => {
+    if (error && typeof error === "object" && "code" in error) {
+      const sdkError = error as {
+        code: string;
+        details?: unknown;
+        message?: string;
+      };
+      console.error(
+        `FAIL [${sdkError.code}]: ${sdkError.message ?? "Unknown SDK error"}`,
+      );
+      if (sdkError.details !== undefined) {
+        console.error(`details=${JSON.stringify(sdkError.details)}`);
+      }
+      process.exit(1);
     }
-    process.exit(1);
-  }
 
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`FAIL: ${message}`);
-  process.exit(1);
-});
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`FAIL: ${message}`);
+    process.exit(1);
+  });
