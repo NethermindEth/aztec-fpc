@@ -201,14 +201,33 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function topUpFpcFeeJuice(
-  config: SmokeConfig,
+type PublicClient = ReturnType<typeof createPublicClient>;
+type WalletClient = ReturnType<typeof createWalletClient>;
+type L1Receipt = Awaited<ReturnType<PublicClient["waitForTransactionReceipt"]>>;
+
+interface FeeJuiceBridgeContracts {
+  feeJuiceTokenAddress: Hex;
+  portalAddress: Hex;
+  recipientBytes32: Hex;
+}
+
+interface L1Clients {
+  accountAddress: Hex;
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+}
+
+interface FeeJuiceBridgeMessage {
+  bridgeAmount: bigint;
+  claimSecret: Fr;
+  messageLeafIndex: bigint;
+  l1ToL2MessageHash: Fr;
+}
+
+async function resolveFeeJuiceBridgeContracts(
   node: ReturnType<typeof createAztecNodeClient>,
-  wallet: EmbeddedWallet,
-  operator: AztecAddress,
   fpcAddress: string,
-  topupWei: bigint,
-): Promise<bigint> {
+): Promise<FeeJuiceBridgeContracts> {
   const nodeInfo = await node.getNodeInfo();
   const l1Addresses = nodeInfo.l1ContractAddresses as Record<string, unknown>;
   const tokenAddressValue = l1Addresses.feeJuiceAddress ?? l1Addresses.feeJuice;
@@ -216,59 +235,85 @@ async function topUpFpcFeeJuice(
   if (!tokenAddressValue || !portalAddressValue) {
     throw new Error("Node info is missing FeeJuice L1 contract addresses");
   }
-  const feeJuiceTokenAddress = normalizeHexAddress(tokenAddressValue, "feeJuiceAddress");
-  const portalAddress = normalizeHexAddress(portalAddressValue, "feeJuicePortalAddress");
-  const recipientBytes32 = `0x${fpcAddress.replace("0x", "").padStart(64, "0")}` as Hex;
 
+  return {
+    feeJuiceTokenAddress: normalizeHexAddress(tokenAddressValue, "feeJuiceAddress"),
+    portalAddress: normalizeHexAddress(portalAddressValue, "feeJuicePortalAddress"),
+    recipientBytes32: `0x${fpcAddress.replace("0x", "").padStart(64, "0")}` as Hex,
+  };
+}
+
+function createL1Clients(config: SmokeConfig): L1Clients {
   const account = privateKeyToAccount(config.l1PrivateKey);
-  const walletClient = createWalletClient({
-    account,
-    transport: http(config.l1RpcUrl),
-  });
-  const publicClient = createPublicClient({
-    transport: http(config.l1RpcUrl),
-  });
+  return {
+    accountAddress: account.address,
+    walletClient: createWalletClient({
+      account,
+      transport: http(config.l1RpcUrl),
+    }),
+    publicClient: createPublicClient({
+      transport: http(config.l1RpcUrl),
+    }),
+  };
+}
+
+async function resolveBridgeAmount(
+  publicClient: PublicClient,
+  feeJuiceTokenAddress: Hex,
+  accountAddress: Hex,
+  requestedTopupWei: bigint,
+): Promise<bigint> {
   const l1FeeJuiceBalance = (await publicClient.readContract({
     address: feeJuiceTokenAddress,
     abi: ERC20_ABI,
     functionName: "balanceOf",
-    args: [account.address],
+    args: [accountAddress],
   })) as bigint;
   if (l1FeeJuiceBalance === 0n) {
-    throw new Error(
-      `L1 FeeJuice balance is zero for ${account.address}; cannot fund FPC fee payer`,
-    );
-  }
-  const bridgeAmount = topupWei > l1FeeJuiceBalance ? l1FeeJuiceBalance : topupWei;
-  if (bridgeAmount < topupWei) {
-    pinoLogger.warn(
-      `[smoke] WARN: requested FeeJuice topup ${topupWei} exceeds L1 balance ${l1FeeJuiceBalance}. Clamping bridge amount to ${bridgeAmount}.`,
-    );
+    throw new Error(`L1 FeeJuice balance is zero for ${accountAddress}; cannot fund FPC fee payer`);
   }
 
+  const bridgeAmount =
+    requestedTopupWei > l1FeeJuiceBalance ? l1FeeJuiceBalance : requestedTopupWei;
+  if (bridgeAmount < requestedTopupWei) {
+    pinoLogger.warn(
+      `[smoke] WARN: requested FeeJuice topup ${requestedTopupWei} exceeds L1 balance ${l1FeeJuiceBalance}. Clamping bridge amount to ${bridgeAmount}.`,
+    );
+  }
+  return bridgeAmount;
+}
+
+async function approveAndBridgeFeeJuice(
+  walletClient: WalletClient,
+  publicClient: PublicClient,
+  contracts: FeeJuiceBridgeContracts,
+  bridgeAmount: bigint,
+): Promise<{ receipt: L1Receipt; claimSecret: Fr }> {
   const claimSecret = Fr.random();
   const claimSecretHash = await computeSecretHash(claimSecret);
 
   const approveHash = await walletClient.writeContract({
-    address: feeJuiceTokenAddress,
+    address: contracts.feeJuiceTokenAddress,
     abi: ERC20_ABI,
     functionName: "approve",
-    args: [portalAddress, bridgeAmount],
+    args: [contracts.portalAddress, bridgeAmount],
   });
   await publicClient.waitForTransactionReceipt({ hash: approveHash });
   pinoLogger.info(`[smoke] l1_fee_juice_approve_tx=${approveHash}`);
 
-  const hash = await walletClient.writeContract({
-    address: portalAddress,
+  const depositHash = await walletClient.writeContract({
+    address: contracts.portalAddress,
     abi: FEE_JUICE_PORTAL_ABI,
     functionName: "depositToAztecPublic",
-    args: [recipientBytes32, bridgeAmount, claimSecretHash.toString() as Hex],
+    args: [contracts.recipientBytes32, bridgeAmount, claimSecretHash.toString() as Hex],
   });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  pinoLogger.info(`[smoke] l1_fee_juice_bridge_tx=${hash}`);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: depositHash });
+  pinoLogger.info(`[smoke] l1_fee_juice_bridge_tx=${depositHash}`);
 
-  let messageLeafIndex: bigint | undefined;
-  let l1ToL2MessageHash: Fr | undefined;
+  return { receipt, claimSecret };
+}
+
+function decodeFeeJuiceBridgeMessage(receipt: L1Receipt, portalAddress: Hex) {
   for (const log of receipt.logs) {
     if (log.address.toLowerCase() !== portalAddress.toLowerCase()) {
       continue;
@@ -282,28 +327,48 @@ async function topUpFpcFeeJuice(
       if (decoded.eventName !== "DepositToAztecPublic") {
         continue;
       }
-      messageLeafIndex = decoded.args.index as bigint;
-      l1ToL2MessageHash = Fr.fromHexString(decoded.args.key as string);
-      break;
+      return {
+        messageLeafIndex: decoded.args.index as bigint,
+        l1ToL2MessageHash: Fr.fromHexString(decoded.args.key as string),
+      };
     } catch {
       // Ignore non-matching logs from the same contract.
     }
   }
-  if (messageLeafIndex === undefined || !l1ToL2MessageHash) {
-    throw new Error("Could not decode DepositToAztecPublic event for Fee Juice bridge");
-  }
 
-  await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
+  throw new Error("Could not decode DepositToAztecPublic event for Fee Juice bridge");
+}
+
+async function claimFeeJuiceOnL2(
+  config: SmokeConfig,
+  node: ReturnType<typeof createAztecNodeClient>,
+  wallet: EmbeddedWallet,
+  operator: AztecAddress,
+  fpcAddress: string,
+  bridgeMessage: FeeJuiceBridgeMessage,
+): Promise<void> {
+  await waitForL1ToL2MessageReady(node, bridgeMessage.l1ToL2MessageHash, {
     timeoutSeconds: Math.floor(config.feeJuiceWaitTimeoutMs / 1000),
     forPublicConsumption: false,
   });
 
   const feeJuice = FeeJuiceContract.at(wallet);
   await feeJuice.methods
-    .claim(AztecAddress.fromString(fpcAddress), bridgeAmount, claimSecret, new Fr(messageLeafIndex))
+    .claim(
+      AztecAddress.fromString(fpcAddress),
+      bridgeMessage.bridgeAmount,
+      bridgeMessage.claimSecret,
+      new Fr(bridgeMessage.messageLeafIndex),
+    )
     .send({ from: operator });
+}
 
-  const deadline = Date.now() + config.feeJuiceWaitTimeoutMs;
+async function waitForFeeJuiceCredit(
+  node: ReturnType<typeof createAztecNodeClient>,
+  fpcAddress: string,
+  timeoutMs: number,
+): Promise<bigint> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const balance = await getFeeJuiceBalance(AztecAddress.fromString(fpcAddress), node);
     if (balance > 0n) {
@@ -312,6 +377,106 @@ async function topUpFpcFeeJuice(
     await sleep(2_000);
   }
   throw new Error(`Timed out waiting for Fee Juice credit on ${fpcAddress}`);
+}
+
+async function topUpFpcFeeJuice(
+  config: SmokeConfig,
+  node: ReturnType<typeof createAztecNodeClient>,
+  wallet: EmbeddedWallet,
+  operator: AztecAddress,
+  fpcAddress: string,
+  topupWei: bigint,
+): Promise<bigint> {
+  const contracts = await resolveFeeJuiceBridgeContracts(node, fpcAddress);
+  const { accountAddress, walletClient, publicClient } = createL1Clients(config);
+  const bridgeAmount = await resolveBridgeAmount(
+    publicClient,
+    contracts.feeJuiceTokenAddress,
+    accountAddress,
+    topupWei,
+  );
+  const { receipt, claimSecret } = await approveAndBridgeFeeJuice(
+    walletClient,
+    publicClient,
+    contracts,
+    bridgeAmount,
+  );
+  const decodedMessage = decodeFeeJuiceBridgeMessage(receipt, contracts.portalAddress);
+  await claimFeeJuiceOnL2(config, node, wallet, operator, fpcAddress, {
+    bridgeAmount,
+    claimSecret,
+    messageLeafIndex: decodedMessage.messageLeafIndex,
+    l1ToL2MessageHash: decodedMessage.l1ToL2MessageHash,
+  });
+  return waitForFeeJuiceCredit(node, fpcAddress, config.feeJuiceWaitTimeoutMs);
+}
+
+async function waitForNodeReady(
+  node: ReturnType<typeof createAztecNodeClient>,
+  nodeUrl: string,
+  timeoutMs: number,
+): Promise<void> {
+  await Promise.race([
+    waitForNode(node),
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Timed out waiting for Aztec node at ${nodeUrl}`)),
+        timeoutMs,
+      ),
+    ),
+  ]);
+}
+
+function resolveFeeJuiceTopupWei(config: SmokeConfig, maxGasCostNoTeardown: bigint): bigint {
+  const minimumTopupWei = maxGasCostNoTeardown * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER + 1_000_000n;
+  const feeJuiceTopupWei = config.feeJuiceTopupWei ?? minimumTopupWei;
+  if (config.feeJuiceTopupWei !== null && config.feeJuiceTopupWei < minimumTopupWei) {
+    throw new Error(
+      `FPC_SMOKE_FEE_JUICE_TOPUP_WEI=${config.feeJuiceTopupWei} is below required minimum ${minimumTopupWei} for current gas settings`,
+    );
+  }
+  return feeJuiceTopupWei;
+}
+
+async function maybeTopUpFpcFeeJuiceBalance(
+  config: SmokeConfig,
+  node: ReturnType<typeof createAztecNodeClient>,
+  wallet: EmbeddedWallet,
+  operator: AztecAddress,
+  fpcAddress: string,
+  feeJuiceTopupWei: bigint,
+): Promise<void> {
+  if (feeJuiceTopupWei > 0n) {
+    const feeJuiceBalance = await topUpFpcFeeJuice(
+      config,
+      node,
+      wallet,
+      operator,
+      fpcAddress,
+      feeJuiceTopupWei,
+    );
+    pinoLogger.info(`[smoke] fpc_fee_juice_balance=${feeJuiceBalance}`);
+    return;
+  }
+
+  pinoLogger.info("[smoke] skipping fee-juice top-up (FPC_SMOKE_FEE_JUICE_TOPUP_WEI=0)");
+}
+
+async function getLatestBlockTimestampOrThrow(
+  node: ReturnType<typeof createAztecNodeClient>,
+  errorMessage: string,
+): Promise<bigint> {
+  const latestBlock = await node.getBlock("latest");
+  if (!latestBlock) {
+    throw new Error(errorMessage);
+  }
+  return latestBlock.timestamp;
+}
+
+function assertExpectedAmount(label: string, expected: bigint, actual: bigint): void {
+  if (actual !== expected) {
+    throw new Error(`${label} mismatch. expected=${expected} got=${actual}`);
+  }
 }
 
 async function main() {
@@ -324,28 +489,14 @@ async function main() {
   const fpcArtifact = loadArtifact(fpcArtifactPath);
 
   const node = createAztecNodeClient(config.nodeUrl);
-  await Promise.race([
-    waitForNode(node),
-    new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Timed out waiting for Aztec node at ${config.nodeUrl}`)),
-        config.nodeTimeoutMs,
-      ),
-    ),
-  ]);
+  await waitForNodeReady(node, config.nodeUrl, config.nodeTimeoutMs);
   const wallet = await EmbeddedWallet.create(node);
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = config.feePerDaGasOverride ?? minFees.feePerDaGas;
   const feePerL2Gas = config.feePerL2GasOverride ?? minFees.feePerL2Gas;
   const maxGasCostNoTeardown =
     BigInt(config.daGasLimit) * feePerDaGas + BigInt(config.l2GasLimit) * feePerL2Gas;
-  const minimumTopupWei = maxGasCostNoTeardown * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER + 1_000_000n;
-  const feeJuiceTopupWei = config.feeJuiceTopupWei ?? minimumTopupWei;
-  if (config.feeJuiceTopupWei !== null && config.feeJuiceTopupWei < minimumTopupWei) {
-    throw new Error(
-      `FPC_SMOKE_FEE_JUICE_TOPUP_WEI=${config.feeJuiceTopupWei} is below required minimum ${minimumTopupWei} for current gas settings`,
-    );
-  }
+  const feeJuiceTopupWei = resolveFeeJuiceTopupWei(config, maxGasCostNoTeardown);
 
   const testAccounts = await getInitialTestAccountsData();
   const [operator, user] = await Promise.all(
@@ -382,19 +533,14 @@ async function main() {
   pinoLogger.info(`[smoke] fee_per_l2_gas=${feePerL2Gas}`);
   pinoLogger.info(`[smoke] fee_juice_topup_wei=${feeJuiceTopupWei}`);
 
-  if (feeJuiceTopupWei > 0n) {
-    const feeJuiceBalance = await topUpFpcFeeJuice(
-      config,
-      node,
-      wallet,
-      operator,
-      fpc.address.toString(),
-      feeJuiceTopupWei,
-    );
-    pinoLogger.info(`[smoke] fpc_fee_juice_balance=${feeJuiceBalance}`);
-  } else {
-    pinoLogger.info("[smoke] skipping fee-juice top-up (FPC_SMOKE_FEE_JUICE_TOPUP_WEI=0)");
-  }
+  await maybeTopUpFpcFeeJuiceBalance(
+    config,
+    node,
+    wallet,
+    operator,
+    fpc.address.toString(),
+    feeJuiceTopupWei,
+  );
 
   const expectedCharge = ceilDiv(maxGasCostNoTeardown * config.rateNum, config.rateDen);
   const fjFeeAmount = maxGasCostNoTeardown;
@@ -405,11 +551,11 @@ async function main() {
   await token.methods.mint_to_private(user, mintAmount).send({ from: operator });
   await token.methods.mint_to_public(user, 2n).send({ from: operator });
 
-  const latestBlock = await node.getBlock("latest");
-  if (!latestBlock) {
-    throw new Error("Could not read latest L2 block while building quote validity window");
-  }
-  const validUntil = latestBlock.timestamp + config.quoteTtlSeconds;
+  const validUntil =
+    (await getLatestBlockTimestampOrThrow(
+      node,
+      "Could not read latest L2 block while building quote validity window",
+    )) + config.quoteTtlSeconds;
   const quoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
@@ -489,21 +635,17 @@ async function main() {
   pinoLogger.info(`[smoke] operator_balance_after=${operatorAfter}`);
   pinoLogger.info(`[smoke] tx_fee_juice=${receipt.transactionFee}`);
 
-  if (userDebited !== expectedCharge) {
-    throw new Error(`User debit mismatch. expected=${expectedCharge} got=${userDebited}`);
-  }
-  if (operatorCredited !== expectedCharge) {
-    throw new Error(`Operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`);
-  }
+  assertExpectedAmount("User debit", expectedCharge, userDebited);
+  assertExpectedAmount("Operator credit", expectedCharge, operatorCredited);
 
-  const latestBlockForNegative = await node.getBlock("latest");
-  if (!latestBlockForNegative) {
-    throw new Error("Could not read latest L2 block while building direct-call negative quote");
-  }
   // Ensure negative-path tx can reach fee validation checks instead of failing
   // early due to insufficient private token balance.
   await token.methods.mint_to_private(user, expectedCharge + 1_000_000n).send({ from: operator });
-  const negativeValidUntil = latestBlockForNegative.timestamp + config.quoteTtlSeconds;
+  const negativeValidUntil =
+    (await getLatestBlockTimestampOrThrow(
+      node,
+      "Could not read latest L2 block while building direct-call negative quote",
+    )) + config.quoteTtlSeconds;
   const negativeQuoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
