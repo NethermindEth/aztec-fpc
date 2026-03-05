@@ -11,7 +11,28 @@ bun add @aztec-fpc/sdk
 ## APIs
 
 - Generic API: `executeSponsoredCall(...)`
+- Convenience API: `executeSponsoredEntrypoint(...)`
 - Legacy convenience API: `createSponsoredCounterClient(...).increment()`
+- Helper utilities: `firstEnv`, `requiredEnvGroup`, `loadEnvIfPresent`, `parsePositiveInt`, `parseJsonArray`, `sameAddress`
+
+## Example Script (Devnet)
+
+Use the runnable example at `sdk/example/manual-fpc-sponsored-user-tx-devnet-attestation-v2-sdk.ts`.
+
+1. Copy env template and fill required fields:
+
+```bash
+cp sdk/example/.env.example .env
+```
+
+2. Run:
+
+```bash
+bunx tsx sdk/example/manual-fpc-sponsored-user-tx-devnet-attestation-v2-sdk.ts
+```
+
+The default target address in the example is:
+`0x226762b1e122bd46054de3fd21a19f0500ebe072aeac35fe0bb82d43b85f94fd`
 
 ## Generic API
 

@@ -45,6 +45,7 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "example:manual:devnet:v2": "bunx tsx example/manual-fpc-sponsored-user-tx-devnet-attestation-v2-sdk.ts",
     "ci": "bun run format && bun run biome:ci && bun run lint && bun run typecheck && bun run test",
     "prepublishOnly": "bun run typecheck && bun run build"
   }
