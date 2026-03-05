@@ -43,16 +43,19 @@ function readReceiptMetadata(receipt: unknown): {
     );
   }
 
-  const txHashCandidate = (receipt as { txHash?: { toString(): string } }).txHash;
+  const txHashCandidate = (receipt as { txHash?: { toString(): string } })
+    .txHash;
   if (!txHashCandidate || typeof txHashCandidate.toString !== "function") {
     throw new SponsoredTxFailedError(
       "Sponsored call receipt is missing txHash.",
     );
   }
 
-  const feeCandidate = (receipt as {
-    transactionFee?: { toString(): string } | bigint;
-  }).transactionFee;
+  const feeCandidate = (
+    receipt as {
+      transactionFee?: { toString(): string } | bigint;
+    }
+  ).transactionFee;
   if (feeCandidate === undefined) {
     throw new SponsoredTxFailedError(
       "Sponsored call receipt is missing transactionFee.",
@@ -235,10 +238,7 @@ export async function executeSponsoredCall<TReceipt>(
 
     const gasLimits = new Gas(daGasLimit, l2GasLimit);
     const teardownGasLimits = new Gas(0, 0);
-    const maxFeesPerGas = new GasFees(
-      minFees.feePerDaGas,
-      minFees.feePerL2Gas,
-    );
+    const maxFeesPerGas = new GasFees(minFees.feePerDaGas, minFees.feePerL2Gas);
 
     let receipt: TReceipt;
     try {

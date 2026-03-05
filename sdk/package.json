@@ -1,6 +1,6 @@
 {
   "name": "@aztec-fpc/sdk",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Minimal SDK for FPC-sponsored Counter.increment on Aztec devnet",
   "packageManager": "bun@1.3.9",
   "type": "module",

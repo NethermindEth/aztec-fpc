@@ -143,9 +143,9 @@ async function fetchJsonPayload(input: {
   }
 }
 
-function parseDiscoveryPayload(payload: unknown):
-  | AttestationDiscoveryResponse
-  | undefined {
+function parseDiscoveryPayload(
+  payload: unknown,
+): AttestationDiscoveryResponse | undefined {
   if (!isObject(payload)) {
     return undefined;
   }
@@ -227,7 +227,9 @@ export async function resolveAcceptedAssetsAndDiscovery(input: {
     };
   }
 
-  const discoveryAssets = parseAcceptedAssetsPayload(discovery?.supported_assets);
+  const discoveryAssets = parseAcceptedAssetsPayload(
+    discovery?.supported_assets,
+  );
   if (discoveryAssets && discoveryAssets.length > 0) {
     return {
       assets: discoveryAssets,
@@ -238,7 +240,10 @@ export async function resolveAcceptedAssetsAndDiscovery(input: {
   }
 
   const legacyAssetPath = discovery?.endpoints?.asset ?? "/asset";
-  const legacyAssetUrl = resolveEndpointUrl(input.attestationBaseUrl, legacyAssetPath);
+  const legacyAssetUrl = resolveEndpointUrl(
+    input.attestationBaseUrl,
+    legacyAssetPath,
+  );
   const legacyAssetPayload = await fetchJsonPayload({
     fetchImpl,
     url: legacyAssetUrl,
@@ -262,11 +267,7 @@ export async function resolveAcceptedAssetsAndDiscovery(input: {
 }
 
 function resolveSelectedAddress(input: {
-  selection:
-    | AttestationAcceptedAsset
-    | AztecAddress
-    | string
-    | undefined;
+  selection: AttestationAcceptedAsset | AztecAddress | string | undefined;
 }): string | undefined {
   const selection = input.selection;
   if (!selection) {
@@ -324,7 +325,9 @@ export async function selectAcceptedAsset(input: {
 
   if (input.selector) {
     const selectedCandidate = await input.selector(input.supportedAssets);
-    const selectedAddress = resolveSelectedAddress({ selection: selectedCandidate });
+    const selectedAddress = resolveSelectedAddress({
+      selection: selectedCandidate,
+    });
     if (!selectedAddress) {
       throw new QuoteValidationError(
         "Accepted asset selector did not return a selection.",

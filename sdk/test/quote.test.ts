@@ -195,7 +195,10 @@ describe("attestation discovery", () => {
 describe("discovery fpc address resolution", () => {
   it("parses valid discovery fpc address", () => {
     const out = resolveDiscoveryFpcAddress({
-      discovery: { fpc_address: "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b" },
+      discovery: {
+        fpc_address:
+          "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b",
+      },
       required: true,
     });
 
