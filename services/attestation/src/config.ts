@@ -84,12 +84,7 @@ const ConfigSchema = z.object({
   /** Optional externally reachable base URL override for discovery clients. */
   quote_base_url: z.string().url().optional(),
   aztec_node_url: AztecNodeUrlSchema.optional(),
-  quote_validity_seconds: z
-    .number()
-    .int()
-    .positive()
-    .max(MAX_QUOTE_VALIDITY_SECONDS)
-    .default(300),
+  quote_validity_seconds: z.number().int().positive().max(MAX_QUOTE_VALIDITY_SECONDS).default(300),
   port: z.number().int().positive().default(3000),
   /** The single token contract address this FPC accepts. Must match accepted_asset in the deployed contract. */
   accepted_asset_address: AztecAddressSchema,
@@ -264,9 +259,7 @@ function parseBooleanOverride(
     return false;
   }
 
-  throw new Error(
-    `Invalid ${envName}: expected boolean value (true/false, 1/0, yes/no, on/off)`,
-  );
+  throw new Error(`Invalid ${envName}: expected boolean value (true/false, 1/0, yes/no, on/off)`);
 }
 
 function parseIntegerOverride(
@@ -282,9 +275,7 @@ function parseIntegerOverride(
 
   const parsed = Number(envOverride.trim());
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    throw new Error(
-      `Invalid ${envName}: expected integer in range [${min}, ${max}]`,
-    );
+    throw new Error(`Invalid ${envName}: expected integer in range [${min}, ${max}]`);
   }
   return parsed;
 }
@@ -320,24 +311,17 @@ function resolveQuoteAuthConfig(
   config: ParsedConfig,
   runtimeProfile: RuntimeProfile,
 ): QuoteAuthConfig {
-  const mode = parseQuoteAuthMode(
-    config.quote_auth_mode,
-    process.env.QUOTE_AUTH_MODE,
-  );
-  const apiKey = normalizeOptional(
-    process.env.QUOTE_AUTH_API_KEY ?? config.quote_auth_api_key,
-  );
+  const mode = parseQuoteAuthMode(config.quote_auth_mode, process.env.QUOTE_AUTH_MODE);
+  const apiKey = normalizeOptional(process.env.QUOTE_AUTH_API_KEY ?? config.quote_auth_api_key);
   const apiKeyHeader = normalizeHeaderName(
     process.env.QUOTE_AUTH_API_KEY_HEADER ?? config.quote_auth_api_key_header,
     "quote auth api key",
   );
   const trustedHeaderNameRaw = normalizeOptional(
-    process.env.QUOTE_AUTH_TRUSTED_HEADER_NAME ??
-      config.quote_auth_trusted_header_name,
+    process.env.QUOTE_AUTH_TRUSTED_HEADER_NAME ?? config.quote_auth_trusted_header_name,
   );
   const trustedHeaderValue = normalizeOptional(
-    process.env.QUOTE_AUTH_TRUSTED_HEADER_VALUE ??
-      config.quote_auth_trusted_header_value,
+    process.env.QUOTE_AUTH_TRUSTED_HEADER_VALUE ?? config.quote_auth_trusted_header_value,
   );
   const trustedHeaderName = trustedHeaderNameRaw
     ? normalizeHeaderName(trustedHeaderNameRaw, "quote auth trusted upstream")
@@ -369,10 +353,7 @@ function resolveQuoteAuthConfig(
         `Missing trusted upstream auth header config: set quote_auth_trusted_header_name and quote_auth_trusted_header_value (or env overrides) when quote_auth_mode=${mode}`,
       );
     }
-    if (
-      mode === "api_key_and_trusted_header" &&
-      trustedHeaderName === apiKeyHeader
-    ) {
+    if (mode === "api_key_and_trusted_header" && trustedHeaderName === apiKeyHeader) {
       throw new Error(
         "Invalid quote auth header config: quote_auth_api_key_header and quote_auth_trusted_header_name must differ when quote_auth_mode=api_key_and_trusted_header",
       );
@@ -392,9 +373,7 @@ function resolveQuoteAuthConfig(
   };
 }
 
-function resolveQuoteRateLimitConfig(
-  config: ParsedConfig,
-): QuoteRateLimitConfig {
+function resolveQuoteRateLimitConfig(config: ParsedConfig): QuoteRateLimitConfig {
   const enabled = parseBooleanOverride(
     config.quote_rate_limit_enabled,
     process.env.QUOTE_RATE_LIMIT_ENABLED,
@@ -454,9 +433,7 @@ function resolveSupportedAssets(config: ParsedConfig): SupportedAssetPolicy[] {
   for (const asset of config.supported_assets) {
     const normalizedAddress = normalizeAddress(asset.address);
     if (seenAddresses.has(normalizedAddress)) {
-      throw new Error(
-        `Duplicate supported asset address in config: ${normalizedAddress}`,
-      );
+      throw new Error(`Duplicate supported asset address in config: ${normalizedAddress}`);
     }
     seenAddresses.add(normalizedAddress);
     includesDefaultAcceptedAsset =
@@ -485,15 +462,10 @@ export function resolveSelectedAssetPolicy(
   selectedAcceptedAssetAddress: string,
 ): SupportedAssetPolicy | undefined {
   const selectedAddress = normalizeAddress(selectedAcceptedAssetAddress);
-  return config.supported_assets.find(
-    (asset) => asset.address.toLowerCase() === selectedAddress,
-  );
+  return config.supported_assets.find((asset) => asset.address.toLowerCase() === selectedAddress);
 }
 
-export function loadConfig(
-  path: string,
-  options: LoadConfigOptions = {},
-): Config {
+export function loadConfig(path: string, options: LoadConfigOptions = {}): Config {
   const raw = readFileSync(path, "utf8");
   const parsed = parse(raw);
   const config = ConfigSchema.parse(parsed);
@@ -564,8 +536,7 @@ export function computeFinalRate(config: RatePolicy): {
   rate_num: bigint;
   rate_den: bigint;
 } {
-  const rate_num =
-    BigInt(config.market_rate_num) * BigInt(10000 + config.fee_bips);
+  const rate_num = BigInt(config.market_rate_num) * BigInt(10000 + config.fee_bips);
   const rate_den = BigInt(config.market_rate_den) * BigInt(10000);
   return { rate_num, rate_den };
 }

@@ -43,9 +43,7 @@ function mockNodeWithInitializationHash(
   };
 }
 
-function mockNodeGetContractThrows(
-  message: string,
-): Pick<AztecNode, "getContract"> {
+function mockNodeGetContractThrows(message: string): Pick<AztecNode, "getContract"> {
   return {
     getContract: async () => {
       throw new Error(message);

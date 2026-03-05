@@ -82,10 +82,7 @@ export function computeRateQuoteHash(params: RateQuoteParams): Promise<Fr> {
  * Compute the quote hash and sign it with the operator's Schnorr key.
  * Returns the 64-byte signature as a hex string.
  */
-export async function signQuote(
-  signer: QuoteSchnorrSigner,
-  params: QuoteParams,
-): Promise<string> {
+export async function signQuote(signer: QuoteSchnorrSigner, params: QuoteParams): Promise<string> {
   const quoteHash = await computeQuoteHash(params);
   return signer.signQuoteHash(quoteHash);
 }

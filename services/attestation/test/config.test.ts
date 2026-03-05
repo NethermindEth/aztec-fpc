@@ -5,14 +5,10 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { loadConfig } from "../src/config.js";
 
-const VALID_SECRET =
-  "0x0000000000000000000000000000000000000000000000000000000000000001";
+const VALID_SECRET = "0x0000000000000000000000000000000000000000000000000000000000000001";
 const QUOTE_API_KEY = "test-quote-api-key";
 
-function withEnv(
-  overrides: Record<string, string | undefined>,
-  fn: () => void,
-): void {
+function withEnv(overrides: Record<string, string | undefined>, fn: () => void): void {
   const original = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(overrides)) {
     original.set(key, process.env[key]);
@@ -36,10 +32,7 @@ function withEnv(
   }
 }
 
-function withAttestationEnv(
-  overrides: Record<string, string | undefined>,
-  fn: () => void,
-): void {
+function withAttestationEnv(overrides: Record<string, string | undefined>, fn: () => void): void {
   withEnv(
     {
       AZTEC_NODE_URL: undefined,
@@ -121,10 +114,7 @@ describe("attestation config secret providers", () => {
     );
 
     withAttestationEnv({}, () => {
-      assert.throws(
-        () => loadConfig(configPath),
-        /plaintext config secrets are not allowed/,
-      );
+      assert.throws(() => loadConfig(configPath), /plaintext config secrets are not allowed/);
     });
 
     cleanupConfig(configPath);
@@ -174,10 +164,7 @@ describe("attestation config secret providers", () => {
         OPERATOR_SECRET_KEY: VALID_SECRET,
       },
       () => {
-        assert.throws(
-          () => loadConfig(configPath),
-          /plaintext config secrets are not allowed/,
-        );
+        assert.throws(() => loadConfig(configPath), /plaintext config secrets are not allowed/);
       },
     );
 
@@ -291,16 +278,14 @@ describe("attestation config secret providers", () => {
       const config = loadConfig(configPath);
       assert.equal(config.supported_assets.length, 2);
       assert.deepEqual(config.supported_assets[0], {
-        address:
-          "0x0000000000000000000000000000000000000000000000000000000000000002",
+        address: "0x0000000000000000000000000000000000000000000000000000000000000002",
         name: "humanUSDC",
         market_rate_num: 1,
         market_rate_den: 1000,
         fee_bips: 200,
       });
       assert.deepEqual(config.supported_assets[1], {
-        address:
-          "0x0000000000000000000000000000000000000000000000000000000000000003",
+        address: "0x0000000000000000000000000000000000000000000000000000000000000003",
         name: "ravenETH",
         market_rate_num: 3,
         market_rate_den: 1000,
@@ -352,18 +337,14 @@ describe("attestation config secret providers", () => {
     );
 
     withAttestationEnv({}, () => {
-      assert.throws(
-        () => loadConfig(configPath),
-        /Duplicate supported asset address/,
-      );
+      assert.throws(() => loadConfig(configPath), /Duplicate supported asset address/);
     });
 
     cleanupConfig(configPath);
   });
 
   it("accepts explicit operator_address in config", () => {
-    const operatorAddress =
-      "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
+    const operatorAddress = "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
     const configPath = writeConfig(
       baseConfigYaml(
         [
@@ -422,10 +403,7 @@ describe("attestation config secret providers", () => {
         OPERATOR_SECRET_KEY: VALID_SECRET,
       },
       () => {
-        assert.throws(
-          () => loadConfig(configPath),
-          /quote_auth_mode must not be disabled/,
-        );
+        assert.throws(() => loadConfig(configPath), /quote_auth_mode must not be disabled/);
       },
     );
 
@@ -465,10 +443,7 @@ describe("attestation config secret providers", () => {
     );
 
     withAttestationEnv({}, () => {
-      assert.throws(
-        () => loadConfig(configPath),
-        /Missing trusted upstream auth header config/,
-      );
+      assert.throws(() => loadConfig(configPath), /Missing trusted upstream auth header config/);
     });
 
     cleanupConfig(configPath);
@@ -625,10 +600,7 @@ describe("attestation config secret providers", () => {
         QUOTE_RATE_LIMIT_MAX_REQUESTS: "0",
       },
       () => {
-        assert.throws(
-          () => loadConfig(configPath),
-          /Invalid QUOTE_RATE_LIMIT_MAX_REQUESTS/,
-        );
+        assert.throws(() => loadConfig(configPath), /Invalid QUOTE_RATE_LIMIT_MAX_REQUESTS/);
       },
     );
 
@@ -651,10 +623,7 @@ describe("attestation config secret providers", () => {
         QUOTE_RATE_LIMIT_ENABLED: "maybe",
       },
       () => {
-        assert.throws(
-          () => loadConfig(configPath),
-          /Invalid QUOTE_RATE_LIMIT_ENABLED/,
-        );
+        assert.throws(() => loadConfig(configPath), /Invalid QUOTE_RATE_LIMIT_ENABLED/);
       },
     );
 
