@@ -15,8 +15,11 @@ import type {
   CreateSponsoredCounterClientInput,
   ExecuteSponsoredCallInput,
   ExecuteSponsoredEntrypointInput,
+  SponsoredCallContext,
   SponsoredCounterClient,
   SponsoredExecutionResult,
+  SponsoredIncrementResult,
+  SponsoredPostCheckContext,
   SponsorshipConfig,
 } from "./types";
 
@@ -96,6 +99,112 @@ function asCounterContract(target: unknown): CounterContractLike {
   }
 
   return target as CounterContractLike;
+}
+
+type CounterIncrementState = {
+  counter?: CounterContractLike;
+  counterAfter?: bigint;
+  counterBefore?: bigint;
+};
+
+function requireCounterPreState(state: CounterIncrementState): {
+  counter: CounterContractLike;
+  counterBefore: bigint;
+} {
+  if (!state.counter || state.counterBefore === undefined) {
+    throw new SponsoredTxFailedError("Counter state was not initialized before post-checks.");
+  }
+  return {
+    counter: state.counter,
+    counterBefore: state.counterBefore,
+  };
+}
+
+function requireCounterSnapshots(state: CounterIncrementState): {
+  counterAfter: bigint;
+  counterBefore: bigint;
+} {
+  if (state.counterBefore === undefined || state.counterAfter === undefined) {
+    throw new SponsoredTxFailedError("Counter state was not captured by wrapper flow.");
+  }
+  return {
+    counterAfter: state.counterAfter,
+    counterBefore: state.counterBefore,
+  };
+}
+
+async function buildCounterIncrementCall(ctx: SponsoredCallContext, state: CounterIncrementState) {
+  const counter = asCounterContract(ctx.contracts.targets.counter);
+  const counterBefore = toBigInt(
+    await counter.methods.get_counter(ctx.user).simulate({ from: ctx.user }),
+  );
+  state.counter = counter;
+  state.counterBefore = counterBefore;
+  return counter.methods.increment(ctx.user);
+}
+
+async function runCounterIncrementPostChecks(
+  ctx: SponsoredPostCheckContext<CounterReceipt>,
+  state: CounterIncrementState,
+): Promise<void> {
+  const { counter, counterBefore } = requireCounterPreState(state);
+  state.counterAfter = toBigInt(
+    await counter.methods.get_counter(ctx.user).simulate({ from: ctx.user }),
+  );
+  if (state.counterAfter !== counterBefore + 1n) {
+    throw new SponsoredTxFailedError("Counter increment invariant failed.", {
+      counterAfter: state.counterAfter.toString(),
+      counterBefore: counterBefore.toString(),
+    });
+  }
+}
+
+function mapCounterIncrementResult(
+  execution: SponsoredExecutionResult<CounterReceipt>,
+  state: CounterIncrementState,
+): SponsoredIncrementResult {
+  const { counterAfter, counterBefore } = requireCounterSnapshots(state);
+  return {
+    counterAfter,
+    counterBefore,
+    expectedCharge: execution.expectedCharge,
+    quoteValidUntil: execution.quoteValidUntil,
+    txFeeJuice: execution.txFeeJuice,
+    txHash: execution.txHash,
+    userDebited: execution.userDebited,
+  };
+}
+
+async function executeSponsoredCounterIncrement(
+  input: CreateSponsoredCounterClientInput,
+): Promise<SponsoredIncrementResult> {
+  try {
+    const state: CounterIncrementState = {};
+    const execution = await executeSponsoredCall<CounterReceipt>({
+      account: input.account,
+      buildCall: (ctx) => buildCounterIncrementCall(ctx, state),
+      postChecks: (ctx) => runCounterIncrementPostChecks(ctx, state),
+      sponsorship: {
+        attestationBaseUrl: SDK_DEFAULTS.attestationBaseUrl,
+        daGasLimit: SDK_DEFAULTS.daGasLimit,
+        l2GasLimit: SDK_DEFAULTS.l2GasLimit,
+        maxFaucetAttempts: SDK_DEFAULTS.maxFaucetAttempts,
+        minimumPrivateBalanceBuffer: SDK_DEFAULTS.minimumPrivateBalanceBuffer,
+        runtimeConfig: createDevnetRuntimeConfig(),
+        txWaitTimeoutSeconds: SDK_DEFAULTS.txWaitTimeoutSeconds,
+      },
+      wallet: input.wallet,
+    });
+
+    return mapCounterIncrementResult(execution, state);
+  } catch (error) {
+    if (error instanceof SponsoredSdkError) {
+      throw error;
+    }
+    throw new SponsoredTxFailedError("Failed to execute sponsored increment.", {
+      cause: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 type EntrypointContractLike = {
@@ -514,70 +623,8 @@ export function createSponsoredCounterClient(
   input: CreateSponsoredCounterClientInput,
 ): Promise<SponsoredCounterClient> {
   return Promise.resolve({
-    async increment() {
-      try {
-        let counter: CounterContractLike | undefined;
-        let counterBefore: bigint | undefined;
-        let counterAfter: bigint | undefined;
-
-        const execution = await executeSponsoredCall<CounterReceipt>({
-          account: input.account,
-          buildCall: async (ctx) => {
-            counter = asCounterContract(ctx.contracts.targets.counter);
-            counterBefore = toBigInt(
-              await counter.methods.get_counter(ctx.user).simulate({ from: ctx.user }),
-            );
-            return counter.methods.increment(ctx.user);
-          },
-          postChecks: async (ctx) => {
-            if (!counter || counterBefore === undefined) {
-              throw new SponsoredTxFailedError(
-                "Counter state was not initialized before post-checks.",
-              );
-            }
-            counterAfter = toBigInt(
-              await counter.methods.get_counter(ctx.user).simulate({ from: ctx.user }),
-            );
-            if (counterAfter !== counterBefore + 1n) {
-              throw new SponsoredTxFailedError("Counter increment invariant failed.", {
-                counterAfter: counterAfter.toString(),
-                counterBefore: counterBefore.toString(),
-              });
-            }
-          },
-          sponsorship: {
-            attestationBaseUrl: SDK_DEFAULTS.attestationBaseUrl,
-            daGasLimit: SDK_DEFAULTS.daGasLimit,
-            l2GasLimit: SDK_DEFAULTS.l2GasLimit,
-            maxFaucetAttempts: SDK_DEFAULTS.maxFaucetAttempts,
-            minimumPrivateBalanceBuffer: SDK_DEFAULTS.minimumPrivateBalanceBuffer,
-            runtimeConfig: createDevnetRuntimeConfig(),
-            txWaitTimeoutSeconds: SDK_DEFAULTS.txWaitTimeoutSeconds,
-          },
-          wallet: input.wallet,
-        });
-
-        if (counterBefore === undefined || counterAfter === undefined) {
-          throw new SponsoredTxFailedError("Counter state was not captured by wrapper flow.");
-        }
-
-        return {
-          counterAfter,
-          counterBefore,
-          expectedCharge: execution.expectedCharge,
-          quoteValidUntil: execution.quoteValidUntil,
-          txFeeJuice: execution.txFeeJuice,
-          txHash: execution.txHash,
-          userDebited: execution.userDebited,
-        };
-      } catch (error) {
-        if (error instanceof SponsoredSdkError) {
-          throw error;
-        }
-        throw new SponsoredTxFailedError("Failed to execute sponsored increment.", {
-          cause: error instanceof Error ? error.message : String(error),
-        });
-      }
+    increment() {
+      return executeSponsoredCounterIncrement(input);
     },
   });
 }

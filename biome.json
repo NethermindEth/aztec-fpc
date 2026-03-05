@@ -44,12 +44,13 @@
   },
   "overrides": [
     {
-      "includes": ["services/**", "sdk/**"],
+      "includes": ["services/**", "sdk/**", "scripts/**"],
       "linter": {
         "rules": {
           "correctness": {
             "noUnusedImports": "error",
-            "noUnusedPrivateClassMembers": "error"
+            "noUnusedPrivateClassMembers": "error",
+            "noUnusedFunctionParameters": "error"
           },
           "suspicious": {
             "noConsole": "warn",
@@ -59,22 +60,74 @@
           },
           "style": {
             "noInferrableTypes": "error",
-            "noNonNullAssertion": "warn",
+            "noNonNullAssertion": "error",
             "noParameterAssign": "error",
             "noUnusedTemplateLiteral": "error",
             "noUselessElse": "error",
             "useImportType": "error"
           },
-          "complexity": {
-            "noExcessiveCognitiveComplexity": {
-              "level": "warn",
-              "options": {
-                "maxAllowedComplexity": 15
-              }
-            }
-          },
           "performance": {
             "noAccumulatingSpread": "warn"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["scripts/**"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveCognitiveComplexity": {
+              "level": "error",
+              "options": {
+                "maxAllowedComplexity": 40
+              }
+            },
+            "noExcessiveLinesPerFunction": {
+              "level": "error",
+              "options": {
+                "maxLines": 650
+              }
+            },
+            "noForEach": "warn"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["services/**", "sdk/**"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveCognitiveComplexity": {
+              "level": "error",
+              "options": {
+                "maxAllowedComplexity": 20
+              }
+            },
+            "noExcessiveLinesPerFunction": {
+              "level": "error",
+              "options": {
+                "maxLines": 160
+              }
+            },
+            "noForEach": "warn"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/test/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "complexity": {
+            "noExcessiveLinesPerFunction": "off"
+          },
+          "correctness": {
+            "noUnusedFunctionParameters": "off"
           }
         }
       }

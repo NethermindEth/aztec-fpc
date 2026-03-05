@@ -904,12 +904,12 @@ function getConfig(): FullE2EConfig {
   }
   if (topupConfirmPollInitialMs > topupConfirmPollMaxMs) {
     throw new Error(
-      `FPC_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS must be <= FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS`,
+      "FPC_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS must be <= FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS",
     );
   }
   if (topupConfirmPollMaxMs > topupConfirmTimeoutMs) {
     throw new Error(
-      `FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS must be <= FPC_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS`,
+      "FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS must be <= FPC_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS",
     );
   }
   if (attestationPort === topupOpsPort) {

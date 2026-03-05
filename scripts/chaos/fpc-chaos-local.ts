@@ -375,10 +375,10 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
       `market_rate_num: ${config.marketRateNum}`,
       `market_rate_den: ${config.marketRateDen}`,
       `fee_bips: ${config.feeBips}`,
-      `quote_rate_limit_enabled: true`,
-      `quote_rate_limit_max_requests: 60`,
-      `quote_rate_limit_window_seconds: 60`,
-      `quote_rate_limit_max_tracked_keys: 10000`,
+      "quote_rate_limit_enabled: true",
+      "quote_rate_limit_max_requests: 60",
+      "quote_rate_limit_window_seconds: 60",
+      "quote_rate_limit_max_tracked_keys: 10000",
     ].join("\n")}\n`,
     "utf8",
   );
@@ -513,14 +513,14 @@ async function runChaosTest(config: LocalConfig, setup: SetupResult): Promise<nu
 
   const reportPath = config.reportPath ?? path.join(config.runDir, "chaos-report.json");
 
-  pinoLogger.info(`\n[chaos-local] ──────────────────────────────────────────`);
+  pinoLogger.info("\n[chaos-local] ──────────────────────────────────────────");
   pinoLogger.info(`[chaos-local] Launching chaos test suite (mode=${config.chaosMode})`);
   pinoLogger.info(`[chaos-local] FPC:    ${setup.fpcAddress.toString()}`);
   pinoLogger.info(`[chaos-local] Token:  ${setup.tokenAddress.toString()}`);
   pinoLogger.info(`[chaos-local] Attest: ${attestationBaseUrl}`);
   pinoLogger.info(`[chaos-local] Topup:  ${topupOpsBaseUrl}`);
   pinoLogger.info(`[chaos-local] Report: ${reportPath}`);
-  pinoLogger.info(`[chaos-local] ──────────────────────────────────────────\n`);
+  pinoLogger.info("[chaos-local] ──────────────────────────────────────────\n");
 
   // Chaos test env – passed directly so no shell inheritance issues
   const chaosEnv: NodeJS.ProcessEnv = {

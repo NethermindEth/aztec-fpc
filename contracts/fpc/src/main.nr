@@ -34,6 +34,7 @@ pub contract FPCMultiAsset {
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
     // Quotes must expire within this many seconds from the tx anchor timestamp.
     global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
+    global GRUMPKIN_CURVE_B: Field = 17;
 
     /// Packed configuration stored as a single PublicImmutable slot.
     /// 3 fields (no accepted_asset -- that is now a per-quote parameter).
@@ -58,7 +59,7 @@ pub contract FPCMultiAsset {
         // Basic on-curve check: y^2 = x^3 - 17 (Grumpkin)
         assert(
             operator_pubkey_y * operator_pubkey_y
-                == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
+                == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - GRUMPKIN_CURVE_B,
             "operator pubkey not on curve",
         );
         self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y });
