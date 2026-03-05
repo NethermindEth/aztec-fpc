@@ -26,13 +26,7 @@
  *   FPC_CHAOS_LOCAL_RATE_LIMIT_BURST   default: 70
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,10 +37,7 @@ import { Contract } from "@aztec/aztec.js/contracts";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import {
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
+import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
@@ -63,8 +54,7 @@ import {
   waitForNodeReady,
 } from "../common/managed-process.ts";
 
-const DEFAULT_L1_PRIVATE_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const DEFAULT_L1_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
 const BRIDGE_SUBMISSION_RE =
   /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+)/;
@@ -112,9 +102,7 @@ function readEnvInt(name: string, fallback: number): number {
 
 function getRepoRoot(): string {
   const dir =
-    typeof __dirname === "string"
-      ? __dirname
-      : path.dirname(fileURLToPath(import.meta.url));
+    typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
   return path.resolve(dir, "..", "..");
 }
 
@@ -127,10 +115,7 @@ function getConfig(): LocalConfig {
   return {
     nodeUrl: readEnvStr("FPC_CHAOS_LOCAL_NODE_URL", "http://127.0.0.1:8080"),
     l1RpcUrl: readEnvStr("FPC_CHAOS_LOCAL_L1_RPC_URL", "http://127.0.0.1:8545"),
-    l1PrivateKey: readEnvStr(
-      "FPC_CHAOS_LOCAL_L1_PRIVATE_KEY",
-      DEFAULT_L1_PRIVATE_KEY,
-    ),
+    l1PrivateKey: readEnvStr("FPC_CHAOS_LOCAL_L1_PRIVATE_KEY", DEFAULT_L1_PRIVATE_KEY),
     attestationPort: readEnvInt("FPC_CHAOS_LOCAL_ATTESTATION_PORT", 3300),
     topupOpsPort: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_OPS_PORT", 3401),
     topupWaitMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_WAIT_MS", 300_000),
@@ -143,28 +128,13 @@ function getConfig(): LocalConfig {
     marketRateNum: readEnvInt("FPC_CHAOS_LOCAL_MARKET_RATE_NUM", 1),
     marketRateDen: readEnvInt("FPC_CHAOS_LOCAL_MARKET_RATE_DEN", 1000),
     feeBips: readEnvInt("FPC_CHAOS_LOCAL_FEE_BIPS", 200),
-    quoteValiditySeconds: readEnvInt(
-      "FPC_CHAOS_LOCAL_QUOTE_VALIDITY_SECONDS",
-      3600,
-    ),
+    quoteValiditySeconds: readEnvInt("FPC_CHAOS_LOCAL_QUOTE_VALIDITY_SECONDS", 3600),
     daGasLimit: readEnvInt("FPC_CHAOS_LOCAL_DA_GAS_LIMIT", 1_000_000),
     l2GasLimit: readEnvInt("FPC_CHAOS_LOCAL_L2_GAS_LIMIT", 1_000_000),
-    topupCheckIntervalMs: readEnvInt(
-      "FPC_CHAOS_LOCAL_TOPUP_CHECK_INTERVAL_MS",
-      3_000,
-    ),
-    topupConfirmTimeoutMs: readEnvInt(
-      "FPC_CHAOS_LOCAL_TOPUP_CONFIRM_TIMEOUT_MS",
-      180_000,
-    ),
-    topupConfirmPollInitialMs: readEnvInt(
-      "FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_INITIAL_MS",
-      1_000,
-    ),
-    topupConfirmPollMaxMs: readEnvInt(
-      "FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_MAX_MS",
-      15_000,
-    ),
+    topupCheckIntervalMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CHECK_INTERVAL_MS", 3_000),
+    topupConfirmTimeoutMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_TIMEOUT_MS", 180_000),
+    topupConfirmPollInitialMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_INITIAL_MS", 1_000),
+    topupConfirmPollMaxMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_MAX_MS", 15_000),
     repoRoot,
     runDir,
   };
@@ -215,15 +185,13 @@ async function waitForBridgeSubmission(
     if (sub) return sub;
     if (proc.process.exitCode !== null) {
       throw new Error(
-        `${proc.name} exited (code=${proc.process.exitCode}) before bridge submission.\n` +
-          proc.getLogs().slice(-3000),
+        `${proc.name} exited (code=${proc.process.exitCode}) before bridge submission.\n${proc.getLogs().slice(-3000)}`,
       );
     }
     await sleep(300);
   }
   throw new Error(
-    `Timed out waiting for bridge submission from ${proc.name}.\n` +
-      proc.getLogs().slice(-3000),
+    `Timed out waiting for bridge submission from ${proc.name}.\n${proc.getLogs().slice(-3000)}`,
   );
 }
 
@@ -240,37 +208,27 @@ async function waitForPositiveFeeJuiceBalance(
     }
     await sleep(300);
   }
-  throw new Error(
-    `Timed out waiting for positive Fee Juice balance on ${fpcAddress.toString()}`,
-  );
+  throw new Error(`Timed out waiting for positive Fee Juice balance on ${fpcAddress.toString()}`);
 }
 
-async function waitForBridgeConfirmed(
-  proc: ManagedProcess,
-  timeoutMs: number,
-): Promise<void> {
+async function waitForBridgeConfirmed(proc: ManagedProcess, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (hasBridgeConfirmed(proc.getLogs())) return;
     if (proc.process.exitCode !== null) {
       throw new Error(
-        `${proc.name} exited (code=${proc.process.exitCode}) before bridge confirmed.\n` +
-          proc.getLogs().slice(-3000),
+        `${proc.name} exited (code=${proc.process.exitCode}) before bridge confirmed.\n${proc.getLogs().slice(-3000)}`,
       );
     }
     await sleep(300);
   }
   throw new Error(
-    `Timed out waiting for bridge confirmation from ${proc.name}.\n` +
-      proc.getLogs().slice(-3000),
+    `Timed out waiting for bridge confirmation from ${proc.name}.\n${proc.getLogs().slice(-3000)}`,
   );
 }
 
 /** Wait for chaos test process to exit; returns exit code. */
-async function waitForProcessExit(
-  proc: ManagedProcess,
-  timeoutMs: number,
-): Promise<number> {
+async function waitForProcessExit(proc: ManagedProcess, timeoutMs: number): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (proc.process.exitCode !== null) return proc.process.exitCode;
@@ -294,16 +252,8 @@ type SetupResult = {
 };
 
 async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
-  const tokenArtifactPath = path.join(
-    config.repoRoot,
-    "target",
-    "token_contract-Token.json",
-  );
-  const fpcArtifactPath = path.join(
-    config.repoRoot,
-    "target",
-    "fpc-FPCMultiAsset.json",
-  );
+  const tokenArtifactPath = path.join(config.repoRoot, "target", "token_contract-Token.json");
+  const fpcArtifactPath = path.join(config.repoRoot, "target", "fpc-FPCMultiAsset.json");
 
   if (!existsSync(tokenArtifactPath) || !existsSync(fpcArtifactPath)) {
     throw new Error(
@@ -361,10 +311,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   ]).send({ from: operator });
   console.log(`[chaos-local] FPC deployed at ${fpc.address.toString()}`);
 
-  const [minFees, nodeInfo] = await Promise.all([
-    node.getCurrentMinFees(),
-    node.getNodeInfo(),
-  ]);
+  const [minFees, nodeInfo] = await Promise.all([node.getCurrentMinFees(), node.getNodeInfo()]);
   const maxGasCostPerTx =
     BigInt(config.daGasLimit) * minFees.feePerDaGas +
     BigInt(config.l2GasLimit) * minFees.feePerL2Gas;
@@ -373,11 +320,8 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
 
   // Query the actual L1 FeeJuice ERC20 balance so we never try to bridge more
   // than what the operator account holds (which causes ERC20InsufficientBalance).
-  const feeJuiceL1Addr =
-    nodeInfo.l1ContractAddresses.feeJuiceAddress.toString() as `0x${string}`;
-  const l1OperatorAddr = privateKeyToAccount(
-    config.l1PrivateKey as Hex,
-  ).address;
+  const feeJuiceL1Addr = nodeInfo.l1ContractAddresses.feeJuiceAddress.toString() as `0x${string}`;
+  const l1OperatorAddr = privateKeyToAccount(config.l1PrivateKey as Hex).address;
   const l1Client = createPublicClient({ transport: http(config.l1RpcUrl) });
   const l1FeeJuiceBalance = await l1Client.readContract({
     address: feeJuiceL1Addr,
@@ -401,8 +345,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   // 50% of the local devnet's 1 FeeJuice covers ~25 worst-case fee-paid txs,
   // more than enough for the chaos suite (~15-20 fee-paid txs).
   const safeL1Budget = l1FeeJuiceBalance / 2n;
-  const topupAmountWei =
-    desiredTopupWei <= safeL1Budget ? desiredTopupWei : safeL1Budget;
+  const topupAmountWei = desiredTopupWei <= safeL1Budget ? desiredTopupWei : safeL1Budget;
 
   if (topupAmountWei === 0n) {
     throw new Error(
@@ -415,10 +358,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   );
 
   // Write attestation config
-  const attestationConfigPath = path.join(
-    config.runDir,
-    "attestation.config.yaml",
-  );
+  const attestationConfigPath = path.join(config.runDir, "attestation.config.yaml");
   writeFileSync(
     attestationConfigPath,
     `${[
@@ -440,10 +380,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   );
 
   // Write topup config
-  const topupBridgeStatePath = path.join(
-    config.runDir,
-    "topup.bridge-state.json",
-  );
+  const topupBridgeStatePath = path.join(config.runDir, "topup.bridge-state.json");
   const topupConfigPath = path.join(config.runDir, "topup.config.yaml");
   writeFileSync(
     topupConfigPath,
@@ -496,13 +433,7 @@ async function startServicesAndFundFpc(
     "dist",
     "index.js",
   );
-  const topupDistPath = path.join(
-    config.repoRoot,
-    "services",
-    "topup",
-    "dist",
-    "index.js",
-  );
+  const topupDistPath = path.join(config.repoRoot, "services", "topup", "dist", "index.js");
 
   console.log("[chaos-local] Starting attestation service...");
   const attestation = startManagedProcess(
@@ -519,9 +450,7 @@ async function startServicesAndFundFpc(
   );
 
   await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
-  console.log(
-    `[chaos-local] Attestation service ready at ${attestationBaseUrl}`,
-  );
+  console.log(`[chaos-local] Attestation service ready at ${attestationBaseUrl}`);
 
   console.log("[chaos-local] Starting topup service...");
   const topup = startManagedProcess(
@@ -547,6 +476,16 @@ async function startServicesAndFundFpc(
     `[chaos-local] Bridge submitted: messageHash=${bridgeSub.messageHash} leafIndex=${bridgeSub.leafIndex}`,
   );
 
+  // Advance L2 blocks to make the L1→L2 message available for claiming
+  console.log(
+    `[chaos-local] Advancing ${config.relayAdvanceBlocks} L2 blocks to relay L1→L2 message...`,
+  );
+  for (let i = 0; i < config.relayAdvanceBlocks; i++) {
+    await setup.token.methods
+      .mint_to_private(setup.user, 1n)
+      .send({ from: setup.operator, wait: { timeout: 120 } });
+    console.log(`[chaos-local] relay block ${i + 1}/${config.relayAdvanceBlocks}`);
+  }
   const node = createAztecNodeClient(config.nodeUrl);
 
   // Wait for topup to log a confirmed outcome
@@ -563,26 +502,15 @@ async function startServicesAndFundFpc(
   return { attestation, topup };
 }
 
-async function runChaosTest(
-  config: LocalConfig,
-  setup: SetupResult,
-): Promise<number> {
-  const chaosTestPath = path.join(
-    config.repoRoot,
-    "scripts",
-    "chaos",
-    "fpc-chaos-test.ts",
-  );
+async function runChaosTest(config: LocalConfig, setup: SetupResult): Promise<number> {
+  const chaosTestPath = path.join(config.repoRoot, "scripts", "chaos", "fpc-chaos-test.ts");
   const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
   const topupOpsBaseUrl = `http://127.0.0.1:${config.topupOpsPort}`;
 
-  const reportPath =
-    config.reportPath ?? path.join(config.runDir, "chaos-report.json");
+  const reportPath = config.reportPath ?? path.join(config.runDir, "chaos-report.json");
 
   console.log(`\n[chaos-local] ──────────────────────────────────────────`);
-  console.log(
-    `[chaos-local] Launching chaos test suite (mode=${config.chaosMode})`,
-  );
+  console.log(`[chaos-local] Launching chaos test suite (mode=${config.chaosMode})`);
   console.log(`[chaos-local] FPC:    ${setup.fpcAddress.toString()}`);
   console.log(`[chaos-local] Token:  ${setup.tokenAddress.toString()}`);
   console.log(`[chaos-local] Attest: ${attestationBaseUrl}`);
@@ -616,9 +544,7 @@ async function runChaosTest(
 
   // 30 min ceiling for the full suite
   const exitCode = await waitForProcessExit(chaosProc, 30 * 60 * 1000);
-  console.log(
-    `\n[chaos-local] Chaos test process exited with code ${exitCode}`,
-  );
+  console.log(`\n[chaos-local] Chaos test process exited with code ${exitCode}`);
 
   if (existsSync(reportPath)) {
     try {
@@ -654,9 +580,7 @@ async function main(): Promise<void> {
   console.log("[chaos-local]  FPC Chaos Local – self-contained test run  ");
   console.log("[chaos-local] ════════════════════════════════════════════");
   console.log(`[chaos-local] node=${config.nodeUrl}  l1=${config.l1RpcUrl}`);
-  console.log(
-    `[chaos-local] mode=${config.chaosMode}  runDir=${config.runDir}\n`,
-  );
+  console.log(`[chaos-local] mode=${config.chaosMode}  runDir=${config.runDir}\n`);
 
   let exitCode = 0;
 
@@ -664,19 +588,14 @@ async function main(): Promise<void> {
     console.log("[chaos-local] Step 1/3: Deploying contracts...");
     const setup = await deployAndConfigure(config);
 
-    console.log(
-      "\n[chaos-local] Step 2/3: Starting services and funding FPC...",
-    );
+    console.log("\n[chaos-local] Step 2/3: Starting services and funding FPC...");
     const { attestation, topup } = await startServicesAndFundFpc(config, setup);
     managed.push(attestation, topup);
 
     console.log("\n[chaos-local] Step 3/3: Running chaos tests...");
     exitCode = await runChaosTest(config, setup);
   } catch (err) {
-    console.error(
-      "\n[chaos-local] ERROR:",
-      err instanceof Error ? err.message : String(err),
-    );
+    console.error("\n[chaos-local] ERROR:", err instanceof Error ? err.message : String(err));
     exitCode = 1;
   } finally {
     console.log("\n[chaos-local] Stopping services...");
