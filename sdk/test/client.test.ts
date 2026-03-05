@@ -35,6 +35,6 @@ describe("createSponsoredCounterClient scaffold", () => {
     });
 
     expect(typeof client.increment).toBe("function");
-    expect(contracts.connectAndAttachContracts).toHaveBeenCalledTimes(1);
+    expect(contracts.connectAndAttachContracts).not.toHaveBeenCalled();
   });
 });

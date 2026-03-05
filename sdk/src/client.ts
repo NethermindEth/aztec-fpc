@@ -50,8 +50,9 @@ function readReceiptMetadata(receipt: unknown): {
     );
   }
 
-  const feeCandidate = (receipt as { transactionFee?: { toString(): string } | bigint })
-    .transactionFee;
+  const feeCandidate = (receipt as {
+    transactionFee?: { toString(): string } | bigint;
+  }).transactionFee;
   if (feeCandidate === undefined) {
     throw new SponsoredTxFailedError(
       "Sponsored call receipt is missing transactionFee.",
@@ -62,6 +63,45 @@ function readReceiptMetadata(receipt: unknown): {
     txFeeJuice: toBigInt(feeCandidate),
     txHash: txHashCandidate.toString(),
   };
+}
+
+type CounterContractLike = {
+  methods: {
+    get_counter: (user: unknown) => {
+      simulate: (args: {
+        from: unknown;
+      }) => Promise<{ toString(): string } | bigint>;
+    };
+    increment: (user: unknown) => {
+      send: (args: {
+        fee: unknown;
+        from: unknown;
+        wait: { timeout: number };
+      }) => Promise<unknown>;
+    };
+  };
+};
+
+function asCounterContract(target: unknown): CounterContractLike {
+  if (!target || typeof target !== "object") {
+    throw new SponsoredTxFailedError("Counter target contract is missing.");
+  }
+  const methods = (target as { methods?: unknown }).methods;
+  if (!methods || typeof methods !== "object") {
+    throw new SponsoredTxFailedError(
+      "Counter target contract does not expose methods.",
+    );
+  }
+
+  const getCounter = (methods as { get_counter?: unknown }).get_counter;
+  const increment = (methods as { increment?: unknown }).increment;
+  if (typeof getCounter !== "function" || typeof increment !== "function") {
+    throw new SponsoredTxFailedError(
+      "Counter target contract is missing get_counter/increment methods.",
+    );
+  }
+
+  return target as CounterContractLike;
 }
 
 export async function executeSponsoredCall<TReceipt>(
@@ -270,152 +310,75 @@ export async function executeSponsoredCall<TReceipt>(
 export async function createSponsoredCounterClient(
   input: CreateSponsoredCounterClientInput,
 ): Promise<SponsoredCounterClient> {
-  const context = await connectAndAttachContracts({
-    account: input.account,
-    runtimeConfig: createDevnetRuntimeConfig(),
-    wallet: input.wallet,
-  });
-  const counter = context.counter;
-  const counterAddress = context.addresses.targets.counter;
-  if (!counter || !counterAddress || !context.faucet) {
-    throw new SponsoredTxFailedError(
-      "Counter runtime target/faucet is not configured.",
-    );
-  }
-
   return {
     async increment() {
       try {
-        const minFees = await context.node.getCurrentMinFees();
-        const fjAmount =
-          BigInt(SDK_DEFAULTS.daGasLimit) * minFees.feePerDaGas +
-          BigInt(SDK_DEFAULTS.l2GasLimit) * minFees.feePerL2Gas;
-        const fpcFeeJuiceBalance = await getFeeJuiceBalance(
-          context.addresses.fpc,
-          context.node,
-        );
-        if (fpcFeeJuiceBalance < fjAmount) {
-          throw new InsufficientFpcFeeJuiceError(
-            "FPC FeeJuice balance is below required amount.",
-            {
-              current: fpcFeeJuiceBalance.toString(),
-              required: fjAmount.toString(),
-            },
-          );
-        }
+        let counter: CounterContractLike | undefined;
+        let counterBefore: bigint | undefined;
+        let counterAfter: bigint | undefined;
 
-        const quote = await fetchAndValidateQuote({
-          acceptedAsset: context.addresses.acceptedAsset,
-          attestationBaseUrl: SDK_DEFAULTS.attestationBaseUrl,
-          fjAmount,
-          user: context.addresses.user,
-        });
-        await ensurePrivateBalance({
-          faucet: context.faucet as never,
-          from: context.addresses.user,
-          maxFaucetAttempts: SDK_DEFAULTS.maxFaucetAttempts,
-          minimumPrivateAcceptedAsset:
-            quote.aaPaymentAmount + SDK_DEFAULTS.minimumPrivateBalanceBuffer,
-          token: context.token as never,
-          txWaitTimeoutSeconds: SDK_DEFAULTS.txWaitTimeoutSeconds,
-          user: context.addresses.user,
-        });
-        const counterBefore = toBigInt(
-          await counter.methods
-            .get_counter(context.addresses.user)
-            .simulate({ from: context.addresses.user }),
-        );
-        const userPrivateBefore = toBigInt(
-          await context.token.methods
-            .balance_of_private(context.addresses.user)
-            .simulate({ from: context.addresses.user }),
-        );
-
-        const { paymentMethod } = await createSponsoredPaymentMethod({
-          aaPaymentAmount: quote.aaPaymentAmount,
-          fpc: context.fpc as never,
-          fjAmount,
-          operatorAddress: context.addresses.operator,
-          quoteSignatureBytes: quote.signatureBytes,
-          quoteValidUntil: quote.validUntil,
-          token: context.token as never,
-          tokenAddress: context.addresses.acceptedAsset,
-          user: context.addresses.user,
+        const execution = await executeSponsoredCall<{
+          transactionFee: { toString(): string } | bigint;
+          txHash: { toString(): string };
+        }>({
+          account: input.account,
+          buildCall: async (ctx) => {
+            counter = asCounterContract(ctx.contracts.targets.counter);
+            counterBefore = toBigInt(
+              await counter.methods
+                .get_counter(ctx.user)
+                .simulate({ from: ctx.user }),
+            );
+            return counter.methods.increment(ctx.user);
+          },
+          postChecks: async (ctx) => {
+            if (!counter || counterBefore === undefined) {
+              throw new SponsoredTxFailedError(
+                "Counter state was not initialized before post-checks.",
+              );
+            }
+            counterAfter = toBigInt(
+              await counter.methods
+                .get_counter(ctx.user)
+                .simulate({ from: ctx.user }),
+            );
+            if (counterAfter !== counterBefore + 1n) {
+              throw new SponsoredTxFailedError(
+                "Counter increment invariant failed.",
+                {
+                  counterAfter: counterAfter.toString(),
+                  counterBefore: counterBefore.toString(),
+                },
+              );
+            }
+          },
+          sponsorship: {
+            attestationBaseUrl: SDK_DEFAULTS.attestationBaseUrl,
+            daGasLimit: SDK_DEFAULTS.daGasLimit,
+            l2GasLimit: SDK_DEFAULTS.l2GasLimit,
+            maxFaucetAttempts: SDK_DEFAULTS.maxFaucetAttempts,
+            minimumPrivateBalanceBuffer:
+              SDK_DEFAULTS.minimumPrivateBalanceBuffer,
+            runtimeConfig: createDevnetRuntimeConfig(),
+            txWaitTimeoutSeconds: SDK_DEFAULTS.txWaitTimeoutSeconds,
+          },
           wallet: input.wallet,
         });
 
-        const gasLimits = new Gas(
-          SDK_DEFAULTS.daGasLimit,
-          SDK_DEFAULTS.l2GasLimit,
-        );
-        const teardownGasLimits = new Gas(0, 0);
-        const maxFeesPerGas = new GasFees(
-          minFees.feePerDaGas,
-          minFees.feePerL2Gas,
-        );
-
-        let receipt: {
-          transactionFee: { toString(): string } | bigint;
-          txHash: { toString(): string };
-        };
-        try {
-          receipt = await counter.methods
-            .increment(context.addresses.user)
-            .send({
-              fee: {
-                gasSettings: { gasLimits, maxFeesPerGas, teardownGasLimits },
-                paymentMethod,
-              },
-              from: context.addresses.user,
-              wait: { timeout: SDK_DEFAULTS.txWaitTimeoutSeconds },
-            });
-        } catch (error) {
+        if (counterBefore === undefined || counterAfter === undefined) {
           throw new SponsoredTxFailedError(
-            "Sponsored transaction submission failed.",
-            {
-              cause: error instanceof Error ? error.message : String(error),
-            },
+            "Counter state was not captured by wrapper flow.",
           );
-        }
-        const counterAfter = toBigInt(
-          await counter.methods
-            .get_counter(context.addresses.user)
-            .simulate({ from: context.addresses.user }),
-        );
-        const userPrivateAfter = toBigInt(
-          await context.token.methods
-            .balance_of_private(context.addresses.user)
-            .simulate({ from: context.addresses.user }),
-        );
-        const userDebited = userPrivateBefore - userPrivateAfter;
-
-        if (counterAfter !== counterBefore + 1n) {
-          throw new SponsoredTxFailedError(
-            "Counter increment invariant failed.",
-            {
-              counterAfter: counterAfter.toString(),
-              counterBefore: counterBefore.toString(),
-            },
-          );
-        }
-        if (
-          !sameAddress(context.addresses.user, context.addresses.operator) &&
-          userDebited !== quote.aaPaymentAmount
-        ) {
-          throw new SponsoredTxFailedError("Accounting invariant failed.", {
-            expectedCharge: quote.aaPaymentAmount.toString(),
-            userDebited: userDebited.toString(),
-          });
         }
 
         return {
           counterAfter,
           counterBefore,
-          expectedCharge: quote.aaPaymentAmount,
-          quoteValidUntil: quote.validUntil,
-          txFeeJuice: toBigInt(receipt.transactionFee),
-          txHash: receipt.txHash.toString(),
-          userDebited,
+          expectedCharge: execution.expectedCharge,
+          quoteValidUntil: execution.quoteValidUntil,
+          txFeeJuice: execution.txFeeJuice,
+          txHash: execution.txHash,
+          userDebited: execution.userDebited,
         };
       } catch (error) {
         if (error instanceof SponsoredSdkError) {

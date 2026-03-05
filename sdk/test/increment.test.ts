@@ -61,7 +61,28 @@ function buildContext(input: {
     input.privateAfter ?? 90n,
   ];
 
+  const counterContract = {
+    methods: {
+      get_counter: () => ({
+        simulate: async () => counterValues.shift() ?? input.counterAfter,
+      }),
+      increment: () => ({
+        send: async () => ({
+          transactionFee: 123n,
+          txHash: { toString: () => "0xabc" },
+        }),
+      }),
+    },
+  };
+
   return {
+    acceptedAsset: {
+      methods: {
+        balance_of_private: () => ({
+          simulate: async () => privateValues.shift() ?? 90n,
+        }),
+      },
+    },
     addresses: {
       acceptedAsset: TOKEN,
       fpc: FPC,
@@ -71,19 +92,7 @@ function buildContext(input: {
       },
       user: USER,
     },
-    counter: {
-      methods: {
-        get_counter: () => ({
-          simulate: async () => counterValues.shift() ?? input.counterAfter,
-        }),
-        increment: () => ({
-          send: async () => ({
-            transactionFee: 123n,
-            txHash: { toString: () => "0xabc" },
-          }),
-        }),
-      },
-    },
+    counter: counterContract,
     faucet: {},
     fpc: {
       address: FPC,
@@ -94,6 +103,9 @@ function buildContext(input: {
         feePerDaGas: 1n,
         feePerL2Gas: 1n,
       }),
+    },
+    targets: {
+      counter: counterContract,
     },
     token: {
       methods: {
@@ -108,6 +120,11 @@ function buildContext(input: {
 describe("increment", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(quote.resolveAcceptedAssetsAndDiscovery).mockResolvedValue({
+      assets: [{ address: TOKEN.toString(), name: "humanUSDC" }],
+      source: "accepted_assets_endpoint",
+    } as never);
+    vi.mocked(quote.selectAcceptedAsset).mockResolvedValue(TOKEN);
     vi.mocked(quote.fetchAndValidateQuote).mockResolvedValue({
       aaPaymentAmount: 10n,
       accepted_asset: TOKEN.toString(),
@@ -139,6 +156,7 @@ describe("increment", () => {
     expect(out.counterAfter).toBe(1n);
     expect(out.expectedCharge).toBe(10n);
     expect(out.userDebited).toBe(10n);
+    expect(quote.resolveAcceptedAssetsAndDiscovery).toHaveBeenCalledTimes(1);
     expect(quote.fetchAndValidateQuote).toHaveBeenCalledTimes(1);
     expect(balanceBootstrap.ensurePrivateBalance).toHaveBeenCalledTimes(1);
     expect(feePayment.createSponsoredPaymentMethod).toHaveBeenCalledTimes(1);

@@ -281,6 +281,8 @@ Failure modes:
 
 ### Step 5: Rebuild legacy counter client on top of generic API
 
+Status: [x] Completed on 2026-03-05.
+
 Files:
 - `sdk/src/client.ts`
 - `sdk/src/index.ts`
