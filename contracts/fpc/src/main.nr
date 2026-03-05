@@ -142,10 +142,7 @@ pub contract FPCMultiAsset {
             user_address.to_field(),
         ]);
 
-        assert(
-            schnorr::verify_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>()),
-            "invalid quote signature",
-        );
+        schnorr::assert_valid_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>());
 
         context.push_nullifier(quote_hash);
 
