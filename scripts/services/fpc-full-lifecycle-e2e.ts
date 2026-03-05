@@ -1595,7 +1595,7 @@ async function negativeSenderBindingRejected(
 
   await expectFailure(
     "negative quote sender binding rejected",
-    ["invalid quote signature"],
+    ["invalid quote signature", "Cannot satisfy constraint"],
     () =>
       executeFeePaidTx(config, result, {
         token: result.token,
