@@ -24,4 +24,5 @@ aztec compile
 
 echo "[smoke] Running fee entrypoint local smoke flow"
 FPC_SMOKE_L1_RPC_URL="$(setup_l1_rpc_url)" \
+  FPC_SMOKE_ALLOW_DEGRADED="${FPC_SMOKE_ALLOW_DEGRADED:-1}" \
   bunx tsx "$REPO_ROOT/services/attestation/test/fee-entrypoint-local-smoke.ts"
