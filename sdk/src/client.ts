@@ -65,6 +65,11 @@ function readReceiptMetadata(receipt: unknown): {
   };
 }
 
+type CounterReceipt = {
+  transactionFee: { toString(): string } | bigint;
+  txHash: { toString(): string };
+};
+
 type CounterContractLike = {
   methods: {
     get_counter: (user: unknown) => {
@@ -77,7 +82,7 @@ type CounterContractLike = {
         fee: unknown;
         from: unknown;
         wait: { timeout: number };
-      }) => Promise<unknown>;
+      }) => Promise<CounterReceipt>;
     };
   };
 };
@@ -317,10 +322,7 @@ export async function createSponsoredCounterClient(
         let counterBefore: bigint | undefined;
         let counterAfter: bigint | undefined;
 
-        const execution = await executeSponsoredCall<{
-          transactionFee: { toString(): string } | bigint;
-          txHash: { toString(): string };
-        }>({
+        const execution = await executeSponsoredCall<CounterReceipt>({
           account: input.account,
           buildCall: async (ctx) => {
             counter = asCounterContract(ctx.contracts.targets.counter);
