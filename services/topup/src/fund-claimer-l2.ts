@@ -354,30 +354,37 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function main(): Promise<void> {
-  const args = parseCliArgs(process.argv.slice(2));
-  const manifest = readManifest(args.manifestPath);
+type TopupNode = ReturnType<typeof createAztecNodeClient>;
+type BridgePortalManager = Awaited<ReturnType<typeof L1FeeJuicePortalManager.new>>;
+type EmbeddedWalletInstance = Awaited<ReturnType<typeof EmbeddedWallet.create>>;
 
+function resolveNodeUrl(args: CliArgs, manifest: PartialManifest): string {
   const nodeUrlRaw = args.nodeUrl ?? manifest.network?.node_url ?? null;
   if (!nodeUrlRaw) {
     throw new Error(
       "Missing node URL. Set AZTEC_NODE_URL, pass --node-url, or include manifest.network.node_url.",
     );
   }
-  const nodeUrl = parseHttpUrl("node URL", nodeUrlRaw);
+  return parseHttpUrl("node URL", nodeUrlRaw);
+}
 
-  const l1RpcUrl = args.l1RpcUrl;
-  if (!l1RpcUrl) {
+function requireL1RpcUrl(args: CliArgs): string {
+  if (!args.l1RpcUrl) {
     throw new Error("Missing L1 RPC URL. Set L1_RPC_URL or pass --l1-rpc-url.");
   }
+  return args.l1RpcUrl;
+}
 
-  const l1PrivateKey = args.l1PrivateKey;
-  if (!l1PrivateKey) {
+function requireL1PrivateKey(args: CliArgs): string {
+  if (!args.l1PrivateKey) {
     throw new Error(
       "Missing L1 private key. Set L1_OPERATOR_PRIVATE_KEY or pass --l1-private-key.",
     );
   }
+  return args.l1PrivateKey;
+}
 
+function resolveClaimerSecretKey(args: CliArgs, manifest: PartialManifest): string | null {
   const manifestDeployerKey = parseOptionalHex32(
     "manifest.deployment_accounts.l2_deployer.private_key",
     manifest.deployment_accounts?.l2_deployer?.private_key ?? null,
@@ -386,214 +393,371 @@ async function main(): Promise<void> {
     "OPERATOR_SECRET_KEY",
     parseOptionalEnv("OPERATOR_SECRET_KEY"),
   );
-  const claimerSecretKey = args.claimerSecretKey ?? fallbackOperatorKey ?? manifestDeployerKey;
+  return args.claimerSecretKey ?? fallbackOperatorKey ?? manifestDeployerKey;
+}
 
-  const manifestDeployerAddress = parseOptionalAztecAddress(
+function resolveManifestDeployerAddress(manifest: PartialManifest): string | null {
+  return parseOptionalAztecAddress(
     "manifest.deployment_accounts.l2_deployer.address",
     manifest.deployment_accounts?.l2_deployer?.address ?? null,
   );
+}
 
-  let claimerAddress: AztecAddress;
+function assertClaimerAddressMatchesDerived(
+  explicitAddress: string,
+  derivedAddress: AztecAddress,
+): void {
+  const explicit = AztecAddress.fromString(explicitAddress);
+  if (explicit.toString().toLowerCase() === derivedAddress.toString().toLowerCase()) {
+    return;
+  }
+  throw new Error(
+    `--claimer-address ${explicit.toString()} does not match address derived from claimer secret key ${derivedAddress.toString()}.`,
+  );
+}
+
+async function resolveClaimerAddress(
+  args: CliArgs,
+  claimerSecretKey: string | null,
+  manifestDeployerAddress: string | null,
+): Promise<AztecAddress> {
   if (claimerSecretKey) {
     const derived = await deriveAddressFromSecret(claimerSecretKey);
     if (args.claimerAddress) {
-      const explicit = AztecAddress.fromString(args.claimerAddress);
-      if (explicit.toString().toLowerCase() !== derived.toString().toLowerCase()) {
-        throw new Error(
-          `--claimer-address ${explicit.toString()} does not match address derived from claimer secret key ${derived.toString()}.`,
-        );
-      }
+      assertClaimerAddressMatchesDerived(args.claimerAddress, derived);
     }
-    claimerAddress = derived;
-  } else if (args.claimerAddress) {
-    claimerAddress = AztecAddress.fromString(args.claimerAddress);
-  } else if (manifestDeployerAddress) {
-    claimerAddress = AztecAddress.fromString(manifestDeployerAddress);
-  } else {
-    throw new Error(
-      "Could not resolve claimer address. Provide --claimer-address or --claimer-secret-key, or include deployment_accounts.l2_deployer in manifest.",
-    );
+    return derived;
   }
+  if (args.claimerAddress) {
+    return AztecAddress.fromString(args.claimerAddress);
+  }
+  if (manifestDeployerAddress) {
+    return AztecAddress.fromString(manifestDeployerAddress);
+  }
+  throw new Error(
+    "Could not resolve claimer address. Provide --claimer-address or --claimer-secret-key, or include deployment_accounts.l2_deployer in manifest.",
+  );
+}
 
-  const feePayerSecretKey =
+function resolveFeePayerSecretKey(args: CliArgs, claimerSecretKey: string | null): string | null {
+  return (
     args.feePayerSecretKey ??
     parseOptionalHex32(
       "TOPUP_AUTOCLAIM_FEE_PAYER_SECRET_KEY",
       parseOptionalEnv("TOPUP_AUTOCLAIM_FEE_PAYER_SECRET_KEY"),
     ) ??
-    claimerSecretKey;
-  if (!args.skipClaim && !feePayerSecretKey) {
+    claimerSecretKey
+  );
+}
+
+function requireFeePayerSecretKeyForClaim(feePayerSecretKey: string | null): string {
+  if (!feePayerSecretKey) {
     throw new Error(
       "Missing fee payer secret key for claim. Set --fee-payer-secret-key, TOPUP_AUTOCLAIM_FEE_PAYER_SECRET_KEY, or provide claimer secret key.",
     );
   }
+  return feePayerSecretKey;
+}
 
+function logRunConfig(
+  args: CliArgs,
+  nodeUrl: string,
+  l1RpcUrl: string,
+  claimerAddress: AztecAddress,
+): void {
   pinoLogger.info(`${LOG_PREFIX} node_url=${nodeUrl}`);
   pinoLogger.info(`${LOG_PREFIX} l1_rpc_url=${l1RpcUrl}`);
   pinoLogger.info(`${LOG_PREFIX} claimer_address=${claimerAddress.toString()}`);
   pinoLogger.info(`${LOG_PREFIX} amount_wei=${args.amountWei.toString()}`);
   pinoLogger.info(`${LOG_PREFIX} payment_mode=fee_juice (sponsored disabled)`);
+}
 
-  const node = createAztecNodeClient(nodeUrl);
-  await waitForNode(node);
-  const nodeInfo = await node.getNodeInfo();
-  const l1ChainId = nodeInfo.l1ChainId;
-  if (!Number.isInteger(l1ChainId) || l1ChainId <= 0) {
-    throw new Error(`Node returned invalid l1ChainId=${String(l1ChainId)}`);
+function assertPositiveL1ChainId(l1ChainId: number): void {
+  if (Number.isInteger(l1ChainId) && l1ChainId > 0) {
+    return;
   }
+  throw new Error(`Node returned invalid l1ChainId=${String(l1ChainId)}`);
+}
 
+async function assertL1ChainIdMatchesRpc(l1RpcUrl: string, l1ChainId: number): Promise<void> {
   const l1Public = createPublicClient({ transport: http(l1RpcUrl) });
   const rpcChainId = await l1Public.getChainId();
   if (rpcChainId !== l1ChainId) {
     throw new Error(`L1 chain mismatch. node l1ChainId=${l1ChainId}, rpc chainId=${rpcChainId}`);
   }
+}
 
+function createL1WalletClient(l1RpcUrl: string, l1ChainId: number, l1PrivateKey: string) {
   const l1Chain = resolveL1Chain(l1ChainId, l1RpcUrl);
   const l1Account = privateKeyToAccount(l1PrivateKey as Hex);
-  const l1Wallet = createWalletClient({
+  return createWalletClient({
     account: l1Account,
     chain: l1Chain,
     transport: http(l1RpcUrl),
   }).extend(publicActions);
+}
 
+async function setupBridgePortal(
+  nodeUrl: string,
+  l1RpcUrl: string,
+  l1PrivateKey: string,
+): Promise<{ node: TopupNode; portalManager: BridgePortalManager }> {
+  const node = createAztecNodeClient(nodeUrl);
+  await waitForNode(node);
+  const nodeInfo = await node.getNodeInfo();
+  const l1ChainId = nodeInfo.l1ChainId;
+  assertPositiveL1ChainId(l1ChainId);
+  await assertL1ChainIdMatchesRpc(l1RpcUrl, l1ChainId);
+
+  const l1Wallet = createL1WalletClient(l1RpcUrl, l1ChainId, l1PrivateKey);
   const bridgeLogger = createLogger("fund-claimer-l2:bridge");
   const portalManager = await L1FeeJuicePortalManager.new(node, l1Wallet as never, bridgeLogger);
+  return { node, portalManager };
+}
 
+async function submitBridgeToClaimer(
+  portalManager: BridgePortalManager,
+  claimerAddress: AztecAddress,
+  amountWei: bigint,
+): Promise<BridgeClaim> {
   pinoLogger.info(`${LOG_PREFIX} bridging FeeJuice to claimer...`);
   const bridgeClaim = (await portalManager.bridgeTokensPublic(
     claimerAddress,
-    args.amountWei,
+    amountWei,
   )) as BridgeClaim;
-
   pinoLogger.info(
     `${LOG_PREFIX} bridge submitted message_hash=${bridgeClaim.messageHash} leaf_index=${bridgeClaim.messageLeafIndex} claim_secret_hash=<hidden>`,
   );
+  return bridgeClaim;
+}
 
+async function waitForBridgeMessageReady(
+  node: TopupNode,
+  bridgeClaim: BridgeClaim,
+  timeoutSeconds: number,
+): Promise<void> {
+  const messageHashFr = Fr.fromHexString(bridgeClaim.messageHash);
+  pinoLogger.info(`${LOG_PREFIX} waiting for L1->L2 message readiness...`);
+  const ready = await waitForL1ToL2MessageReady(node, messageHashFr, {
+    timeoutSeconds,
+    forPublicConsumption: false,
+  });
+  if (!ready) {
+    throw new Error(`Bridge message did not become ready within ${timeoutSeconds}s.`);
+  }
+}
+
+async function createWalletAccountFromSecret(
+  wallet: EmbeddedWalletInstance,
+  secretKey: string,
+): Promise<AztecAddress> {
+  const secret = Fr.fromHexString(secretKey);
+  const signingKey = deriveSigningKey(secret);
+  const account = await wallet.createSchnorrAccount(secret, Fr.ZERO, signingKey);
+  return account.address;
+}
+
+async function setupClaimWallet(
+  node: TopupNode,
+  feePayerSecretKey: string,
+  claimerSecretKey: string | null,
+): Promise<{
+  wallet: EmbeddedWalletInstance;
+  feePayerAddress: AztecAddress;
+  claimerWalletAddress: AztecAddress;
+}> {
+  const wallet = await EmbeddedWallet.create(node, {
+    ephemeral: true,
+    pxeConfig: { proverEnabled: true },
+  });
+  const feePayerAddress = await createWalletAccountFromSecret(wallet, feePayerSecretKey);
+  if (!claimerSecretKey || claimerSecretKey === feePayerSecretKey) {
+    return { wallet, feePayerAddress, claimerWalletAddress: feePayerAddress };
+  }
+
+  const claimerWalletAddress = await createWalletAccountFromSecret(wallet, claimerSecretKey);
+  return { wallet, feePayerAddress, claimerWalletAddress };
+}
+
+async function readBalances(
+  node: TopupNode,
+  claimerAddress: AztecAddress,
+  feePayerAddress: AztecAddress,
+): Promise<{ claimerBalance: bigint; feePayerBalance: bigint }> {
+  const claimerBalance = await getFeeJuiceBalance(claimerAddress, node);
+  const feePayerBalance = await getFeeJuiceBalance(feePayerAddress, node);
+  return { claimerBalance, feePayerBalance };
+}
+
+function resolveSelfPayMode(
+  feePayerBalance: bigint,
+  claimerSecretKey: string | null,
+  feePayerAddress: AztecAddress,
+): boolean {
+  const useSelfPay = feePayerBalance <= 0n && claimerSecretKey != null;
+  if (useSelfPay) {
+    pinoLogger.info(
+      `${LOG_PREFIX} fee payer has no balance — using FeeJuicePaymentMethodWithClaim (self-pay)`,
+    );
+    return true;
+  }
+  if (feePayerBalance <= 0n) {
+    throw new Error(
+      `Fee payer ${feePayerAddress.toString()} has zero L2 FeeJuice. Fund it first or provide --claimer-secret-key for self-pay.`,
+    );
+  }
+  return false;
+}
+
+function isInsufficientFeePayerBalanceError(renderedError: string): boolean {
+  return (
+    renderedError.includes("Insufficient fee payer balance") ||
+    renderedError.includes("Invalid tx: Insufficient fee payer balance")
+  );
+}
+
+interface ClaimWithRetriesArgs {
+  feeJuice: ReturnType<typeof FeeJuiceContract.at>;
+  claimerAddress: AztecAddress;
+  bridgeClaim: BridgeClaim;
+  useSelfPay: boolean;
+  claimerWalletAddress: AztecAddress;
+  feePayerAddress: AztecAddress;
+  claimRetries: number;
+  claimTimeoutSeconds: number;
+  claimRetryDelayMs: number;
+}
+
+function resolveClaimSendContext(args: ClaimWithRetriesArgs): {
+  from: AztecAddress;
+  fee: { paymentMethod: FeeJuicePaymentMethodWithClaim } | undefined;
+} {
+  if (!args.useSelfPay) {
+    return { from: args.feePayerAddress, fee: undefined };
+  }
+  return {
+    from: args.claimerWalletAddress,
+    fee: {
+      paymentMethod: new FeeJuicePaymentMethodWithClaim(args.claimerAddress, args.bridgeClaim),
+    },
+  };
+}
+
+async function submitClaimAttempt(args: ClaimWithRetriesArgs): Promise<string> {
+  const sendContext = resolveClaimSendContext(args);
+  const receipt = await args.feeJuice.methods
+    .claim(
+      args.claimerAddress,
+      args.bridgeClaim.claimAmount,
+      args.bridgeClaim.claimSecret,
+      new Fr(args.bridgeClaim.messageLeafIndex),
+    )
+    .send({
+      from: sendContext.from,
+      fee: sendContext.fee,
+      wait: { timeout: args.claimTimeoutSeconds },
+    });
+  return receipt.txHash.toString();
+}
+
+async function handleClaimAttemptFailure(
+  args: ClaimWithRetriesArgs,
+  attempt: number,
+  error: unknown,
+): Promise<void> {
+  const renderedError = String(error);
+  if (isInsufficientFeePayerBalanceError(renderedError)) {
+    throw new Error(
+      `Claim failed due to insufficient fee payer balance for ${args.feePayerAddress.toString()}. Underlying error: ${renderedError}`,
+    );
+  }
+  if (attempt >= args.claimRetries) {
+    return;
+  }
+  pinoLogger.warn(
+    `${LOG_PREFIX} claim attempt failed attempt=${attempt}/${args.claimRetries} retry_in_ms=${args.claimRetryDelayMs} error=${renderedError}`,
+  );
+  await sleep(args.claimRetryDelayMs);
+}
+
+async function claimWithRetries(args: ClaimWithRetriesArgs): Promise<string> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= args.claimRetries; attempt += 1) {
+    try {
+      const txHash = await submitClaimAttempt(args);
+      pinoLogger.info(
+        `${LOG_PREFIX} claim succeeded tx_hash=${txHash} attempt=${attempt}/${args.claimRetries}`,
+      );
+      return txHash;
+    } catch (error) {
+      lastError = error;
+      await handleClaimAttemptFailure(args, attempt, error);
+    }
+  }
+  throw new Error(
+    `Claim did not succeed after ${args.claimRetries} attempts. Last error: ${String(lastError)}`,
+  );
+}
+
+async function main(): Promise<void> {
+  const args = parseCliArgs(process.argv.slice(2));
+  const manifest = readManifest(args.manifestPath);
+  const nodeUrl = resolveNodeUrl(args, manifest);
+  const l1RpcUrl = requireL1RpcUrl(args);
+  const l1PrivateKey = requireL1PrivateKey(args);
+  const claimerSecretKey = resolveClaimerSecretKey(args, manifest);
+  const manifestDeployerAddress = resolveManifestDeployerAddress(manifest);
+  const claimerAddress = await resolveClaimerAddress(
+    args,
+    claimerSecretKey,
+    manifestDeployerAddress,
+  );
+  const feePayerSecretKey = resolveFeePayerSecretKey(args, claimerSecretKey);
+  logRunConfig(args, nodeUrl, l1RpcUrl, claimerAddress);
+
+  const { node, portalManager } = await setupBridgePortal(nodeUrl, l1RpcUrl, l1PrivateKey);
+  const bridgeClaim = await submitBridgeToClaimer(portalManager, claimerAddress, args.amountWei);
   if (args.skipClaim) {
     pinoLogger.info(`${LOG_PREFIX} skip-claim enabled; stopping after bridge submission`);
     return;
   }
 
-  const messageHashFr = Fr.fromHexString(bridgeClaim.messageHash);
-  pinoLogger.info(`${LOG_PREFIX} waiting for L1->L2 message readiness...`);
-  const ready = await waitForL1ToL2MessageReady(node, messageHashFr, {
-    timeoutSeconds: args.messageReadyTimeoutSeconds,
-    forPublicConsumption: false,
-  });
-  if (!ready) {
-    throw new Error(
-      `Bridge message did not become ready within ${args.messageReadyTimeoutSeconds}s.`,
-    );
-  }
-
-  const wallet = await EmbeddedWallet.create(node, {
-    ephemeral: true,
-    pxeConfig: { proverEnabled: true },
-  });
-  const feePayerSecret = Fr.fromHexString(feePayerSecretKey as string);
-  const feePayerSigningKey = deriveSigningKey(feePayerSecret);
-  const feePayerAccount = await wallet.createSchnorrAccount(
-    feePayerSecret,
-    Fr.ZERO,
-    feePayerSigningKey,
+  const requiredFeePayerSecretKey = requireFeePayerSecretKeyForClaim(feePayerSecretKey);
+  await waitForBridgeMessageReady(node, bridgeClaim, args.messageReadyTimeoutSeconds);
+  const { wallet, feePayerAddress, claimerWalletAddress } = await setupClaimWallet(
+    node,
+    requiredFeePayerSecretKey,
+    claimerSecretKey,
   );
-  const feePayerAddress = feePayerAccount.address;
-
-  // Register claimer account in wallet for self-pay fallback when fee payer has no balance.
-  let claimerWalletAddress = feePayerAddress;
-  if (claimerSecretKey && claimerSecretKey !== feePayerSecretKey) {
-    const claimerSecret = Fr.fromHexString(claimerSecretKey);
-    const claimerSigningKey = deriveSigningKey(claimerSecret);
-    const claimerAccount = await wallet.createSchnorrAccount(
-      claimerSecret,
-      Fr.ZERO,
-      claimerSigningKey,
-    );
-    claimerWalletAddress = claimerAccount.address;
-  }
-
-  const claimerBalanceBefore = await getFeeJuiceBalance(claimerAddress, node);
-  const feePayerBalanceBefore = await getFeeJuiceBalance(feePayerAddress, node);
+  const balancesBefore = await readBalances(node, claimerAddress, feePayerAddress);
   pinoLogger.info(
-    `${LOG_PREFIX} pre-claim balances claimer=${claimerBalanceBefore} fee_payer=${feePayerBalanceBefore}`,
+    `${LOG_PREFIX} pre-claim balances claimer=${balancesBefore.claimerBalance} fee_payer=${balancesBefore.feePayerBalance}`,
   );
 
-  // Self-pay with the claim when fee payer has no balance and we have the claimer key.
-  const useSelfPay = feePayerBalanceBefore <= 0n && claimerSecretKey != null;
-  if (useSelfPay) {
-    pinoLogger.info(
-      `${LOG_PREFIX} fee payer has no balance — using FeeJuicePaymentMethodWithClaim (self-pay)`,
-    );
-  } else if (feePayerBalanceBefore <= 0n) {
-    throw new Error(
-      `Fee payer ${feePayerAddress.toString()} has zero L2 FeeJuice. Fund it first or provide --claimer-secret-key for self-pay.`,
-    );
-  }
-
+  const useSelfPay = resolveSelfPayMode(
+    balancesBefore.feePayerBalance,
+    claimerSecretKey,
+    feePayerAddress,
+  );
   const feeJuice = FeeJuiceContract.at(wallet);
-  let lastError: unknown = null;
-  let txHash: string | null = null;
+  await claimWithRetries({
+    feeJuice,
+    claimerAddress,
+    bridgeClaim,
+    useSelfPay,
+    claimerWalletAddress,
+    feePayerAddress,
+    claimRetries: args.claimRetries,
+    claimTimeoutSeconds: args.claimTimeoutSeconds,
+    claimRetryDelayMs: args.claimRetryDelayMs,
+  });
 
-  for (let attempt = 1; attempt <= args.claimRetries; attempt += 1) {
-    try {
-      const sendFrom = useSelfPay ? claimerWalletAddress : feePayerAddress;
-      const sendFee = useSelfPay
-        ? {
-            paymentMethod: new FeeJuicePaymentMethodWithClaim(claimerAddress, bridgeClaim),
-          }
-        : undefined;
-      const receipt = await feeJuice.methods
-        .claim(
-          claimerAddress,
-          bridgeClaim.claimAmount,
-          bridgeClaim.claimSecret,
-          new Fr(bridgeClaim.messageLeafIndex),
-        )
-        .send({
-          from: sendFrom,
-          fee: sendFee,
-          wait: { timeout: args.claimTimeoutSeconds },
-        });
-
-      txHash = receipt.txHash.toString();
-      pinoLogger.info(
-        `${LOG_PREFIX} claim succeeded tx_hash=${txHash} attempt=${attempt}/${args.claimRetries}`,
-      );
-      break;
-    } catch (error) {
-      lastError = error;
-      const rendered = String(error);
-      if (
-        rendered.includes("Insufficient fee payer balance") ||
-        rendered.includes("Invalid tx: Insufficient fee payer balance")
-      ) {
-        throw new Error(
-          `Claim failed due to insufficient fee payer balance for ${feePayerAddress.toString()}. Underlying error: ${rendered}`,
-        );
-      }
-      if (attempt >= args.claimRetries) {
-        break;
-      }
-      pinoLogger.warn(
-        `${LOG_PREFIX} claim attempt failed attempt=${attempt}/${args.claimRetries} retry_in_ms=${args.claimRetryDelayMs} error=${rendered}`,
-      );
-      await sleep(args.claimRetryDelayMs);
-    }
-  }
-
-  if (!txHash) {
-    throw new Error(
-      `Claim did not succeed after ${args.claimRetries} attempts. Last error: ${String(lastError)}`,
-    );
-  }
-
-  const claimerBalanceAfter = await getFeeJuiceBalance(claimerAddress, node);
-  const feePayerBalanceAfter = await getFeeJuiceBalance(feePayerAddress, node);
+  const balancesAfter = await readBalances(node, claimerAddress, feePayerAddress);
   pinoLogger.info(
-    `${LOG_PREFIX} post-claim balances claimer=${claimerBalanceAfter} fee_payer=${feePayerBalanceAfter}`,
+    `${LOG_PREFIX} post-claim balances claimer=${balancesAfter.claimerBalance} fee_payer=${balancesAfter.feePayerBalance}`,
   );
   pinoLogger.info(
-    `${LOG_PREFIX} success: claimer delta=${claimerBalanceAfter - claimerBalanceBefore} wei`,
+    `${LOG_PREFIX} success: claimer delta=${balancesAfter.claimerBalance - balancesBefore.claimerBalance} wei`,
   );
 }
 
