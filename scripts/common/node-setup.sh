@@ -212,7 +212,7 @@ function setup_node() {
 
   _NODESETUP_INITIALIZED=1
 
-  if [[ "$_NODESETUP_STARTED_LOCAL" -eq 1 ]]; then
+  if [[ "$_NODESETUP_STARTED_LOCAL" -eq 1 && "${NODESETUP_DISABLE_BLOCK_PRODUCER:-0}" != "1" ]]; then
     local bp_script="$_NODESETUP_COMMON_DIR/../services/block-producer.sh"
     if [[ -f "$bp_script" ]]; then
       echo "$log_prefix Starting block-producer in background"

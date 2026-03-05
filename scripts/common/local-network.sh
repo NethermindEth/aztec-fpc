@@ -256,4 +256,5 @@ function localnet_reset_wallet_pxe_state() {
 
   rm -rf "$repo_root"/wallet_data_* "$repo_root"/pxe_data_*
   rm -rf "$repo_root"/services/attestation/wallet_data_* "$repo_root"/services/attestation/pxe_data_*
+  rm -rf "$HOME"/.aztec/wallet/pxe
 }

@@ -13,6 +13,7 @@ type CliArgs = {
   l1RpcUrl: string;
   operatorSecretKey: string | null;
   l1OperatorPrivateKey: string | null;
+  stopBlockProducerPid: number | null;
   nodeReadyTimeoutMs: number;
   bridgeWaitTimeoutMs: number;
   bridgePollMs: number;
@@ -157,7 +158,7 @@ class OperatorKeyMismatchError extends Error {
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
-const DEFAULT_MANIFEST_PATH = path.join(REPO_ROOT, "deployments", "manifest.json");
+const DEFAULT_MANIFEST_PATH = path.join(REPO_ROOT, "deployments", "devnet-manifest-v2.json");
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
@@ -169,6 +170,9 @@ const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const UINT_DEC_PATTERN = /^(0|[1-9][0-9]*)$/;
 const ETH_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const ZERO_ETH_ADDRESS_PATTERN = /^0x0{40}$/i;
+const INCLUDE_BY_ANCHOR_ERROR_FRAGMENT =
+  "Include-by timestamp must be greater than the anchor block timestamp.";
+const FPC_FEE_SEND_MAX_ATTEMPTS = 4;
 
 function usage(): string {
   return [
@@ -179,6 +183,7 @@ function usage(): string {
     "    [--l1-rpc-url <http(s)-url>] \\",
     "    [--operator-secret-key <hex32>] \\",
     "    [--l1-operator-private-key <hex32>] \\",
+    "    [--stop-block-producer-pid <positive_integer>] \\",
     "    [--node-ready-timeout-ms <positive_integer>] \\",
     "    [--bridge-wait-timeout-ms <positive_integer>] \\",
     "    [--bridge-poll-ms <positive_integer>] \\",
@@ -208,6 +213,7 @@ function usage(): string {
     "  FPC_DEVNET_L1_RPC_URL (or L1_RPC_URL)",
     "  FPC_DEVNET_OPERATOR_SECRET_KEY",
     "  L1_OPERATOR_PRIVATE_KEY",
+    "  FPC_DEVNET_SMOKE_STOP_BLOCK_PRODUCER_PID",
     "  FPC_DEVNET_SMOKE_* for numeric options",
     "",
     "Failure classification:",
@@ -287,6 +293,11 @@ function parseCliArgs(argv: string[]): CliParseResult {
     "http://127.0.0.1:8545";
   let operatorSecretKey = readEnvString("FPC_DEVNET_OPERATOR_SECRET_KEY");
   let l1OperatorPrivateKey = readEnvString("L1_OPERATOR_PRIVATE_KEY");
+  const stopBlockProducerPidRaw = readEnvString("FPC_DEVNET_SMOKE_STOP_BLOCK_PRODUCER_PID");
+  let stopBlockProducerPid =
+    stopBlockProducerPidRaw !== null
+      ? parsePositiveInteger(stopBlockProducerPidRaw, "FPC_DEVNET_SMOKE_STOP_BLOCK_PRODUCER_PID")
+      : null;
 
   let nodeReadyTimeoutMs = parsePositiveInteger(
     readEnvString("FPC_DEVNET_SMOKE_NODE_READY_TIMEOUT_MS") ?? "45000",
@@ -347,6 +358,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--l1-operator-private-key":
         l1OperatorPrivateKey = parseHex32(nextArg(argv, i, arg), arg);
+        i += 1;
+        break;
+      case "--stop-block-producer-pid":
+        stopBlockProducerPid = parsePositiveInteger(nextArg(argv, i, arg), arg);
         i += 1;
         break;
       case "--node-ready-timeout-ms":
@@ -414,6 +429,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
       l1OperatorPrivateKey: l1OperatorPrivateKey
         ? parseHex32(l1OperatorPrivateKey, "l1-operator-private-key")
         : null,
+      stopBlockProducerPid,
       nodeReadyTimeoutMs,
       bridgeWaitTimeoutMs,
       bridgePollMs,
@@ -702,6 +718,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isIncludeByAnchorTimestampError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes(INCLUDE_BY_ANCHOR_ERROR_FRAGMENT);
+}
+
+function isMissingPrivateNoteError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Failed to get a note 'self.is_some()'");
+}
+
 function normalizeEthAddress(value: unknown, fieldName: string): string {
   let candidate: string;
   if (typeof value === "string") {
@@ -745,6 +771,31 @@ async function waitForFeeJuiceBalanceAtLeast(
   }
   throw new FundingRuntimeFailure(
     `Timed out waiting for FeeJuice balance on ${feePayerAddress.toString()} to reach ${minimum.toString()} (latest=${latest.toString()})`,
+  );
+}
+
+async function waitForPrivateBalanceAtLeast(params: {
+  token: ContractLike;
+  owner: AztecAddressLike;
+  caller: AztecAddressLike;
+  minimum: bigint;
+  timeoutMs: number;
+  pollMs: number;
+}): Promise<bigint> {
+  const { token, owner, caller, minimum, timeoutMs, pollMs } = params;
+  const deadline = Date.now() + timeoutMs;
+  let latest = 0n;
+  while (Date.now() <= deadline) {
+    const raw = await token.methods.balance_of_private(owner).simulate({ from: caller });
+    const balance = BigInt((raw as { toString: () => string }).toString());
+    latest = balance;
+    if (balance >= minimum) {
+      return balance;
+    }
+    await sleep(pollMs);
+  }
+  throw new FundingRuntimeFailure(
+    `Timed out waiting for private token balance on ${owner.toString()} to reach ${minimum.toString()} (latest=${latest.toString()})`,
   );
 }
 
@@ -925,6 +976,14 @@ async function runSmoke(args: CliArgs): Promise<void> {
     operatorSigningKey,
   );
   const operatorAddress = deps.AztecAddress.fromString(operatorAccount.address.toString());
+  const userSecret = deps.Fr.random();
+  const userSigningKey = deps.deriveSigningKey(userSecret);
+  const userAccount = await wallet.createSchnorrAccount(
+    userSecret,
+    deps.Fr.random(),
+    userSigningKey,
+  );
+  const userAddress = deps.AztecAddress.fromString(userAccount.address.toString());
   if (operatorAddress.toString().toLowerCase() !== manifest.operator.address.toLowerCase()) {
     throw new OperatorKeyMismatchError(
       `operator address mismatch. manifest=${manifest.operator.address} derived=${operatorAddress.toString()}`,
@@ -1015,6 +1074,29 @@ async function runSmoke(args: CliArgs): Promise<void> {
   });
   pinoLogger.info(`[devnet-postdeploy-smoke] fpc_fee_juice_balance=${fpcFeeJuiceBalance}`);
 
+  if (args.stopBlockProducerPid !== null) {
+    try {
+      process.kill(args.stopBlockProducerPid, "SIGTERM");
+      pinoLogger.info(
+        `[devnet-postdeploy-smoke] stopped block-producer pid=${args.stopBlockProducerPid} after topup`,
+      );
+    } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : "unknown";
+      if (code !== "ESRCH") {
+        throw new FundingRuntimeFailure(
+          `Failed to stop block-producer pid=${args.stopBlockProducerPid}: ${String(error)}`,
+        );
+      }
+      pinoLogger.warn(
+        `[devnet-postdeploy-smoke] block-producer pid=${args.stopBlockProducerPid} already exited`,
+      );
+    }
+    await sleep(500);
+  }
+
   const QUOTE_DOMAIN_SEPARATOR = deps.Fr.fromHexString("0x465043");
   const fpcExpectedCharge = ceilDiv(maxGasCostNoTeardown * args.fpcRateNum, args.fpcRateDen);
   const fpcFjAmount = maxGasCostNoTeardown;
@@ -1025,67 +1107,131 @@ async function runSmoke(args: CliArgs): Promise<void> {
   await token.methods
     .mint_to_public(operatorAddress, 2n)
     .send({ from: operatorAddress, wait: { timeout: 180 } });
-
-  const latestBlock = await node.getBlock("latest");
-  if (!latestBlock) {
-    throw new Error("Could not read latest block while creating FPC quote");
-  }
-  const fpcValidUntil = latestBlock.timestamp + args.quoteTtlSeconds;
-  const fpcQuoteHash = await deps.computeInnerAuthWitHash([
-    QUOTE_DOMAIN_SEPARATOR,
-    fpc.address.toField(),
-    token.address.toField(),
-    new deps.Fr(fpcFjAmount),
-    new deps.Fr(fpcAaAmount),
-    new deps.Fr(fpcValidUntil),
-    operatorAddress.toField(),
-  ]);
-  const fpcQuoteSig = await schnorr.constructSignature(fpcQuoteHash.toBuffer(), operatorSigningKey);
-  const fpcQuoteSigBytes = Array.from(fpcQuoteSig.toBuffer());
-  const fpcAuthwitNonce = deps.Fr.random();
-  const fpcTransferCall = token.methods.transfer_private_to_private(
-    operatorAddress,
-    operatorAddress,
-    fpcAaAmount,
-    fpcAuthwitNonce,
-  );
-  const fpcTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
-    caller: fpc.address,
-    action: fpcTransferCall,
+  await waitForPrivateBalanceAtLeast({
+    token,
+    owner: operatorAddress,
+    caller: operatorAddress,
+    minimum: fpcExpectedCharge,
+    timeoutMs: 30_000,
+    pollMs: 500,
   });
-  const fpcFeeEntrypointCall = await fpc.methods
-    .fee_entrypoint(
-      token.address,
-      fpcAuthwitNonce,
-      fpcFjAmount,
+
+  let fpcReceipt: { transactionFee?: bigint | number | string } | null = null;
+  let finalValidUntil = 0n;
+  for (let attempt = 1; attempt <= FPC_FEE_SEND_MAX_ATTEMPTS; attempt += 1) {
+    const latestBlock = await node.getBlock("latest");
+    let pendingBlock: { timestamp: bigint } | null = null;
+    try {
+      pendingBlock = await node.getBlock("pending");
+    } catch (error) {
+      if (attempt === 1) {
+        pinoLogger.warn(
+          `[devnet-postdeploy-smoke] pending block lookup unavailable; falling back to latest anchor reference: ${String(error)}`,
+        );
+      }
+    }
+    const anchorReferenceBlock = pendingBlock ?? latestBlock;
+    if (!anchorReferenceBlock) {
+      throw new Error("Could not read latest/pending block while creating FPC quote");
+    }
+    const fpcValidUntil = anchorReferenceBlock.timestamp + args.quoteTtlSeconds;
+    const fpcQuoteHash = await deps.computeInnerAuthWitHash([
+      QUOTE_DOMAIN_SEPARATOR,
+      fpc.address.toField(),
+      token.address.toField(),
+      new deps.Fr(fpcFjAmount),
+      new deps.Fr(fpcAaAmount),
+      new deps.Fr(fpcValidUntil),
+      operatorAddress.toField(),
+    ]);
+    const fpcQuoteSig = await schnorr.constructSignature(
+      fpcQuoteHash.toBuffer(),
+      operatorSigningKey,
+    );
+    const fpcQuoteSigBytes = Array.from(fpcQuoteSig.toBuffer());
+    const fpcAuthwitNonce = deps.Fr.random();
+    const fpcTransferCall = token.methods.transfer_private_to_private(
+      operatorAddress,
+      userAddress,
       fpcAaAmount,
-      fpcValidUntil,
-      fpcQuoteSigBytes,
-    )
-    .getFunctionCall();
-  const fpcPaymentMethod = {
-    getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new deps.ExecutionPayload([fpcFeeEntrypointCall], [fpcTransferAuthwit], [], [], fpc.address),
-    getFeePayer: async () => fpc.address,
-    getGasSettings: () => undefined,
-  };
-  const fpcReceipt = await token.methods
-    .transfer_public_to_public(operatorAddress, operatorAddress, 1n, deps.Fr.random())
-    .send({
-      from: operatorAddress,
-      fee: {
-        paymentMethod: fpcPaymentMethod,
-        gasSettings: {
-          gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
-          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-        },
-      },
-      wait: { timeout: 180 },
+      fpcAuthwitNonce,
+    );
+    const fpcTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
+      caller: fpc.address,
+      action: fpcTransferCall,
     });
+    const fpcFeeEntrypointCall = await fpc.methods
+      .fee_entrypoint(
+        token.address,
+        fpcAuthwitNonce,
+        fpcFjAmount,
+        fpcAaAmount,
+        fpcValidUntil,
+        fpcQuoteSigBytes,
+      )
+      .getFunctionCall();
+    const fpcPaymentMethod = {
+      getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
+      getExecutionPayload: async () =>
+        new deps.ExecutionPayload(
+          [fpcFeeEntrypointCall],
+          [fpcTransferAuthwit],
+          [],
+          [],
+          fpc.address,
+        ),
+      getFeePayer: async () => fpc.address,
+      getGasSettings: () => undefined,
+    };
+
+    try {
+      fpcReceipt = (await token.methods
+        .transfer_public_to_public(operatorAddress, operatorAddress, 1n, deps.Fr.random())
+        .send({
+          from: operatorAddress,
+          authWitnesses: [fpcTransferAuthwit],
+          fee: {
+            paymentMethod: fpcPaymentMethod,
+            gasSettings: {
+              gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
+              teardownGasLimits: { daGas: 0, l2Gas: 0 },
+              maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+            },
+          },
+          wait: { timeout: 180 },
+        })) as { transactionFee?: bigint | number | string };
+      finalValidUntil = fpcValidUntil;
+      break;
+    } catch (error) {
+      if (isIncludeByAnchorTimestampError(error) && attempt < FPC_FEE_SEND_MAX_ATTEMPTS) {
+        pinoLogger.warn(
+          `[devnet-postdeploy-smoke] include-by/anchor race while sending fee tx; retrying attempt ${attempt + 1}/${FPC_FEE_SEND_MAX_ATTEMPTS} (latest_ts=${latestBlock?.timestamp ?? "n/a"} pending_ts=${pendingBlock?.timestamp ?? "n/a"} valid_until=${fpcValidUntil})`,
+        );
+        await sleep(500);
+        continue;
+      }
+      if (isMissingPrivateNoteError(error) && attempt < FPC_FEE_SEND_MAX_ATTEMPTS) {
+        pinoLogger.warn(
+          `[devnet-postdeploy-smoke] user private note not ready; retrying attempt ${attempt + 1}/${FPC_FEE_SEND_MAX_ATTEMPTS}`,
+        );
+        await waitForPrivateBalanceAtLeast({
+          token,
+          owner: operatorAddress,
+          caller: operatorAddress,
+          minimum: fpcExpectedCharge,
+          timeoutMs: 10_000,
+          pollMs: 500,
+        });
+        continue;
+      }
+      throw error;
+    }
+  }
+  if (!fpcReceipt) {
+    throw new Error("Failed to send FPC fee-path tx after retries");
+  }
   pinoLogger.info(
-    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
+    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge} quote_valid_until=${finalValidUntil}`,
   );
   pinoLogger.info(
     `[devnet-postdeploy-smoke] PASS variant=${fpcSelection.variant} successful_txs=1`,
