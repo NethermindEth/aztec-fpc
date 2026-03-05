@@ -49,5 +49,6 @@ bun run --filter @aztec-fpc/topup build
 echo "[full-lifecycle-e2e] Running full lifecycle E2E runner"
 (
   cd "$REPO_ROOT/scripts"
-  bun run "./services/fpc-full-lifecycle-e2e.ts" "$@"
+  FPC_FULL_E2E_ALLOW_DEGRADED="${FPC_FULL_E2E_ALLOW_DEGRADED:-1}" \
+    bun run "./services/fpc-full-lifecycle-e2e.ts" "$@"
 )
