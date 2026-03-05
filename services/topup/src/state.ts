@@ -23,11 +23,7 @@ export interface BridgeStateStore {
     baselineBalance: bigint,
     bridgeResult: Pick<
       BridgeResult,
-      | "amount"
-      | "claimSecretHash"
-      | "messageHash"
-      | "messageLeafIndex"
-      | "submittedAtMs"
+      "amount" | "claimSecretHash" | "messageHash" | "messageLeafIndex" | "submittedAtMs"
     >,
   ): Promise<void>;
   clear(): Promise<void>;
@@ -36,11 +32,7 @@ export interface BridgeStateStore {
 const UINT_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 const FIELD_HEX_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-function assertUintString(
-  filePath: string,
-  field: string,
-  value: unknown,
-): string {
+function assertUintString(filePath: string, field: string, value: unknown): string {
   if (typeof value !== "string" || !UINT_DECIMAL_PATTERN.test(value)) {
     throw new Error(
       `Bridge state file is malformed at ${filePath}: ${field} must be an unsigned integer string`,
@@ -49,11 +41,7 @@ function assertUintString(
   return value;
 }
 
-function assertFieldHexString(
-  filePath: string,
-  field: string,
-  value: unknown,
-): string {
+function assertFieldHexString(filePath: string, field: string, value: unknown): string {
   if (typeof value !== "string" || !FIELD_HEX_PATTERN.test(value)) {
     throw new Error(
       `Bridge state file is malformed at ${filePath}: ${field} must be a 32-byte 0x-prefixed hex string`,
@@ -67,9 +55,7 @@ function assertPersistedBridgeSubmission(
   value: unknown,
 ): PersistedBridgeSubmission {
   if (!value || typeof value !== "object") {
-    throw new Error(
-      `Bridge state file is malformed at ${filePath}: expected object`,
-    );
+    throw new Error(`Bridge state file is malformed at ${filePath}: expected object`);
   }
 
   const candidate = value as {
@@ -81,24 +67,15 @@ function assertPersistedBridgeSubmission(
     submittedAtMs?: unknown;
   };
   if (typeof candidate.submittedAtMs !== "number") {
-    throw new Error(
-      `Bridge state file is malformed at ${filePath}: invalid bridge payload`,
-    );
+    throw new Error(`Bridge state file is malformed at ${filePath}: invalid bridge payload`);
   }
-  if (
-    !Number.isInteger(candidate.submittedAtMs) ||
-    candidate.submittedAtMs < 0
-  ) {
+  if (!Number.isInteger(candidate.submittedAtMs) || candidate.submittedAtMs < 0) {
     throw new Error(
       `Bridge state file is malformed at ${filePath}: submittedAtMs must be a non-negative integer`,
     );
   }
 
-  const baselineBalance = assertUintString(
-    filePath,
-    "baselineBalance",
-    candidate.baselineBalance,
-  );
+  const baselineBalance = assertUintString(filePath, "baselineBalance", candidate.baselineBalance);
   const amount = assertUintString(filePath, "amount", candidate.amount);
   if (BigInt(amount) <= 0n) {
     throw new Error(
@@ -110,11 +87,7 @@ function assertPersistedBridgeSubmission(
     "claimSecretHash",
     candidate.claimSecretHash,
   );
-  const messageHash = assertFieldHexString(
-    filePath,
-    "messageHash",
-    candidate.messageHash,
-  );
+  const messageHash = assertFieldHexString(filePath, "messageHash", candidate.messageHash);
   const messageLeafIndex = assertUintString(
     filePath,
     "messageLeafIndex",
@@ -175,16 +148,12 @@ export function createBridgeStateStore(filePath: string): BridgeStateStore {
       }
 
       if (!parsed || typeof parsed !== "object") {
-        throw new Error(
-          `Bridge state file is malformed at ${filePath}: expected root object`,
-        );
+        throw new Error(`Bridge state file is malformed at ${filePath}: expected root object`);
       }
 
       const root = parsed as { version?: unknown; bridge?: unknown };
       if (root.version !== 1) {
-        throw new Error(
-          `Unsupported bridge state version in ${filePath}: ${String(root.version)}`,
-        );
+        throw new Error(`Unsupported bridge state version in ${filePath}: ${String(root.version)}`);
       }
 
       return assertPersistedBridgeSubmission(filePath, root.bridge);
@@ -193,11 +162,7 @@ export function createBridgeStateStore(filePath: string): BridgeStateStore {
       baselineBalance: bigint,
       bridgeResult: Pick<
         BridgeResult,
-        | "amount"
-        | "claimSecretHash"
-        | "messageHash"
-        | "messageLeafIndex"
-        | "submittedAtMs"
+        "amount" | "claimSecretHash" | "messageHash" | "messageLeafIndex" | "submittedAtMs"
       >,
     ): Promise<void> {
       const payload: PersistedBridgeStateFile = {

@@ -30,10 +30,7 @@ async function readFeeJuiceBalanceFromStorage(
   node: AztecNode,
   feeJuiceAddress: AztecAddress,
 ): Promise<bigint> {
-  const slot = await deriveStorageSlotInMap(
-    FEE_JUICE_BALANCES_STORAGE_SLOT,
-    owner,
-  );
+  const slot = await deriveStorageSlotInMap(FEE_JUICE_BALANCES_STORAGE_SLOT, owner);
   const value = await node.getPublicStorageAt("latest", feeJuiceAddress, slot);
   return value.toBigInt();
 }
@@ -51,9 +48,7 @@ export async function resolveFeeJuiceAddress(node: AztecNode): Promise<{
   };
 }
 
-export async function createFeeJuiceBalanceReader(
-  node: AztecNode,
-): Promise<FeeJuiceBalanceReader> {
+export async function createFeeJuiceBalanceReader(node: AztecNode): Promise<FeeJuiceBalanceReader> {
   const resolution = await resolveFeeJuiceAddress(node);
   let sdkPathEnabled = true;
 
@@ -75,11 +70,7 @@ export async function createFeeJuiceBalanceReader(
       }
 
       try {
-        return await readFeeJuiceBalanceFromStorage(
-          owner,
-          node,
-          resolution.address,
-        );
+        return await readFeeJuiceBalanceFromStorage(owner, node, resolution.address);
       } catch (error) {
         throw new Error(
           `Unable to read Fee Juice balance from L2 storage at ${resolution.address.toString()}`,

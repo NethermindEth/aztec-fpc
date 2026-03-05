@@ -29,10 +29,7 @@ const ConfigSchema = z
     runtime_profile: RuntimeProfileSchema.default("development"),
     fpc_address: z
       .string()
-      .regex(
-        AZTEC_ADDRESS_PATTERN,
-        "must be a 32-byte 0x-prefixed hex address",
-      ),
+      .regex(AZTEC_ADDRESS_PATTERN, "must be a 32-byte 0x-prefixed hex address"),
     aztec_node_url: z.string().url().optional(),
     l1_rpc_url: z.string().url().optional(),
     /** Secret provider strategy for L1 bridge key. */
@@ -66,8 +63,7 @@ const ConfigSchema = z
     if (config.confirmation_poll_max_ms > config.confirmation_timeout_ms) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "confirmation_poll_max_ms must be less than or equal to confirmation_timeout_ms",
+        message: "confirmation_poll_max_ms must be less than or equal to confirmation_timeout_ms",
         path: ["confirmation_poll_max_ms"],
       });
     }
@@ -125,17 +121,12 @@ function parseIntegerOverride(
 
   const parsed = Number(envOverride.trim());
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    throw new Error(
-      `Invalid ${envName}: expected integer in range [${min}, ${max}]`,
-    );
+    throw new Error(`Invalid ${envName}: expected integer in range [${min}, ${max}]`);
   }
   return parsed;
 }
 
-export function loadConfig(
-  path: string,
-  options: LoadConfigOptions = {},
-): Config {
+export function loadConfig(path: string, options: LoadConfigOptions = {}): Config {
   const raw = readFileSync(path, "utf8");
   const parsed = parse(raw);
   const config = ConfigSchema.parse(parsed);
@@ -155,17 +146,14 @@ export function loadConfig(
     envVarName: "L1_OPERATOR_PRIVATE_KEY",
     envValue: process.env.L1_OPERATOR_PRIVATE_KEY,
     configValue: config.l1_operator_private_key,
-    secretRef:
-      process.env.L1_OPERATOR_SECRET_REF ?? config.l1_operator_secret_ref,
+    secretRef: process.env.L1_OPERATOR_SECRET_REF ?? config.l1_operator_secret_ref,
     adapters: options.secretAdapters,
   });
 
   PrivateKeySchema.parse(resolvedSecret.value);
 
   const UrlSchema = z.string().url();
-  const aztecNodeUrl = UrlSchema.parse(
-    process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
-  );
+  const aztecNodeUrl = UrlSchema.parse(process.env.AZTEC_NODE_URL ?? config.aztec_node_url);
   const l1RpcUrl = UrlSchema.parse(process.env.L1_RPC_URL ?? config.l1_rpc_url);
 
   return {
@@ -173,8 +161,7 @@ export function loadConfig(
     runtime_profile: runtimeProfile,
     aztec_node_url: aztecNodeUrl,
     l1_rpc_url: l1RpcUrl,
-    bridge_state_path:
-      process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
+    bridge_state_path: process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
     ops_port: parseIntegerOverride(
       config.ops_port,
       process.env.TOPUP_OPS_PORT,

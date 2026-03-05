@@ -14,10 +14,7 @@ export interface TopupCheckerDependencies {
     baselineBalance: bigint,
     bridgeResult: BridgeResult,
   ) => Promise<BridgeConfirmationResult>;
-  onBridgeSubmitted?: (
-    baselineBalance: bigint,
-    bridgeResult: BridgeResult,
-  ) => Promise<void> | void;
+  onBridgeSubmitted?: (baselineBalance: bigint, bridgeResult: BridgeResult) => Promise<void> | void;
   onBridgeSettled?: (
     baselineBalance: bigint,
     bridgeResult: BridgeResult,
@@ -65,9 +62,7 @@ export function createTopupChecker(
       return;
     }
 
-    logger.log(
-      `Top-up target Fee Juice balance: ${balance} wei (threshold: ${config.threshold})`,
-    );
+    logger.log(`Top-up target Fee Juice balance: ${balance} wei (threshold: ${config.threshold})`);
 
     if (balance >= config.threshold) {
       return;
@@ -78,9 +73,7 @@ export function createTopupChecker(
       return;
     }
 
-    logger.log(
-      `Balance below threshold — initiating bridge of ${config.topUpAmount} wei`,
-    );
+    logger.log(`Balance below threshold — initiating bridge of ${config.topUpAmount} wei`);
     bridgeInFlight = true;
 
     try {
@@ -91,9 +84,7 @@ export function createTopupChecker(
           includeClaimSecretInLogs ? ` claim_secret=${result.claimSecret}` : ""
         }`,
       );
-      logger.log(
-        `Bridged ${result.amount} wei. Waiting for L2 confirmation...`,
-      );
+      logger.log(`Bridged ${result.amount} wei. Waiting for L2 confirmation...`);
 
       const confirmation = await deps.confirm(balance, result);
       await deps.onBridgeSettled?.(balance, result, confirmation);

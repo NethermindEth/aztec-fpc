@@ -71,10 +71,7 @@ describe("state", () => {
     writeFileSync(temp.filePath, "{bad-json", "utf8");
 
     const store = createBridgeStateStore(temp.filePath);
-    await assert.rejects(
-      () => store.read(),
-      /Bridge state file is not valid JSON/,
-    );
+    await assert.rejects(() => store.read(), /Bridge state file is not valid JSON/);
 
     temp.cleanup();
   });
