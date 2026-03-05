@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import type { ContractArtifact, NoirCompiledContract } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,13 +9,30 @@ import {
 } from "../src/internal/contracts";
 import type { SponsoredRuntimeConfig } from "../src/types";
 
-const { contractAtMock, getContractMock, waitForNodeMock } = vi.hoisted(() => ({
+const {
+  contractAtMock,
+  getContractMock,
+  loadContractArtifactForPublicMock,
+  loadContractArtifactMock,
+  waitForNodeMock,
+} = vi.hoisted(() => ({
   contractAtMock: vi.fn((address: AztecAddress, artifact: ContractArtifact) => ({
     address,
     artifact,
   })),
   getContractMock: vi.fn(async () => ({ mocked: true })),
+  loadContractArtifactForPublicMock: vi.fn((compiled: { name?: string }) => ({
+    name: compiled.name ?? "Unknown",
+  })),
+  loadContractArtifactMock: vi.fn((compiled: { name?: string }) => ({
+    name: compiled.name ?? "Unknown",
+  })),
   waitForNodeMock: vi.fn(async () => undefined),
+}));
+
+vi.mock("@aztec/aztec.js/abi", () => ({
+  loadContractArtifact: loadContractArtifactMock,
+  loadContractArtifactForPublic: loadContractArtifactForPublicMock,
 }));
 
 vi.mock("@aztec/aztec.js/node", () => ({
@@ -41,32 +56,30 @@ const OPERATOR = "0x000000000000000000000000000000000000000000000000000000000000
 const FAUCET = "0x0000000000000000000000000000000000000000000000000000000000000015";
 const TARGET = "0x0000000000000000000000000000000000000000000000000000000000000016";
 
-function loadArtifactJson(filename: string): NoirCompiledContract {
-  return JSON.parse(
-    readFileSync(path.resolve(__dirname, "..", "artifacts", filename), "utf8"),
-  ) as NoirCompiledContract;
+function mockCompiledArtifact(name: string): NoirCompiledContract {
+  return { name } as unknown as NoirCompiledContract;
 }
 
 function runtimeConfig(overrides: Partial<SponsoredRuntimeConfig> = {}): SponsoredRuntimeConfig {
   return {
     acceptedAsset: {
       address: TOKEN,
-      artifact: loadArtifactJson("token_contract-Token.json"),
+      artifact: mockCompiledArtifact("Token"),
     },
     faucet: {
       address: FAUCET,
-      artifact: loadArtifactJson("faucet-Faucet.json"),
+      artifact: mockCompiledArtifact("Faucet"),
     },
     fpc: {
       address: FPC_EXPLICIT,
-      artifact: loadArtifactJson("fpc-FPCMultiAsset.json"),
+      artifact: mockCompiledArtifact("FPCMultiAsset"),
     },
     nodeUrl: "http://node.example:8080",
     operatorAddress: OPERATOR,
     targets: {
       custom: {
         address: TARGET,
-        artifact: loadArtifactJson("mock_counter-Counter.json"),
+        artifact: mockCompiledArtifact("Counter"),
       },
     },
     ...overrides,
@@ -93,7 +106,7 @@ describe("runtime address resolution", () => {
       account: USER,
       discoveryFpcAddress: FPC_DISCOVERY,
       runtimeConfig: runtimeConfig({
-        fpc: { artifact: loadArtifactJson("fpc-FPCMultiAsset.json") },
+        fpc: { artifact: mockCompiledArtifact("FPCMultiAsset") },
       }),
     });
 
@@ -156,7 +169,7 @@ describe("contract attachment", () => {
       connectAndAttachContracts({
         account: USER,
         runtimeConfig: runtimeConfig({
-          fpc: { artifact: loadArtifactJson("fpc-FPCMultiAsset.json") },
+          fpc: { artifact: mockCompiledArtifact("FPCMultiAsset") },
         }),
         wallet: {
           registerContract: vi.fn(async () => undefined),
