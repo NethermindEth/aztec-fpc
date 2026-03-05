@@ -34,6 +34,9 @@ export interface TopupAutoClaimer {
   claim: (request: AutoClaimRequest) => Promise<string>;
 }
 
+type ClaimFeeOptions = { paymentMethod: SponsoredFeePaymentMethod } | undefined;
+type FeeJuiceInstance = ReturnType<typeof FeeJuiceContract.at>;
+
 function isSponsoredProofFailure(error: unknown): boolean {
   const message = String(error);
   return (
@@ -156,6 +159,90 @@ async function assertPublishedClaimerAccount(
   );
 }
 
+async function sendClaim(
+  feeJuice: FeeJuiceInstance,
+  claimerAddress: AztecAddress,
+  request: AutoClaimRequest,
+  fee: ClaimFeeOptions,
+): Promise<string> {
+  const receipt = await feeJuice.methods
+    .claim(
+      request.recipient,
+      request.amount,
+      Fr.fromString(request.claimSecret),
+      new Fr(request.messageLeafIndex),
+    )
+    .send({
+      from: claimerAddress,
+      fee,
+      wait: { timeout: request.waitTimeoutSeconds },
+    });
+  return receipt.txHash.toString();
+}
+
+function maybeDisableSponsoredMode(
+  sponsoredError: unknown,
+  sponsoredFpcAddress: AztecAddress | null,
+  disableSponsoredMode: () => void,
+): void {
+  if (!isSponsoredProofFailure(sponsoredError)) {
+    return;
+  }
+
+  disableSponsoredMode();
+  pinoLogger.warn(
+    { err: sponsoredError },
+    `Disabling sponsored auto-claim for this process due to proving/runtime failure (sponsor=${sponsoredFpcAddress?.toString()}). Falling back to claimer Fee Juice payment.`,
+  );
+}
+
+async function claimWithSponsoredFallback(params: {
+  feeJuice: FeeJuiceInstance;
+  claimerAddress: AztecAddress;
+  request: AutoClaimRequest;
+  sponsoredPaymentMethod: SponsoredFeePaymentMethod | null;
+  sponsoredModeDisabled: boolean;
+  sponsoredFpcAddress: AztecAddress | null;
+  disableSponsoredMode: () => void;
+}): Promise<string> {
+  if (!params.sponsoredPaymentMethod || params.sponsoredModeDisabled) {
+    return sendClaim(params.feeJuice, params.claimerAddress, params.request, undefined);
+  }
+
+  try {
+    return await sendClaim(params.feeJuice, params.claimerAddress, params.request, {
+      paymentMethod: params.sponsoredPaymentMethod,
+    });
+  } catch (sponsoredError) {
+    maybeDisableSponsoredMode(
+      sponsoredError,
+      params.sponsoredFpcAddress,
+      params.disableSponsoredMode,
+    );
+    pinoLogger.warn(
+      { sponsoredErrorDetails: String(sponsoredError) },
+      `Sponsored auto-claim failed for message_hash=${params.request.messageHash}; retrying with claimer Fee Juice payment (sponsor=${params.sponsoredFpcAddress?.toString()})`,
+    );
+    return sendClaim(params.feeJuice, params.claimerAddress, params.request, undefined);
+  }
+}
+
+function buildAutoClaimFailureMessage(params: {
+  error: unknown;
+  request: AutoClaimRequest;
+  sponsoredPaymentMethod: SponsoredFeePaymentMethod | null;
+  sponsoredFpcAddress: AztecAddress | null;
+  claimerAddress: AztecAddress;
+}): string {
+  const errorDetails = String(params.error);
+  const insufficientBalanceHint = errorDetails.includes("Insufficient fee payer balance")
+    ? params.sponsoredPaymentMethod
+      ? ` Hint: sponsored auto-claim is enabled via ${params.sponsoredFpcAddress?.toString()} but fee sponsorship failed or the sponsor is not funded.`
+      : ` Hint: claimer ${params.claimerAddress.toString()} has insufficient L2 Fee Juice to pay tx fees. Set TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS (recommended) or pre-fund this claimer.`
+    : "";
+  return `Auto-claim failed for message_hash=${params.request.messageHash}.${insufficientBalanceHint}`;
+}
+
 export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAutoClaimer> {
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: true,
@@ -220,59 +307,27 @@ export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAuto
     paymentMode: sponsoredPaymentMethod ? "sponsored" : "fee_juice",
     sponsoredFpcAddress,
     async claim(request: AutoClaimRequest): Promise<string> {
-      const sendClaim = async (
-        fee:
-          | {
-              paymentMethod: SponsoredFeePaymentMethod;
-            }
-          | undefined,
-      ) => {
-        const receipt = await feeJuice.methods
-          .claim(
-            request.recipient,
-            request.amount,
-            Fr.fromString(request.claimSecret),
-            new Fr(request.messageLeafIndex),
-          )
-          .send({
-            from: claimerAddress,
-            fee,
-            wait: { timeout: request.waitTimeoutSeconds },
-          });
-        return receipt.txHash.toString();
-      };
-
       try {
-        if (!sponsoredPaymentMethod || sponsoredModeDisabled) {
-          return await sendClaim(undefined);
-        }
-
-        try {
-          return await sendClaim({ paymentMethod: sponsoredPaymentMethod });
-        } catch (sponsoredError) {
-          if (isSponsoredProofFailure(sponsoredError)) {
+        return await claimWithSponsoredFallback({
+          feeJuice,
+          claimerAddress,
+          request,
+          sponsoredPaymentMethod,
+          sponsoredModeDisabled,
+          sponsoredFpcAddress,
+          disableSponsoredMode: () => {
             sponsoredModeDisabled = true;
-            pinoLogger.warn(
-              { err: sponsoredError },
-              `Disabling sponsored auto-claim for this process due to proving/runtime failure (sponsor=${sponsoredFpcAddress?.toString()}). Falling back to claimer Fee Juice payment.`,
-            );
-          }
-          const sponsoredErrorDetails = String(sponsoredError);
-          pinoLogger.warn(
-            { sponsoredErrorDetails },
-            `Sponsored auto-claim failed for message_hash=${request.messageHash}; retrying with claimer Fee Juice payment (sponsor=${sponsoredFpcAddress?.toString()})`,
-          );
-          return await sendClaim(undefined);
-        }
+          },
+        });
       } catch (error) {
-        const errorDetails = String(error);
-        const insufficientBalanceHint = errorDetails.includes("Insufficient fee payer balance")
-          ? sponsoredPaymentMethod
-            ? ` Hint: sponsored auto-claim is enabled via ${sponsoredFpcAddress?.toString()} but fee sponsorship failed or the sponsor is not funded.`
-            : ` Hint: claimer ${claimerAddress.toString()} has insufficient L2 Fee Juice to pay tx fees. Set TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS (recommended) or pre-fund this claimer.`
-          : "";
         throw new Error(
-          `Auto-claim failed for message_hash=${request.messageHash}.${insufficientBalanceHint}`,
+          buildAutoClaimFailureMessage({
+            error,
+            request,
+            sponsoredPaymentMethod,
+            sponsoredFpcAddress,
+            claimerAddress,
+          }),
           { cause: error },
         );
       }

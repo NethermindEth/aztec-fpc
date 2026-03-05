@@ -81,6 +81,205 @@ const DEFAULT_CONFIRM_DEPS: BridgeConfirmDeps = {
   waitForL1ToL2MessageReady,
 };
 
+interface BridgeConfirmationState {
+  startMs: number;
+  deadlineMs: number;
+  pollMs: number;
+  maxObservedBalance: bigint;
+  lastObservedBalance: bigint;
+  attempts: number;
+  pollErrors: number;
+  successfulReads: number;
+  messageCheckAttempted: boolean;
+  messageReady: boolean;
+  messageCheckFailed: boolean;
+  messageReadyActionAttempted: boolean;
+  messageReadyActionSucceeded: boolean;
+  messageReadyActionFailed: boolean;
+}
+
+function createBridgeConfirmationState(
+  options: BridgeConfirmationOptions,
+): BridgeConfirmationState {
+  const startMs = Date.now();
+  return {
+    startMs,
+    deadlineMs: startMs + options.timeoutMs,
+    pollMs: options.initialPollMs,
+    maxObservedBalance: options.baselineBalance,
+    lastObservedBalance: options.baselineBalance,
+    attempts: 0,
+    pollErrors: 0,
+    successfulReads: 0,
+    messageCheckAttempted: false,
+    messageReady: false,
+    messageCheckFailed: false,
+    messageReadyActionAttempted: false,
+    messageReadyActionSucceeded: false,
+    messageReadyActionFailed: false,
+  };
+}
+
+function buildResult(
+  options: BridgeConfirmationOptions,
+  state: BridgeConfirmationState,
+  status: BridgeConfirmationStatus,
+): BridgeConfirmationResult {
+  return {
+    status,
+    baselineBalance: options.baselineBalance,
+    maxObservedBalance: state.maxObservedBalance,
+    lastObservedBalance: state.lastObservedBalance,
+    observedDelta: state.maxObservedBalance - options.baselineBalance,
+    elapsedMs: Date.now() - state.startMs,
+    attempts: state.attempts,
+    pollErrors: state.pollErrors,
+    messageCheckAttempted: state.messageCheckAttempted,
+    messageReady: state.messageReady,
+    messageCheckFailed: state.messageCheckFailed,
+    messageReadyActionAttempted: state.messageReadyActionAttempted,
+    messageReadyActionSucceeded: state.messageReadyActionSucceeded,
+    messageReadyActionFailed: state.messageReadyActionFailed,
+  };
+}
+
+function isAborted(abortSignal?: AbortSignal): boolean {
+  return abortSignal?.aborted === true;
+}
+
+async function settleMessageCheckNonBlocking(messageWaitPromise?: Promise<void>): Promise<void> {
+  if (!messageWaitPromise) {
+    return;
+  }
+  await Promise.race([messageWaitPromise, sleep(0)]);
+}
+
+function startMessageReadinessCheck(
+  options: BridgeConfirmationOptions,
+  deps: BridgeConfirmDeps,
+  state: BridgeConfirmationState,
+): Promise<void> | undefined {
+  if (!options.messageContext) {
+    return undefined;
+  }
+
+  state.messageCheckAttempted = true;
+  let messageHash: Fr | undefined;
+  try {
+    messageHash = Fr.fromHexString(options.messageContext.messageHash);
+  } catch (error) {
+    state.messageCheckFailed = true;
+    pinoLogger.warn(
+      { err: error },
+      "L1->L2 message hash is not a valid field element; skipping message readiness check",
+    );
+  }
+  if (!messageHash) {
+    return undefined;
+  }
+
+  const timeoutSeconds = Math.max(1, Math.floor(options.timeoutMs / 1000));
+  return deps
+    .waitForL1ToL2MessageReady(options.messageContext.node, messageHash, {
+      timeoutSeconds,
+      forPublicConsumption: options.messageContext.forPublicConsumption,
+    })
+    .then((ready) => {
+      state.messageReady = ready;
+    })
+    .catch((error) => {
+      state.messageCheckFailed = true;
+      pinoLogger.warn({ err: error }, "L1->L2 message readiness check failed");
+    });
+}
+
+async function maybeRunMessageReadyAction(
+  options: BridgeConfirmationOptions,
+  state: BridgeConfirmationState,
+): Promise<void> {
+  if (!state.messageReady || !options.onMessageReady || state.messageReadyActionSucceeded) {
+    return;
+  }
+
+  state.messageReadyActionAttempted = true;
+  try {
+    await options.onMessageReady();
+    state.messageReadyActionSucceeded = true;
+  } catch (error) {
+    state.messageReadyActionFailed = true;
+    pinoLogger.warn({ err: error }, "Message-ready action failed; retrying");
+  }
+}
+
+async function pollBalanceOnce(
+  options: BridgeConfirmationOptions,
+  state: BridgeConfirmationState,
+): Promise<boolean> {
+  try {
+    const balance = await options.balanceReader.getBalance(options.fpcAddress);
+    state.successfulReads += 1;
+    state.lastObservedBalance = balance;
+    if (balance > state.maxObservedBalance) {
+      state.maxObservedBalance = balance;
+    }
+    return state.maxObservedBalance - options.baselineBalance > 0n;
+  } catch (error) {
+    state.pollErrors += 1;
+    pinoLogger.warn({ err: error }, "Fee Juice confirmation poll failed; retrying");
+    return false;
+  }
+}
+
+async function waitForNextPoll(
+  state: BridgeConfirmationState,
+  maxPollMs: number,
+  abortSignal?: AbortSignal,
+): Promise<"continue" | "aborted" | "timeout"> {
+  const remainingMs = state.deadlineMs - Date.now();
+  if (remainingMs <= 0) {
+    return "timeout";
+  }
+  try {
+    await sleep(Math.min(state.pollMs, remainingMs), abortSignal);
+  } catch {
+    return "aborted";
+  }
+  state.pollMs = Math.min(maxPollMs, Math.floor(state.pollMs * 1.5));
+  return "continue";
+}
+
+async function pollUntilConfirmed(
+  options: BridgeConfirmationOptions,
+  state: BridgeConfirmationState,
+  messageWaitPromise: Promise<void> | undefined,
+): Promise<BridgeConfirmationStatus | undefined> {
+  while (Date.now() <= state.deadlineMs) {
+    if (isAborted(options.abortSignal)) {
+      return "aborted";
+    }
+
+    state.attempts += 1;
+    await settleMessageCheckNonBlocking(messageWaitPromise);
+    await maybeRunMessageReadyAction(options, state);
+
+    const confirmed = await pollBalanceOnce(options, state);
+    if (confirmed) {
+      await settleMessageCheckNonBlocking(messageWaitPromise);
+      return "confirmed";
+    }
+
+    const pollStep = await waitForNextPoll(state, options.maxPollMs, options.abortSignal);
+    if (pollStep === "aborted") {
+      return "aborted";
+    }
+    if (pollStep === "timeout") {
+      break;
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * Confirms a bridge by combining message-level readiness checks and
  * Fee Juice balance growth observation.
@@ -94,141 +293,28 @@ export async function waitForFeeJuiceBridgeConfirmation(
   depsOverride: Partial<BridgeConfirmDeps> = {},
 ): Promise<BridgeConfirmationResult> {
   const deps: BridgeConfirmDeps = { ...DEFAULT_CONFIRM_DEPS, ...depsOverride };
-  const start = Date.now();
-  const deadline = start + options.timeoutMs;
-  let pollMs = options.initialPollMs;
-  let maxObservedBalance = options.baselineBalance;
-  let lastObservedBalance = options.baselineBalance;
-  let attempts = 0;
-  let pollErrors = 0;
-  let successfulReads = 0;
-  let messageCheckAttempted = false;
-  let messageReady = false;
-  let messageCheckFailed = false;
-  let messageReadyActionAttempted = false;
-  let messageReadyActionSucceeded = false;
-  let messageReadyActionFailed = false;
-  let messageWaitPromise: Promise<void> | undefined;
+  const state = createBridgeConfirmationState(options);
+  const messageWaitPromise = startMessageReadinessCheck(options, deps, state);
 
-  if (options.messageContext) {
-    messageCheckAttempted = true;
-    let messageHash: Fr | undefined;
-    try {
-      messageHash = Fr.fromHexString(options.messageContext.messageHash);
-    } catch (error) {
-      messageCheckFailed = true;
-      pinoLogger.warn(
-        { err: error },
-        "L1->L2 message hash is not a valid field element; skipping message readiness check",
-      );
-    }
-
-    if (messageHash) {
-      const timeoutSeconds = Math.max(1, Math.floor(options.timeoutMs / 1000));
-      messageWaitPromise = deps
-        .waitForL1ToL2MessageReady(options.messageContext.node, messageHash, {
-          timeoutSeconds,
-          forPublicConsumption: options.messageContext.forPublicConsumption,
-        })
-        .then((ready) => {
-          messageReady = ready;
-        })
-        .catch((error) => {
-          messageCheckFailed = true;
-          pinoLogger.warn({ err: error }, "L1->L2 message readiness check failed");
-        });
-    }
+  if (isAborted(options.abortSignal)) {
+    return buildResult(options, state, "aborted");
   }
 
-  async function settleMessageCheckNonBlocking() {
-    if (!messageWaitPromise) {
-      return;
-    }
-    await Promise.race([messageWaitPromise, sleep(0)]);
+  const status = await pollUntilConfirmed(options, state, messageWaitPromise);
+  if (status) {
+    return buildResult(options, state, status);
   }
 
-  function buildResult(status: BridgeConfirmationStatus): BridgeConfirmationResult {
-    return {
-      status,
-      baselineBalance: options.baselineBalance,
-      maxObservedBalance,
-      lastObservedBalance,
-      observedDelta: maxObservedBalance - options.baselineBalance,
-      elapsedMs: Date.now() - start,
-      attempts,
-      pollErrors,
-      messageCheckAttempted,
-      messageReady,
-      messageCheckFailed,
-      messageReadyActionAttempted,
-      messageReadyActionSucceeded,
-      messageReadyActionFailed,
-    };
-  }
+  await settleMessageCheckNonBlocking(messageWaitPromise);
 
-  if (options.abortSignal?.aborted) {
-    return buildResult("aborted");
-  }
-
-  while (Date.now() <= deadline) {
-    if (options.abortSignal?.aborted) {
-      return buildResult("aborted");
-    }
-
-    attempts += 1;
-    await settleMessageCheckNonBlocking();
-
-    if (messageReady && options.onMessageReady && !messageReadyActionSucceeded) {
-      messageReadyActionAttempted = true;
-      try {
-        await options.onMessageReady();
-        messageReadyActionSucceeded = true;
-      } catch (error) {
-        messageReadyActionFailed = true;
-        pinoLogger.warn({ err: error }, "Message-ready action failed; retrying");
-      }
-    }
-
-    try {
-      const balance = await options.balanceReader.getBalance(options.fpcAddress);
-      successfulReads += 1;
-      lastObservedBalance = balance;
-      if (balance > maxObservedBalance) {
-        maxObservedBalance = balance;
-      }
-
-      const observedDelta = maxObservedBalance - options.baselineBalance;
-      if (observedDelta > 0n) {
-        await settleMessageCheckNonBlocking();
-        return buildResult("confirmed");
-      }
-    } catch (error) {
-      pollErrors += 1;
-      pinoLogger.warn({ err: error }, "Fee Juice confirmation poll failed; retrying");
-    }
-
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) {
-      break;
-    }
-    try {
-      await sleep(Math.min(pollMs, remainingMs), options.abortSignal);
-    } catch {
-      return buildResult("aborted");
-    }
-    pollMs = Math.min(options.maxPollMs, Math.floor(pollMs * 1.5));
-  }
-
-  await settleMessageCheckNonBlocking();
-
-  if (successfulReads === 0) {
-    if (messageReady) {
-      return buildResult("timeout");
+  if (state.successfulReads === 0) {
+    if (state.messageReady) {
+      return buildResult(options, state, "timeout");
     }
     throw new Error(
-      `Unable to read Fee Juice balance during confirmation polling after ${attempts} attempt(s)`,
+      `Unable to read Fee Juice balance during confirmation polling after ${state.attempts} attempt(s)`,
     );
   }
 
-  return buildResult("timeout");
+  return buildResult(options, state, "timeout");
 }

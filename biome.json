@@ -49,6 +49,14 @@
         "rules": {
           "suspicious": {
             "noConsole": "warn"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": {
+              "level": "warn",
+              "options": {
+                "maxAllowedComplexity": 10
+              }
+            }
           }
         }
       }
