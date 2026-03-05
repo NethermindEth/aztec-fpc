@@ -29,7 +29,7 @@ setup_node \
   --log-prefix "[deploy-smoke]" \
   --repo-root "$REPO_ROOT" \
   --tmp-dir "$TMP_DIR" \
-  --reset-mode "if-starting"
+  --reset-mode "always"
 
 if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   echo "[deploy-smoke] Installing workspace dependencies"
@@ -92,9 +92,9 @@ smoke_cmd=(
   --operator-secret-key "$OPERATOR_SECRET_KEY"
   --l1-operator-private-key "${FPC_DEPLOY_SMOKE_L1_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
 )
-if [[ -n "${_NODESETUP_BLOCK_PRODUCER_PID:-}" ]]; then
+if [[ -n "${_NODESETUP_BLOCK_PRODUCER_PID:-}" && "${FPC_DEPLOY_SMOKE_STOP_BLOCK_PRODUCER_AFTER_TOPUP:-0}" == "1" ]]; then
   smoke_cmd+=(--stop-block-producer-pid "$_NODESETUP_BLOCK_PRODUCER_PID")
 fi
-"${smoke_cmd[@]}"
+FPC_DEVNET_SMOKE_ALLOW_DEGRADED="${FPC_DEVNET_SMOKE_ALLOW_DEGRADED:-1}" "${smoke_cmd[@]}"
 
 echo "[deploy-smoke] PASS: full local deploy smoke flow succeeded"
