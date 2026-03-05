@@ -7,12 +7,13 @@ export {
   SponsoredTxFailedError,
 } from "./errors";
 export type {
-  ExecuteSponsoredCallInput,
+  ContractArtifactJson,
   CreateSponsoredCounterClientInput,
-  SponsorshipConfig,
+  ExecuteSponsoredCallInput,
   SponsoredCallContext,
   SponsoredCounterClient,
   SponsoredExecutionResult,
   SponsoredIncrementResult,
   SponsoredPostCheckContext,
+  SponsorshipConfig,
 } from "./types";

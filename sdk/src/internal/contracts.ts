@@ -21,53 +21,42 @@ import {
   PublishedAccountRequiredError,
   SponsoredTxFailedError,
 } from "../errors";
-import type {
-  RuntimeContractConfig,
-  SponsoredRuntimeConfig,
-} from "../types";
+import type { RuntimeContractConfig, SponsoredRuntimeConfig } from "../types";
 
 const currentDir =
   typeof __dirname !== "undefined"
     ? __dirname
     : path.dirname(fileURLToPath(import.meta.url));
 
-function resolveArtifactsDir(): string {
-  const hasArtifacts = (dir: string): boolean =>
-    existsSync(path.join(dir, "token_contract-Token.json")) &&
-    existsSync(path.join(dir, "fpc-FPCMultiAsset.json")) &&
-    existsSync(path.join(dir, "faucet-Faucet.json")) &&
-    existsSync(path.join(dir, "mock_counter-Counter.json"));
+type DefaultArtifactLabel = "token" | "fpc" | "faucet" | "counter";
 
-  const sourceLayout = path.resolve(currentDir, "..", "..", "artifacts");
-  if (hasArtifacts(sourceLayout)) {
-    return sourceLayout;
-  }
-
-  const distLayout = path.resolve(currentDir, "..", "artifacts");
-  if (hasArtifacts(distLayout)) {
-    return distLayout;
-  }
-
-  return distLayout;
-}
-
-const artifactsDir = resolveArtifactsDir();
-
-type ArtifactDescriptor = {
-  filename: string;
-  label: "token" | "fpc" | "faucet" | "counter";
+const DEFAULT_ARTIFACT_FILENAMES: Record<DefaultArtifactLabel, string> = {
+  counter: "mock_counter-Counter.json",
+  faucet: "faucet-Faucet.json",
+  fpc: "fpc-FPCMultiAsset.json",
+  token: "token_contract-Token.json",
 };
 
-const ARTIFACTS: readonly ArtifactDescriptor[] = [
-  { filename: "token_contract-Token.json", label: "token" },
-  { filename: "fpc-FPCMultiAsset.json", label: "fpc" },
-  { filename: "faucet-Faucet.json", label: "faucet" },
-  { filename: "mock_counter-Counter.json", label: "counter" },
-] as const;
+const defaultArtifactCache: Partial<
+  Record<DefaultArtifactLabel, ContractArtifact>
+> = {};
 
-type LoadedArtifacts = Record<ArtifactDescriptor["label"], ContractArtifact>;
+function resolveArtifactSearchDirs(): string[] {
+  const dirs = [
+    // sdk/src/internal -> sdk/artifacts
+    path.resolve(currentDir, "..", "..", "artifacts"),
+    // sdk/dist/internal -> sdk/dist/artifacts
+    path.resolve(currentDir, "..", "artifacts"),
+    // repo root target from source-layout path
+    path.resolve(currentDir, "..", "..", "..", "target"),
+    // repo root target from dist-layout path
+    path.resolve(currentDir, "..", "..", "..", "..", "target"),
+    // runtime cwd fallback
+    path.resolve(process.cwd(), "target"),
+  ];
 
-let cachedDefaultArtifacts: LoadedArtifacts | undefined;
+  return Array.from(new Set(dirs));
+}
 
 export type RuntimeAddresses = {
   acceptedAsset: AztecAddress;
@@ -97,8 +86,7 @@ function parseAddress(
     if (!raw) {
       throw new Error("missing address");
     }
-    const parsed =
-      typeof raw === "string" ? AztecAddress.fromString(raw) : raw;
+    const parsed = typeof raw === "string" ? AztecAddress.fromString(raw) : raw;
     if (parsed.isZero()) {
       throw new Error("zero address");
     }
@@ -111,22 +99,79 @@ function parseAddress(
   }
 }
 
-function requireDefaultArtifact(
-  label: ArtifactDescriptor["label"],
+function loadArtifactFromPath(
+  artifactPath: string,
+  label: string,
 ): ContractArtifact {
-  if (!cachedDefaultArtifacts) {
-    cachedDefaultArtifacts = loadArtifacts();
+  const parsed = JSON.parse(
+    readFileSync(artifactPath, "utf8"),
+  ) as NoirCompiledContract;
+
+  return loadArtifactFromCompiledJson(parsed, label, artifactPath);
+}
+
+function loadArtifactFromCompiledJson(
+  parsed: NoirCompiledContract,
+  label: string,
+  artifactPath?: string,
+): ContractArtifact {
+  try {
+    return loadContractArtifact(parsed);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes(
+        "Contract's public bytecode has not been transpiled",
+      )
+    ) {
+      return loadContractArtifactForPublic(parsed);
+    }
+    throw new SponsoredTxFailedError(`Failed to load ${label} artifact.`, {
+      artifactPath,
+      cause: error instanceof Error ? error.message : String(error),
+    });
   }
-  return cachedDefaultArtifacts[label];
+}
+
+function resolveDefaultArtifactPath(
+  label: DefaultArtifactLabel,
+): string | undefined {
+  const filename = DEFAULT_ARTIFACT_FILENAMES[label];
+  for (const dir of resolveArtifactSearchDirs()) {
+    const candidatePath = path.join(dir, filename);
+    if (existsSync(candidatePath)) {
+      return candidatePath;
+    }
+  }
+  return undefined;
+}
+
+function requireDefaultArtifact(label: DefaultArtifactLabel): ContractArtifact {
+  const cached = defaultArtifactCache[label];
+  if (cached) {
+    return cached;
+  }
+
+  const artifactPath = resolveDefaultArtifactPath(label);
+  if (!artifactPath) {
+    throw new SponsoredTxFailedError(`Missing ${label} artifact.`, {
+      filename: DEFAULT_ARTIFACT_FILENAMES[label],
+      searchedDirs: resolveArtifactSearchDirs(),
+    });
+  }
+
+  const artifact = loadArtifactFromPath(artifactPath, label);
+  defaultArtifactCache[label] = artifact;
+  return artifact;
 }
 
 function resolveArtifact(input: {
-  artifact?: ContractArtifact;
-  defaultLabel?: ArtifactDescriptor["label"];
+  artifact?: NoirCompiledContract;
+  defaultLabel?: DefaultArtifactLabel;
   label: string;
 }): ContractArtifact {
   if (input.artifact) {
-    return input.artifact;
+    return loadArtifactFromCompiledJson(input.artifact, input.label);
   }
   if (input.defaultLabel) {
     return requireDefaultArtifact(input.defaultLabel);
@@ -175,7 +220,9 @@ export function resolveFpcAddress(input: {
     : undefined;
 
   if (explicit && discovery) {
-    if (explicit.toString().toLowerCase() !== discovery.toString().toLowerCase()) {
+    if (
+      explicit.toString().toLowerCase() !== discovery.toString().toLowerCase()
+    ) {
       throw new SponsoredTxFailedError(
         "FPC address mismatch between runtime config and attestation discovery.",
         {
@@ -229,43 +276,6 @@ export function resolveRuntimeAddresses(input: {
   };
 }
 
-function loadArtifact(filename: string, label: string): ContractArtifact {
-  const artifactPath = path.join(artifactsDir, filename);
-  if (!existsSync(artifactPath)) {
-    throw new SponsoredTxFailedError(`Missing ${label} artifact.`, {
-      artifactPath,
-      label,
-    });
-  }
-
-  const parsed = JSON.parse(
-    readFileSync(artifactPath, "utf8"),
-  ) as NoirCompiledContract;
-  try {
-    return loadContractArtifact(parsed);
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes(
-        "Contract's public bytecode has not been transpiled",
-      )
-    ) {
-      return loadContractArtifactForPublic(parsed);
-    }
-    throw new SponsoredTxFailedError(`Failed to load ${label} artifact.`, {
-      artifactPath,
-      cause: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-function loadArtifacts(): LoadedArtifacts {
-  return ARTIFACTS.reduce<LoadedArtifacts>((acc, item) => {
-    acc[item.label] = loadArtifact(item.filename, item.label);
-    return acc;
-  }, {} as LoadedArtifacts);
-}
-
 async function attachRegisteredContract(input: {
   address: AztecAddress;
   artifact: ContractArtifact;
@@ -293,7 +303,10 @@ function resolveTargetArtifact(input: {
   label: string;
 }): ContractArtifact {
   if (input.config.artifact) {
-    return input.config.artifact;
+    return loadArtifactFromCompiledJson(
+      input.config.artifact,
+      `target:${input.label}`,
+    );
   }
   if (input.label === "counter") {
     return requireDefaultArtifact("counter");

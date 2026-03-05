@@ -1,4 +1,4 @@
-import type { ContractArtifact } from "@aztec/aztec.js/abi";
+import type { NoirCompiledContract } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Wallet as AccountWallet } from "@aztec/aztec.js/wallet";
 
@@ -25,6 +25,8 @@ export type AttestationAcceptedAsset = {
   address: string;
   name: string;
 };
+
+export type ContractArtifactJson = NoirCompiledContract;
 
 export type AttestationAcceptedAssetsResponse = AttestationAcceptedAsset[];
 
@@ -58,12 +60,12 @@ export type AcceptedAssetSelectionCallback = (
 
 export type RuntimeContractConfig = {
   address?: AztecAddress | string;
-  artifact?: ContractArtifact;
+  artifact?: ContractArtifactJson;
 };
 
 export type RuntimeFpcConfig = {
   address?: AztecAddress | string;
-  artifact?: ContractArtifact;
+  artifact?: ContractArtifactJson;
 };
 
 export type SponsoredRuntimeConfig = {

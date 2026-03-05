@@ -1,13 +1,17 @@
-import type { ContractArtifact } from "@aztec/aztec.js/abi";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import type {
+  ContractArtifact,
+  NoirCompiledContract,
+} from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
+import { SponsoredTxFailedError } from "../src/errors";
 import {
   connectAndAttachContracts,
   resolveFpcAddress,
   resolveRuntimeAddresses,
 } from "../src/internal/contracts";
-import { SponsoredTxFailedError } from "../src/errors";
 import type { SponsoredRuntimeConfig } from "../src/types";
 
 const { contractAtMock, getContractMock, waitForNodeMock } = vi.hoisted(() => ({
@@ -49,26 +53,37 @@ const FAUCET =
 const TARGET =
   "0x0000000000000000000000000000000000000000000000000000000000000016";
 
-function runtimeConfig(overrides: Partial<SponsoredRuntimeConfig> = {}): SponsoredRuntimeConfig {
+function loadArtifactJson(filename: string): NoirCompiledContract {
+  return JSON.parse(
+    readFileSync(
+      path.resolve(__dirname, "..", "..", "target", filename),
+      "utf8",
+    ),
+  ) as NoirCompiledContract;
+}
+
+function runtimeConfig(
+  overrides: Partial<SponsoredRuntimeConfig> = {},
+): SponsoredRuntimeConfig {
   return {
     acceptedAsset: {
       address: TOKEN,
-      artifact: { name: "token-artifact" } as ContractArtifact,
+      artifact: loadArtifactJson("token_contract-Token.json"),
     },
     faucet: {
       address: FAUCET,
-      artifact: { name: "faucet-artifact" } as ContractArtifact,
+      artifact: loadArtifactJson("faucet-Faucet.json"),
     },
     fpc: {
       address: FPC_EXPLICIT,
-      artifact: { name: "fpc-artifact" } as ContractArtifact,
+      artifact: loadArtifactJson("fpc-FPCMultiAsset.json"),
     },
     nodeUrl: "http://node.example:8080",
     operatorAddress: OPERATOR,
     targets: {
       custom: {
         address: TARGET,
-        artifact: { name: "custom-artifact" } as ContractArtifact,
+        artifact: loadArtifactJson("mock_counter-Counter.json"),
       },
     },
     ...overrides,
@@ -94,7 +109,9 @@ describe("runtime address resolution", () => {
     const out = resolveRuntimeAddresses({
       account: USER,
       discoveryFpcAddress: FPC_DISCOVERY,
-      runtimeConfig: runtimeConfig({ fpc: { artifact: { name: "fpc" } as ContractArtifact } }),
+      runtimeConfig: runtimeConfig({
+        fpc: { artifact: loadArtifactJson("fpc-FPCMultiAsset.json") },
+      }),
     });
 
     expect(out.fpc.toString()).toBe(FPC_DISCOVERY);
@@ -131,22 +148,22 @@ describe("contract attachment", () => {
     expect(wallet.registerContract).toHaveBeenCalledTimes(4);
     expect(contractAtMock).toHaveBeenCalledWith(
       AztecAddress.fromString(TOKEN),
-      expect.objectContaining({ name: "token-artifact" }),
+      expect.objectContaining({ name: "Token" }),
       wallet,
     );
     expect(contractAtMock).toHaveBeenCalledWith(
       AztecAddress.fromString(FPC_EXPLICIT),
-      expect.objectContaining({ name: "fpc-artifact" }),
+      expect.objectContaining({ name: "FPCMultiAsset" }),
       wallet,
     );
     expect(contractAtMock).toHaveBeenCalledWith(
       AztecAddress.fromString(FAUCET),
-      expect.objectContaining({ name: "faucet-artifact" }),
+      expect.objectContaining({ name: "Faucet" }),
       wallet,
     );
     expect(contractAtMock).toHaveBeenCalledWith(
       AztecAddress.fromString(TARGET),
-      expect.objectContaining({ name: "custom-artifact" }),
+      expect.objectContaining({ name: "Counter" }),
       wallet,
     );
   });
@@ -156,7 +173,7 @@ describe("contract attachment", () => {
       connectAndAttachContracts({
         account: USER,
         runtimeConfig: runtimeConfig({
-          fpc: { artifact: { name: "fpc-artifact" } as ContractArtifact },
+          fpc: { artifact: loadArtifactJson("fpc-FPCMultiAsset.json") },
         }),
         wallet: {
           registerContract: vi.fn(async () => undefined),
