@@ -480,20 +480,25 @@ async function main(): Promise<void> {
   const deps = await loadAztecDeps();
   const node = deps.createAztecNodeClient(manifest.network.node_url);
 
-  await Promise.race([
-    deps.waitForNode(node),
-    new Promise((_, reject) =>
-      setTimeout(
-        () =>
-          reject(
-            new CliError(
-              `Timed out waiting for node readiness at ${manifest.network.node_url}`,
+  let nodeReadyTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      deps.waitForNode(node),
+      new Promise((_, reject) => {
+        nodeReadyTimer = setTimeout(
+          () =>
+            reject(
+              new CliError(
+                `Timed out waiting for node readiness at ${manifest.network.node_url}`,
+              ),
             ),
-          ),
-        args.nodeReadyTimeoutMs,
-      ),
-    ),
-  ]);
+          args.nodeReadyTimeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(nodeReadyTimer);
+  }
   console.log("[verify-fpc-devnet] node connectivity check passed");
 
   let lastIssues: string[] = [];
