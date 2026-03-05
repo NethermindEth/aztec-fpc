@@ -56,8 +56,9 @@ Aztec L2
 | Field | Type | Description |
 |---|---|---|
 | `config` | `PublicImmutable<Config>` | Packed immutable config: `operator`, `operator_pubkey_x`, `operator_pubkey_y`. |
+| `accepted_assets` | `Map<AztecAddress, PublicMutable<bool>>` | Operator-managed on-chain asset allowlist. |
 
-The contract keeps one packed immutable config slot and no mutable admin state after deployment.
+The contract keeps one packed immutable config slot plus mutable operator-gated allowlist state.
 
 ### 3.2 Quote Format
 
@@ -109,14 +110,15 @@ For `FPC.fee_entrypoint`, `fj_amount` must match `max_gas_cost_no_teardown` for 
 User private balance →[transfer_private_to_private]→ Operator private balance
 ```
 
-1. Reads packed `config` from storage (`operator`, signing pubkey)
-2. Verifies Schnorr quote signature and binds `user_address = msg_sender`
-3. Pushes quote nullifier (replay protection; duplicates fail via nullifier conflict)
-4. Asserts `anchor_block_timestamp ≤ valid_until`
-5. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
-6. Asserts `fj_fee_amount == get_max_gas_cost_no_teardown(...)`
-7. Calls `Token::at(accepted_asset).transfer_private_to_private(sender → operator, aa_payment_amount, nonce)`
-8. For fee-paying txs (any non-zero `maxFeesPerGas` lane), asserts setup-phase execution (`!in_revertible_phase`), then calls `set_as_fee_payer()` + `end_setup()`
+1. Enqueues a public self-call that asserts `accepted_asset` is in the on-chain allowlist.
+2. Reads packed `config` from storage (`operator`, signing pubkey)
+3. Verifies Schnorr quote signature and binds `user_address = msg_sender`
+4. Pushes quote nullifier (replay protection; duplicates fail via nullifier conflict)
+5. Asserts `anchor_block_timestamp ≤ valid_until`
+6. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
+7. Asserts `fj_fee_amount == get_max_gas_cost_no_teardown(...)`
+8. Calls `Token::at(accepted_asset).transfer_private_to_private(sender → operator, aa_payment_amount, nonce)`
+9. For fee-paying txs (any non-zero `maxFeesPerGas` lane), asserts setup-phase execution (`!in_revertible_phase`), then calls `set_as_fee_payer()` + `end_setup()`
 
 The token transfer is a private function call that executes in the setup phase, before `end_setup()`. It is irrevocably committed. If the user's app logic subsequently reverts, the fee has still been paid — this is unavoidable in the Aztec FPC model.
 
@@ -127,9 +129,12 @@ No teardown is scheduled. No tokens accumulate in this contract's balance.
 | Function | Aztec context | Callable by |
 |---|---|---|
 | `constructor(operator, operator_pubkey_x, operator_pubkey_y)` | public | anyone (one-time initializer) |
+| `add_accepted_asset(asset)` | public | operator only |
+| `remove_accepted_asset(asset)` | public | operator only |
+| `is_accepted_asset(asset)` | public view | anyone |
 | `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` | private | any user (quote binds to caller) |
 
-> There are no admin functions. The contract has no mutable state after construction.
+> The operator must initialize/maintain the on-chain allowlist with `add_accepted_asset` / `remove_accepted_asset`.
 
 ### 3.6 Fee Revenue
 
@@ -415,8 +420,9 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 - The token transfer executes directly inside the setup phase, before `end_setup()`. It is irrevocably committed.
 - If the user's app logic reverts, the fee has still been paid. This is unavoidable in the Aztec FPC model — users accept this when using any FPC.
 
-### No on-chain asset whitelist
-- The contract does not enforce an allowlist in storage. Protection comes from quote binding: `accepted_asset` is in the signed preimage, so tampering the asset at call time invalidates signature verification.
+### On-chain asset whitelist
+- The contract enforces an on-chain allowlist and rejects unaccepted assets in `fee_entrypoint`.
+- Quote binding still matters: `accepted_asset` remains in the signed preimage, so tampering still invalidates signature verification.
 
 ### Top-up service
 - The L1 operator key needs ETH for gas and Fee Juice bridging. Keep only the needed float; replenish from a cold wallet.

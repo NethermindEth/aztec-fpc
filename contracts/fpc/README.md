@@ -5,10 +5,11 @@
 
 ## What This Contract Does
 
-`FPC` stores only immutable config:
+`FPC` stores:
 
 - `operator`
 - operator Schnorr pubkey (`operator_pubkey_x`, `operator_pubkey_y`)
+- `accepted_assets` allowlist (`Map<AztecAddress, bool>`)
 
 ### `fee_entrypoint` flow
 
@@ -17,10 +18,11 @@
 1. Verifies operator quote signature over `accepted_asset`, `fj_fee_amount`, `aa_payment_amount`, and caller address.
 2. Rejects replay by nullifying quote hash (duplicate nullifier insertion fails canonically).
 3. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
-4. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution (`fee_entrypoint must run in setup phase`).
-5. Enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)` (`quoted fee amount mismatch` on mismatch).
-6. Transfers exactly signed `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
-7. Marks contract as fee payer (`set_as_fee_payer`) and ends setup.
+4. Enqueues a self-call to enforce `accepted_asset` is on the operator-managed on-chain allowlist.
+5. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution (`fee_entrypoint must run in setup phase`).
+6. Enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)` (`quoted fee amount mismatch` on mismatch).
+7. Transfers exactly signed `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
+8. Marks contract as fee payer (`set_as_fee_payer`) and ends setup.
 
 ## Quote Model (Amount-Based)
 
@@ -49,6 +51,7 @@ For `FPC`, attestation must be configured with:
 - `fpc_address = <fpc_address>`
 - `accepted_asset_address = <token_address>`
 - operator key matching constructor `operator_pubkey_x/y`
+- deployed `FPCMultiAsset` must have that token added via `add_accepted_asset(token)`
 
 Client flow:
 
@@ -85,6 +88,9 @@ If authwit is missing, stale, or mismatched to amount/nonce, the call fails.
 ## Public/Private Interface
 
 - `constructor(operator, operator_pubkey_x, operator_pubkey_y)` (`public`, initializer)
+- `add_accepted_asset(asset)` (`public`, operator-only)
+- `remove_accepted_asset(asset)` (`public`, operator-only)
+- `is_accepted_asset(asset) -> bool` (`public`, view)
 - `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` (`private`)
 
 Internal helpers:
@@ -104,4 +110,5 @@ Contract tests in `contracts/fpc/src/test` cover:
 - expired quote rejection,
 - overlong TTL rejection (`quote ttl too large`),
 - user-bound quote enforcement,
-- fresh authwit requirement across repeated calls.
+- fresh authwit requirement across repeated calls,
+- allowlist admin controls and `fee_entrypoint` rejection for unaccepted assets.
