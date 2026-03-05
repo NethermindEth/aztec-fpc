@@ -43,7 +43,7 @@ const TARGET = "0x00000000000000000000000000000000000000000000000000000000000000
 
 function loadArtifactJson(filename: string): NoirCompiledContract {
   return JSON.parse(
-    readFileSync(path.resolve(__dirname, "..", "..", "target", filename), "utf8"),
+    readFileSync(path.resolve(__dirname, "..", "artifacts", filename), "utf8"),
   ) as NoirCompiledContract;
 }
 

@@ -66,7 +66,11 @@ jobs:
 
       - name: Build and test sdk
         if: steps.version_check.outputs.should_publish == 'true'
-        run: bun run --cwd sdk ci
+        run: |
+          bunx biome ci --config-path ./biome.json sdk/src sdk/test sdk/package.json sdk/tsconfig.json
+          bun run --cwd sdk typecheck
+          bun run --cwd sdk test
+          bun run --cwd sdk build
 
       - name: Publish to npm
         if: steps.version_check.outputs.should_publish == 'true'
