@@ -56,7 +56,7 @@ Aztec L2
 | Field | Type | Description |
 |---|---|---|
 | `config` | `PublicImmutable<Config>` | Packed immutable config: `operator`, `operator_pubkey_x`, `operator_pubkey_y`. |
-| `accepted_assets` | `Map<AztecAddress, PublicMutable<bool>>` | Operator-managed on-chain asset allowlist. |
+| `accepted_assets` | `Map<AztecAddress, DelayedPublicMutable<bool>>` | Operator-managed on-chain asset allowlist (private-readable). |
 
 The contract keeps one packed immutable config slot plus mutable operator-gated allowlist state.
 
@@ -110,7 +110,7 @@ For `FPC.fee_entrypoint`, `fj_amount` must match `max_gas_cost_no_teardown` for 
 User private balance →[transfer_private_to_private]→ Operator private balance
 ```
 
-1. Enqueues a public self-call that asserts `accepted_asset` is in the on-chain allowlist.
+1. Reads allowlist state and asserts `accepted_asset` is in the on-chain allowlist.
 2. Reads packed `config` from storage (`operator`, signing pubkey)
 3. Verifies Schnorr quote signature and binds `user_address = msg_sender`
 4. Pushes quote nullifier (replay protection; duplicates fail via nullifier conflict)

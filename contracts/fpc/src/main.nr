@@ -19,19 +19,16 @@ use ::aztec::macros::aztec;
 /// - config            (PublicImmutable<Config>) -- packed immutable config
 ///                                                  containing operator address
 ///                                                  and operator signing key.
-/// - accepted_assets   (Map<AztecAddress, PublicMutable<bool>>) -- operator-managed
+/// - accepted_assets   (Map<AztecAddress, DelayedPublicMutable<bool>>) -- operator-managed
 ///                                                  allowlist of accepted payment assets.
 #[aztec]
 pub contract FPCMultiAsset {
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
-        macros::{
-            functions::{allow_phase_change, external, initializer, only_self, view},
-            storage::storage,
-        },
+        macros::{functions::{allow_phase_change, external, initializer, view}, storage::storage},
         protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
-        state_vars::{Map, PublicImmutable, PublicMutable},
+        state_vars::{DelayedPublicMutable, Map, PublicImmutable},
     };
     use std::embedded_curve_ops::EmbeddedCurvePoint;
     use token::Token;
@@ -39,6 +36,8 @@ pub contract FPCMultiAsset {
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
     // Quotes must expire within this many seconds from the tx anchor timestamp.
     global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
+    // DelayedPublicMutable requires a non-zero delay. Keep it minimal.
+    global ACCEPTED_ASSET_DELAY_SECONDS: u64 = 1;
     global GRUMPKIN_CURVE_B: Field = 17;
 
     /// Packed configuration stored as a single PublicImmutable slot.
@@ -56,7 +55,11 @@ pub contract FPCMultiAsset {
     struct Storage<Context> {
         config: PublicImmutable<Config, Context>,
         /// Per-asset acceptability flag. Unwritten slots default to false.
-        accepted_assets: Map<AztecAddress, PublicMutable<bool, Context>, Context>,
+        accepted_assets: Map<
+            AztecAddress,
+            DelayedPublicMutable<bool, ACCEPTED_ASSET_DELAY_SECONDS, Context>,
+            Context,
+        >,
     }
 
     #[external("public")]
@@ -83,7 +86,7 @@ pub contract FPCMultiAsset {
             "caller is not operator",
         );
         assert(!asset.is_zero(), "invalid asset");
-        self.storage.accepted_assets.at(asset).write(true);
+        self.storage.accepted_assets.at(asset).schedule_value_change(true);
     }
 
     /// Remove an asset from the operator-controlled accept-list.
@@ -95,24 +98,15 @@ pub contract FPCMultiAsset {
             self.context.maybe_msg_sender().unwrap() == config.operator,
             "caller is not operator",
         );
-        assert(self.storage.accepted_assets.at(asset).read(), "asset not accepted");
-        self.storage.accepted_assets.at(asset).write(false);
+        assert(self.storage.accepted_assets.at(asset).get_current_value(), "asset not accepted");
+        self.storage.accepted_assets.at(asset).schedule_value_change(false);
     }
 
     /// Public read helper for off-chain integrators/UIs.
     #[view]
     #[external("public")]
     fn is_accepted_asset(asset: AztecAddress) -> bool {
-        self.storage.accepted_assets.at(asset).read()
-    }
-
-    /// Internal guard enqueued by fee_entrypoint to validate the asset against
-    /// the accept-list at public execution time. Marked only_self so it cannot
-    /// be called directly by external accounts.
-    #[external("public")]
-    #[only_self]
-    fn _check_asset_accepted(asset: AztecAddress) {
-        assert(self.storage.accepted_assets.at(asset).read(), "asset not accepted");
+        self.storage.accepted_assets.at(asset).get_current_value()
     }
 
     // Transfers the fee charge from the user's private balance directly to the
@@ -135,11 +129,11 @@ pub contract FPCMultiAsset {
             assert(!self.context.in_revertible_phase(), "fee_entrypoint must run in setup phase");
         }
 
-        // Enqueue a public self-call to verify accepted_asset is in the allowlist.
-        // PublicMutable cannot be read from private context; this runs in the
-        // non-revertible setup phase of public execution, so a failed assertion
-        // rejects the tx entirely (no notes committed, no fee charged).
-        self.enqueue_self._check_asset_accepted(accepted_asset);
+        // Enforce allowlist inline to avoid extra setup-phase public calls.
+        assert(
+            self.storage.accepted_assets.at(accepted_asset).get_current_value(),
+            "asset not accepted",
+        );
 
         let config = self.storage.config.read();
         let sender = self.msg_sender();

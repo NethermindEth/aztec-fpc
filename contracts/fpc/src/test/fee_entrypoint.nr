@@ -50,8 +50,10 @@ unconstrained fn is_accepted_asset_tracks_add_and_remove() {
 
     assert(!env.view_public(fpc.is_accepted_asset(token_address)));
     env.call_public(operator, fpc.add_accepted_asset(token_address));
+    env.mine_block_at(env.last_block_timestamp() + 1);
     assert(env.view_public(fpc.is_accepted_asset(token_address)));
     env.call_public(operator, fpc.remove_accepted_asset(token_address));
+    env.mine_block_at(env.last_block_timestamp() + 1);
     assert(!env.view_public(fpc.is_accepted_asset(token_address)));
 }
 
@@ -77,6 +79,7 @@ unconstrained fn fee_entrypoint_rejects_unlisted_asset() {
 
     // Remove the token from the allowlist so the entrypoint rejects it.
     env.call_public(operator, fpc.remove_accepted_asset(token_address));
+    env.mine_block_at(env.last_block_timestamp() + 1);
 
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
     let aa_payment_amount = fj_fee_amount;
@@ -158,6 +161,7 @@ unconstrained fn fee_entrypoint_accepts_asset_after_allowlist_add() {
     let fpc = FPCMultiAsset::at(fpc_address);
     let token = Token::at(token_address);
     env.call_public(operator, fpc.add_accepted_asset(token_address));
+    env.mine_block_at(env.last_block_timestamp() + 1);
 
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
     let aa_payment_amount = fj_fee_amount;

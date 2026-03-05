@@ -184,6 +184,7 @@ pub unconstrained fn setup_without_allowlist() -> (TestEnvironment, AztecAddress
 pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress) {
     let (mut env, fpc_address, token_address, operator, user) = setup_without_allowlist();
     env.call_public(operator, FPCMultiAsset::at(fpc_address).add_accepted_asset(token_address));
+    env.mine_block_at(env.last_block_timestamp() + 1);
     (env, fpc_address, token_address, operator, user)
 }
 

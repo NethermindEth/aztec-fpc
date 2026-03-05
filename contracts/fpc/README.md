@@ -9,7 +9,7 @@
 
 - `operator`
 - operator Schnorr pubkey (`operator_pubkey_x`, `operator_pubkey_y`)
-- `accepted_assets` allowlist (`Map<AztecAddress, bool>`)
+- `accepted_assets` allowlist (`Map<AztecAddress, DelayedPublicMutable<bool>>`)
 
 ### `fee_entrypoint` flow
 
@@ -18,7 +18,7 @@
 1. Verifies operator quote signature over `accepted_asset`, `fj_fee_amount`, `aa_payment_amount`, and caller address.
 2. Rejects replay by nullifying quote hash (duplicate nullifier insertion fails canonically).
 3. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
-4. Enqueues a self-call to enforce `accepted_asset` is on the operator-managed on-chain allowlist.
+4. Enforces `accepted_asset` is on the operator-managed on-chain allowlist.
 5. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution (`fee_entrypoint must run in setup phase`).
 6. Enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)` (`quoted fee amount mismatch` on mismatch).
 7. Transfers exactly signed `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
