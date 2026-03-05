@@ -26,19 +26,16 @@
     "release:sdk:publish:dry-run": "npm publish --workspace @aztec-fpc/sdk --dry-run --access public",
     "build": "bun run --workspaces --if-present build",
     "typecheck": "bun run --workspaces --if-present typecheck",
-
     "test": "bun run test:contracts && bun run test:ts",
     "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test && bun run --filter @aztec-fpc/sdk --if-present test",
     "test:services": "bun run test:ts",
     "test:contracts": "aztec compile --workspace --force && aztec test --package fpc",
-
     "attestation:build": "bun run --filter @aztec-fpc/attestation build",
     "attestation:dev": "bun run --filter @aztec-fpc/attestation dev",
     "attestation:start": "bun run --filter @aztec-fpc/attestation start",
     "topup:build": "bun run --filter @aztec-fpc/topup build",
     "topup:dev": "bun run --filter @aztec-fpc/topup dev",
     "topup:start": "bun run --filter @aztec-fpc/topup start",
-
     "docker:build": "docker buildx bake",
     "docker:build:attestation": "docker buildx bake attestation",
     "docker:build:deploy": "docker buildx bake deploy",
@@ -49,7 +46,6 @@
     "compose:full": "bash scripts/services/compose-mode.sh full",
     "compose:services:devnet": "bash scripts/services/compose-mode.sh services-devnet",
     "compose:teardown": "docker compose down -v --remove-orphans || true",
-
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
     "generate:configs:devnet": "FPC_DEPLOY_MANIFEST=./deployments/devnet-manifest-v2.json bash scripts/config/generate-service-configs.sh",
     "bootstrap:topup:autoclaim-account": "bunx tsx scripts/services/bootstrap-topup-autoclaim-account.ts",
@@ -60,19 +56,14 @@
     "manual:fpc:sponsored:devnet:v2:sdk": "bunx tsx scripts/manual-fpc-sponsored-user-tx-devnet-attestation-v2-sdk.ts",
     "deploy:fpc": "bash scripts/contract/deploy-fpc.sh",
     "deploy:fpc:devnet": "bash scripts/contract/deploy-fpc-devnet.sh",
-    "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/manifest.json",
-    "verify:deploy:fpc:devnet:v2": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/devnet-manifest-v2.json",
-    "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/manifest.json",
-    "smoke:deploy:fpc:devnet:v2": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
-
+    "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/devnet-manifest-v2.json",
+    "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-smoke-local.sh",
     "smoke:fee-entrypoint:local": "bash scripts/contract/fee-entrypoint-local-smoke.sh",
     "smoke:services:local": "bash scripts/services/fpc-services-smoke.sh",
     "e2e:full-lifecycle:fpc:local": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
     "e2e:full-lifecycle:fpc:compose": "bash scripts/services/full-lifecycle-compose.sh",
-
     "teardown": "pkill -f '[a]ztec' || true",
-
     "chaos:api": "FPC_CHAOS_MODE=api bun scripts/chaos/fpc-chaos-test.ts",
     "chaos:onchain": "FPC_CHAOS_MODE=onchain bun scripts/chaos/fpc-chaos-test.ts",
     "chaos:full": "FPC_CHAOS_MODE=full bun scripts/chaos/fpc-chaos-test.ts",

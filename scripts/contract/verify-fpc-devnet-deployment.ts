@@ -44,7 +44,7 @@ type AztecDeps = {
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
-const DEFAULT_MANIFEST_PATH = path.join(REPO_ROOT, "deployments", "manifest.json");
+const DEFAULT_MANIFEST_PATH = path.join(REPO_ROOT, "deployments", "devnet-manifest-v2.json");
 
 class CliError extends Error {
   constructor(message: string) {

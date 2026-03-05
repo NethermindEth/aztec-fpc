@@ -255,7 +255,7 @@ bun run deploy:fpc:devnet
 bun run verify:deploy:fpc:devnet
 
 # 3) Generate attestation/topup configs from manifest + master config
-bun run generate:configs
+bun run generate:configs:devnet
 
 # 4) Execute post-deploy runtime smoke
 bun run smoke:deploy:fpc:devnet
