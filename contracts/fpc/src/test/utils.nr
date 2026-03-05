@@ -157,7 +157,7 @@ unconstrained fn add_u256(a_hi: u128, a_lo: u128, b_hi: u128, b_lo: u128) -> (u1
     }
 }
 
-pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress) {
+pub unconstrained fn setup_without_allowlist() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress) {
     let mut env = TestEnvironment::new();
 
     let user = env.create_contract_account();
@@ -178,6 +178,12 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
     let fpc_address =
         env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
 
+    (env, fpc_address, token_address, operator, user)
+}
+
+pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress) {
+    let (mut env, fpc_address, token_address, operator, user) = setup_without_allowlist();
+    env.call_public(operator, FPCMultiAsset::at(fpc_address).add_accepted_asset(token_address));
     (env, fpc_address, token_address, operator, user)
 }
 

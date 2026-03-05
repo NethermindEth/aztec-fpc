@@ -3,6 +3,198 @@ use aztec::protocol::address::AztecAddress;
 use aztec::test::helpers::authwit::add_private_authwit_from_call;
 use token::Token;
 
+// Asset allowlist tests
+
+#[test]
+unconstrained fn add_accepted_asset_operator_can_add() {
+    let (mut env, fpc_address, _token_address, operator, _user) = utils::setup();
+    // Deploy a second token and add it. Should not panic.
+    let token2_initializer = Token::interface().constructor_with_minter(
+        "TestToken1111111111111111111111",
+        "TT11111111111111111111111111111",
+        18,
+        operator,
+        AztecAddress::zero(),
+    );
+    let token2_address =
+        env.deploy("@token_contract/Token").with_public_initializer(operator, token2_initializer);
+    env.call_public(operator, FPCMultiAsset::at(fpc_address).add_accepted_asset(token2_address));
+}
+
+#[test(should_fail_with = "caller is not operator")]
+unconstrained fn add_accepted_asset_rejects_non_operator() {
+    let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
+    let _ = env.call_public(user, FPCMultiAsset::at(fpc_address).add_accepted_asset(token_address));
+}
+
+#[test(should_fail_with = "invalid asset")]
+unconstrained fn add_accepted_asset_rejects_zero_address() {
+    let (mut env, fpc_address, _token_address, operator, _user) = utils::setup();
+    let _ = env.call_public(
+        operator,
+        FPCMultiAsset::at(fpc_address).add_accepted_asset(AztecAddress::zero()),
+    );
+}
+
+#[test]
+unconstrained fn remove_accepted_asset_operator_can_remove() {
+    let (mut env, fpc_address, token_address, operator, _user) = utils::setup();
+    // token_address was added during setup; remove it -- should not panic.
+    env.call_public(operator, FPCMultiAsset::at(fpc_address).remove_accepted_asset(token_address));
+}
+
+#[test]
+unconstrained fn is_accepted_asset_tracks_add_and_remove() {
+    let (mut env, fpc_address, token_address, operator, _user) = utils::setup_without_allowlist();
+    let fpc = FPCMultiAsset::at(fpc_address);
+
+    assert(!env.view_public(fpc.is_accepted_asset(token_address)));
+    env.call_public(operator, fpc.add_accepted_asset(token_address));
+    assert(env.view_public(fpc.is_accepted_asset(token_address)));
+    env.call_public(operator, fpc.remove_accepted_asset(token_address));
+    assert(!env.view_public(fpc.is_accepted_asset(token_address)));
+}
+
+#[test(should_fail_with = "caller is not operator")]
+unconstrained fn remove_accepted_asset_rejects_non_operator() {
+    let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
+    let _ =
+        env.call_public(user, FPCMultiAsset::at(fpc_address).remove_accepted_asset(token_address));
+}
+
+#[test(should_fail_with = "asset not accepted")]
+unconstrained fn remove_accepted_asset_rejects_unlisted_asset() {
+    let (mut env, fpc_address, _token_address, operator, user) = utils::setup();
+    // `user` is a contract account address that was never added as an asset.
+    let _ = env.call_public(operator, FPCMultiAsset::at(fpc_address).remove_accepted_asset(user));
+}
+
+#[test(should_fail_with = "asset not accepted")]
+unconstrained fn fee_entrypoint_rejects_unlisted_asset() {
+    let (mut env, fpc_address, token_address, operator, user) = utils::setup();
+    let fpc = FPCMultiAsset::at(fpc_address);
+    let token = Token::at(token_address);
+
+    // Remove the token from the allowlist so the entrypoint rejects it.
+    env.call_public(operator, fpc.remove_accepted_asset(token_address));
+
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let aa_payment_amount = fj_fee_amount;
+    env.call_private(operator, token.mint_to_private(user, aa_payment_amount + (1000 as u128)));
+
+    let valid_until = env.last_block_timestamp() + 3600;
+    let quote_sig = utils::sign_quote(
+        fpc_address,
+        token_address,
+        fj_fee_amount,
+        aa_payment_amount,
+        valid_until,
+        user,
+    );
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
+    add_private_authwit_from_call(env, user, fpc_address, transfer_call);
+
+    let _ = env.call_private(
+        user,
+        fpc.fee_entrypoint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            fj_fee_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
+    );
+}
+
+#[test(should_fail_with = "asset not accepted")]
+unconstrained fn fee_entrypoint_rejects_asset_before_allowlist_add() {
+    let (mut env, fpc_address, token_address, operator, user) = utils::setup_without_allowlist();
+    let fpc = FPCMultiAsset::at(fpc_address);
+    let token = Token::at(token_address);
+
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let aa_payment_amount = fj_fee_amount;
+    env.call_private(operator, token.mint_to_private(user, aa_payment_amount + (1000 as u128)));
+
+    let valid_until = env.last_block_timestamp() + 3600;
+    let quote_sig = utils::sign_quote(
+        fpc_address,
+        token_address,
+        fj_fee_amount,
+        aa_payment_amount,
+        valid_until,
+        user,
+    );
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
+    add_private_authwit_from_call(env, user, fpc_address, transfer_call);
+
+    let _ = env.call_private(
+        user,
+        fpc.fee_entrypoint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            fj_fee_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
+    );
+}
+
+#[test]
+unconstrained fn fee_entrypoint_accepts_asset_after_allowlist_add() {
+    let (mut env, fpc_address, token_address, operator, user) = utils::setup_without_allowlist();
+    let fpc = FPCMultiAsset::at(fpc_address);
+    let token = Token::at(token_address);
+    env.call_public(operator, fpc.add_accepted_asset(token_address));
+
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let aa_payment_amount = fj_fee_amount;
+    env.call_private(operator, token.mint_to_private(user, aa_payment_amount + (1000 as u128)));
+
+    let valid_until = env.last_block_timestamp() + 3600;
+    let quote_sig = utils::sign_quote(
+        fpc_address,
+        token_address,
+        fj_fee_amount,
+        aa_payment_amount,
+        valid_until,
+        user,
+    );
+    let transfer_call = token.transfer_private_to_private(
+        user,
+        operator,
+        aa_payment_amount,
+        TRANSFER_AUTHWIT_NONCE,
+    );
+    add_private_authwit_from_call(env, user, fpc_address, transfer_call);
+
+    env.call_private(
+        user,
+        fpc.fee_entrypoint(
+            token_address,
+            TRANSFER_AUTHWIT_NONCE,
+            fj_fee_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
+    );
+}
+
+// Original fee_entrypoint tests
+
 global TRANSFER_AUTHWIT_NONCE: Field = 42;
 global TRANSFER_AUTHWIT_NONCE_2: Field = 43;
 
