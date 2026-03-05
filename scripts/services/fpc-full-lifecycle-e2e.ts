@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,10 +11,7 @@ import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import {
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
+import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
@@ -152,10 +143,7 @@ const MAX_PORT = 65535;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DIAGNOSTIC_TAIL_LINES = 200;
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
-const FPC_ARTIFACT_FILE_CANDIDATES = [
-  "fpc-FPCMultiAsset.json",
-  "fpc-FPC.json",
-] as const;
+const FPC_ARTIFACT_FILE_CANDIDATES = ["fpc-FPCMultiAsset.json", "fpc-FPC.json"] as const;
 function printHelp(): void {
   console.log(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
 
@@ -195,9 +183,7 @@ function parseMode(value: string | undefined): FullE2EMode {
   if (normalized === "fpc") {
     return "fpc";
   }
-  throw new Error(
-    `Invalid FPC_FULL_E2E_MODE=${value}. This runner is FPC-only and accepts: fpc`,
-  );
+  throw new Error(`Invalid FPC_FULL_E2E_MODE=${value}. This runner is FPC-only and accepts: fpc`);
 }
 
 function readEnvPositiveInteger(name: string, fallback: number): number {
@@ -213,9 +199,7 @@ function readEnvPositiveInteger(name: string, fallback: number): number {
 
   const parsed = Number(normalized);
   if (!Number.isSafeInteger(parsed)) {
-    throw new Error(
-      `Invalid integer env var ${name}=${value} (out of safe integer range)`,
-    );
+    throw new Error(`Invalid integer env var ${name}=${value} (out of safe integer range)`);
   }
   return parsed;
 }
@@ -315,9 +299,7 @@ function loadArtifact(artifactPath: string): ContractArtifact {
   } catch (error) {
     if (
       error instanceof Error &&
-      error.message.includes(
-        "Contract's public bytecode has not been transpiled",
-      )
+      error.message.includes("Contract's public bytecode has not been transpiled")
     ) {
       return loadContractArtifactForPublic(parsed);
     }
@@ -326,8 +308,7 @@ function loadArtifact(artifactPath: string): ContractArtifact {
 }
 
 function resolveFpcArtifactPath(repoRoot: string): string {
-  const explicitPath =
-    process.env.FPC_FULL_E2E_FPC_ARTIFACT ?? process.env.FPC_FPC_ARTIFACT;
+  const explicitPath = process.env.FPC_FULL_E2E_FPC_ARTIFACT ?? process.env.FPC_FPC_ARTIFACT;
   if (explicitPath && explicitPath.trim().length > 0) {
     return path.resolve(explicitPath);
   }
@@ -349,8 +330,7 @@ function resolveFpcArtifactPath(repoRoot: string): string {
 
 function parseTopupBridgeSubmissions(logs: string): TopupBridgeSubmission[] {
   const submissions: TopupBridgeSubmission[] = [];
-  const pattern =
-    /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+)/g;
+  const pattern = /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+)/g;
   let match: RegExpExecArray | null = pattern.exec(logs);
   while (match) {
     submissions.push({
@@ -362,10 +342,7 @@ function parseTopupBridgeSubmissions(logs: string): TopupBridgeSubmission[] {
   return submissions;
 }
 
-function countTopupOutcome(
-  logs: string,
-  outcome: "confirmed" | "timeout" | "failed",
-): number {
+function countTopupOutcome(logs: string, outcome: "confirmed" | "timeout" | "failed"): number {
   const pattern = new RegExp(`Bridge confirmation outcome=${outcome}\\b`, "g");
   let count = 0;
   let match: RegExpExecArray | null = pattern.exec(logs);
@@ -385,9 +362,7 @@ function getTopupLogCounters(logs: string): TopupLogCounters {
   };
 }
 
-function getTopupLogCountersFromProcess(
-  proc: ManagedProcess,
-): TopupLogCounters {
+function getTopupLogCountersFromProcess(proc: ManagedProcess): TopupLogCounters {
   return getTopupLogCounters(proc.getLogs());
 }
 
@@ -402,8 +377,7 @@ async function waitForNextBridgeSubmission(
     const submissions = parseTopupBridgeSubmissions(logs);
     if (submissions.length > previousSubmissionCount) {
       const submission =
-        submissions[previousSubmissionCount] ??
-        submissions[submissions.length - 1];
+        submissions[previousSubmissionCount] ?? submissions[submissions.length - 1];
       return {
         submission,
         submissionCount: submissions.length,
@@ -531,10 +505,7 @@ async function waitForFeeJuiceBalanceAboveBaseline(
   );
 }
 
-async function fetchQuote(
-  quoteUrl: string,
-  timeoutMs: number,
-): Promise<QuoteResponse> {
+async function fetchQuote(quoteUrl: string, timeoutMs: number): Promise<QuoteResponse> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
 
@@ -576,10 +547,7 @@ function getFinalRate(config: FullE2EConfig): {
   };
 }
 
-function computeAaPaymentFromFj(
-  config: FullE2EConfig,
-  fjAmount: bigint,
-): bigint {
+function computeAaPaymentFromFj(config: FullE2EConfig, fjAmount: bigint): bigint {
   const { rateNum, rateDen } = getFinalRate(config);
   return ceilDiv(fjAmount * rateNum, rateDen);
 }
@@ -589,9 +557,7 @@ function parseQuoteResponse(
   expectedAsset: AztecAddress,
   config: FullE2EConfig,
 ): QuoteInput {
-  const quoteSigBytes = Array.from(
-    Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
-  );
+  const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace(/^0x/, ""), "hex"));
   const parsed: QuoteInput = {
     fjAmount: BigInt(quote.fj_amount),
     aaPaymentAmount: BigInt(quote.aa_payment_amount),
@@ -600,31 +566,21 @@ function parseQuoteResponse(
   };
 
   if (parsed.quoteSigBytes.length !== 64) {
-    throw new Error(
-      `Quote signature length must be 64 bytes, got ${parsed.quoteSigBytes.length}`,
-    );
+    throw new Error(`Quote signature length must be 64 bytes, got ${parsed.quoteSigBytes.length}`);
   }
   if (parsed.fjAmount <= 0n) {
     throw new Error("Attestation quote returned non-positive fj_amount");
   }
   if (parsed.aaPaymentAmount <= 0n) {
-    throw new Error(
-      "Attestation quote returned non-positive aa_payment_amount",
-    );
+    throw new Error("Attestation quote returned non-positive aa_payment_amount");
   }
-  const expectedAaPaymentAmount = computeAaPaymentFromFj(
-    config,
-    parsed.fjAmount,
-  );
+  const expectedAaPaymentAmount = computeAaPaymentFromFj(config, parsed.fjAmount);
   if (parsed.aaPaymentAmount !== expectedAaPaymentAmount) {
     throw new Error(
       `Attestation quote aa_payment_amount mismatch. expected=${expectedAaPaymentAmount} got=${parsed.aaPaymentAmount}`,
     );
   }
-  if (
-    quote.accepted_asset.toLowerCase() !==
-    expectedAsset.toString().toLowerCase()
-  ) {
+  if (quote.accepted_asset.toLowerCase() !== expectedAsset.toString().toLowerCase()) {
     throw new Error(
       `Quote accepted_asset mismatch. expected=${expectedAsset.toString()} got=${quote.accepted_asset}`,
     );
@@ -665,10 +621,7 @@ async function signQuoteForUser(
     new Fr(validUntil),
     userAddress.toField(),
   ]);
-  const signature = await schnorr.constructSignature(
-    quoteHash.toBuffer(),
-    signingKey,
-  );
+  const signature = await schnorr.constructSignature(quoteHash.toBuffer(), signingKey);
   return {
     fjAmount,
     aaPaymentAmount,
@@ -745,24 +698,13 @@ async function executeFeePaidTx(
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [transferAuthwit],
-        [],
-        [],
-        params.fpc.address,
-      ),
+      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], params.fpc.address),
     getFeePayer: async () => params.fpc.address,
     getGasSettings: () => undefined,
   };
 
   const receipt = await params.token.methods
-    .transfer_public_to_public(
-      params.payer,
-      params.recipient,
-      params.transferAmount,
-      Fr.random(),
-    )
+    .transfer_public_to_public(params.payer, params.recipient, params.transferAmount, Fr.random())
     .send({
       from: params.payer,
       fee: {
@@ -794,19 +736,13 @@ function errorMessage(error: unknown): string {
 
 function readSummary(summaryPath: string): Record<string, unknown> {
   try {
-    return JSON.parse(readFileSync(summaryPath, "utf8")) as Record<
-      string,
-      unknown
-    >;
+    return JSON.parse(readFileSync(summaryPath, "utf8")) as Record<string, unknown>;
   } catch {
     return {};
   }
 }
 
-function writeSummary(
-  summaryPath: string,
-  summary: Record<string, unknown>,
-): void {
+function writeSummary(summaryPath: string, summary: Record<string, unknown>): void {
   writeFileSync(summaryPath, JSON.stringify(summary, null, 2), "utf8");
 }
 
@@ -856,8 +792,7 @@ function sanitizeLogName(value: string): string {
 
 function getArtifactsRootDir(repoRoot: string): string {
   const configured = readOptionalEnvString("FPC_FULL_E2E_ARTIFACTS_DIR");
-  const resolved =
-    configured === null ? path.join(repoRoot, "tmp") : path.resolve(configured);
+  const resolved = configured === null ? path.join(repoRoot, "tmp") : path.resolve(configured);
   mkdirSync(resolved, { recursive: true });
   return resolved;
 }
@@ -876,18 +811,11 @@ function persistFailureDiagnostics(
   for (const proc of processes) {
     const safeName = sanitizeLogName(proc.name);
     const tailPath = path.join(diagnosticsDir, `${safeName}.tail.log`);
-    writeFileSync(
-      tailPath,
-      `${getLogTail(proc.getLogs(), DIAGNOSTIC_TAIL_LINES)}\n`,
-      "utf8",
-    );
+    writeFileSync(tailPath, `${getLogTail(proc.getLogs(), DIAGNOSTIC_TAIL_LINES)}\n`, "utf8");
     logTailPaths[proc.name] = tailPath;
   }
 
-  const diagnosticsPath = path.join(
-    diagnosticsDir,
-    `failure-${Date.now()}.json`,
-  );
+  const diagnosticsPath = path.join(diagnosticsDir, `failure-${Date.now()}.json`);
   const details = {
     generatedAt: new Date().toISOString(),
     phase,
@@ -917,18 +845,12 @@ async function expectFailure(
     await action();
   } catch (error) {
     const message = errorMessage(error).toLowerCase();
-    if (
-      expectedSubstrings.some((fragment) =>
-        message.includes(fragment.toLowerCase()),
-      )
-    ) {
+    if (expectedSubstrings.some((fragment) => message.includes(fragment.toLowerCase()))) {
       console.log(`[full-lifecycle-e2e] PASS: ${scenario}`);
       return;
     }
     throw new Error(
-      `[full-lifecycle-e2e] ${scenario} failed with unexpected error: ${errorMessage(
-        error,
-      )}`,
+      `[full-lifecycle-e2e] ${scenario} failed with unexpected error: ${errorMessage(error)}`,
     );
   }
   throw new Error(`[full-lifecycle-e2e] ${scenario} unexpectedly succeeded`);
@@ -936,14 +858,8 @@ async function expectFailure(
 
 function getConfig(): FullE2EConfig {
   const mode = parseMode(process.env.FPC_FULL_E2E_MODE);
-  const requiredTopupCyclesRaw = readEnvPositiveInteger(
-    "FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES",
-    2,
-  );
-  const quoteValiditySeconds = readEnvPositiveInteger(
-    "FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS",
-    3600,
-  );
+  const requiredTopupCyclesRaw = readEnvPositiveInteger("FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES", 2);
+  const quoteValiditySeconds = readEnvPositiveInteger("FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS", 3600);
   const nodeHost = readEnvString("FPC_FULL_E2E_NODE_HOST", "127.0.0.1");
   const nodePort = readEnvPort("FPC_FULL_E2E_NODE_PORT", 8080);
   const l1Host = readEnvString("FPC_FULL_E2E_L1_HOST", "127.0.0.1");
@@ -970,8 +886,7 @@ function getConfig(): FullE2EConfig {
     throw new Error(`FPC_FULL_E2E_FEE_BIPS must be <= 10000, got ${feeBips}`);
   }
 
-  const l1PrivateKey =
-    process.env.FPC_FULL_E2E_L1_PRIVATE_KEY ?? DEFAULT_LOCAL_L1_PRIVATE_KEY;
+  const l1PrivateKey = process.env.FPC_FULL_E2E_L1_PRIVATE_KEY ?? DEFAULT_LOCAL_L1_PRIVATE_KEY;
   assertPrivateKeyHex(l1PrivateKey, "FPC_FULL_E2E_L1_PRIVATE_KEY");
 
   if (requiredTopupCyclesRaw !== 1 && requiredTopupCyclesRaw !== 2) {
@@ -995,38 +910,21 @@ function getConfig(): FullE2EConfig {
     );
   }
   if (attestationPort === topupOpsPort) {
-    throw new Error(
-      "FPC_FULL_E2E_ATTESTATION_PORT must differ from FPC_FULL_E2E_TOPUP_OPS_PORT",
-    );
+    throw new Error("FPC_FULL_E2E_ATTESTATION_PORT must differ from FPC_FULL_E2E_TOPUP_OPS_PORT");
   }
 
   return {
     mode,
-    nodeUrl:
-      nodeUrlFromAztecEnv ??
-      nodeUrlFromFpcEnv ??
-      `http://${nodeHost}:${nodePort}`,
+    nodeUrl: nodeUrlFromAztecEnv ?? nodeUrlFromFpcEnv ?? `http://${nodeHost}:${nodePort}`,
     l1RpcUrl: l1RpcUrlOverride ?? `http://${l1Host}:${l1Port}`,
     l1PrivateKey,
     requiredTopupCycles: requiredTopupCyclesRaw,
-    topupCheckIntervalMs: readEnvPositiveInteger(
-      "FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS",
-      2_000,
-    ),
+    topupCheckIntervalMs: readEnvPositiveInteger("FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS", 2_000),
     topupWei: readOptionalEnvBigInt("FPC_FULL_E2E_TOPUP_WEI"),
     thresholdWei: readOptionalEnvBigInt("FPC_FULL_E2E_THRESHOLD_WEI"),
-    nodeTimeoutMs: readEnvPositiveInteger(
-      "FPC_FULL_E2E_NODE_TIMEOUT_MS",
-      45_000,
-    ),
-    httpTimeoutMs: readEnvPositiveInteger(
-      "FPC_FULL_E2E_HTTP_TIMEOUT_MS",
-      30_000,
-    ),
-    topupWaitTimeoutMs: readEnvPositiveInteger(
-      "FPC_FULL_E2E_TOPUP_WAIT_TIMEOUT_MS",
-      240_000,
-    ),
+    nodeTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_NODE_TIMEOUT_MS", 45_000),
+    httpTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_HTTP_TIMEOUT_MS", 30_000),
+    topupWaitTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_TOPUP_WAIT_TIMEOUT_MS", 240_000),
     topupPollMs: readEnvPositiveInteger("FPC_FULL_E2E_TOPUP_POLL_MS", 2_000),
     attestationPort,
     topupOpsPort,
@@ -1036,10 +934,7 @@ function getConfig(): FullE2EConfig {
     feeBips,
     daGasLimit: readEnvPositiveInteger("FPC_FULL_E2E_DA_GAS_LIMIT", 1_000_000),
     l2GasLimit: readEnvPositiveInteger("FPC_FULL_E2E_L2_GAS_LIMIT", 1_000_000),
-    feeJuiceTopupSafetyMultiplier: readEnvBigInt(
-      "FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER",
-      2n,
-    ),
+    feeJuiceTopupSafetyMultiplier: readEnvBigInt("FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER", 2n),
     topupConfirmTimeoutMs,
     topupConfirmPollInitialMs,
     topupConfirmPollMaxMs,
@@ -1056,19 +951,11 @@ async function deployContractsAndWriteRuntimeConfig(
   config: FullE2EConfig,
 ): Promise<DeploymentRuntimeResult> {
   const scriptDir =
-    typeof __dirname === "string"
-      ? __dirname
-      : path.dirname(fileURLToPath(import.meta.url));
+    typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(scriptDir, "..", "..");
   const artifactsRootDir = getArtifactsRootDir(repoRoot);
-  const runDir = mkdtempSync(
-    path.join(artifactsRootDir, "fpc-full-lifecycle-e2e-"),
-  );
-  const tokenArtifactPath = path.join(
-    repoRoot,
-    "target",
-    "token_contract-Token.json",
-  );
+  const runDir = mkdtempSync(path.join(artifactsRootDir, "fpc-full-lifecycle-e2e-"));
+  const tokenArtifactPath = path.join(repoRoot, "target", "token_contract-Token.json");
   const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
@@ -1088,21 +975,13 @@ async function deployContractsAndWriteRuntimeConfig(
 
   const [operator, user, otherUser] = await Promise.all([
     wallet
-      .createSchnorrAccount(
-        operatorData.secret,
-        operatorData.salt,
-        operatorData.signingKey,
-      )
+      .createSchnorrAccount(operatorData.secret, operatorData.salt, operatorData.signingKey)
       .then((account) => account.address),
     wallet
       .createSchnorrAccount(userData.secret, userData.salt, userData.signingKey)
       .then((account) => account.address),
     wallet
-      .createSchnorrAccount(
-        otherUserData.secret,
-        otherUserData.salt,
-        otherUserData.signingKey,
-      )
+      .createSchnorrAccount(otherUserData.secret, otherUserData.salt, otherUserData.signingKey)
       .then((account) => account.address),
   ]);
 
@@ -1117,8 +996,7 @@ async function deployContractsAndWriteRuntimeConfig(
   ).send({ from: operator });
 
   const schnorr = new Schnorr();
-  const operatorSigningKey =
-    operatorData.signingKey ?? deriveSigningKey(operatorData.secret);
+  const operatorSigningKey = operatorData.signingKey ?? deriveSigningKey(operatorData.secret);
   const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
   const fpc = await Contract.deploy(wallet, fpcArtifact, [
@@ -1132,8 +1010,7 @@ async function deployContractsAndWriteRuntimeConfig(
   const feePerDaGas = minFees.feePerDaGas;
   const feePerL2Gas = minFees.feePerL2Gas;
   const maxGasCostNoTeardown =
-    BigInt(config.daGasLimit) * feePerDaGas +
-    BigInt(config.l2GasLimit) * feePerL2Gas;
+    BigInt(config.daGasLimit) * feePerDaGas + BigInt(config.l2GasLimit) * feePerL2Gas;
 
   const minimumTopupWei =
     maxGasCostNoTeardown *
@@ -1156,10 +1033,7 @@ async function deployContractsAndWriteRuntimeConfig(
     );
   }
 
-  const attestationConfigPath = path.join(
-    runDir,
-    "attestation.fpc.config.yaml",
-  );
+  const attestationConfigPath = path.join(runDir, "attestation.fpc.config.yaml");
   const topupConfigPath = path.join(runDir, "topup.fpc.config.yaml");
   const topupBridgeStatePath = path.join(runDir, "topup.bridge-state.json");
   const summaryPath = path.join(runDir, "run-summary.json");
@@ -1258,26 +1132,20 @@ async function runFeePaidTargetTxAndAssert(
     `${attestationBaseUrl}/quote?user=${result.user.toString()}&accepted_asset=${result.token.address.toString()}&fj_amount=${requestedFjAmount.toString()}`,
     config.httpTimeoutMs,
   );
-  const quoteSigBytes = Array.from(
-    Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
-  );
+  const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace(/^0x/, ""), "hex"));
   const fjAmount = BigInt(quote.fj_amount);
   const aaPaymentAmount = BigInt(quote.aa_payment_amount);
   const { rateNum, rateDen } = getFinalRate(config);
   const validUntil = BigInt(quote.valid_until);
 
   if (quoteSigBytes.length !== 64) {
-    throw new Error(
-      `Quote signature length must be 64 bytes, got ${quoteSigBytes.length}`,
-    );
+    throw new Error(`Quote signature length must be 64 bytes, got ${quoteSigBytes.length}`);
   }
   if (fjAmount <= 0n) {
     throw new Error("Attestation quote returned non-positive fj_amount");
   }
   if (aaPaymentAmount <= 0n) {
-    throw new Error(
-      "Attestation quote returned non-positive aa_payment_amount",
-    );
+    throw new Error("Attestation quote returned non-positive aa_payment_amount");
   }
   if (fjAmount !== requestedFjAmount) {
     throw new Error(
@@ -1290,10 +1158,7 @@ async function runFeePaidTargetTxAndAssert(
       `Attestation quote aa_payment_amount mismatch. expected=${expectedAaPaymentAmount} got=${aaPaymentAmount}`,
     );
   }
-  if (
-    quote.accepted_asset.toLowerCase() !==
-    result.token.address.toString().toLowerCase()
-  ) {
+  if (quote.accepted_asset.toLowerCase() !== result.token.address.toString().toLowerCase()) {
     throw new Error(
       `Quote accepted_asset mismatch. expected=${result.token.address.toString()} got=${quote.accepted_asset}`,
     );
@@ -1307,9 +1172,7 @@ async function runFeePaidTargetTxAndAssert(
 
   const userPrivateBefore = BigInt(
     (
-      await result.token.methods
-        .balance_of_private(result.user)
-        .simulate({ from: result.user })
+      await result.token.methods.balance_of_private(result.user).simulate({ from: result.user })
     ).toString(),
   );
   const operatorPrivateBefore = BigInt(
@@ -1321,9 +1184,7 @@ async function runFeePaidTargetTxAndAssert(
   );
   const userPublicBefore = BigInt(
     (
-      await result.token.methods
-        .balance_of_public(result.user)
-        .simulate({ from: result.user })
+      await result.token.methods.balance_of_public(result.user).simulate({ from: result.user })
     ).toString(),
   );
   const operatorPublicBefore = BigInt(
@@ -1360,24 +1221,13 @@ async function runFeePaidTargetTxAndAssert(
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [transferAuthwit],
-        [],
-        [],
-        result.fpc.address,
-      ),
+      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], result.fpc.address),
     getFeePayer: async () => result.fpc.address,
     getGasSettings: () => undefined,
   };
 
   const receipt = await result.token.methods
-    .transfer_public_to_public(
-      result.user,
-      result.operator,
-      targetTransferAmount,
-      Fr.random(),
-    )
+    .transfer_public_to_public(result.user, result.operator, targetTransferAmount, Fr.random())
     .send({
       from: result.user,
       fee: {
@@ -1396,9 +1246,7 @@ async function runFeePaidTargetTxAndAssert(
 
   const userPrivateAfter = BigInt(
     (
-      await result.token.methods
-        .balance_of_private(result.user)
-        .simulate({ from: result.user })
+      await result.token.methods.balance_of_private(result.user).simulate({ from: result.user })
     ).toString(),
   );
   const operatorPrivateAfter = BigInt(
@@ -1410,9 +1258,7 @@ async function runFeePaidTargetTxAndAssert(
   );
   const userPublicAfter = BigInt(
     (
-      await result.token.methods
-        .balance_of_public(result.user)
-        .simulate({ from: result.user })
+      await result.token.methods.balance_of_public(result.user).simulate({ from: result.user })
     ).toString(),
   );
   const operatorPublicAfter = BigInt(
@@ -1515,18 +1361,15 @@ async function negativeExpiredQuoteRejected(
 
   await waitForNextBlock(node, 60_000);
 
-  await expectFailure(
-    "negative expired quote rejected",
-    ["quote expired"],
-    () =>
-      executeFeePaidTx(config, result, {
-        token: result.token,
-        fpc: result.fpc,
-        payer: result.user,
-        recipient: result.operator,
-        transferAmount: 1n,
-        quote: expiredQuote,
-      }),
+  await expectFailure("negative expired quote rejected", ["quote expired"], () =>
+    executeFeePaidTx(config, result, {
+      token: result.token,
+      fpc: result.fpc,
+      payer: result.user,
+      recipient: result.operator,
+      transferAmount: 1n,
+      quote: expiredQuote,
+    }),
   );
 }
 
@@ -1546,24 +1389,19 @@ async function negativeOverlongTtlRejected(
     fjAmount,
     rateNum,
     rateDen,
-    latestTimestamp +
-      BigInt(MAX_QUOTE_VALIDITY_SECONDS) +
-      ttlSafetyBufferSeconds,
+    latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS) + ttlSafetyBufferSeconds,
     result.user,
   );
 
-  await expectFailure(
-    "negative overlong quote ttl rejected",
-    ["quote ttl too large"],
-    () =>
-      executeFeePaidTx(config, result, {
-        token: result.token,
-        fpc: result.fpc,
-        payer: result.user,
-        recipient: result.operator,
-        transferAmount: 1n,
-        quote: ttlTooLargeQuote,
-      }),
+  await expectFailure("negative overlong quote ttl rejected", ["quote ttl too large"], () =>
+    executeFeePaidTx(config, result, {
+      token: result.token,
+      fpc: result.fpc,
+      payer: result.user,
+      recipient: result.operator,
+      transferAmount: 1n,
+      quote: ttlTooLargeQuote,
+    }),
   );
 }
 
@@ -1682,11 +1520,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   node: ReturnType<typeof createAztecNodeClient>,
   estimatedSingleTxFeeJuice: bigint,
 ): Promise<bigint> {
-  const tokenArtifactPath = path.join(
-    result.repoRoot,
-    "target",
-    "token_contract-Token.json",
-  );
+  const tokenArtifactPath = path.join(result.repoRoot, "target", "token_contract-Token.json");
   const fpcArtifactPath = resolveFpcArtifactPath(result.repoRoot);
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
@@ -1719,12 +1553,9 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
 
   const minimumBudget = 1_000_000n;
   const txHeadroom =
-    estimatedSingleTxFeeJuice <= 0n
-      ? 1_000_000_000n
-      : ceilDiv(estimatedSingleTxFeeJuice, 2n);
+    estimatedSingleTxFeeJuice <= 0n ? 1_000_000_000n : ceilDiv(estimatedSingleTxFeeJuice, 2n);
   const budgetWei = result.maxGasCostNoTeardown + txHeadroom + 1_000_000n;
-  const effectiveBudgetWei =
-    budgetWei > minimumBudget ? budgetWei : minimumBudget;
+  const effectiveBudgetWei = budgetWei > minimumBudget ? budgetWei : minimumBudget;
 
   writeFileSync(
     topupConfigPath,
@@ -1761,26 +1592,14 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   );
 
   try {
-    await waitForHealth(
-      `http://127.0.0.1:${config.topupOpsPort}/health`,
-      config.httpTimeoutMs,
-    );
-    await waitForHealth(
-      `http://127.0.0.1:${config.topupOpsPort}/ready`,
-      config.topupWaitTimeoutMs,
-    );
+    await waitForHealth(`http://127.0.0.1:${config.topupOpsPort}/health`, config.httpTimeoutMs);
+    await waitForHealth(`http://127.0.0.1:${config.topupOpsPort}/ready`, config.topupWaitTimeoutMs);
     const submission = await waitForNextBridgeSubmission(
       isolatedTopup,
       config.topupWaitTimeoutMs,
       0,
     );
-    await waitForNextBridgeConfirmedOutcome(
-      isolatedTopup,
-      config.topupWaitTimeoutMs,
-      0,
-      0,
-      0,
-    );
+    await waitForNextBridgeConfirmedOutcome(isolatedTopup, config.topupWaitTimeoutMs, 0, 0, 0);
 
     let isolatedBalance = await getFeeJuiceBalance(isolatedFpc.address, node);
     if (isolatedBalance === 0n) {
@@ -1870,17 +1689,14 @@ async function runStep7NegativeScenarios(
   await negativeDirectEntrypointCallRejected(config, result, node);
 
   await stopManagedProcess(topup);
-  console.log(
-    "[full-lifecycle-e2e] topup stopped before insufficient Fee Juice negative scenario",
-  );
+  console.log("[full-lifecycle-e2e] topup stopped before insufficient Fee Juice negative scenario");
 
-  const insufficientFeeJuiceBudgetWei =
-    await negativeInsufficientFeeJuiceSecondTxRejected(
-      config,
-      result,
-      node,
-      estimatedSingleTxFeeJuice,
-    );
+  const insufficientFeeJuiceBudgetWei = await negativeInsufficientFeeJuiceSecondTxRejected(
+    config,
+    result,
+    node,
+    estimatedSingleTxFeeJuice,
+  );
 
   return {
     quoteReplayRejected: true,
@@ -1911,13 +1727,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
       "bun",
       [
         "run",
-        path.join(
-          result.repoRoot,
-          "services",
-          "attestation",
-          "dist",
-          "index.js",
-        ),
+        path.join(result.repoRoot, "services", "attestation", "dist", "index.js"),
         "--config",
         result.attestationConfigPath,
       ],
@@ -1972,12 +1782,9 @@ async function orchestrateServicesAndAssertBridgeCycles(
     };
     if (topupCounters.submissionCount > 0) {
       const existingSubmissions = parseTopupBridgeSubmissions(topup.getLogs());
-      const latestSubmission =
-        existingSubmissions[existingSubmissions.length - 1];
+      const latestSubmission = existingSubmissions[existingSubmissions.length - 1];
       if (!latestSubmission) {
-        throw new Error(
-          "Top-up submission counter was non-zero but no submission could be parsed",
-        );
+        throw new Error("Top-up submission counter was non-zero but no submission could be parsed");
       }
       cycle1Submission = {
         submission: latestSubmission,
@@ -1987,11 +1794,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
         `[full-lifecycle-e2e] using existing bridge submission for cycle #1 (message_hash=${latestSubmission.messageHash})`,
       );
     } else {
-      cycle1Submission = await waitForNextBridgeSubmission(
-        topup,
-        config.topupWaitTimeoutMs,
-        0,
-      );
+      cycle1Submission = await waitForNextBridgeSubmission(topup, config.topupWaitTimeoutMs, 0);
     }
     topupCounters.submissionCount = cycle1Submission.submissionCount;
     const cycle1Outcome = await waitForNextBridgeConfirmedOutcome(
@@ -2005,10 +1808,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
     topupCounters.timeoutCount = cycle1Outcome.timeoutCount;
     topupCounters.failedCount = cycle1Outcome.failedCount;
 
-    let feeJuiceAfterCycle1 = await getFeeJuiceBalance(
-      result.fpc.address,
-      node,
-    );
+    let feeJuiceAfterCycle1 = await getFeeJuiceBalance(result.fpc.address, node);
     if (feeJuiceAfterCycle1 === 0n) {
       console.log(
         `[full-lifecycle-e2e] bridge cycle #1 confirmed but Fee Juice is still zero; waiting for auto-claim settlement (message_hash=${cycle1Submission.submission.messageHash})`,
@@ -2025,9 +1825,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
       `[full-lifecycle-e2e] PASS: bridge cycle #1 confirmed before tx1 (message_hash=${cycle1Submission.submission.messageHash}, leaf_index=${cycle1Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle1})`,
     );
 
-    await result.token.methods
-      .mint_to_public(result.user, 2n)
-      .send({ from: result.operator });
+    await result.token.methods.mint_to_public(result.user, 2n).send({ from: result.operator });
 
     phase = "step6.tx1";
     const cycle2Baseline: TopupLogCounters = { ...topupCounters };
@@ -2096,9 +1894,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
     console.log(`[full-lifecycle-e2e] fee_juice_after_tx2=${feeJuiceAfterTx2}`);
 
     const estimatedSingleTxFeeJuice =
-      feeJuiceAfterTx1 > feeJuiceAfterTx2
-        ? feeJuiceAfterTx1 - feeJuiceAfterTx2
-        : 0n;
+      feeJuiceAfterTx1 > feeJuiceAfterTx2 ? feeJuiceAfterTx1 - feeJuiceAfterTx2 : 0n;
     if (!topup) {
       throw new Error("Top-up process handle was lost before step7");
     }
@@ -2144,10 +1940,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
   }
 }
 
-function writeStep5Summary(
-  summaryPath: string,
-  orchestration: OrchestrationResult,
-): void {
+function writeStep5Summary(summaryPath: string, orchestration: OrchestrationResult): void {
   const summary = readSummary(summaryPath);
 
   summary.step5 = {
@@ -2175,10 +1968,8 @@ function writeStep5Summary(
     expiredQuoteRejected: orchestration.step7.expiredQuoteRejected,
     overlongTtlRejected: orchestration.step7.overlongTtlRejected,
     senderBindingRejected: orchestration.step7.senderBindingRejected,
-    insufficientFeeJuiceRejected:
-      orchestration.step7.insufficientFeeJuiceRejected,
-    insufficientFeeJuiceBudgetWei:
-      orchestration.step7.insufficientFeeJuiceBudgetWei.toString(),
+    insufficientFeeJuiceRejected: orchestration.step7.insufficientFeeJuiceRejected,
+    insufficientFeeJuiceBudgetWei: orchestration.step7.insufficientFeeJuiceBudgetWei.toString(),
   };
 
   writeSummary(summaryPath, summary);
@@ -2220,22 +2011,12 @@ async function main(): Promise<void> {
     result = await deployContractsAndWriteRuntimeConfig(config);
     console.log(`[full-lifecycle-e2e] operator=${result.operator.toString()}`);
     console.log(`[full-lifecycle-e2e] user=${result.user.toString()}`);
-    console.log(
-      `[full-lifecycle-e2e] other_user=${result.otherUser.toString()}`,
-    );
-    console.log(
-      `[full-lifecycle-e2e] token=${result.token.address.toString()}`,
-    );
+    console.log(`[full-lifecycle-e2e] other_user=${result.otherUser.toString()}`);
+    console.log(`[full-lifecycle-e2e] token=${result.token.address.toString()}`);
     console.log(`[full-lifecycle-e2e] fpc=${result.fpc.address.toString()}`);
-    console.log(
-      `[full-lifecycle-e2e] topup_threshold_wei=${result.topupThresholdWei}`,
-    );
-    console.log(
-      `[full-lifecycle-e2e] topup_amount_wei=${result.topupAmountWei}`,
-    );
-    console.log(
-      `[full-lifecycle-e2e] attestation_config=${result.attestationConfigPath}`,
-    );
+    console.log(`[full-lifecycle-e2e] topup_threshold_wei=${result.topupThresholdWei}`);
+    console.log(`[full-lifecycle-e2e] topup_amount_wei=${result.topupAmountWei}`);
+    console.log(`[full-lifecycle-e2e] attestation_config=${result.attestationConfigPath}`);
     console.log(`[full-lifecycle-e2e] topup_config=${result.topupConfigPath}`);
     console.log(`[full-lifecycle-e2e] run_summary=${result.summaryPath}`);
 
@@ -2244,15 +2025,10 @@ async function main(): Promise<void> {
       attestationConfigPath: result.attestationConfigPath,
       topupConfigPath: result.topupConfigPath,
     });
-    console.log(
-      "[full-lifecycle-e2e] PASS: step4 deployment and runtime wiring complete",
-    );
+    console.log("[full-lifecycle-e2e] PASS: step4 deployment and runtime wiring complete");
 
     phase = "step5_to_step7.orchestration";
-    const orchestration = await orchestrateServicesAndAssertBridgeCycles(
-      config,
-      result,
-    );
+    const orchestration = await orchestrateServicesAndAssertBridgeCycles(config, result);
     writeStep5Summary(result.summaryPath, orchestration);
 
     console.log(
@@ -2267,9 +2043,7 @@ async function main(): Promise<void> {
 
     phase = "step8.diagnostics_and_artifacts";
     writeStep8Summary(result.summaryPath, result.runDir);
-    console.log(
-      "[full-lifecycle-e2e] PASS: step8 diagnostics and artifacts are persisted",
-    );
+    console.log("[full-lifecycle-e2e] PASS: step8 diagnostics and artifacts are persisted");
     console.log("[full-lifecycle-e2e] PASS: full lifecycle e2e succeeded");
   } catch (error) {
     if (result !== null) {

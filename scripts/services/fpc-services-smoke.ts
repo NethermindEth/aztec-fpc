@@ -1,11 +1,5 @@
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,31 +7,19 @@ import { fileURLToPath } from "node:url";
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import {
-  computeInnerAuthWitHash,
-  lookupValidity,
-} from "@aztec/aztec.js/authorization";
+import { computeInnerAuthWitHash, lookupValidity } from "@aztec/aztec.js/authorization";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
-import {
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
+import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import {
-  createPublicClient,
-  createWalletClient,
-  type Hex,
-  http,
-  parseAbi,
-} from "viem";
+import { createPublicClient, createWalletClient, type Hex, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 import {
@@ -61,10 +43,7 @@ const ERC20_ABI = parseAbi([
 ]);
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
-const FPC_ARTIFACT_FILE_CANDIDATES = [
-  "fpc-FPCMultiAsset.json",
-  "fpc-FPC.json",
-] as const;
+const FPC_ARTIFACT_FILE_CANDIDATES = ["fpc-FPCMultiAsset.json", "fpc-FPC.json"] as const;
 
 type TopupBridgeOutcome = "confirmed" | "timeout" | "failed";
 type TopupBridgeSubmission = {
@@ -165,8 +144,7 @@ function loadArtifact(artifactPath: string): ContractArtifact {
 }
 
 function resolveFpcArtifactPath(repoRoot: string): string {
-  const explicitPath =
-    process.env.FPC_SERVICES_SMOKE_FPC_ARTIFACT ?? process.env.FPC_FPC_ARTIFACT;
+  const explicitPath = process.env.FPC_SERVICES_SMOKE_FPC_ARTIFACT ?? process.env.FPC_FPC_ARTIFACT;
   if (explicitPath && explicitPath.trim().length > 0) {
     return path.resolve(explicitPath);
   }
@@ -207,18 +185,14 @@ async function getFeeJuiceL1Addresses(
   const nodeInfo = await node.getNodeInfo();
   const l1Addresses = nodeInfo.l1ContractAddresses as Record<string, unknown>;
   const tokenAddressValue = l1Addresses.feeJuiceAddress ?? l1Addresses.feeJuice;
-  const portalAddressValue =
-    l1Addresses.feeJuicePortalAddress ?? l1Addresses.feeJuicePortal;
+  const portalAddressValue = l1Addresses.feeJuicePortalAddress ?? l1Addresses.feeJuicePortal;
   if (!tokenAddressValue || !portalAddressValue) {
     throw new Error("Node info is missing FeeJuice L1 contract addresses");
   }
 
   return {
     tokenAddress: normalizeHexAddress(tokenAddressValue, "feeJuiceAddress"),
-    portalAddress: normalizeHexAddress(
-      portalAddressValue,
-      "feeJuicePortalAddress",
-    ),
+    portalAddress: normalizeHexAddress(portalAddressValue, "feeJuicePortalAddress"),
   };
 }
 
@@ -249,11 +223,7 @@ async function tryMintL1FeeJuice(
   if (amount <= 0n) {
     return {
       minted: false,
-      resultingBalance: await getL1FeeJuiceBalance(
-        node,
-        l1RpcUrl,
-        l1PrivateKey,
-      ),
+      resultingBalance: await getL1FeeJuiceBalance(node, l1RpcUrl, l1PrivateKey),
     };
   }
 
@@ -277,20 +247,12 @@ async function tryMintL1FeeJuice(
     await publicClient.waitForTransactionReceipt({ hash: mintTxHash });
     return {
       minted: true,
-      resultingBalance: await getL1FeeJuiceBalance(
-        node,
-        l1RpcUrl,
-        l1PrivateKey,
-      ),
+      resultingBalance: await getL1FeeJuiceBalance(node, l1RpcUrl, l1PrivateKey),
     };
   } catch {
     return {
       minted: false,
-      resultingBalance: await getL1FeeJuiceBalance(
-        node,
-        l1RpcUrl,
-        l1PrivateKey,
-      ),
+      resultingBalance: await getL1FeeJuiceBalance(node, l1RpcUrl, l1PrivateKey),
     };
   }
 }
@@ -298,46 +260,27 @@ async function tryMintL1FeeJuice(
 function getConfig(): SmokeConfig {
   const config: SmokeConfig = {
     nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
-    l1RpcUrl:
-      process.env.FPC_SERVICES_SMOKE_L1_RPC_URL ?? "http://127.0.0.1:8545",
+    l1RpcUrl: process.env.FPC_SERVICES_SMOKE_L1_RPC_URL ?? "http://127.0.0.1:8545",
     attestationPort: readEnvNumber("FPC_SERVICES_SMOKE_ATTESTATION_PORT", 3300),
     topupOpsPort: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_OPS_PORT", 3401),
     nodeTimeoutMs: readEnvNumber("FPC_SERVICES_SMOKE_NODE_TIMEOUT_MS", 45_000),
     httpTimeoutMs: readEnvNumber("FPC_SERVICES_SMOKE_HTTP_TIMEOUT_MS", 30_000),
-    topupWaitTimeoutMs: readEnvNumber(
-      "FPC_SERVICES_SMOKE_TOPUP_WAIT_TIMEOUT_MS",
-      240_000,
-    ),
+    topupWaitTimeoutMs: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_WAIT_TIMEOUT_MS", 240_000),
     topupPollMs: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_POLL_MS", 2_000),
-    topupCheckIntervalMs: readEnvNumber(
-      "FPC_SERVICES_SMOKE_TOPUP_CHECK_INTERVAL_MS",
-      300_000,
-    ),
-    quoteValiditySeconds: readEnvNumber(
-      "FPC_SERVICES_SMOKE_QUOTE_VALIDITY_SECONDS",
-      3600,
-    ),
+    topupCheckIntervalMs: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_CHECK_INTERVAL_MS", 300_000),
+    quoteValiditySeconds: readEnvNumber("FPC_SERVICES_SMOKE_QUOTE_VALIDITY_SECONDS", 3600),
     marketRateNum: readEnvNumber("FPC_SERVICES_SMOKE_MARKET_RATE_NUM", 1),
     marketRateDen: readEnvNumber("FPC_SERVICES_SMOKE_MARKET_RATE_DEN", 1000),
     feeBips: readEnvNumber("FPC_SERVICES_SMOKE_FEE_BIPS", 200),
     daGasLimit: readEnvNumber("FPC_SERVICES_SMOKE_DA_GAS_LIMIT", 1_000_000),
     l2GasLimit: readEnvNumber("FPC_SERVICES_SMOKE_L2_GAS_LIMIT", 1_000_000),
-    feeJuiceTopupSafetyMultiplier: readEnvBigInt(
-      "FPC_SERVICES_SMOKE_TOPUP_SAFETY_MULTIPLIER",
-      2n,
-    ),
-    topupConfirmTimeoutMs: readEnvNumber(
-      "FPC_SERVICES_SMOKE_TOPUP_CONFIRM_TIMEOUT_MS",
-      180_000,
-    ),
+    feeJuiceTopupSafetyMultiplier: readEnvBigInt("FPC_SERVICES_SMOKE_TOPUP_SAFETY_MULTIPLIER", 2n),
+    topupConfirmTimeoutMs: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_CONFIRM_TIMEOUT_MS", 180_000),
     topupConfirmPollInitialMs: readEnvNumber(
       "FPC_SERVICES_SMOKE_TOPUP_CONFIRM_POLL_INITIAL_MS",
       1_000,
     ),
-    topupConfirmPollMaxMs: readEnvNumber(
-      "FPC_SERVICES_SMOKE_TOPUP_CONFIRM_POLL_MAX_MS",
-      15_000,
-    ),
+    topupConfirmPollMaxMs: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_CONFIRM_POLL_MAX_MS", 15_000),
   };
 
   return config;
@@ -379,10 +322,7 @@ function bootstrapTopupAutoclaimAccount(
   claimerSecretKey: string,
 ): void {
   const timeoutRaw = process.env.TOPUP_AUTOCLAIM_BOOTSTRAP_TIMEOUT_MS?.trim();
-  const timeoutMs =
-    timeoutRaw && timeoutRaw.length > 0
-      ? Number.parseInt(timeoutRaw, 10)
-      : 180_000;
+  const timeoutMs = timeoutRaw && timeoutRaw.length > 0 ? Number.parseInt(timeoutRaw, 10) : 180_000;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error(
       "[services-smoke] invalid TOPUP_AUTOCLAIM_BOOTSTRAP_TIMEOUT_MS; expected positive integer milliseconds",
@@ -394,9 +334,7 @@ function bootstrapTopupAutoclaimAccount(
     "services",
     "bootstrap-topup-autoclaim-account.ts",
   );
-  console.log(
-    `[services-smoke] bootstrapping topup auto-claim claimer on ${nodeUrl}`,
-  );
+  console.log(`[services-smoke] bootstrapping topup auto-claim claimer on ${nodeUrl}`);
   try {
     execFileSync(
       "bun",
@@ -500,10 +438,7 @@ async function getCurrentChainUnixSeconds(
   return BigInt(Math.floor(Date.now() / 1000));
 }
 
-async function fetchQuote(
-  quoteUrl: string,
-  timeoutMs: number,
-): Promise<QuoteResponse> {
+async function fetchQuote(quoteUrl: string, timeoutMs: number): Promise<QuoteResponse> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
 
@@ -536,10 +471,7 @@ async function fetchQuote(
   throw new Error(`Timed out requesting quote. Last error: ${lastError}`);
 }
 
-async function fetchAsset(
-  assetUrl: string,
-  timeoutMs: number,
-): Promise<AssetResponse> {
+async function fetchAsset(assetUrl: string, timeoutMs: number): Promise<AssetResponse> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
 
@@ -551,10 +483,7 @@ async function fetchAsset(
         lastError = `HTTP ${response.status}: ${bodyText}`;
       } else {
         const parsed = JSON.parse(bodyText) as AssetResponse;
-        if (
-          typeof parsed.name === "string" &&
-          typeof parsed.address === "string"
-        ) {
+        if (typeof parsed.name === "string" && typeof parsed.address === "string") {
           return parsed;
         }
         lastError = `Invalid asset payload: ${bodyText}`;
@@ -566,15 +495,10 @@ async function fetchAsset(
     await sleep(500);
   }
 
-  throw new Error(
-    `Timed out requesting asset metadata. Last error: ${lastError}`,
-  );
+  throw new Error(`Timed out requesting asset metadata. Last error: ${lastError}`);
 }
 
-async function fetchMetrics(
-  metricsUrl: string,
-  timeoutMs: number,
-): Promise<string> {
+async function fetchMetrics(metricsUrl: string, timeoutMs: number): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
 
@@ -699,11 +623,7 @@ async function verifyAttestationAmountQuoteSignature(
     user.toField(),
   ]);
   const signature = SchnorrSignature.fromBuffer(Buffer.from(quoteSigBytes));
-  const isValid = await schnorr.verifySignature(
-    quoteHash.toBuffer(),
-    operatorPubKey,
-    signature,
-  );
+  const isValid = await schnorr.verifySignature(quoteHash.toBuffer(), operatorPubKey, signature);
   if (!isValid) {
     throw new Error(
       `${scenarioPrefix} quote signature failed Schnorr verification for quoted amount preimage`,
@@ -731,10 +651,7 @@ async function runServiceScenario(
   const managed: ManagedProcess[] = [];
 
   try {
-    const attestationConfigPath = path.join(
-      tmpDir,
-      "attestation.fpc.config.yaml",
-    );
+    const attestationConfigPath = path.join(tmpDir, "attestation.fpc.config.yaml");
     const topupConfigPath = path.join(tmpDir, "topup.fpc.config.yaml");
 
     writeFileSync(
@@ -803,25 +720,18 @@ async function runServiceScenario(
       );
     }
     console.log(`${scenarioPrefix} PASS: attestation bad quote request`);
-    const asset = await fetchAsset(
-      `${attestationBaseUrl}/asset`,
-      config.httpTimeoutMs,
-    );
+    const asset = await fetchAsset(`${attestationBaseUrl}/asset`, config.httpTimeoutMs);
     if (asset.name !== "SmokeToken") {
       throw new Error(
         `${scenarioPrefix} asset name mismatch. expected=SmokeToken got=${asset.name}`,
       );
     }
-    if (
-      asset.address.toLowerCase() !== token.address.toString().toLowerCase()
-    ) {
+    if (asset.address.toLowerCase() !== token.address.toString().toLowerCase()) {
       throw new Error(
         `${scenarioPrefix} asset address mismatch. expected=${token.address.toString()} got=${asset.address}`,
       );
     }
-    console.log(
-      `${scenarioPrefix} PASS: asset endpoint matches deployed token`,
-    );
+    console.log(`${scenarioPrefix} PASS: asset endpoint matches deployed token`);
 
     const topup = startManagedProcess(
       "topup-fpc",
@@ -851,38 +761,22 @@ async function runServiceScenario(
     console.log(`${scenarioPrefix} PASS: topup service health endpoint`);
 
     await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
-    await waitForLog(
-      topup,
-      "Top-up target Fee Juice balance:",
-      config.topupWaitTimeoutMs,
-    );
+    await waitForLog(topup, "Top-up target Fee Juice balance:", config.topupWaitTimeoutMs);
     await waitForHealth(`${topupOpsBaseUrl}/ready`, config.topupWaitTimeoutMs);
     console.log(`${scenarioPrefix} PASS: topup service readiness endpoint`);
-    const bridgeSubmission = await waitForTopupBridgeSubmission(
-      topup,
-      config.topupWaitTimeoutMs,
-    );
+    const bridgeSubmission = await waitForTopupBridgeSubmission(topup, config.topupWaitTimeoutMs);
 
-    const topupOutcome = await waitForTopupBridgeOutcome(
-      topup,
-      config.topupWaitTimeoutMs,
-    );
+    const topupOutcome = await waitForTopupBridgeOutcome(topup, config.topupWaitTimeoutMs);
     console.log(`${scenarioPrefix} topup_confirmation_outcome=${topupOutcome}`);
 
-    const initialFeeJuiceBalance = await getFeeJuiceBalance(
-      feePayerAddress,
-      node,
-    );
+    const initialFeeJuiceBalance = await getFeeJuiceBalance(feePayerAddress, node);
     console.log(
       `${scenarioPrefix} fee_payer_fee_juice_after_topup_service=${initialFeeJuiceBalance}`,
     );
 
     let bridgedFeeJuiceBalance = initialFeeJuiceBalance;
     if (bridgedFeeJuiceBalance === 0n) {
-      const settleTimeoutMs = Math.max(
-        1_000,
-        Math.floor(config.topupWaitTimeoutMs / 2),
-      );
+      const settleTimeoutMs = Math.max(1_000, Math.floor(config.topupWaitTimeoutMs / 2));
       console.log(
         `${scenarioPrefix} topup balance still zero after outcome=${topupOutcome}; waiting ${settleTimeoutMs}ms for relay settlement`,
       );
@@ -899,9 +793,7 @@ async function runServiceScenario(
         );
       }
     }
-    console.log(
-      `${scenarioPrefix} fee_payer_fee_juice_after_topup=${bridgedFeeJuiceBalance}`,
-    );
+    console.log(`${scenarioPrefix} fee_payer_fee_juice_after_topup=${bridgedFeeJuiceBalance}`);
 
     const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
     const quote = await fetchQuote(
@@ -909,9 +801,7 @@ async function runServiceScenario(
       config.httpTimeoutMs,
     );
     const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
-    const quoteSigBytes = Array.from(
-      Buffer.from(quote.signature.replace("0x", ""), "hex"),
-    );
+    const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace("0x", ""), "hex"));
     const fjAmount = BigInt(quote.fj_amount);
     const aaPaymentAmount = BigInt(quote.aa_payment_amount);
     const validUntil = BigInt(quote.valid_until);
@@ -922,31 +812,22 @@ async function runServiceScenario(
       );
     }
     if (fjAmount <= 0n) {
-      throw new Error(
-        `${scenarioPrefix} attestation quote returned non-positive fj_amount`,
-      );
+      throw new Error(`${scenarioPrefix} attestation quote returned non-positive fj_amount`);
     }
     if (aaPaymentAmount <= 0n) {
       throw new Error(
         `${scenarioPrefix} attestation quote returned non-positive aa_payment_amount`,
       );
     }
-    if (
-      quote.accepted_asset.toLowerCase() !==
-      token.address.toString().toLowerCase()
-    ) {
+    if (quote.accepted_asset.toLowerCase() !== token.address.toString().toLowerCase()) {
       throw new Error(
         `${scenarioPrefix} quote accepted_asset mismatch. expected=${token.address.toString()} got=${quote.accepted_asset}`,
       );
     }
 
-    const expectedRateNum =
-      BigInt(config.marketRateNum) * BigInt(10_000 + config.feeBips);
+    const expectedRateNum = BigInt(config.marketRateNum) * BigInt(10_000 + config.feeBips);
     const expectedRateDen = BigInt(config.marketRateDen) * 10_000n;
-    const expectedAaPaymentAmount = ceilDiv(
-      fjAmount * expectedRateNum,
-      expectedRateDen,
-    );
+    const expectedAaPaymentAmount = ceilDiv(fjAmount * expectedRateNum, expectedRateDen);
     if (aaPaymentAmount !== expectedAaPaymentAmount) {
       throw new Error(
         `${scenarioPrefix} quote payment mismatch. expected=${expectedAaPaymentAmount} got=${aaPaymentAmount}`,
@@ -972,21 +853,12 @@ async function runServiceScenario(
     console.log(`${scenarioPrefix} PASS: quote signature verification`);
 
     const chainNowMin =
-      chainNowBeforeQuote < chainNowAfterQuote
-        ? chainNowBeforeQuote
-        : chainNowAfterQuote;
+      chainNowBeforeQuote < chainNowAfterQuote ? chainNowBeforeQuote : chainNowAfterQuote;
     const chainNowMax =
-      chainNowBeforeQuote > chainNowAfterQuote
-        ? chainNowBeforeQuote
-        : chainNowAfterQuote;
-    const minExpectedValidUntil =
-      chainNowMin + BigInt(config.quoteValiditySeconds);
-    const maxExpectedValidUntil =
-      chainNowMax + BigInt(config.quoteValiditySeconds) + 5n;
-    if (
-      validUntil < minExpectedValidUntil ||
-      validUntil > maxExpectedValidUntil
-    ) {
+      chainNowBeforeQuote > chainNowAfterQuote ? chainNowBeforeQuote : chainNowAfterQuote;
+    const minExpectedValidUntil = chainNowMin + BigInt(config.quoteValiditySeconds);
+    const maxExpectedValidUntil = chainNowMax + BigInt(config.quoteValiditySeconds) + 5n;
+    if (validUntil < minExpectedValidUntil || validUntil > maxExpectedValidUntil) {
       throw new Error(
         `${scenarioPrefix} quote validity window mismatch. chain_now_before=${chainNowBeforeQuote} chain_now_after=${chainNowAfterQuote} valid_until=${validUntil} expected_range=[${minExpectedValidUntil}, ${maxExpectedValidUntil}]`,
       );
@@ -1018,9 +890,7 @@ async function runServiceScenario(
       { outcome: "success" },
     );
     if ((attestationSuccessCount ?? 0) < 1) {
-      throw new Error(
-        `${scenarioPrefix} attestation metrics missing non-zero success quote count`,
-      );
+      throw new Error(`${scenarioPrefix} attestation metrics missing non-zero success quote count`);
     }
     const attestationErrorCount = getPrometheusMetricValue(
       attestationMetrics,
@@ -1042,25 +912,18 @@ async function runServiceScenario(
         `${scenarioPrefix} attestation metrics missing non-zero success latency count`,
       );
     }
-    const topupMetrics = await fetchMetrics(
-      `${topupOpsBaseUrl}/metrics`,
-      config.httpTimeoutMs,
-    );
+    const topupMetrics = await fetchMetrics(`${topupOpsBaseUrl}/metrics`, config.httpTimeoutMs);
     const topupSubmittedCount = getPrometheusMetricValue(
       topupMetrics,
       "topup_bridge_events_total",
       { event: "submitted" },
     );
     if ((topupSubmittedCount ?? 0) < 1) {
-      throw new Error(
-        `${scenarioPrefix} topup metrics missing non-zero submitted bridge count`,
-      );
+      throw new Error(`${scenarioPrefix} topup metrics missing non-zero submitted bridge count`);
     }
-    const topupOutcomeCount = getPrometheusMetricValue(
-      topupMetrics,
-      "topup_bridge_events_total",
-      { event: topupOutcome },
-    );
+    const topupOutcomeCount = getPrometheusMetricValue(topupMetrics, "topup_bridge_events_total", {
+      event: topupOutcome,
+    });
     if ((topupOutcomeCount ?? 0) < 1) {
       throw new Error(
         `${scenarioPrefix} topup metrics missing non-zero ${topupOutcome} bridge count`,
@@ -1105,9 +968,7 @@ async function runFpcFeeEntrypointScenario(
   const mintAmount = expectedCharge + 1_000_000n;
   console.log(`[services-smoke:fpc] expected_charge=${expectedCharge}`);
 
-  await token.methods
-    .mint_to_private(user, mintAmount)
-    .send({ from: operator });
+  await token.methods.mint_to_private(user, mintAmount).send({ from: operator });
   await token.methods.mint_to_public(user, 2n).send({ from: operator });
 
   const transferAuthwitNonce = Fr.random();
@@ -1132,16 +993,10 @@ async function runFpcFeeEntrypointScenario(
   );
 
   const userBefore = BigInt(
-    (
-      await token.methods.balance_of_private(user).simulate({ from: user })
-    ).toString(),
+    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
   );
   const operatorBefore = BigInt(
-    (
-      await token.methods
-        .balance_of_private(operator)
-        .simulate({ from: operator })
-    ).toString(),
+    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
   );
 
   const feeEntrypointCall = await fpc.methods
@@ -1157,43 +1012,29 @@ async function runFpcFeeEntrypointScenario(
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [transferAuthwit],
-        [],
-        [],
-        fpc.address,
-      ),
+      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], fpc.address),
     getFeePayer: async () => fpc.address,
     getGasSettings: () => undefined,
   };
 
-  const receipt = await token.methods
-    .transfer_public_to_public(user, user, 1n, Fr.random())
-    .send({
-      from: user,
-      fee: {
-        paymentMethod,
-        gasSettings: {
-          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
-          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-        },
+  const receipt = await token.methods.transfer_public_to_public(user, user, 1n, Fr.random()).send({
+    from: user,
+    fee: {
+      paymentMethod,
+      gasSettings: {
+        gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+        teardownGasLimits: { daGas: 0, l2Gas: 0 },
+        maxFeesPerGas: { feePerDaGas, feePerL2Gas },
       },
-      wait: { timeout: 180 },
-    });
+    },
+    wait: { timeout: 180 },
+  });
 
   const userAfter = BigInt(
-    (
-      await token.methods.balance_of_private(user).simulate({ from: user })
-    ).toString(),
+    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
   );
   const operatorAfter = BigInt(
-    (
-      await token.methods
-        .balance_of_private(operator)
-        .simulate({ from: operator })
-    ).toString(),
+    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
   );
 
   const userDebited = userBefore - userAfter;
@@ -1212,27 +1053,19 @@ async function runFpcFeeEntrypointScenario(
   console.log(
     `[services-smoke:fpc] tx_fee_juice=${receipt.transactionFee} user_debited=${userDebited} operator_credited=${operatorCredited}`,
   );
-  console.log(
-    "[services-smoke:fpc] PASS: tx accepted with attestation quote + fee_entrypoint",
-  );
+  console.log("[services-smoke:fpc] PASS: tx accepted with attestation quote + fee_entrypoint");
 }
 
 async function main() {
   installManagedProcessSignalHandlers("services-smoke");
   const config = getConfig();
   const scriptDir =
-    typeof __dirname === "string"
-      ? __dirname
-      : path.dirname(fileURLToPath(import.meta.url));
+    typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(scriptDir, "..", "..");
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), "fpc-services-smoke-"));
 
   try {
-    const tokenArtifactPath = path.join(
-      repoRoot,
-      "target",
-      "token_contract-Token.json",
-    );
+    const tokenArtifactPath = path.join(repoRoot, "target", "token_contract-Token.json");
     const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
     const tokenArtifact = loadArtifact(tokenArtifactPath);
     const fpcArtifact = loadArtifact(fpcArtifactPath);
@@ -1242,21 +1075,17 @@ async function main() {
     const wallet = await EmbeddedWallet.create(node);
 
     const l1PrivateKey =
-      process.env.FPC_SERVICES_SMOKE_L1_PRIVATE_KEY ??
-      DEFAULT_LOCAL_L1_PRIVATE_KEY;
+      process.env.FPC_SERVICES_SMOKE_L1_PRIVATE_KEY ?? DEFAULT_LOCAL_L1_PRIVATE_KEY;
     assertPrivateKeyHex(l1PrivateKey, "FPC_SERVICES_SMOKE_L1_PRIVATE_KEY");
 
     const minFees = await node.getCurrentMinFees();
     const feePerDaGas = minFees.feePerDaGas;
     const feePerL2Gas = minFees.feePerL2Gas;
     const maxGasCostNoTeardown =
-      BigInt(config.daGasLimit) * feePerDaGas +
-      BigInt(config.l2GasLimit) * feePerL2Gas;
+      BigInt(config.daGasLimit) * feePerDaGas + BigInt(config.l2GasLimit) * feePerL2Gas;
     const minimumTopupWei =
       maxGasCostNoTeardown * config.feeJuiceTopupSafetyMultiplier + 1_000_000n;
-    const configuredTopupWei = readOptionalEnvBigInt(
-      "FPC_SERVICES_SMOKE_TOPUP_WEI",
-    );
+    const configuredTopupWei = readOptionalEnvBigInt("FPC_SERVICES_SMOKE_TOPUP_WEI");
     const desiredTopupWei = configuredTopupWei ?? minimumTopupWei;
 
     if (configuredTopupWei !== null && configuredTopupWei < minimumTopupWei) {
@@ -1265,11 +1094,7 @@ async function main() {
       );
     }
 
-    let l1Balance = await getL1FeeJuiceBalance(
-      node,
-      config.l1RpcUrl,
-      l1PrivateKey as Hex,
-    );
+    let l1Balance = await getL1FeeJuiceBalance(node, config.l1RpcUrl, l1PrivateKey as Hex);
     if (l1Balance < desiredTopupWei) {
       const missingWei = desiredTopupWei - l1Balance;
       console.warn(
@@ -1303,18 +1128,14 @@ async function main() {
       }
       topupAmount = l1Balance;
       if (topupAmount <= 0n) {
-        throw new Error(
-          `Insufficient L1 FeeJuice for smoke scenario. balance=${l1Balance}`,
-        );
+        throw new Error(`Insufficient L1 FeeJuice for smoke scenario. balance=${l1Balance}`);
       }
       console.warn(
         `[services-smoke] auto-scaling topup amount to fit available L1 FeeJuice. scaled_topup_wei=${topupAmount} desired=${desiredTopupWei}`,
       );
     }
 
-    const thresholdOverride = readOptionalEnvBigInt(
-      "FPC_SERVICES_SMOKE_THRESHOLD_WEI",
-    );
+    const thresholdOverride = readOptionalEnvBigInt("FPC_SERVICES_SMOKE_THRESHOLD_WEI");
     const topupThreshold = thresholdOverride ?? topupAmount;
     if (topupThreshold <= 0n) {
       throw new Error("Top-up threshold must be greater than zero");
@@ -1333,16 +1154,8 @@ async function main() {
     }
 
     const [operatorAccount, userAccount] = await Promise.all([
-      wallet.createSchnorrAccount(
-        operatorData.secret,
-        operatorData.salt,
-        operatorData.signingKey,
-      ),
-      wallet.createSchnorrAccount(
-        userData.secret,
-        userData.salt,
-        userData.signingKey,
-      ),
+      wallet.createSchnorrAccount(operatorData.secret, operatorData.salt, operatorData.signingKey),
+      wallet.createSchnorrAccount(userData.secret, userData.salt, userData.signingKey),
     ]);
     const operator = operatorAccount.address;
     const user = userAccount.address;
@@ -1384,9 +1197,7 @@ async function main() {
         `[services-smoke] operator auto-claim claimer was not publicly deployed (${operator.toString()})`,
       );
     }
-    console.log(
-      `[services-smoke] operator_account_publicly_deployed=${operator.toString()}`,
-    );
+    console.log(`[services-smoke] operator_account_publicly_deployed=${operator.toString()}`);
 
     const quote = await runServiceScenario(
       config,
