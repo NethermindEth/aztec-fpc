@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `SponsoredTxFailedError`
 - Contract attach and published-account validation flow.
 - Quote retrieval and strict quote validation logic.
+- Attestation discovery helpers with accepted-asset fallback order:
+  - `endpoints.accepted_assets`
+  - discovery `supported_assets`
+  - legacy `/asset`
+- Accepted-asset selection helper supporting explicit address, default-first, and callback strategy.
+- Discovery FPC-address resolution helper for optional discovery-driven FPC configuration.
 - Balance bootstrap flow with faucet and shield retries.
 - Sponsored fee-payment construction (`authwit`, `fee_entrypoint`, payment method payload).
 - Post-transaction invariant checks and typed `SponsoredIncrementResult`.

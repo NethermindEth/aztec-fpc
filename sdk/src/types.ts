@@ -19,3 +19,38 @@ export type SponsoredIncrementResult = {
 export type SponsoredCounterClient = {
   increment(): Promise<SponsoredIncrementResult>;
 };
+
+export type AttestationAcceptedAsset = {
+  address: string;
+  name: string;
+};
+
+export type AttestationAcceptedAssetsResponse = AttestationAcceptedAsset[];
+
+export type AttestationDiscoveryEndpoints = {
+  accepted_assets?: string;
+  asset?: string;
+  discovery?: string;
+  health?: string;
+  quote?: string;
+};
+
+export type AttestationDiscoveryResponse = {
+  attestation_api_version?: string;
+  contract_variant?: string;
+  discovery_version?: string;
+  endpoints?: AttestationDiscoveryEndpoints;
+  fpc_address?: string;
+  network_id?: string;
+  quote_base_url?: string;
+  supported_assets?: AttestationAcceptedAsset[];
+};
+
+export type AcceptedAssetSelectionCallback = (
+  supportedAssets: readonly AttestationAcceptedAsset[],
+) =>
+  | AttestationAcceptedAsset
+  | AztecAddress
+  | string
+  | undefined
+  | Promise<AttestationAcceptedAsset | AztecAddress | string | undefined>;

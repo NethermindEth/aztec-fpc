@@ -175,6 +175,8 @@ Failure modes made explicit:
 
 ### Step 2: Introduce SDK attestation discovery client
 
+Status: [x] Completed on 2026-03-05.
+
 Files:
 - `sdk/src/internal/quote.ts` (or split into `internal/attestation-discovery.ts` + `internal/quote.ts`)
 - `sdk/src/types.ts`
