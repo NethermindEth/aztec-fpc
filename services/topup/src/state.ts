@@ -121,42 +121,62 @@ async function writeJsonAtomically(filePath: string, contents: string) {
   }
 }
 
+async function readBridgeStateFile(filePath: string): Promise<string | null> {
+  try {
+    return await readFile(filePath, "utf8");
+  } catch (error) {
+    const maybeNodeError = error as NodeJS.ErrnoException;
+    if (maybeNodeError.code === "ENOENT") {
+      return null;
+    }
+    throw new Error(`Failed reading bridge state file at ${filePath}`, {
+      cause: error,
+    });
+  }
+}
+
+function parseBridgeStateFile(filePath: string, raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Bridge state file is not valid JSON at ${filePath}`, {
+      cause: error,
+    });
+  }
+}
+
+function parsePersistedBridgeSubmission(
+  filePath: string,
+  parsed: unknown,
+): PersistedBridgeSubmission {
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`Bridge state file is malformed at ${filePath}: expected root object`);
+  }
+
+  const root = parsed as { version?: unknown; bridge?: unknown };
+  if (root.version !== 1) {
+    throw new Error(`Unsupported bridge state version in ${filePath}: ${String(root.version)}`);
+  }
+
+  return assertPersistedBridgeSubmission(filePath, root.bridge);
+}
+
+async function readPersistedBridgeSubmission(
+  filePath: string,
+): Promise<PersistedBridgeSubmission | null> {
+  const raw = await readBridgeStateFile(filePath);
+  if (raw === null) {
+    return null;
+  }
+  const parsed = parseBridgeStateFile(filePath, raw);
+  return parsePersistedBridgeSubmission(filePath, parsed);
+}
+
 export function createBridgeStateStore(filePath: string): BridgeStateStore {
   return {
     filePath,
     async read(): Promise<PersistedBridgeSubmission | null> {
-      let raw: string;
-      try {
-        raw = await readFile(filePath, "utf8");
-      } catch (error) {
-        const maybeNodeError = error as NodeJS.ErrnoException;
-        if (maybeNodeError.code === "ENOENT") {
-          return null;
-        }
-        throw new Error(`Failed reading bridge state file at ${filePath}`, {
-          cause: error,
-        });
-      }
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch (error) {
-        throw new Error(`Bridge state file is not valid JSON at ${filePath}`, {
-          cause: error,
-        });
-      }
-
-      if (!parsed || typeof parsed !== "object") {
-        throw new Error(`Bridge state file is malformed at ${filePath}: expected root object`);
-      }
-
-      const root = parsed as { version?: unknown; bridge?: unknown };
-      if (root.version !== 1) {
-        throw new Error(`Unsupported bridge state version in ${filePath}: ${String(root.version)}`);
-      }
-
-      return assertPersistedBridgeSubmission(filePath, root.bridge);
+      return readPersistedBridgeSubmission(filePath);
     },
     async write(
       baselineBalance: bigint,
