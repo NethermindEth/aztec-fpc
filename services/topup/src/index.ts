@@ -19,13 +19,13 @@ import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { createTopupAutoClaimer, type TopupAutoClaimer } from "./autoclaim.js";
 import { bridgeFeeJuice } from "./bridge.js";
 import { createTopupChecker, type TopupChecker, type TopupCheckerDependencies } from "./checker.js";
-import { loadConfig, type Config } from "./config.js";
+import { type Config, loadConfig } from "./config.js";
 import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
 import { assertL1RpcChainIdMatches } from "./l1.js";
 import { createFeeJuiceBalanceReader, type FeeJuiceBalanceReader } from "./monitor.js";
-import { createTopupOpsServer, TopupOpsState, type TopupOpsServer } from "./ops.js";
+import { createTopupOpsServer, type TopupOpsServer, TopupOpsState } from "./ops.js";
 import { reconcilePersistedBridgeState } from "./reconcile.js";
-import { createBridgeStateStore, type BridgeStateStore } from "./state.js";
+import { type BridgeStateStore, createBridgeStateStore } from "./state.js";
 
 type TopupConfig = Config;
 type TopupNodeClient = ReturnType<typeof createAztecNodeClient>;
