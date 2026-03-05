@@ -23,9 +23,61 @@
   },
   "formatter": {
     "enabled": true,
-    "indentStyle": "space"
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "arrowParentheses": "always",
+      "bracketSpacing": true,
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
   },
   "linter": {
-    "enabled": true
-  }
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["sdk/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "error",
+            "noUnusedPrivateClassMembers": "error"
+          },
+          "suspicious": {
+            "noConsole": "warn",
+            "noExplicitAny": "error",
+            "noImplicitAnyLet": "error",
+            "useAwait": "error"
+          },
+          "style": {
+            "noInferrableTypes": "error",
+            "noNonNullAssertion": "warn",
+            "noParameterAssign": "error",
+            "noUnusedTemplateLiteral": "error",
+            "noUselessElse": "error",
+            "useImportType": "error"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": {
+              "level": "warn",
+              "options": {
+                "maxAllowedComplexity": 15
+              }
+            }
+          },
+          "performance": {
+            "noAccumulatingSpread": "warn"
+          }
+        }
+      }
+    }
+  ]
 }
