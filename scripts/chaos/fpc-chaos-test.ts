@@ -60,10 +60,7 @@ import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import {
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
+import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
@@ -309,10 +306,7 @@ type Manifest = {
   network?: { node_url?: string };
 };
 
-function readEnvStr(
-  name: string,
-  fallback: string | null = null,
-): string | null {
+function readEnvStr(name: string, fallback: string | null = null): string | null {
   const val = process.env[name];
   if (!val || val.trim() === "") return fallback;
   return val.trim();
@@ -341,9 +335,7 @@ function readEnvBool(name: string, fallback: boolean): boolean {
 
 function getRepoRoot(): string {
   const scriptDir =
-    typeof __dirname === "string"
-      ? __dirname
-      : path.dirname(fileURLToPath(import.meta.url));
+    typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
   return path.resolve(scriptDir, "..", "..");
 }
 
@@ -351,9 +343,7 @@ function loadManifest(manifestPath: string): Manifest {
   try {
     return JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
   } catch (e) {
-    throw new Error(
-      `Failed to load manifest at ${manifestPath}: ${(e as Error).message}`,
-    );
+    throw new Error(`Failed to load manifest at ${manifestPath}: ${(e as Error).message}`);
   }
 }
 
@@ -398,15 +388,10 @@ function getConfig(): ChaosConfig {
   }
   const mode = modeStr as ChaosMode;
 
-  const attestationUrl = requireEnvStr("FPC_CHAOS_ATTESTATION_URL").replace(
-    /\/$/,
-    "",
-  );
+  const attestationUrl = requireEnvStr("FPC_CHAOS_ATTESTATION_URL").replace(/\/$/, "");
 
   if ((mode === "onchain" || mode === "full") && !nodeUrl) {
-    throw new Error(
-      `FPC_CHAOS_NODE_URL (or manifest with node URL) is required for mode=${mode}`,
-    );
+    throw new Error(`FPC_CHAOS_NODE_URL (or manifest with node URL) is required for mode=${mode}`);
   }
   if ((mode === "onchain" || mode === "full") && !fpcAddress) {
     throw new Error(
@@ -460,10 +445,7 @@ async function httpGet(
   timeoutMs?: number,
 ): Promise<{ status: number; body: string }> {
   const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    timeoutMs ?? config.httpTimeoutMs,
-  );
+  const timer = setTimeout(() => controller.abort(), timeoutMs ?? config.httpTimeoutMs);
   try {
     const resp = await fetch(url, {
       signal: controller.signal,
@@ -478,17 +460,13 @@ async function httpGet(
 
 function assertOk(status: number, body: string, label: string): void {
   if (status < 200 || status >= 300) {
-    throw new Error(
-      `${label}: expected 2xx, got ${status}. body=${body.slice(0, 200)}`,
-    );
+    throw new Error(`${label}: expected 2xx, got ${status}. body=${body.slice(0, 200)}`);
   }
 }
 
 function assertClientError(status: number, body: string, label: string): void {
   if (status < 400 || status >= 500) {
-    throw new Error(
-      `${label}: expected 4xx, got ${status}. body=${body.slice(0, 200)}`,
-    );
+    throw new Error(`${label}: expected 4xx, got ${status}. body=${body.slice(0, 200)}`);
   }
 }
 
@@ -501,9 +479,7 @@ function parseQuote(body: string): QuoteResponse {
     typeof parsed.valid_until !== "string" ||
     typeof parsed.signature !== "string"
   ) {
-    throw new Error(
-      `Quote response missing required fields: ${body.slice(0, 300)}`,
-    );
+    throw new Error(`Quote response missing required fields: ${body.slice(0, 300)}`);
   }
   return parsed;
 }
@@ -513,13 +489,10 @@ function _sleep(ms: number): Promise<void> {
 }
 
 // Sentinel user for API-only tests – not a valid account but a real format address
-const SENTINEL_USER =
-  "0x0000000000000000000000000000000000000000000000000000000000000001";
+const SENTINEL_USER = "0x0000000000000000000000000000000000000000000000000000000000000001";
 const SENTINEL_FJ_AMOUNT = "1000000";
 
-async function fetchQuoteForSentinel(
-  config: ChaosConfig,
-): Promise<QuoteResponse> {
+async function fetchQuoteForSentinel(config: ChaosConfig): Promise<QuoteResponse> {
   const url = `${config.attestationUrl}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
   const { status, body } = await httpGet(url, config);
   assertOk(status, body, "fetchQuoteForSentinel");
@@ -547,10 +520,7 @@ async function signQuote(
     new Fr(validUntil),
     userAddress.toField(),
   ]);
-  const sig = await schnorr.constructSignature(
-    quoteHash.toBuffer(),
-    signingKey,
-  );
+  const sig = await schnorr.constructSignature(quoteHash.toBuffer(), signingKey);
   return Array.from(sig.toBuffer());
 }
 
@@ -570,29 +540,15 @@ function loadArtifact(artifactPath: string): ContractArtifact {
   }
 }
 
-async function buildOnchainContext(
-  config: ChaosConfig,
-): Promise<OnchainContext> {
+async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext> {
   if (!config.nodeUrl) throw new Error("nodeUrl is required for onchain tests");
-  if (!config.fpcAddress)
-    throw new Error("fpcAddress is required for onchain tests");
-  if (!config.acceptedAsset)
-    throw new Error("acceptedAsset is required for onchain tests");
+  if (!config.fpcAddress) throw new Error("fpcAddress is required for onchain tests");
+  if (!config.acceptedAsset) throw new Error("acceptedAsset is required for onchain tests");
   if (!config.operatorSecretKey)
-    throw new Error(
-      "FPC_CHAOS_OPERATOR_SECRET_KEY is required for onchain tests",
-    );
+    throw new Error("FPC_CHAOS_OPERATOR_SECRET_KEY is required for onchain tests");
 
-  const tokenArtifactPath = path.join(
-    config.repoRoot,
-    "target",
-    "token_contract-Token.json",
-  );
-  const fpcArtifactPath = path.join(
-    config.repoRoot,
-    "target",
-    "fpc-FPCMultiAsset.json",
-  );
+  const tokenArtifactPath = path.join(config.repoRoot, "target", "token_contract-Token.json");
+  const fpcArtifactPath = path.join(config.repoRoot, "target", "fpc-FPCMultiAsset.json");
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
@@ -618,11 +574,7 @@ async function buildOnchainContext(
       .createSchnorrAccount(userDat.secret, userDat.salt, userDat.signingKey)
       .then((a) => a.address),
     wallet
-      .createSchnorrAccount(
-        otherUserData.secret,
-        otherUserData.salt,
-        otherUserData.signingKey,
-      )
+      .createSchnorrAccount(otherUserData.secret, otherUserData.salt, otherUserData.signingKey)
       .then((a) => a.address),
   ]);
 
@@ -635,10 +587,8 @@ async function buildOnchainContext(
     node.getContract(acceptedAsset),
     node.getContract(fpcAddress),
   ]);
-  if (!tokenInstance)
-    throw new Error(`Token contract not found on-chain: ${acceptedAsset}`);
-  if (!fpcInstance)
-    throw new Error(`FPC contract not found on-chain: ${fpcAddress}`);
+  if (!tokenInstance) throw new Error(`Token contract not found on-chain: ${acceptedAsset}`);
+  if (!fpcInstance) throw new Error(`FPC contract not found on-chain: ${fpcAddress}`);
   await Promise.all([
     wallet.registerContract(tokenInstance, tokenArtifact),
     wallet.registerContract(fpcInstance, fpcArtifact),
@@ -651,8 +601,7 @@ async function buildOnchainContext(
   const feePerDaGas = minFees.feePerDaGas;
   const feePerL2Gas = minFees.feePerL2Gas;
   const maxGasCostNoTeardown =
-    BigInt(config.daGasLimit) * feePerDaGas +
-    BigInt(config.l2GasLimit) * feePerL2Gas;
+    BigInt(config.daGasLimit) * feePerDaGas + BigInt(config.l2GasLimit) * feePerL2Gas;
 
   // Verify the FPC has enough Fee Juice for tests
   const feeJuiceBalance = await getFeeJuiceBalance(fpcAddress, node);
@@ -706,9 +655,7 @@ async function submitFeePaidTx(
   // Mint 1 public token so payer can do transfer_public_to_public as the
   // actual fee-paid action. Only the operator/admin can mint, so this must
   // be sent from ctx.operator (not payer).
-  await ctx.token.methods
-    .mint_to_public(payer, 1n)
-    .send({ from: ctx.operator });
+  await ctx.token.methods.mint_to_public(payer, 1n).send({ from: ctx.operator });
 
   const nonce = Fr.random();
   const transferCall = ctx.token.methods.transfer_private_to_private(
@@ -723,52 +670,37 @@ async function submitFeePaidTx(
   });
 
   const feeEntrypointCall = await ctx.fpc.methods
-    .fee_entrypoint(
-      ctx.acceptedAsset,
-      nonce,
-      fjAmount,
-      aaPaymentAmount,
-      validUntil,
-      quoteSigBytes,
-    )
+    .fee_entrypoint(ctx.acceptedAsset, nonce, fjAmount, aaPaymentAmount, validUntil, quoteSigBytes)
     .getFunctionCall();
 
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [authwit],
-        [],
-        [],
-        ctx.fpcAddress,
-      ),
+      new ExecutionPayload([feeEntrypointCall], [authwit], [], [], ctx.fpcAddress),
     getFeePayer: async () => ctx.fpcAddress,
     getGasSettings: () => undefined,
   };
 
   // Use transfer_public_to_public as the fee-paid action; any account can call
   // this on their own balance (unlike mint_to_public which requires admin).
-  await ctx.token.methods
-    .transfer_public_to_public(payer, ctx.operator, 1n, Fr.random())
-    .send({
-      from: payer,
-      fee: {
-        paymentMethod,
-        gasSettings: {
-          gasLimits: {
-            daGas: config.daGasLimit,
-            l2Gas: config.l2GasLimit,
-          },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
-          maxFeesPerGas: {
-            feePerDaGas: ctx.feePerDaGas,
-            feePerL2Gas: ctx.feePerL2Gas,
-          },
+  await ctx.token.methods.transfer_public_to_public(payer, ctx.operator, 1n, Fr.random()).send({
+    from: payer,
+    fee: {
+      paymentMethod,
+      gasSettings: {
+        gasLimits: {
+          daGas: config.daGasLimit,
+          l2Gas: config.l2GasLimit,
+        },
+        teardownGasLimits: { daGas: 0, l2Gas: 0 },
+        maxFeesPerGas: {
+          feePerDaGas: ctx.feePerDaGas,
+          feePerL2Gas: ctx.feePerL2Gas,
         },
       },
-      wait: { timeout: 180 },
-    });
+    },
+    wait: { timeout: 180 },
+  });
 
   return { expectedCharge: aaPaymentAmount };
 }
@@ -802,13 +734,10 @@ async function submitFeePaidTxWithOptions(
   await ctx.token.methods
     .mint_to_private(
       payer,
-      (authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount) +
-        1_000_000n,
+      (authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount) + 1_000_000n,
     )
     .send({ from: ctx.operator });
-  await ctx.token.methods
-    .mint_to_public(payer, 1n)
-    .send({ from: ctx.operator });
+  await ctx.token.methods.mint_to_public(payer, 1n).send({ from: ctx.operator });
 
   const transferCall = ctx.token.methods.transfer_private_to_private(
     payer,
@@ -835,37 +764,29 @@ async function submitFeePaidTxWithOptions(
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [authwit],
-        [],
-        [],
-        ctx.fpcAddress,
-      ),
+      new ExecutionPayload([feeEntrypointCall], [authwit], [], [], ctx.fpcAddress),
     getFeePayer: async () => ctx.fpcAddress,
     getGasSettings: () => undefined,
   };
 
-  await ctx.token.methods
-    .transfer_public_to_public(payer, ctx.operator, 1n, Fr.random())
-    .send({
-      from: payer,
-      fee: {
-        paymentMethod,
-        gasSettings: {
-          gasLimits: {
-            daGas: config.daGasLimit,
-            l2Gas: config.l2GasLimit,
-          },
-          teardownGasLimits: { daGas: teardownDaGas, l2Gas: teardownL2Gas },
-          maxFeesPerGas: {
-            feePerDaGas: ctx.feePerDaGas,
-            feePerL2Gas: ctx.feePerL2Gas,
-          },
+  await ctx.token.methods.transfer_public_to_public(payer, ctx.operator, 1n, Fr.random()).send({
+    from: payer,
+    fee: {
+      paymentMethod,
+      gasSettings: {
+        gasLimits: {
+          daGas: config.daGasLimit,
+          l2Gas: config.l2GasLimit,
+        },
+        teardownGasLimits: { daGas: teardownDaGas, l2Gas: teardownL2Gas },
+        maxFeesPerGas: {
+          feePerDaGas: ctx.feePerDaGas,
+          feePerL2Gas: ctx.feePerL2Gas,
         },
       },
-      wait: { timeout: 180 },
-    });
+    },
+    wait: { timeout: 180 },
+  });
 
   return { expectedCharge: aaPaymentAmount };
 }
@@ -878,84 +799,55 @@ async function expectOnchainFailure(
   try {
     await action();
   } catch (err) {
-    const msg = (
-      err instanceof Error ? err.message : String(err)
-    ).toLowerCase();
+    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
     if (expectedFragments.some((f) => msg.includes(f.toLowerCase()))) {
       return; // Expected rejection – test passes
     }
-    throw new Error(
-      `${scenario} failed with UNEXPECTED error: ${(err as Error).message}`,
-    );
+    throw new Error(`${scenario} failed with UNEXPECTED error: ${(err as Error).message}`);
   }
-  throw new Error(
-    `${scenario} unexpectedly SUCCEEDED (should have been rejected)`,
-  );
+  throw new Error(`${scenario} unexpectedly SUCCEEDED (should have been rejected)`);
 }
 
 function ceilDiv(a: bigint, b: bigint): bigint {
   return (a + b - 1n) / b;
 }
 
-async function runApiTests(
-  runner: ChaosRunner,
-  config: ChaosConfig,
-): Promise<void> {
+async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<void> {
   const base = config.attestationUrl;
 
-  await runner.run(
-    "health-ok",
-    "api",
-    "GET /health returns 200 + {status:ok}",
-    async () => {
-      const { status, body } = await httpGet(`${base}/health`, config);
-      assertOk(status, body, "/health");
-      const parsed = JSON.parse(body) as { status?: string };
-      if (parsed.status !== "ok") {
-        throw new Error(
-          `/health body.status expected "ok", got: ${body.slice(0, 100)}`,
-        );
-      }
-      return { status, body };
-    },
-  );
+  await runner.run("health-ok", "api", "GET /health returns 200 + {status:ok}", async () => {
+    const { status, body } = await httpGet(`${base}/health`, config);
+    assertOk(status, body, "/health");
+    const parsed = JSON.parse(body) as { status?: string };
+    if (parsed.status !== "ok") {
+      throw new Error(`/health body.status expected "ok", got: ${body.slice(0, 100)}`);
+    }
+    return { status, body };
+  });
 
-  await runner.run(
-    "asset-ok",
-    "api",
-    "GET /asset returns valid structure",
-    async () => {
-      const { status, body } = await httpGet(`${base}/asset`, config);
-      assertOk(status, body, "/asset");
-      const parsed = JSON.parse(body) as { name?: string; address?: string };
-      if (
-        typeof parsed.name !== "string" ||
-        typeof parsed.address !== "string"
-      ) {
-        throw new Error(
-          `/asset missing name or address: ${body.slice(0, 200)}`,
-        );
-      }
-      return { name: parsed.name, address: parsed.address };
-    },
-  );
+  await runner.run("asset-ok", "api", "GET /asset returns valid structure", async () => {
+    const { status, body } = await httpGet(`${base}/asset`, config);
+    assertOk(status, body, "/asset");
+    const parsed = JSON.parse(body) as { name?: string; address?: string };
+    if (typeof parsed.name !== "string" || typeof parsed.address !== "string") {
+      throw new Error(`/asset missing name or address: ${body.slice(0, 200)}`);
+    }
+    return { name: parsed.name, address: parsed.address };
+  });
 
   await runner.run(
     "asset-address-matches-manifest",
     "api",
     "GET /asset address matches configured accepted_asset",
     async () => {
-      if (!config.acceptedAsset)
-        return { skipped: "no accepted_asset configured" };
+      if (!config.acceptedAsset) return { skipped: "no accepted_asset configured" };
       const { status, body } = await httpGet(`${base}/asset`, config);
       assertOk(status, body, "/asset");
       const parsed = JSON.parse(body) as { address?: string };
       const got = (parsed.address ?? "").toLowerCase();
       const expected = config.acceptedAsset.toLowerCase();
       if (got !== expected) {
-        throw new Error(
-          `/asset address mismatch. expected=${expected} got=${got}`,
-        );
+        throw new Error(`/asset address mismatch. expected=${expected} got=${got}`);
       }
       return { got, expected };
     },
@@ -974,19 +866,14 @@ async function runApiTests(
     },
   );
 
-  await runner.run(
-    "quote-sig-64-bytes",
-    "api",
-    "Quote signature is exactly 64 bytes",
-    async () => {
-      const q = await fetchQuoteForSentinel(config);
-      const sigBytes = Buffer.from(q.signature.replace(/^0x/, ""), "hex");
-      if (sigBytes.length !== 64) {
-        throw new Error(`Signature expected 64 bytes, got ${sigBytes.length}`);
-      }
-      return { sigLenBytes: sigBytes.length };
-    },
-  );
+  await runner.run("quote-sig-64-bytes", "api", "Quote signature is exactly 64 bytes", async () => {
+    const q = await fetchQuoteForSentinel(config);
+    const sigBytes = Buffer.from(q.signature.replace(/^0x/, ""), "hex");
+    if (sigBytes.length !== 64) {
+      throw new Error(`Signature expected 64 bytes, got ${sigBytes.length}`);
+    }
+    return { sigLenBytes: sigBytes.length };
+  });
 
   await runner.run(
     "quote-ttl-in-range",
@@ -1005,9 +892,7 @@ async function runApiTests(
       if (config.nodeUrl) {
         const node = createAztecNodeClient(config.nodeUrl);
         const block = await node.getBlock("latest");
-        nowSec = block
-          ? block.timestamp
-          : BigInt(Math.floor(Date.now() / 1000));
+        nowSec = block ? block.timestamp : BigInt(Math.floor(Date.now() / 1000));
       } else {
         nowSec = BigInt(Math.floor(Date.now() / 1000));
       }
@@ -1030,15 +915,12 @@ async function runApiTests(
     "api",
     "Quote accepted_asset matches configured accepted_asset",
     async () => {
-      if (!config.acceptedAsset)
-        return { skipped: "no accepted_asset configured" };
+      if (!config.acceptedAsset) return { skipped: "no accepted_asset configured" };
       const q = await fetchQuoteForSentinel(config);
       const got = q.accepted_asset.toLowerCase();
       const expected = config.acceptedAsset.toLowerCase();
       if (got !== expected) {
-        throw new Error(
-          `Quote accepted_asset mismatch. expected=${expected} got=${got}`,
-        );
+        throw new Error(`Quote accepted_asset mismatch. expected=${expected} got=${got}`);
       }
       return { got, expected };
     },
@@ -1055,24 +937,17 @@ async function runApiTests(
       assertOk(status, body, "/quote fj echo");
       const q = parseQuote(body);
       if (q.fj_amount !== requested) {
-        throw new Error(
-          `fj_amount echo mismatch: requested=${requested} got=${q.fj_amount}`,
-        );
+        throw new Error(`fj_amount echo mismatch: requested=${requested} got=${q.fj_amount}`);
       }
       return { requested, got: q.fj_amount };
     },
   );
 
-  await runner.run(
-    "quote-no-params",
-    "api",
-    "GET /quote with no params returns 4xx",
-    async () => {
-      const { status, body } = await httpGet(`${base}/quote`, config);
-      assertClientError(status, body, "/quote (no params)");
-      return { status };
-    },
-  );
+  await runner.run("quote-no-params", "api", "GET /quote with no params returns 4xx", async () => {
+    const { status, body } = await httpGet(`${base}/quote`, config);
+    assertClientError(status, body, "/quote (no params)");
+    return { status };
+  });
 
   await runner.run(
     "quote-missing-user",
@@ -1093,10 +968,7 @@ async function runApiTests(
     "api",
     "GET /quote without fj_amount param returns 4xx",
     async () => {
-      const { status, body } = await httpGet(
-        `${base}/quote?user=${SENTINEL_USER}`,
-        config,
-      );
+      const { status, body } = await httpGet(`${base}/quote?user=${SENTINEL_USER}`, config);
       assertClientError(status, body, "/quote (missing fj_amount)");
       return { status };
     },
@@ -1187,16 +1059,13 @@ async function runApiTests(
       const { status, body } = await httpGet(url, config);
       // We accept both success (service allows it) and client error (service rejects as too large)
       if (status >= 500) {
-        throw new Error(
-          `Server error on u128_max fj_amount: ${status} ${body.slice(0, 200)}`,
-        );
+        throw new Error(`Server error on u128_max fj_amount: ${status} ${body.slice(0, 200)}`);
       }
       return { status, accepted: status < 400 };
     },
   );
 
-  const ZERO_USER =
-    "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const ZERO_USER = "0x0000000000000000000000000000000000000000000000000000000000000000";
   await runner.run(
     "quote-zero-user-rejected",
     "api",
@@ -1226,10 +1095,7 @@ async function runApiTests(
     },
   );
 
-  if (
-    config.quoteAuthApiKey ||
-    (config.quoteAuthHeader && config.quoteAuthValue)
-  ) {
+  if (config.quoteAuthApiKey || (config.quoteAuthHeader && config.quoteAuthValue)) {
     await runner.run(
       "quote-auth-no-key-rejected",
       "api-auth",
@@ -1238,17 +1104,12 @@ async function runApiTests(
         const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
         // Send with no auth headers
         const controller = new AbortController();
-        const timer = setTimeout(
-          () => controller.abort(),
-          config.httpTimeoutMs,
-        );
+        const timer = setTimeout(() => controller.abort(), config.httpTimeoutMs);
         try {
           const resp = await fetch(url, { signal: controller.signal });
           const body = await resp.text();
           if (resp.status !== 401) {
-            throw new Error(
-              `Expected 401 without auth, got ${resp.status}: ${body.slice(0, 100)}`,
-            );
+            throw new Error(`Expected 401 without auth, got ${resp.status}: ${body.slice(0, 100)}`);
           }
           return { status: resp.status };
         } finally {
@@ -1265,16 +1126,13 @@ async function runApiTests(
         const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
         const wrongHeaders: Record<string, string> = {};
         if (config.quoteAuthApiKey) {
-          wrongHeaders[config.quoteAuthHeader ?? "x-api-key"] =
-            "WRONG_KEY_FOR_CHAOS_TEST";
+          wrongHeaders[config.quoteAuthHeader ?? "x-api-key"] = "WRONG_KEY_FOR_CHAOS_TEST";
         } else if (config.quoteAuthHeader) {
           wrongHeaders[config.quoteAuthHeader] = "WRONG_VALUE_FOR_CHAOS_TEST";
         }
         const { status, body } = await httpGet(url, config, wrongHeaders);
         if (status !== 401) {
-          throw new Error(
-            `Expected 401 with wrong key, got ${status}: ${body.slice(0, 100)}`,
-          );
+          throw new Error(`Expected 401 with wrong key, got ${status}: ${body.slice(0, 100)}`);
         }
         return { status };
       },
@@ -1330,16 +1188,11 @@ async function runApiTests(
   if (config.topupUrl) {
     const topupBase = config.topupUrl;
 
-    await runner.run(
-      "topup-health-ok",
-      "api-topup",
-      "Topup GET /health returns 200",
-      async () => {
-        const { status, body } = await httpGet(`${topupBase}/health`, config);
-        assertOk(status, body, "topup /health");
-        return { status };
-      },
-    );
+    await runner.run("topup-health-ok", "api-topup", "Topup GET /health returns 200", async () => {
+      const { status, body } = await httpGet(`${topupBase}/health`, config);
+      assertOk(status, body, "topup /health");
+      return { status };
+    });
 
     await runner.run(
       "topup-ready",
@@ -1348,9 +1201,7 @@ async function runApiTests(
       async () => {
         const { status, body } = await httpGet(`${topupBase}/ready`, config);
         if (status >= 500) {
-          throw new Error(
-            `Topup /ready returned server error ${status}: ${body.slice(0, 200)}`,
-          );
+          throw new Error(`Topup /ready returned server error ${status}: ${body.slice(0, 200)}`);
         }
         return { status, ready: status === 200 };
       },
@@ -1417,34 +1268,29 @@ async function runOnchainTests(
   const TEST_RATE = { num: 1n, den: 1000n };
   const aaPaymentAmount = computeAaPayment(TEST_RATE);
 
-  await runner.run(
-    "onchain-happy-path",
-    "onchain",
-    "Valid fee-paid tx succeeds",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-      const { expectedCharge } = await submitFeePaidTx(
-        config,
-        ctx,
-        ctx.user,
-        sigBytes,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-      );
-      return { expectedCharge: expectedCharge.toString() };
-    },
-  );
+  await runner.run("onchain-happy-path", "onchain", "Valid fee-paid tx succeeds", async () => {
+    const latestTs = await getLatestL2Timestamp(ctx);
+    const validUntil = latestTs + 600n;
+    const sigBytes = await signQuote(
+      ctx.operatorSecretHex,
+      ctx.fpcAddress,
+      ctx.acceptedAsset,
+      fjAmount,
+      aaPaymentAmount,
+      validUntil,
+      ctx.user,
+    );
+    const { expectedCharge } = await submitFeePaidTx(
+      config,
+      ctx,
+      ctx.user,
+      sigBytes,
+      fjAmount,
+      aaPaymentAmount,
+      validUntil,
+    );
+    return { expectedCharge: expectedCharge.toString() };
+  });
 
   await runner.run(
     "onchain-quote-replay",
@@ -1465,30 +1311,11 @@ async function runOnchainTests(
       );
 
       // First use – should succeed
-      await submitFeePaidTx(
-        config,
-        ctx,
-        ctx.user,
-        sigBytes,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-      );
+      await submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil);
 
       // Second use – must fail due to nullifier
-      await expectOnchainFailure(
-        "quote replay",
-        ["nullifier", "already exists", "duplicate"],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-          ),
+      await expectOnchainFailure("quote replay", ["nullifier", "already exists", "duplicate"], () =>
+        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
       );
     },
   );
@@ -1515,19 +1342,8 @@ async function runOnchainTests(
         .mint_to_private(ctx.operator, 1n)
         .send({ from: ctx.operator, wait: { timeout: 60 } });
 
-      await expectOnchainFailure(
-        "expired quote",
-        ["quote expired", "expired"],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            latestTs,
-          ),
+      await expectOnchainFailure("expired quote", ["quote expired", "expired"], () =>
+        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, latestTs),
       );
     },
   );
@@ -1549,19 +1365,16 @@ async function runOnchainTests(
         ctx.user,
       );
 
-      await expectOnchainFailure(
-        "overlong TTL",
-        ["quote ttl too large", "ttl"],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            overlongValidUntil,
-          ),
+      await expectOnchainFailure("overlong TTL", ["quote ttl too large", "ttl"], () =>
+        submitFeePaidTx(
+          config,
+          ctx,
+          ctx.user,
+          sigBytes,
+          fjAmount,
+          aaPaymentAmount,
+          overlongValidUntil,
+        ),
       );
     },
   );
@@ -1590,19 +1403,16 @@ async function runOnchainTests(
 
       // Submit as ctx.user (user B) – sig verification fails because
       // quote_hash includes user_address = otherUser but msg_sender = user.
-      await expectOnchainFailure(
-        "sender binding",
-        ["invalid quote signature", "signature"],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user, // wrong sender (user B)
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-          ),
+      await expectOnchainFailure("sender binding", ["invalid quote signature", "signature"], () =>
+        submitFeePaidTx(
+          config,
+          ctx,
+          ctx.user, // wrong sender (user B)
+          sigBytes,
+          fjAmount,
+          aaPaymentAmount,
+          validUntil,
+        ),
       );
     },
   );
@@ -1632,23 +1442,9 @@ async function runOnchainTests(
         "tampered signature",
         // A flipped byte in the R-point can create an off-curve point, which
         // the Grumpkin circuit rejects before the FPC sig check is reached.
-        [
-          "invalid quote signature",
-          "signature",
-          "invalid",
-          "grumpkin",
-          "not a valid",
-        ],
+        ["invalid quote signature", "signature", "invalid", "grumpkin", "not a valid"],
         () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            tampered,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-          ),
+          submitFeePaidTx(config, ctx, ctx.user, tampered, fjAmount, aaPaymentAmount, validUntil),
       );
     },
   );
@@ -1795,35 +1591,20 @@ async function runOnchainTests(
         action: transferCall,
       });
       const feeEntrypointCall = await ctx.fpc.methods
-        .fee_entrypoint(
-          ctx.acceptedAsset,
-          nonce,
-          fjAmount,
-          aaPaymentAmount,
-          validUntil,
-          sigBytes,
-        )
+        .fee_entrypoint(ctx.acceptedAsset, nonce, fjAmount, aaPaymentAmount, validUntil, sigBytes)
         .getFunctionCall();
 
       const paymentMethod = {
         getAsset: async () => ProtocolContractAddress.FeeJuice,
         getExecutionPayload: async () =>
-          new ExecutionPayload(
-            [feeEntrypointCall],
-            [authwit],
-            [],
-            [],
-            ctx.fpcAddress,
-          ),
+          new ExecutionPayload([feeEntrypointCall], [authwit], [], [], ctx.fpcAddress),
         getFeePayer: async () => ctx.fpcAddress,
         getGasSettings: () => undefined,
       };
 
       // Mint 1 public token so the tx action is authorized (only operator can mint).
       // The fee payment fails regardless because otherUser has no PRIVATE tokens.
-      await ctx.token.methods
-        .mint_to_public(ctx.otherUser, 1n)
-        .send({ from: ctx.operator });
+      await ctx.token.methods.mint_to_public(ctx.otherUser, 1n).send({ from: ctx.operator });
 
       await expectOnchainFailure(
         "insufficient user balance",
@@ -1832,12 +1613,7 @@ async function runOnchainTests(
         ["insufficient", "balance", "token", "underflow", "app_logic_reverted"],
         () =>
           ctx.token.methods
-            .transfer_public_to_public(
-              ctx.otherUser,
-              ctx.operator,
-              1n,
-              Fr.random(),
-            )
+            .transfer_public_to_public(ctx.otherUser, ctx.operator, 1n, Fr.random())
             .send({
               from: ctx.otherUser,
               fee: {
@@ -1875,19 +1651,8 @@ async function runOnchainTests(
         validUntilPast,
         ctx.user,
       );
-      await expectOnchainFailure(
-        "valid_until in the past",
-        ["quote expired", "expired"],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntilPast,
-          ),
+      await expectOnchainFailure("valid_until in the past", ["quote expired", "expired"], () =>
+        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntilPast),
       );
     },
   );
@@ -1911,20 +1676,17 @@ async function runOnchainTests(
       // Use teardownL2Gas rather than teardownDaGas: in local devnet feePerDaGas
       // is 0 so the FPC's DA-gas assertion is conditionally skipped.  L2 gas is
       // always priced, so the L2-teardown assertion reliably fires.
-      await expectOnchainFailure(
-        "non-zero teardown l2 gas",
-        ["teardown", "l2 gas", "zero"],
-        () =>
-          submitFeePaidTxWithOptions(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-            { teardownDaGas: 0, teardownL2Gas: 1 },
-          ),
+      await expectOnchainFailure("non-zero teardown l2 gas", ["teardown", "l2 gas", "zero"], () =>
+        submitFeePaidTxWithOptions(
+          config,
+          ctx,
+          ctx.user,
+          sigBytes,
+          fjAmount,
+          aaPaymentAmount,
+          validUntil,
+          { teardownDaGas: 0, teardownL2Gas: 1 },
+        ),
       );
     },
   );
@@ -1952,14 +1714,7 @@ async function runOnchainTests(
         // PXE rejects before submission when it cannot find an authwit for the
         // computed message hash ("Unknown auth witness for message hash 0x…").
         // If the tx does reach simulation, the contract reverts via app_logic_reverted.
-        [
-          "unknown auth witness",
-          "authwit",
-          "invalid",
-          "nonce",
-          "app_logic_reverted",
-          "match",
-        ],
+        ["unknown auth witness", "authwit", "invalid", "nonce", "app_logic_reverted", "match"],
         () =>
           submitFeePaidTxWithOptions(
             config,
@@ -1997,14 +1752,7 @@ async function runOnchainTests(
         // PXE rejects before submission when it cannot find an authwit for the
         // computed message hash ("Unknown auth witness for message hash 0x…").
         // If the tx does reach simulation, the contract reverts via app_logic_reverted.
-        [
-          "unknown auth witness",
-          "authwit",
-          "invalid",
-          "app_logic_reverted",
-          "match",
-          "action",
-        ],
+        ["unknown auth witness", "authwit", "invalid", "app_logic_reverted", "match", "action"],
         () =>
           submitFeePaidTxWithOptions(
             config,
@@ -2041,15 +1789,7 @@ async function runOnchainTests(
         "quote signed for wrong FPC address",
         ["invalid quote signature", "signature"],
         () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-          ),
+          submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
       );
     },
   );
@@ -2075,15 +1815,7 @@ async function runOnchainTests(
         "quote signed for wrong accepted_asset",
         ["invalid quote signature", "signature"],
         () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-          ),
+          submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
       );
     },
   );
@@ -2162,9 +1894,7 @@ async function runStressTests(
       const testAccounts = await getInitialTestAccountsData();
       const userDat = testAccounts.at(1);
       if (!userDat) {
-        throw new Error(
-          "Need at least 2 initial test accounts for stress test",
-        );
+        throw new Error("Need at least 2 initial test accounts for stress test");
       }
       const userAddress = await ctx.wallet
         .createSchnorrAccount(userDat.secret, userDat.salt, userDat.signingKey)
@@ -2229,18 +1959,14 @@ async function runStressTests(
 
       const results = await Promise.all(
         Array.from({ length: 20 }, () =>
-          httpGet(url, config).then(({ status, body }) =>
-            status < 400 ? parseQuote(body) : null,
-          ),
+          httpGet(url, config).then(({ status, body }) => (status < 400 ? parseQuote(body) : null)),
         ),
       );
 
       const valid = results.filter((q) => q !== null);
       const fjAmounts = new Set(valid.map((q) => q?.fj_amount));
       if (fjAmounts.size > 1) {
-        throw new Error(
-          `Inconsistent fj_amount in burst: ${[...fjAmounts].join(", ")}`,
-        );
+        throw new Error(`Inconsistent fj_amount in burst: ${[...fjAmounts].join(", ")}`);
       }
 
       return {
@@ -2254,9 +1980,7 @@ async function runStressTests(
 
 async function main(): Promise<void> {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    console.log(
-      "FPC Chaos Test – see top of fpc-chaos-test.ts for ENV VAR documentation.",
-    );
+    console.log("FPC Chaos Test – see top of fpc-chaos-test.ts for ENV VAR documentation.");
     process.exit(0);
   }
 
@@ -2294,9 +2018,7 @@ async function main(): Promise<void> {
       try {
         ctx = await buildOnchainContext(config);
       } catch (err) {
-        console.error(
-          `${RED}Failed to build on-chain context: ${(err as Error).message}${RESET}`,
-        );
+        console.error(`${RED}Failed to build on-chain context: ${(err as Error).message}${RESET}`);
         console.error(
           `${DIM}  Ensure the Aztec node is reachable and contract artifacts exist in target/.${RESET}`,
         );

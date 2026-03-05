@@ -100,15 +100,10 @@ function parseBoolean(name: string, raw: string): boolean {
   if (FALSE_ENV_VALUES.has(normalized)) {
     return false;
   }
-  throw new CliError(
-    `Invalid ${name}. Expected one of: 1/0, true/false, yes/no, on/off`,
-  );
+  throw new CliError(`Invalid ${name}. Expected one of: 1/0, true/false, yes/no, on/off`);
 }
 
-function parseOptionalBoolean(
-  name: string,
-  raw: string | null,
-): boolean | null {
+function parseOptionalBoolean(name: string, raw: string | null): boolean | null {
   if (raw === null) {
     return null;
   }
@@ -118,17 +113,12 @@ function parseOptionalBoolean(
 function parseSecretKey(name: string, raw: string): string {
   const withPrefix = raw.startsWith("0x") ? raw : `0x${raw}`;
   if (!HEX_32_PATTERN.test(withPrefix)) {
-    throw new CliError(
-      `Invalid ${name}. Expected 32-byte 0x-prefixed hex string`,
-    );
+    throw new CliError(`Invalid ${name}. Expected 32-byte 0x-prefixed hex string`);
   }
   return withPrefix;
 }
 
-function parseOptionalSecretKey(
-  name: string,
-  raw: string | null,
-): string | null {
+function parseOptionalSecretKey(name: string, raw: string | null): string | null {
   if (raw === null) {
     return null;
   }
@@ -137,17 +127,12 @@ function parseOptionalSecretKey(
 
 function parseAztecAddress(name: string, raw: string): string {
   if (!AZTEC_ADDRESS_PATTERN.test(raw)) {
-    throw new CliError(
-      `Invalid ${name}. Expected 32-byte 0x-prefixed Aztec address`,
-    );
+    throw new CliError(`Invalid ${name}. Expected 32-byte 0x-prefixed Aztec address`);
   }
   return raw;
 }
 
-function parseOptionalAztecAddress(
-  name: string,
-  raw: string | null,
-): string | null {
+function parseOptionalAztecAddress(name: string, raw: string | null): string | null {
   if (raw === null) {
     return null;
   }
@@ -169,10 +154,7 @@ function parsePaymentMode(name: string, raw: string): PaymentMode {
   }
 }
 
-function parseOptionalPaymentMode(
-  name: string,
-  raw: string | null,
-): PaymentMode | null {
+function parseOptionalPaymentMode(name: string, raw: string | null): PaymentMode | null {
   if (raw === null) {
     return null;
   }
@@ -201,8 +183,7 @@ function nextArg(argv: string[], index: number, flag: string): string {
 }
 
 function parseCliArgs(argv: string[]): CliArgs {
-  let manifestPath =
-    parseOptionalEnv("FPC_DEPLOY_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
+  let manifestPath = parseOptionalEnv("FPC_DEPLOY_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
   let nodeUrl = parseOptionalEnv("AZTEC_NODE_URL");
   let secretKey = parseOptionalSecretKey(
     "TOPUP_AUTOCLAIM_SECRET_KEY",
@@ -281,9 +262,7 @@ function readManifest(manifestPath: string): PartialManifest {
     const raw = readFileSync(manifestPath, "utf8");
     return JSON.parse(raw) as PartialManifest;
   } catch (error) {
-    throw new CliError(
-      `Failed to read manifest at ${manifestPath}: ${String(error)}`,
-    );
+    throw new CliError(`Failed to read manifest at ${manifestPath}: ${String(error)}`);
   }
 }
 
@@ -330,19 +309,13 @@ function resolveSecretKey(
   );
 }
 
-function resolveSponsoredFpcAddress(
-  args: CliArgs,
-  manifest: PartialManifest,
-): string | null {
+function resolveSponsoredFpcAddress(args: CliArgs, manifest: PartialManifest): string | null {
   const fallback = pickOptional(
     parseOptionalAztecAddress(
       "FPC_DEVNET_SPONSORED_FPC_ADDRESS",
       parseOptionalEnv("FPC_DEVNET_SPONSORED_FPC_ADDRESS"),
     ),
-    parseOptionalAztecAddress(
-      "SPONSORED_FPC_ADDRESS",
-      parseOptionalEnv("SPONSORED_FPC_ADDRESS"),
-    ),
+    parseOptionalAztecAddress("SPONSORED_FPC_ADDRESS", parseOptionalEnv("SPONSORED_FPC_ADDRESS")),
     parseOptionalAztecAddress(
       "manifest.aztec_required_addresses.sponsored_fpc_address",
       manifest.aztec_required_addresses?.sponsored_fpc_address ?? null,
@@ -372,9 +345,7 @@ function isCreateAccountConflict(message: string): boolean {
   );
 }
 
-function shouldAttemptExistingAccountPublicDeployFallback(
-  message: string,
-): boolean {
+function shouldAttemptExistingAccountPublicDeployFallback(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
     isCreateAccountConflict(message) ||
@@ -397,16 +368,10 @@ function resolveAztecWalletTimeoutMs(): number {
   return parsed;
 }
 
-function runAztecWalletCommand(
-  nodeUrl: string,
-  args: string[],
-  description: string,
-): string {
+function runAztecWalletCommand(nodeUrl: string, args: string[], description: string): string {
   const walletBin = process.env.AZTEC_WALLET_BIN ?? "aztec-wallet";
   const walletDataDir =
-    process.env.AZTEC_WALLET_DATA_DIR ??
-    process.env.FPC_DEVNET_WALLET_DATA_DIR ??
-    null;
+    process.env.AZTEC_WALLET_DATA_DIR ?? process.env.FPC_DEVNET_WALLET_DATA_DIR ?? null;
   const commandArgs = [
     ...(walletDataDir ? ["--data-dir", walletDataDir] : []),
     "--node-url",
@@ -423,18 +388,10 @@ function runAztecWalletCommand(
       killSignal: "SIGTERM",
     });
   } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "stdout" in error &&
-      "stderr" in error
-    ) {
+    if (error && typeof error === "object" && "stdout" in error && "stderr" in error) {
       const stdout = String((error as { stdout?: unknown }).stdout ?? "");
       const stderr = String((error as { stderr?: unknown }).stderr ?? "");
-      const message =
-        "message" in error
-          ? String((error as { message?: unknown }).message)
-          : "";
+      const message = "message" in error ? String((error as { message?: unknown }).message) : "";
       const timedOut =
         message.toLowerCase().includes("timed out") ||
         ("killed" in error && (error as { killed?: unknown }).killed === true);
@@ -449,10 +406,7 @@ function runAztecWalletCommand(
   }
 }
 
-function registerSponsoredFpc(
-  nodeUrl: string,
-  sponsoredFpcAddress: string,
-): void {
+function registerSponsoredFpc(nodeUrl: string, sponsoredFpcAddress: string): void {
   runAztecWalletCommand(
     nodeUrl,
     [
@@ -473,20 +427,14 @@ async function deriveAddress(secretKey: string): Promise<AztecAddress> {
   return getSchnorrAccountContractAddress(secretFr, Fr.ZERO);
 }
 
-async function isPublished(
-  nodeUrl: string,
-  address: AztecAddress,
-): Promise<boolean> {
+async function isPublished(nodeUrl: string, address: AztecAddress): Promise<boolean> {
   const node = createAztecNodeClient(nodeUrl);
   await waitForNode(node);
   const contract = await node.getContract(address);
   return Boolean(contract);
 }
 
-function buildAlias(
-  explicitAlias: string | null,
-  address: AztecAddress,
-): string {
+function buildAlias(explicitAlias: string | null, address: AztecAddress): string {
   if (explicitAlias && explicitAlias.length > 0) {
     return explicitAlias;
   }
@@ -501,13 +449,7 @@ function createAccountWithMode(params: {
   paymentMode: Exclude<PaymentMode, "auto">;
   sponsoredFpcAddress: string | null;
 }): void {
-  const baseArgs = [
-    "create-account",
-    "--alias",
-    params.alias,
-    "--secret-key",
-    params.secretKey,
-  ];
+  const baseArgs = ["create-account", "--alias", params.alias, "--secret-key", params.secretKey];
 
   if (params.paymentMode === "register_only") {
     runAztecWalletCommand(
@@ -532,10 +474,7 @@ function createAccountWithMode(params: {
         "Payment mode 'sponsored' requested but no sponsored FPC address was provided.",
       );
     }
-    withPayment.push(
-      "--payment",
-      `method=fpc-sponsored,fpc=${params.sponsoredFpcAddress}`,
-    );
+    withPayment.push("--payment", `method=fpc-sponsored,fpc=${params.sponsoredFpcAddress}`);
   }
   const publicDeployArgs = [...withPayment, "--public-deploy"];
 
@@ -575,9 +514,7 @@ async function registerSponsoredFpcInEmbeddedWallet(
     };
     sponsoredFpcArtifact = imported.SponsoredFPCContractArtifact;
   } catch {
-    const requireFromTopup = createRequire(
-      path.resolve("services/topup/package.json"),
-    );
+    const requireFromTopup = createRequire(path.resolve("services/topup/package.json"));
     const resolved = requireFromTopup.resolve(moduleId);
     const imported = (await import(pathToFileURL(resolved).href)) as {
       SponsoredFPCContractArtifact?: unknown;
@@ -585,9 +522,7 @@ async function registerSponsoredFpcInEmbeddedWallet(
     sponsoredFpcArtifact = imported.SponsoredFPCContractArtifact;
   }
   if (!sponsoredFpcArtifact) {
-    throw new CliError(
-      "Failed to load SponsoredFPC artifact for embedded-wallet registration",
-    );
+    throw new CliError("Failed to load SponsoredFPC artifact for embedded-wallet registration");
   }
 
   const node = createAztecNodeClient(nodeUrl);
@@ -626,24 +561,15 @@ async function deployWithAztecJsFallback(params: {
 
   const secret = Fr.fromHexString(params.secretKey);
   const signingKey = deriveSigningKey(secret);
-  const account = await wallet.createSchnorrAccount(
-    secret,
-    Fr.ZERO,
-    signingKey,
-  );
-  if (
-    account.address.toString().toLowerCase() !==
-    params.claimerAddress.toString().toLowerCase()
-  ) {
+  const account = await wallet.createSchnorrAccount(secret, Fr.ZERO, signingKey);
+  if (account.address.toString().toLowerCase() !== params.claimerAddress.toString().toLowerCase()) {
     throw new CliError(
       `Aztec.js fallback derived unexpected account address ${account.address.toString()} (expected ${params.claimerAddress.toString()})`,
     );
   }
 
   const attemptModes: ("sponsored" | "fee_juice")[] =
-    params.paymentMode === "sponsored"
-      ? ["sponsored", "fee_juice"]
-      : ["fee_juice"];
+    params.paymentMode === "sponsored" ? ["sponsored", "fee_juice"] : ["fee_juice"];
   const failures: string[] = [];
 
   for (const mode of attemptModes) {
@@ -671,29 +597,21 @@ async function deployWithAztecJsFallback(params: {
           wait: { timeout: 120 },
         });
       }
-      console.log(
-        `${LOG_PREFIX} aztec.js fallback deployment sent with mode=${mode}`,
-      );
+      console.log(`${LOG_PREFIX} aztec.js fallback deployment sent with mode=${mode}`);
       return;
     } catch (error) {
       const message = String(error);
       // "Existing nullifier" means the contract's deployment nullifier already
       // exists in state (e.g. genesis-deployed test accounts on a local network).
       // The instance IS deployed even though getContract() doesn't index it.
-      if (
-        message.includes("Existing nullifier") ||
-        message.includes("existing nullifier")
-      ) {
+      if (message.includes("Existing nullifier") || message.includes("existing nullifier")) {
         console.log(
           `${LOG_PREFIX} aztec.js fallback got "Existing nullifier" with mode=${mode} — account already deployed; treating as success`,
         );
         return;
       }
       failures.push(`${mode}: ${message}`);
-      console.warn(
-        `${LOG_PREFIX} aztec.js fallback deployment failed with mode=${mode}`,
-        message,
-      );
+      console.warn(`${LOG_PREFIX} aztec.js fallback deployment failed with mode=${mode}`, message);
     }
   }
 
@@ -724,16 +642,12 @@ async function main(): Promise<void> {
   );
 
   if (await isPublished(nodeUrl, claimerAddress)) {
-    console.log(
-      `${LOG_PREFIX} already published: ${claimerAddress.toString()} (no action needed)`,
-    );
+    console.log(`${LOG_PREFIX} already published: ${claimerAddress.toString()} (no action needed)`);
     return;
   }
 
   if (paymentMode === "sponsored" && sponsoredFpcAddress) {
-    console.log(
-      `${LOG_PREFIX} registering SponsoredFPC in wallet: ${sponsoredFpcAddress}`,
-    );
+    console.log(`${LOG_PREFIX} registering SponsoredFPC in wallet: ${sponsoredFpcAddress}`);
     registerSponsoredFpc(nodeUrl, sponsoredFpcAddress);
   }
 
@@ -791,12 +705,8 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log(
-    `${LOG_PREFIX} success: claimer is publicly deployed (${claimerAddress.toString()})`,
-  );
-  console.log(
-    `${LOG_PREFIX} use TOPUP_AUTOCLAIM_SECRET_KEY for this claimer when running topup`,
-  );
+  console.log(`${LOG_PREFIX} success: claimer is publicly deployed (${claimerAddress.toString()})`);
+  console.log(`${LOG_PREFIX} use TOPUP_AUTOCLAIM_SECRET_KEY for this claimer when running topup`);
 }
 
 main().catch((error) => {

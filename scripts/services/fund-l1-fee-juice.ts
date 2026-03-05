@@ -1,12 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import {
-  type Address,
-  createPublicClient,
-  createWalletClient,
-  http,
-  isAddress,
-} from "viem";
+import { type Address, createPublicClient, createWalletClient, http, isAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 type CliArgs = {
@@ -212,9 +206,7 @@ function parseHttpUrl(value: string, fieldName: string): string {
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new CliError(
-        `Invalid ${fieldName}: expected http(s) URL, got "${value}"`,
-      );
+      throw new CliError(`Invalid ${fieldName}: expected http(s) URL, got "${value}"`);
     }
     return parsed.toString();
   } catch (error) {
@@ -227,9 +219,7 @@ function parseHttpUrl(value: string, fieldName: string): string {
 
 function parseHex32(value: string, fieldName: string): string {
   if (!HEX_32_PATTERN.test(value)) {
-    throw new CliError(
-      `Invalid ${fieldName}: expected 32-byte 0x-prefixed hex value`,
-    );
+    throw new CliError(`Invalid ${fieldName}: expected 32-byte 0x-prefixed hex value`);
   }
   return value.toLowerCase();
 }
@@ -322,36 +312,23 @@ function parseCliArgs(argv: string[]): CliParseResult {
   }
 
   if (!l1RpcUrl) {
-    throw new CliError(
-      "Missing --l1-rpc-url (or L1_RPC_URL) for L1 funding transactions",
-    );
+    throw new CliError("Missing --l1-rpc-url (or L1_RPC_URL) for L1 funding transactions");
   }
   if (!operatorPrivateKey) {
-    throw new CliError(
-      "Missing --operator-private-key (or L1_OPERATOR_PRIVATE_KEY)",
-    );
+    throw new CliError("Missing --operator-private-key (or L1_OPERATOR_PRIVATE_KEY)");
   }
 
   const resolvedManifestPath =
-    manifestPath ??
-    (existsSync(DEFAULT_MANIFEST_PATH) ? DEFAULT_MANIFEST_PATH : null);
+    manifestPath ?? (existsSync(DEFAULT_MANIFEST_PATH) ? DEFAULT_MANIFEST_PATH : null);
 
   return {
     kind: "args",
     args: {
       l1RpcUrl: parseHttpUrl(l1RpcUrl, "--l1-rpc-url"),
       nodeUrl: nodeUrl ? parseHttpUrl(nodeUrl, "--node-url") : null,
-      manifestPath: resolvedManifestPath
-        ? path.resolve(resolvedManifestPath)
-        : null,
-      operatorPrivateKey: parseHex32(
-        operatorPrivateKey,
-        "--operator-private-key",
-      ),
-      funderPrivateKey: parseHex32(
-        funderPrivateKey ?? operatorPrivateKey,
-        "--funder-private-key",
-      ),
+      manifestPath: resolvedManifestPath ? path.resolve(resolvedManifestPath) : null,
+      operatorPrivateKey: parseHex32(operatorPrivateKey, "--operator-private-key"),
+      funderPrivateKey: parseHex32(funderPrivateKey ?? operatorPrivateKey, "--funder-private-key"),
       recipientAddress: recipientAddress
         ? parseAddress(recipientAddress, "--recipient-address")
         : null,
@@ -370,10 +347,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
   };
 }
 
-function extractAddressCandidate(
-  root: Record<string, unknown>,
-  keys: string[],
-): Address | null {
+function extractAddressCandidate(root: Record<string, unknown>, keys: string[]): Address | null {
   for (const key of keys) {
     const value = root[key];
     if (typeof value === "string" && isAddress(value)) {
@@ -383,9 +357,7 @@ function extractAddressCandidate(
   return null;
 }
 
-async function loadNodeInfoL1Addresses(
-  nodeUrl: string,
-): Promise<NodeInfoL1Addresses> {
+async function loadNodeInfoL1Addresses(nodeUrl: string): Promise<NodeInfoL1Addresses> {
   const response = await fetch(nodeUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -397,18 +369,14 @@ async function loadNodeInfoL1Addresses(
     }),
   });
   if (!response.ok) {
-    throw new CliError(
-      `node_getNodeInfo failed for ${nodeUrl}: HTTP ${response.status}`,
-    );
+    throw new CliError(`node_getNodeInfo failed for ${nodeUrl}: HTTP ${response.status}`);
   }
 
   let parsed: unknown;
   try {
     parsed = (await response.json()) as unknown;
   } catch (error) {
-    throw new CliError(
-      `Invalid JSON returned by node_getNodeInfo at ${nodeUrl}: ${String(error)}`,
-    );
+    throw new CliError(`Invalid JSON returned by node_getNodeInfo at ${nodeUrl}: ${String(error)}`);
   }
 
   if (
@@ -418,9 +386,7 @@ async function loadNodeInfoL1Addresses(
     !parsed.result ||
     typeof parsed.result !== "object"
   ) {
-    throw new CliError(
-      `Invalid JSON-RPC payload from node_getNodeInfo at ${nodeUrl}`,
-    );
+    throw new CliError(`Invalid JSON-RPC payload from node_getNodeInfo at ${nodeUrl}`);
   }
 
   const result = parsed.result as Record<string, unknown>;
@@ -429,20 +395,14 @@ async function loadNodeInfoL1Addresses(
     !result.l1ContractAddresses ||
     typeof result.l1ContractAddresses !== "object"
   ) {
-    throw new CliError(
-      `node_getNodeInfo at ${nodeUrl} is missing l1ContractAddresses`,
-    );
+    throw new CliError(`node_getNodeInfo at ${nodeUrl} is missing l1ContractAddresses`);
   }
 
   const l1 = result.l1ContractAddresses as Record<string, unknown>;
   return {
-    feeJuiceAddress:
-      extractAddressCandidate(l1, ["feeJuiceAddress", "feeJuice"]) ?? undefined,
+    feeJuiceAddress: extractAddressCandidate(l1, ["feeJuiceAddress", "feeJuice"]) ?? undefined,
     feeAssetHandlerAddress:
-      extractAddressCandidate(l1, [
-        "feeAssetHandlerAddress",
-        "feeAssetHandler",
-      ]) ?? undefined,
+      extractAddressCandidate(l1, ["feeAssetHandlerAddress", "feeAssetHandler"]) ?? undefined,
   };
 }
 
@@ -451,24 +411,18 @@ function loadManifestL1Addresses(manifestPath: string): NodeInfoL1Addresses {
   try {
     raw = readFileSync(manifestPath, "utf8");
   } catch (error) {
-    throw new CliError(
-      `Failed to read deploy manifest at ${manifestPath}: ${String(error)}`,
-    );
+    throw new CliError(`Failed to read deploy manifest at ${manifestPath}: ${String(error)}`);
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch (error) {
-    throw new CliError(
-      `Deploy manifest at ${manifestPath} is not valid JSON: ${String(error)}`,
-    );
+    throw new CliError(`Deploy manifest at ${manifestPath} is not valid JSON: ${String(error)}`);
   }
 
   if (!parsed || typeof parsed !== "object") {
-    throw new CliError(
-      `Deploy manifest at ${manifestPath} must be a JSON object`,
-    );
+    throw new CliError(`Deploy manifest at ${manifestPath} must be a JSON object`);
   }
   const root = parsed as Record<string, unknown>;
 
@@ -484,19 +438,13 @@ function loadManifestL1Addresses(manifestPath: string): NodeInfoL1Addresses {
 
   return {
     feeJuiceAddress:
-      extractAddressCandidate(l1Record, ["feeJuiceAddress", "feeJuice"]) ??
-      undefined,
+      extractAddressCandidate(l1Record, ["feeJuiceAddress", "feeJuice"]) ?? undefined,
     feeAssetHandlerAddress:
-      extractAddressCandidate(l1Record, [
-        "feeAssetHandlerAddress",
-        "feeAssetHandler",
-      ]) ?? undefined,
+      extractAddressCandidate(l1Record, ["feeAssetHandlerAddress", "feeAssetHandler"]) ?? undefined,
   };
 }
 
-async function resolveFundingTargets(
-  args: CliArgs,
-): Promise<ResolvedFundingTargets> {
+async function resolveFundingTargets(args: CliArgs): Promise<ResolvedFundingTargets> {
   const fromCliToken = args.feeJuiceTokenAddress
     ? parseAddress(args.feeJuiceTokenAddress, "--fee-juice-token-address")
     : null;
@@ -517,10 +465,7 @@ async function resolveFundingTargets(
   const tokenAddress =
     fromCliToken ??
     (fromNode.feeJuiceAddress
-      ? parseAddress(
-          fromNode.feeJuiceAddress,
-          "node_getNodeInfo.feeJuiceAddress",
-        )
+      ? parseAddress(fromNode.feeJuiceAddress, "node_getNodeInfo.feeJuiceAddress")
       : null) ??
     (fromManifest.feeJuiceAddress
       ? parseAddress(
@@ -538,10 +483,7 @@ async function resolveFundingTargets(
   const handlerAddress =
     fromCliHandler ??
     (fromNode.feeAssetHandlerAddress
-      ? parseAddress(
-          fromNode.feeAssetHandlerAddress,
-          "node_getNodeInfo.feeAssetHandlerAddress",
-        )
+      ? parseAddress(fromNode.feeAssetHandlerAddress, "node_getNodeInfo.feeAssetHandlerAddress")
       : null) ??
     (fromManifest.feeAssetHandlerAddress
       ? parseAddress(
@@ -612,9 +554,7 @@ async function tryDirectMint(params: {
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") {
-      throw new CliError(
-        `Direct mint transaction reverted: tx_hash=${receipt.transactionHash}`,
-      );
+      throw new CliError(`Direct mint transaction reverted: tx_hash=${receipt.transactionHash}`);
     }
     console.log(
       `[fund-l1-fee-juice] direct token mint succeeded tx_hash=${receipt.transactionHash}`,
@@ -681,9 +621,7 @@ async function mintViaFeeAssetHandler(params: {
     const hash = mintTx.hash;
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") {
-      throw new CliError(
-        `FeeAssetHandler mint reverted: tx_hash=${receipt.transactionHash}`,
-      );
+      throw new CliError(`FeeAssetHandler mint reverted: tx_hash=${receipt.transactionHash}`);
     }
     mintCount += 1;
     balance = await readFeeJuiceBalance({
@@ -704,9 +642,7 @@ async function main(): Promise<void> {
   }
   const args = parseResult.args;
 
-  const operatorAccount = privateKeyToAccount(
-    args.operatorPrivateKey as `0x${string}`,
-  );
+  const operatorAccount = privateKeyToAccount(args.operatorPrivateKey as `0x${string}`);
   const recipient = args.recipientAddress
     ? parseAddress(args.recipientAddress, "--recipient-address")
     : operatorAccount.address;
@@ -719,12 +655,8 @@ async function main(): Promise<void> {
   });
 
   console.log(`[fund-l1-fee-juice] l1_rpc_url=${args.l1RpcUrl}`);
-  console.log(
-    `[fund-l1-fee-juice] node_url=${args.nodeUrl ?? "<not provided>"}`,
-  );
-  console.log(
-    `[fund-l1-fee-juice] manifest_path=${args.manifestPath ?? "<not provided>"}`,
-  );
+  console.log(`[fund-l1-fee-juice] node_url=${args.nodeUrl ?? "<not provided>"}`);
+  console.log(`[fund-l1-fee-juice] manifest_path=${args.manifestPath ?? "<not provided>"}`);
   console.log(
     `[fund-l1-fee-juice] fee_juice_token=${targets.feeJuiceTokenAddress} fee_asset_handler=${targets.feeAssetHandlerAddress ?? "<none>"} source=${targets.source}`,
   );
@@ -734,9 +666,7 @@ async function main(): Promise<void> {
   );
 
   if (beforeBalance >= args.targetBalanceWei) {
-    console.log(
-      "[fund-l1-fee-juice] recipient already has enough L1 FeeJuice; no mint needed",
-    );
+    console.log("[fund-l1-fee-juice] recipient already has enough L1 FeeJuice; no mint needed");
     return;
   }
 

@@ -10,10 +10,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
-import {
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
+import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { Gas, GasFees } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
@@ -69,10 +66,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
 
-const ZERO_SALT_HEX =
-  "0x0000000000000000000000000000000000000000000000000000000000000000";
-const DEFAULT_ATTESTATION_BASE_URL =
-  "https://aztec-fpc.staging-nethermind.xyz/v2";
+const ZERO_SALT_HEX = "0x0000000000000000000000000000000000000000000000000000000000000000";
+const DEFAULT_ATTESTATION_BASE_URL = "https://aztec-fpc.staging-nethermind.xyz/v2";
 
 function usage(): string {
   return [
@@ -145,9 +140,7 @@ function normalizeHex32(name: string, raw: string): string {
   const trimmed = raw.trim();
   const prefixed = trimmed.startsWith("0x") ? trimmed : `0x${trimmed}`;
   if (!HEX_32_PATTERN.test(prefixed)) {
-    throw new Error(
-      `${name} must be 32-byte hex (0x + 64 hex chars). Got: ${raw}`,
-    );
+    throw new Error(`${name} must be 32-byte hex (0x + 64 hex chars). Got: ${raw}`);
   }
   return prefixed.toLowerCase();
 }
@@ -192,9 +185,7 @@ function loadDotEnvFileIfPresent(dotenvPath: string): void {
       continue;
     }
 
-    const match = trimmed.match(
-      /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/,
-    );
+    const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
     if (!match) {
       continue;
     }
@@ -240,8 +231,7 @@ function readConfig(argv: string[]): Config {
     parseOptionalEnv("FPC_ARTIFACT_PATH") ??
     path.join(repoRoot, "target", "fpc-FPCMultiAsset.json");
   const faucetArtifactPath =
-    parseOptionalEnv("FAUCET_ARTIFACT_PATH") ??
-    path.join(repoRoot, "target", "faucet-Faucet.json");
+    parseOptionalEnv("FAUCET_ARTIFACT_PATH") ?? path.join(repoRoot, "target", "faucet-Faucet.json");
   const counterArtifactPath =
     parseOptionalEnv("COUNTER_ARTIFACT_PATH") ??
     path.join(repoRoot, "target", "mock_counter-Counter.json");
@@ -311,9 +301,7 @@ function readConfig(argv: string[]): Config {
     }
   }
 
-  const manifestRaw = JSON.parse(
-    readFileSync(path.resolve(manifestPath), "utf8"),
-  ) as Manifest;
+  const manifestRaw = JSON.parse(readFileSync(path.resolve(manifestPath), "utf8")) as Manifest;
   const resolvedNodeUrl = nodeUrl ?? manifestRaw.network?.node_url;
   if (!resolvedNodeUrl) {
     throw new Error(
@@ -322,23 +310,16 @@ function readConfig(argv: string[]): Config {
   }
 
   if (!userAddressRaw) {
-    throw new Error(
-      "Missing user address. Set L2_ADDRESS or pass --user-address.",
-    );
+    throw new Error("Missing user address. Set L2_ADDRESS or pass --user-address.");
   }
   if (!userSecretKeyRaw) {
-    throw new Error(
-      "Missing user secret key. Set L2_PRIVATE_KEY or pass --user-secret-key.",
-    );
+    throw new Error("Missing user secret key. Set L2_PRIVATE_KEY or pass --user-secret-key.");
   }
 
   return {
     envFilePath: path.resolve(envFilePath),
     nodeUrl: parseHttpUrl("node URL", resolvedNodeUrl),
-    attestationBaseUrl: parseHttpUrl(
-      "attestation base URL",
-      attestationBaseUrl,
-    ),
+    attestationBaseUrl: parseHttpUrl("attestation base URL", attestationBaseUrl),
     manifestPath: path.resolve(manifestPath),
     tokenArtifactPath: path.resolve(tokenArtifactPath),
     fpcArtifactPath: path.resolve(fpcArtifactPath),
@@ -359,10 +340,7 @@ function parseManifest(manifestPath: string): Manifest {
   return JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 }
 
-function requireManifestAddress(
-  name: string,
-  value: string | undefined,
-): AztecAddress {
+function requireManifestAddress(name: string, value: string | undefined): AztecAddress {
   if (!value) {
     throw new Error(`Manifest is missing required ${name}`);
   }
@@ -370,17 +348,13 @@ function requireManifestAddress(
 }
 
 function loadArtifact(artifactPath: string): ContractArtifact {
-  const parsed = JSON.parse(
-    readFileSync(artifactPath, "utf8"),
-  ) as NoirCompiledContract;
+  const parsed = JSON.parse(readFileSync(artifactPath, "utf8")) as NoirCompiledContract;
   try {
     return loadContractArtifact(parsed);
   } catch (error) {
     if (
       error instanceof Error &&
-      error.message.includes(
-        "Contract's public bytecode has not been transpiled",
-      )
+      error.message.includes("Contract's public bytecode has not been transpiled")
     ) {
       return loadContractArtifactForPublic(parsed);
     }
@@ -388,10 +362,7 @@ function loadArtifact(artifactPath: string): ContractArtifact {
   }
 }
 
-async function stopWalletWithTimeout(
-  wallet: EmbeddedWallet,
-  timeoutMs: number,
-): Promise<void> {
+async function stopWalletWithTimeout(wallet: EmbeddedWallet, timeoutMs: number): Promise<void> {
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   try {
     await Promise.race([
@@ -444,9 +415,7 @@ async function attachRegisteredContract(
 ): Promise<Contract> {
   const instance = await node.getContract(address);
   if (!instance) {
-    throw new Error(
-      `Missing ${label} contract instance on node at ${address.toString()}`,
-    );
+    throw new Error(`Missing ${label} contract instance on node at ${address.toString()}`);
   }
   await wallet.registerContract(instance, artifact);
   return Contract.at(address, artifact, wallet);
@@ -471,26 +440,17 @@ async function main() {
   const cfg = readConfig(process.argv.slice(2));
   const manifest = parseManifest(cfg.manifestPath);
 
-  const fpcAddress = requireManifestAddress(
-    "contracts.fpc",
-    manifest.contracts?.fpc,
-  );
+  const fpcAddress = requireManifestAddress("contracts.fpc", manifest.contracts?.fpc);
   const tokenAddress = requireManifestAddress(
     "contracts.accepted_asset",
     manifest.contracts?.accepted_asset,
   );
-  const faucetAddress = requireManifestAddress(
-    "contracts.faucet",
-    manifest.contracts?.faucet,
-  );
+  const faucetAddress = requireManifestAddress("contracts.faucet", manifest.contracts?.faucet);
   const counterAddress = requireManifestAddress(
     "counter address",
     cfg.counterAddress ?? manifest.contracts?.counter,
   );
-  const operatorAddress = requireManifestAddress(
-    "operator.address",
-    manifest.operator?.address,
-  );
+  const operatorAddress = requireManifestAddress("operator.address", manifest.operator?.address);
 
   const tokenArtifact = loadArtifact(cfg.tokenArtifactPath);
   const fpcArtifact = loadArtifact(cfg.fpcArtifactPath);
@@ -509,10 +469,7 @@ async function main() {
 
     const userSecret = Fr.fromHexString(cfg.userSecretKey);
     const userSalt = Fr.fromHexString(cfg.userSalt);
-    const userAddressFromSecret = await getSchnorrAccountContractAddress(
-      userSecret,
-      userSalt,
-    );
+    const userAddressFromSecret = await getSchnorrAccountContractAddress(userSecret, userSalt);
     if (!sameAddress(userAddressFromSecret, cfg.userAddress)) {
       throw new Error(
         `L2_ADDRESS does not match L2_PRIVATE_KEY/user-salt. expected=${cfg.userAddress.toString()} derived=${userAddressFromSecret.toString()}`,
@@ -540,13 +497,7 @@ async function main() {
       tokenArtifact,
       "accepted_asset",
     );
-    const fpc = await attachRegisteredContract(
-      wallet,
-      node,
-      fpcAddress,
-      fpcArtifact,
-      "fpc",
-    );
+    const fpc = await attachRegisteredContract(wallet, node, fpcAddress, fpcArtifact, "fpc");
     const faucet = await attachRegisteredContract(
       wallet,
       node,
@@ -565,23 +516,17 @@ async function main() {
     const minFees = await node.getCurrentMinFees();
     const feePerDaGas = minFees.feePerDaGas;
     const feePerL2Gas = minFees.feePerL2Gas;
-    const fjAmount =
-      BigInt(cfg.daGasLimit) * feePerDaGas +
-      BigInt(cfg.l2GasLimit) * feePerL2Gas;
+    const fjAmount = BigInt(cfg.daGasLimit) * feePerDaGas + BigInt(cfg.l2GasLimit) * feePerL2Gas;
 
     console.log(`[manual-fpc-devnet-v2] env_file=${cfg.envFilePath}`);
     console.log(`[manual-fpc-devnet-v2] node_url=${cfg.nodeUrl}`);
-    console.log(
-      `[manual-fpc-devnet-v2] attestation_base_url=${cfg.attestationBaseUrl}`,
-    );
+    console.log(`[manual-fpc-devnet-v2] attestation_base_url=${cfg.attestationBaseUrl}`);
     if (cfg.walletAlias) {
       console.log(`[manual-fpc-devnet-v2] wallet_alias=${cfg.walletAlias}`);
     }
     console.log(`[manual-fpc-devnet-v2] manifest=${cfg.manifestPath}`);
     console.log(`[manual-fpc-devnet-v2] user=${user.toString()}`);
-    console.log(
-      `[manual-fpc-devnet-v2] operator=${operatorAddress.toString()}`,
-    );
+    console.log(`[manual-fpc-devnet-v2] operator=${operatorAddress.toString()}`);
     console.log(`[manual-fpc-devnet-v2] token=${tokenAddress.toString()}`);
     console.log(`[manual-fpc-devnet-v2] fpc=${fpcAddress.toString()}`);
     console.log(`[manual-fpc-devnet-v2] faucet=${faucetAddress.toString()}`);
@@ -594,16 +539,8 @@ async function main() {
       );
     }
 
-    const quote = await fetchQuote(
-      cfg.attestationBaseUrl,
-      user,
-      tokenAddress,
-      fjAmount,
-    );
-    if (
-      quote.accepted_asset.toLowerCase() !==
-      tokenAddress.toString().toLowerCase()
-    ) {
+    const quote = await fetchQuote(cfg.attestationBaseUrl, user, tokenAddress, fjAmount);
+    if (quote.accepted_asset.toLowerCase() !== tokenAddress.toString().toLowerCase()) {
       throw new Error(
         `Quote accepted_asset mismatch. quote=${quote.accepted_asset} manifest_token=${tokenAddress.toString()}`,
       );
@@ -615,27 +552,17 @@ async function main() {
     }
 
     const aaPaymentAmount = BigInt(quote.aa_payment_amount);
-    const quoteSigBytes = Array.from(
-      Buffer.from(quote.signature.replace(/^0x/, ""), "hex"),
-    );
+    const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace(/^0x/, ""), "hex"));
     if (quoteSigBytes.length !== 64) {
-      throw new Error(
-        `Quote signature must be 64 bytes. got=${quoteSigBytes.length}`,
-      );
+      throw new Error(`Quote signature must be 64 bytes. got=${quoteSigBytes.length}`);
     }
 
     const minimumPrivateAcceptedAsset = aaPaymentAmount + 1_000_000n;
     let userPrivateBalance = BigInt(
-      (
-        await token.methods.balance_of_private(user).simulate({ from: user })
-      ).toString(),
+      (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
     );
 
-    for (
-      let attempt = 1;
-      userPrivateBalance < minimumPrivateAcceptedAsset;
-      attempt += 1
-    ) {
+    for (let attempt = 1; userPrivateBalance < minimumPrivateAcceptedAsset; attempt += 1) {
       if (attempt > 3) {
         throw new Error(
           `Unable to reach required private accepted-asset balance after faucet attempts. required=${minimumPrivateAcceptedAsset} current=${userPrivateBalance}`,
@@ -643,9 +570,7 @@ async function main() {
       }
 
       let userPublicBalance = BigInt(
-        (
-          await token.methods.balance_of_public(user).simulate({ from: user })
-        ).toString(),
+        (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
       );
 
       if (userPublicBalance === 0n) {
@@ -657,9 +582,7 @@ async function main() {
           wait: { timeout: 180 },
         });
         userPublicBalance = BigInt(
-          (
-            await token.methods.balance_of_public(user).simulate({ from: user })
-          ).toString(),
+          (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
         );
       }
 
@@ -674,20 +597,13 @@ async function main() {
         .send({ from: user, wait: { timeout: 180 } });
 
       userPrivateBalance = BigInt(
-        (
-          await token.methods.balance_of_private(user).simulate({ from: user })
-        ).toString(),
+        (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
       );
     }
 
     const nonce = Fr.random();
     const transferCall = await token.methods
-      .transfer_private_to_private(
-        user,
-        operatorAddress,
-        aaPaymentAmount,
-        nonce,
-      )
+      .transfer_private_to_private(user, operatorAddress, aaPaymentAmount, nonce)
       .getFunctionCall();
     const transferAuthwit = await wallet.createAuthWit(user, {
       caller: fpcAddress,
@@ -695,14 +611,10 @@ async function main() {
     });
 
     const counterBefore = BigInt(
-      (
-        await counter.methods.get_counter(user).simulate({ from: user })
-      ).toString(),
+      (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
     );
     const userPrivateBefore = BigInt(
-      (
-        await token.methods.balance_of_private(user).simulate({ from: user })
-      ).toString(),
+      (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
     );
 
     const feeEntrypointCall = await fpc.methods
@@ -719,13 +631,7 @@ async function main() {
     const paymentMethod = {
       getAsset: async () => ProtocolContractAddress.FeeJuice,
       getExecutionPayload: async () =>
-        new ExecutionPayload(
-          [feeEntrypointCall],
-          [transferAuthwit],
-          [],
-          [],
-          fpcAddress,
-        ),
+        new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], fpcAddress),
       getFeePayer: async () => fpcAddress,
       getGasSettings: () => undefined,
     };
@@ -744,14 +650,10 @@ async function main() {
     });
 
     const counterAfter = BigInt(
-      (
-        await counter.methods.get_counter(user).simulate({ from: user })
-      ).toString(),
+      (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
     );
     const userPrivateAfter = BigInt(
-      (
-        await token.methods.balance_of_private(user).simulate({ from: user })
-      ).toString(),
+      (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
     );
     const userDebited = userPrivateBefore - userPrivateAfter;
 
@@ -768,10 +670,7 @@ async function main() {
       );
     }
 
-    if (
-      !sameAddress(user, operatorAddress) &&
-      userDebited !== aaPaymentAmount
-    ) {
+    if (!sameAddress(user, operatorAddress) && userDebited !== aaPaymentAmount) {
       throw new Error(
         `Accounting mismatch. expected user_debited=${aaPaymentAmount} got=${userDebited}`,
       );
