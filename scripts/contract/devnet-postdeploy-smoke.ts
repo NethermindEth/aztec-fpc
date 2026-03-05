@@ -972,6 +972,15 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const token = deps.Contract.at(tokenAddress, tokenArtifact, wallet);
   const fpc = deps.Contract.at(fpcAddress, selectedFpcArtifact, wallet);
 
+  if (fpcSelection.variant === "FPCMultiAsset") {
+    await fpc.methods
+      .add_accepted_asset(token.address)
+      .send({ from: operatorAddress, wait: { timeout: 180 } });
+    pinoLogger.info(
+      `[devnet-postdeploy-smoke] initialized FPC allowlist with accepted_asset=${token.address.toString()}`,
+    );
+  }
+
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas as bigint;
   const feePerL2Gas = minFees.feePerL2Gas as bigint;

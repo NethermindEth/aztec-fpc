@@ -42,6 +42,7 @@ const FEE_JUICE_PORTAL_ABI = parseAbi([
   "event DepositToAztecPublic(bytes32 indexed to, uint256 amount, bytes32 secretHash, bytes32 key, uint256 index)",
 ]);
 const FPC_ARTIFACT_FILE_CANDIDATES = ["fpc-FPCMultiAsset.json", "fpc-FPC.json"] as const;
+type FpcArtifactName = "FPC" | "FPCMultiAsset";
 
 type SmokeConfig = {
   nodeUrl: string;
@@ -132,6 +133,17 @@ function loadArtifact(artifactPath: string): ContractArtifact {
     }
     throw err;
   }
+}
+
+function readFpcArtifactName(artifactPath: string): FpcArtifactName {
+  const raw = readFileSync(artifactPath, "utf8");
+  const parsed = JSON.parse(raw) as { name?: unknown };
+  if (parsed.name === "FPC" || parsed.name === "FPCMultiAsset") {
+    return parsed.name;
+  }
+  throw new Error(
+    `Unsupported FPC artifact at ${artifactPath}. Expected name=FPC or name=FPCMultiAsset.`,
+  );
 }
 
 function resolveFpcArtifactPath(repoRoot: string): string {
@@ -481,6 +493,7 @@ async function main() {
   const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
   const tokenArtifactPath = path.join(repoRoot, "target", "token_contract-Token.json");
   const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
+  const fpcArtifactName = readFpcArtifactName(fpcArtifactPath);
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
@@ -529,10 +542,17 @@ async function main() {
   const fpc = await deployContract(
     wallet,
     fpcArtifact,
-    [operator, operatorPubKey.x, operatorPubKey.y],
+    fpcArtifactName === "FPCMultiAsset"
+      ? [operator, operatorPubKey.x, operatorPubKey.y]
+      : [operator, operatorPubKey.x, operatorPubKey.y, token.address],
     { from: operator },
   );
   pinoLogger.info(`[smoke] fpc=${fpc.address.toString()}`);
+
+  if (fpcArtifactName === "FPCMultiAsset") {
+    await fpc.methods.add_accepted_asset(token.address).send({ from: operator });
+    pinoLogger.info(`[smoke] initialized fpc allowlist with ${token.address.toString()}`);
+  }
 
   pinoLogger.info(`[smoke] fee_per_da_gas=${feePerDaGas}`);
   pinoLogger.info(`[smoke] fee_per_l2_gas=${feePerL2Gas}`);

@@ -314,6 +314,10 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
     operatorPubKey.y,
   ]).send({ from: operator });
   pinoLogger.info(`[chaos-local] FPC deployed at ${fpc.address.toString()}`);
+  await fpc.methods.add_accepted_asset(token.address).send({ from: operator });
+  pinoLogger.info(
+    `[chaos-local] Initialized FPC allowlist with accepted asset ${token.address.toString()}`,
+  );
 
   const [minFees, nodeInfo] = await Promise.all([node.getCurrentMinFees(), node.getNodeInfo()]);
   const maxGasCostPerTx =

@@ -145,6 +145,7 @@ const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const DIAGNOSTIC_TAIL_LINES = 200;
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_FILE_CANDIDATES = ["fpc-FPCMultiAsset.json", "fpc-FPC.json"] as const;
+type FpcArtifactName = "FPC" | "FPCMultiAsset";
 function printHelp(): void {
   pinoLogger.info(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
 
@@ -306,6 +307,17 @@ function loadArtifact(artifactPath: string): ContractArtifact {
     }
     throw error;
   }
+}
+
+function readFpcArtifactName(artifactPath: string): FpcArtifactName {
+  const raw = readFileSync(artifactPath, "utf8");
+  const parsed = JSON.parse(raw) as { name?: unknown };
+  if (parsed.name === "FPC" || parsed.name === "FPCMultiAsset") {
+    return parsed.name;
+  }
+  throw new Error(
+    `Unsupported FPC artifact at ${artifactPath}. Expected name=FPC or name=FPCMultiAsset.`,
+  );
 }
 
 function resolveFpcArtifactPath(repoRoot: string): string {
@@ -955,6 +967,7 @@ async function deployContractsAndWriteRuntimeConfig(
   const runDir = mkdtempSync(path.join(artifactsRootDir, "fpc-full-lifecycle-e2e-"));
   const tokenArtifactPath = path.join(repoRoot, "target", "token_contract-Token.json");
   const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
+  const fpcArtifactName = readFpcArtifactName(fpcArtifactPath);
 
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
@@ -1007,9 +1020,14 @@ async function deployContractsAndWriteRuntimeConfig(
   const fpc = await deployContract(
     wallet,
     fpcArtifact,
-    [operator, operatorPubKey.x, operatorPubKey.y, token.address],
+    fpcArtifactName === "FPCMultiAsset"
+      ? [operator, operatorPubKey.x, operatorPubKey.y]
+      : [operator, operatorPubKey.x, operatorPubKey.y, token.address],
     { from: operator },
   );
+  if (fpcArtifactName === "FPCMultiAsset") {
+    await fpc.methods.add_accepted_asset(token.address).send({ from: operator });
+  }
 
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas;
@@ -1528,6 +1546,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
 ): Promise<bigint> {
   const tokenArtifactPath = path.join(result.repoRoot, "target", "token_contract-Token.json");
   const fpcArtifactPath = resolveFpcArtifactPath(result.repoRoot);
+  const fpcArtifactName = readFpcArtifactName(fpcArtifactPath);
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
 
@@ -1546,9 +1565,16 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   const isolatedFpc = await deployContract(
     result.wallet,
     fpcArtifact,
-    [result.operator, operatorPubKey.x, operatorPubKey.y, isolatedToken.address],
+    fpcArtifactName === "FPCMultiAsset"
+      ? [result.operator, operatorPubKey.x, operatorPubKey.y]
+      : [result.operator, operatorPubKey.x, operatorPubKey.y, isolatedToken.address],
     { from: result.operator },
   );
+  if (fpcArtifactName === "FPCMultiAsset") {
+    await isolatedFpc.methods
+      .add_accepted_asset(isolatedToken.address)
+      .send({ from: result.operator });
+  }
 
   const isolatedCasesRoot = path.join(result.runDir, "insufficient");
   mkdirSync(isolatedCasesRoot, { recursive: true });

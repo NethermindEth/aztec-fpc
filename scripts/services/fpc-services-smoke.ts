@@ -44,6 +44,7 @@ const ERC20_ABI = parseAbi([
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_FILE_CANDIDATES = ["fpc-FPCMultiAsset.json", "fpc-FPC.json"] as const;
+type FpcArtifactName = "FPC" | "FPCMultiAsset";
 
 type TopupBridgeOutcome = "confirmed" | "timeout" | "failed";
 type TopupBridgeSubmission = {
@@ -141,6 +142,17 @@ function loadArtifact(artifactPath: string): ContractArtifact {
     }
     throw err;
   }
+}
+
+function readFpcArtifactName(artifactPath: string): FpcArtifactName {
+  const raw = readFileSync(artifactPath, "utf8");
+  const parsed = JSON.parse(raw) as { name?: unknown };
+  if (parsed.name === "FPC" || parsed.name === "FPCMultiAsset") {
+    return parsed.name;
+  }
+  throw new Error(
+    `Unsupported FPC artifact at ${artifactPath}. Expected name=FPC or name=FPCMultiAsset.`,
+  );
 }
 
 function resolveFpcArtifactPath(repoRoot: string): string {
@@ -1007,6 +1019,7 @@ async function main() {
   try {
     const tokenArtifactPath = path.join(repoRoot, "target", "token_contract-Token.json");
     const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
+    const fpcArtifactName = readFpcArtifactName(fpcArtifactPath);
     const tokenArtifact = loadArtifact(tokenArtifactPath);
     const fpcArtifact = loadArtifact(fpcArtifactPath);
 
@@ -1121,10 +1134,19 @@ async function main() {
     const fpc = await deployContract(
       wallet,
       fpcArtifact,
-      [operator, operatorPubKey.x, operatorPubKey.y, token.address],
+      fpcArtifactName === "FPCMultiAsset"
+        ? [operator, operatorPubKey.x, operatorPubKey.y]
+        : [operator, operatorPubKey.x, operatorPubKey.y, token.address],
       { from: operator },
     );
     pinoLogger.info(`[services-smoke] fpc=${fpc.address.toString()}`);
+
+    if (fpcArtifactName === "FPCMultiAsset") {
+      await fpc.methods.add_accepted_asset(token.address).send({ from: operator });
+      pinoLogger.info(
+        `[services-smoke] initialized fpc allowlist with ${token.address.toString()}`,
+      );
+    }
 
     pinoLogger.info(
       `[services-smoke] topup_threshold_wei=${topupThreshold} topup_amount_wei=${topupAmount}`,

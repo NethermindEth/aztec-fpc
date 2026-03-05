@@ -1740,6 +1740,43 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] fpc deployed. address=${fpcDeploy.address} tx_hash=${fpcDeploy.txHash}`,
   );
 
+  const operatorWalletAlias =
+    operatorIdentity.address.toLowerCase() === deployer.address.toLowerCase()
+      ? deployer.walletAlias
+      : ensureOperatorAccountInWallet(
+          args.nodeUrl,
+          args.operatorSecretKey,
+          paymentArg,
+          operatorIdentity.address,
+        );
+  if (operatorWalletAlias === deployer.walletAlias) {
+    pinoLogger.info(
+      `[deploy-fpc-devnet] operator address matches deployer; reusing ${operatorWalletAlias} for operator-gated calls`,
+    );
+  }
+
+  if (fpcSelection.name === "FPCMultiAsset") {
+    pinoLogger.info(
+      `[deploy-fpc-devnet] initializing FPC allowlist: add_accepted_asset(${acceptedAssetAddress}) from operator=${operatorWalletAlias}`,
+    );
+    try {
+      await callContractSendWithAztecWallet({
+        nodeUrl: args.nodeUrl,
+        fromAlias: operatorWalletAlias,
+        payment: paymentArg,
+        contractAddress: fpcDeploy.address,
+        artifactPath: fpcSelection.artifactPath,
+        method: "add_accepted_asset",
+        methodArgs: [acceptedAssetAddress],
+        context: "FPCMultiAsset.add_accepted_asset",
+      });
+    } catch (error) {
+      throw new CliError(
+        `FPC allowlist initialization failed: add_accepted_asset(${acceptedAssetAddress}) from operator=${operatorIdentity.address} failed. Underlying error: ${String(error)}`,
+      );
+    }
+  }
+
   let faucetDeploy: { address: string; txHash: string } | undefined;
   let faucetConfig: ReturnType<typeof readFaucetEnvConfig> | undefined;
   if (!args.acceptedAsset) {
@@ -1765,20 +1802,6 @@ async function main(): Promise<void> {
       `[deploy-fpc-devnet] faucet deployed. address=${faucetDeploy.address} tx_hash=${faucetDeploy.txHash}`,
     );
 
-    const operatorWalletAlias =
-      operatorIdentity.address.toLowerCase() === deployer.address.toLowerCase()
-        ? deployer.walletAlias
-        : ensureOperatorAccountInWallet(
-            args.nodeUrl,
-            args.operatorSecretKey,
-            paymentArg,
-            operatorIdentity.address,
-          );
-    if (operatorWalletAlias === deployer.walletAlias) {
-      pinoLogger.info(
-        `[deploy-fpc-devnet] operator address matches deployer; reusing ${operatorWalletAlias} for faucet funding`,
-      );
-    }
     pinoLogger.info(
       `[deploy-fpc-devnet] funding faucet: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorWalletAlias}`,
     );
