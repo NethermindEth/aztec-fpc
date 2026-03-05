@@ -47,6 +47,17 @@ function shouldSkipCheck(
   return false;
 }
 
+async function readBalanceOrLog(
+  getBalance: () => Promise<bigint>,
+  logger: Pick<Console, "log" | "warn" | "error">,
+): Promise<bigint | null> {
+  try {
+    return await getBalance();
+  } catch (err) {
+    logger.error("Failed to read Fee Juice balance:", err);
+    return null;
+  }
+}
 function shouldSubmitBridge(
   balance: bigint,
   threshold: bigint,
@@ -137,11 +148,8 @@ export function createTopupChecker(
       return;
     }
 
-    let balance: bigint;
-    try {
-      balance = await deps.getBalance();
-    } catch (err) {
-      logger.error("Failed to read Fee Juice balance:", err);
+    const balance = await readBalanceOrLog(deps.getBalance, logger);
+    if (balance === null) {
       return;
     }
 
