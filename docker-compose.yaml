@@ -131,6 +131,17 @@ services:
       fund-l1-fee-juice:
         condition: service_completed_successfully
 
+  block-producer:
+    image: nethermind/aztec-fpc-contract-deployment:local
+    entrypoint: ["bash", "/app/scripts/services/block-producer.sh"]
+    volumes:
+      - ./scripts:/app/scripts:ro
+    environment:
+      AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
+    depends_on:
+      aztec-node:
+        condition: service_healthy
+
   postdeploy:
     image: nethermind/aztec-fpc-smoke:local
     profiles: ["postdeploy"]
