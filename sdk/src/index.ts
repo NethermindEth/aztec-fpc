@@ -1,4 +1,4 @@
-export { createSponsoredCounterClient } from "./client";
+export { createSponsoredCounterClient, executeSponsoredCall } from "./client";
 export {
   BalanceBootstrapError,
   InsufficientFpcFeeJuiceError,
@@ -7,7 +7,12 @@ export {
   SponsoredTxFailedError,
 } from "./errors";
 export type {
+  ExecuteSponsoredCallInput,
   CreateSponsoredCounterClientInput,
+  SponsorshipConfig,
+  SponsoredCallContext,
   SponsoredCounterClient,
+  SponsoredExecutionResult,
   SponsoredIncrementResult,
+  SponsoredPostCheckContext,
 } from "./types";

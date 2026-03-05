@@ -57,7 +57,7 @@ export type AcceptedAssetSelectionCallback = (
   | Promise<AttestationAcceptedAsset | AztecAddress | string | undefined>;
 
 export type RuntimeContractConfig = {
-  address: AztecAddress | string;
+  address?: AztecAddress | string;
   artifact?: ContractArtifact;
 };
 
@@ -73,4 +73,74 @@ export type SponsoredRuntimeConfig = {
   nodeUrl: string;
   operatorAddress: AztecAddress | string;
   targets?: Record<string, RuntimeContractConfig>;
+};
+
+export type TokenSelectionConfig = {
+  explicitAcceptedAsset?: AztecAddress | string;
+  selector?: AcceptedAssetSelectionCallback;
+};
+
+export type SponsorshipConfig = {
+  attestationBaseUrl: string;
+  daGasLimit?: number;
+  discoveryFpcAddress?: AztecAddress | string;
+  fetchImpl?: typeof fetch;
+  l2GasLimit?: number;
+  maxFaucetAttempts?: number;
+  minimumPrivateBalanceBuffer?: bigint;
+  resolveFpcFromDiscovery?: boolean;
+  runtimeConfig: SponsoredRuntimeConfig;
+  tokenSelection?: TokenSelectionConfig;
+  txWaitTimeoutSeconds?: number;
+};
+
+export type SponsoredCallContext = {
+  acceptedAssetAddress: AztecAddress;
+  contracts: {
+    acceptedAsset: unknown;
+    faucet?: unknown;
+    fpc: unknown;
+    node: unknown;
+    targets: Record<string, unknown>;
+  };
+  user: AztecAddress;
+};
+
+export type SponsoredCallInteraction<TReceipt> = {
+  send(args: {
+    fee: {
+      gasSettings: unknown;
+      paymentMethod: unknown;
+    };
+    from: AztecAddress;
+    wait: { timeout: number };
+  }): Promise<TReceipt>;
+};
+
+export type SponsoredPostCheckContext<TReceipt> = {
+  expectedCharge: bigint;
+  fjAmount: bigint;
+  receipt: TReceipt;
+  user: AztecAddress;
+  userDebited: bigint;
+};
+
+export type SponsoredExecutionResult<TReceipt> = {
+  expectedCharge: bigint;
+  fjAmount: bigint;
+  quoteValidUntil: bigint;
+  receipt: TReceipt;
+  txFeeJuice: bigint;
+  txHash: string;
+  userDebited: bigint;
+};
+
+export type ExecuteSponsoredCallInput<TReceipt> = {
+  account: AztecAddress | string;
+  buildCall: (
+    ctx: SponsoredCallContext,
+  ) => Promise<SponsoredCallInteraction<TReceipt>>;
+  postChecks?: (ctx: SponsoredPostCheckContext<TReceipt>) => Promise<void>;
+  sponsorship: SponsorshipConfig;
+  wallet: AccountWallet;
 };

@@ -246,6 +246,8 @@ Failure modes:
 
 ### Step 4: Introduce generic sponsored execution API
 
+Status: [x] Completed on 2026-03-05.
+
 Files:
 - `sdk/src/client.ts`
 - `sdk/src/types.ts`

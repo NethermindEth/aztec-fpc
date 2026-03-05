@@ -89,8 +89,14 @@ export type AttachedContracts = {
   token: Contract;
 };
 
-function parseAddress(name: string, raw: AztecAddress | string): AztecAddress {
+function parseAddress(
+  name: string,
+  raw: AztecAddress | string | undefined,
+): AztecAddress {
   try {
+    if (!raw) {
+      throw new Error("missing address");
+    }
     const parsed =
       typeof raw === "string" ? AztecAddress.fromString(raw) : raw;
     if (parsed.isZero()) {
@@ -99,7 +105,7 @@ function parseAddress(name: string, raw: AztecAddress | string): AztecAddress {
     return parsed;
   } catch {
     throw new SponsoredTxFailedError(`Invalid ${name} address input.`, {
-      address: typeof raw === "string" ? raw : raw.toString(),
+      address: raw ? (typeof raw === "string" ? raw : raw.toString()) : raw,
       name,
     });
   }

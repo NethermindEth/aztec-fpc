@@ -16,6 +16,9 @@ vi.mock("../src/internal/contracts", () => ({
 }));
 vi.mock("../src/internal/quote", () => ({
   fetchAndValidateQuote: vi.fn(),
+  resolveAcceptedAssetsAndDiscovery: vi.fn(),
+  resolveDiscoveryFpcAddress: vi.fn(),
+  selectAcceptedAsset: vi.fn(),
 }));
 vi.mock("../src/internal/balance-bootstrap", () => ({
   ensurePrivateBalance: vi.fn(async () => 0n),
