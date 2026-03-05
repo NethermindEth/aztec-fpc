@@ -17,15 +17,16 @@ bun add @aztec-fpc/sdk
 
 ```ts
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { NoirCompiledContract } from "@aztec/aztec.js/abi";
 import type { Wallet } from "@aztec/aztec.js/wallet";
 import { executeSponsoredCall } from "@aztec-fpc/sdk";
 
 export async function runSponsoredCall(input: {
   account: string;
-  counterAddress: string;
-  counterArtifact: unknown;
-  tokenArtifact: unknown;
-  fpcArtifact: unknown;
+  targetAddress: string;
+  targetArtifact: NoirCompiledContract;
+  targetMethod: string;
+  targetArgs: unknown[];
   wallet: Wallet;
 }) {
   const account = AztecAddress.fromString(input.account);
@@ -40,12 +41,12 @@ export async function runSponsoredCall(input: {
         nodeUrl: "https://your-aztec-node",
         operatorAddress:
           "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
-        fpc: { artifact: input.fpcArtifact as never },
-        acceptedAsset: { artifact: input.tokenArtifact as never },
+        fpc: {},
+        acceptedAsset: {},
         targets: {
-          counter: {
-            address: input.counterAddress,
-            artifact: input.counterArtifact as never,
+          target: {
+            address: input.targetAddress,
+            artifact: input.targetArtifact as never,
           },
         },
       },
@@ -56,14 +57,18 @@ export async function runSponsoredCall(input: {
       },
     },
     buildCall: async (ctx) => {
-      const counter = ctx.contracts.targets.counter as {
+      const contract = ctx.contracts.targets.target as {
         methods: {
-          increment: (user: AztecAddress) => {
+          [name: string]: (...args: unknown[]) => {
             send: (args: unknown) => Promise<unknown>;
           };
         };
       };
-      return counter.methods.increment(ctx.user);
+      const method = contract.methods[input.targetMethod];
+      if (!method) {
+        throw new Error(`Unknown target method: ${input.targetMethod}`);
+      }
+      return method(...input.targetArgs);
     },
   });
 
@@ -84,6 +89,8 @@ type SponsoredExecutionResult<TReceipt> = {
   receipt: TReceipt;
 };
 ```
+
+`fpc.artifact` and `acceptedAsset.artifact` are optional. When omitted, the SDK auto-loads standard artifacts (`fpc-FPCMultiAsset.json` and `token_contract-Token.json`) from `target/` when available, with bundled SDK artifact fallback.
 
 ## Token Discovery Behavior
 
@@ -148,8 +155,8 @@ await executeSponsoredCall({
   account,
   sponsorship: { attestationBaseUrl, runtimeConfig },
   buildCall: async (ctx) => {
-    const target = ctx.contracts.targets.counter as any;
-    return target.methods.increment(ctx.user);
+    const target = ctx.contracts.targets.target as any;
+    return target.methods.someEntrypoint(...args);
   },
 });
 ```
