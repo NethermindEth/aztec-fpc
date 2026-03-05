@@ -307,10 +307,15 @@ function modeNeedsTrustedHeader(mode: QuoteAuthMode): boolean {
   );
 }
 
-function resolveQuoteAuthConfig(
-  config: ParsedConfig,
-  runtimeProfile: RuntimeProfile,
-): QuoteAuthConfig {
+interface QuoteAuthInputs {
+  mode: QuoteAuthMode;
+  apiKey?: string;
+  apiKeyHeader: string;
+  trustedHeaderName?: string;
+  trustedHeaderValue?: string;
+}
+
+function resolveQuoteAuthInputs(config: ParsedConfig): QuoteAuthInputs {
   const mode = parseQuoteAuthMode(config.quote_auth_mode, process.env.QUOTE_AUTH_MODE);
   const apiKey = normalizeOptional(process.env.QUOTE_AUTH_API_KEY ?? config.quote_auth_api_key);
   const apiKeyHeader = normalizeHeaderName(
@@ -327,42 +332,77 @@ function resolveQuoteAuthConfig(
     ? normalizeHeaderName(trustedHeaderNameRaw, "quote auth trusted upstream")
     : undefined;
 
-  if (runtimeProfile === "production" && mode === "disabled") {
-    throw new Error(
-      "Insecure quote auth configuration: quote_auth_mode must not be disabled when runtime_profile=production",
-    );
+  return {
+    mode,
+    apiKey,
+    apiKeyHeader,
+    trustedHeaderName,
+    trustedHeaderValue,
+  };
+}
+
+function validateQuoteAuthMode(mode: QuoteAuthMode, runtimeProfile: RuntimeProfile): void {
+  if (runtimeProfile !== "production" || mode !== "disabled") {
+    return;
   }
+  throw new Error(
+    "Insecure quote auth configuration: quote_auth_mode must not be disabled when runtime_profile=production",
+  );
+}
 
+function validateQuoteAuthApiKey(mode: QuoteAuthMode, apiKey: string | undefined): void {
   const requiresApiKey = modeNeedsApiKey(mode);
-  const requiresTrustedHeader = modeNeedsTrustedHeader(mode);
-
-  if (requiresApiKey && !apiKey) {
+  if (requiresApiKey === Boolean(apiKey)) {
+    return;
+  }
+  if (requiresApiKey) {
     throw new Error(
       `Missing quote auth API key: set quote_auth_api_key (or QUOTE_AUTH_API_KEY) when quote_auth_mode=${mode}`,
     );
   }
-  if (!requiresApiKey && apiKey) {
-    throw new Error(
-      `Unexpected quote auth API key: quote_auth_mode=${mode} does not use API key auth`,
-    );
-  }
+  throw new Error(
+    `Unexpected quote auth API key: quote_auth_mode=${mode} does not use API key auth`,
+  );
+}
 
-  if (requiresTrustedHeader) {
-    if (!trustedHeaderName || !trustedHeaderValue) {
-      throw new Error(
-        `Missing trusted upstream auth header config: set quote_auth_trusted_header_name and quote_auth_trusted_header_value (or env overrides) when quote_auth_mode=${mode}`,
-      );
+function validateQuoteAuthTrustedHeader(
+  mode: QuoteAuthMode,
+  trustedHeaderName: string | undefined,
+  trustedHeaderValue: string | undefined,
+  apiKeyHeader: string,
+): void {
+  const requiresTrustedHeader = modeNeedsTrustedHeader(mode);
+  if (!requiresTrustedHeader) {
+    if (!trustedHeaderName && !trustedHeaderValue) {
+      return;
     }
-    if (mode === "api_key_and_trusted_header" && trustedHeaderName === apiKeyHeader) {
-      throw new Error(
-        "Invalid quote auth header config: quote_auth_api_key_header and quote_auth_trusted_header_name must differ when quote_auth_mode=api_key_and_trusted_header",
-      );
-    }
-  } else if (trustedHeaderName || trustedHeaderValue) {
     throw new Error(
       `Unexpected trusted upstream auth config: quote_auth_mode=${mode} does not use trusted header auth`,
     );
   }
+
+  if (!trustedHeaderName || !trustedHeaderValue) {
+    throw new Error(
+      `Missing trusted upstream auth header config: set quote_auth_trusted_header_name and quote_auth_trusted_header_value (or env overrides) when quote_auth_mode=${mode}`,
+    );
+  }
+  if (mode === "api_key_and_trusted_header" && trustedHeaderName === apiKeyHeader) {
+    throw new Error(
+      "Invalid quote auth header config: quote_auth_api_key_header and quote_auth_trusted_header_name must differ when quote_auth_mode=api_key_and_trusted_header",
+    );
+  }
+}
+
+function resolveQuoteAuthConfig(
+  config: ParsedConfig,
+  runtimeProfile: RuntimeProfile,
+): QuoteAuthConfig {
+  const { mode, apiKey, apiKeyHeader, trustedHeaderName, trustedHeaderValue } =
+    resolveQuoteAuthInputs(config);
+
+  validateQuoteAuthMode(mode, runtimeProfile);
+  validateQuoteAuthApiKey(mode, apiKey);
+  validateQuoteAuthTrustedHeader(mode, trustedHeaderName, trustedHeaderValue, apiKeyHeader);
 
   return {
     mode,
