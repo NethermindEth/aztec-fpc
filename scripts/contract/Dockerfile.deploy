@@ -47,6 +47,7 @@ WORKDIR /app
 
 # ── JS dependencies (reused from deps stage via bake context) ──
 COPY package.json bun.lock ./
+COPY sdk/package.json sdk/
 COPY scripts/package.json scripts/
 COPY services/attestation/package.json services/attestation/
 COPY services/topup/package.json services/topup/

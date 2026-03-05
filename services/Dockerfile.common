@@ -15,6 +15,7 @@ WORKDIR /app
 # Bun workspace resolution requires every member's package.json present
 # before `bun install` will accept the lockfile.
 COPY package.json bun.lock ./
+COPY sdk/package.json sdk/
 COPY scripts/package.json scripts/
 COPY services/attestation/package.json services/attestation/
 COPY services/topup/package.json services/topup/
@@ -62,6 +63,7 @@ COPY --from=build         --chown=app:app /app/services/${SERVICE}/dist services
 
 # Workspace package manifests (needed for Bun module resolution at runtime)
 COPY --chown=app:app package.json ./
+COPY --chown=app:app sdk/package.json sdk/
 COPY --chown=app:app services/${SERVICE}/package.json services/${SERVICE}/
 
 # Reference config — real config must be bind-mounted at runtime
