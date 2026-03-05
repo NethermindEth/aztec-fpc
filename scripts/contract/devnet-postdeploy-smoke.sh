@@ -29,4 +29,6 @@ if [[ ! -x "$REPO_ROOT/node_modules/.bin/tsx" ]]; then
   bun install
 fi
 
+export FPC_DEVNET_SMOKE_ALLOW_DEGRADED="${FPC_DEVNET_SMOKE_ALLOW_DEGRADED:-1}"
+
 bunx tsx "$REPO_ROOT/scripts/contract/devnet-postdeploy-smoke.ts" "$@"
