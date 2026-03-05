@@ -63,18 +63,6 @@ services:
       aztec-node:
         condition: service_healthy
 
-  config-sync:
-    image: nethermind/aztec-fpc-contract-deployment:local
-    entrypoint: ["bash", "/app/scripts/config/generate-service-configs.sh"]
-    volumes:
-      - ./deployments:/app/data
-      - ./scripts:/app/scripts:ro
-    environment:
-      FPC_DATA_DIR: "/app/data"
-    depends_on:
-      deploy:
-        condition: service_completed_successfully
-
   fund-l1-fee-juice:
     image: ghcr.io/foundry-rs/foundry:v1.4.1
     volumes:
@@ -90,7 +78,7 @@ services:
     depends_on:
       anvil:
         condition: service_healthy
-      config-sync:
+      deploy:
         condition: service_completed_successfully
 
   attestation:
@@ -104,7 +92,7 @@ services:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
     depends_on:
-      config-sync:
+      deploy:
         condition: service_completed_successfully
 
   topup:
