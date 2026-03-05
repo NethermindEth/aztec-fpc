@@ -18,9 +18,9 @@ describe("confirm", () => {
         balanceReader: {
           feeJuiceAddress: AztecAddress.zero(),
           addressSource: "node_info",
-          getBalance: async () => {
+          getBalance: () => {
             reads += 1;
-            return reads < 2 ? 10n : 11n;
+            return Promise.resolve(reads < 2 ? 10n : 11n);
           },
         },
         fpcAddress: FPC,
@@ -59,9 +59,9 @@ describe("confirm", () => {
         balanceReader: {
           feeJuiceAddress: AztecAddress.zero(),
           addressSource: "node_info",
-          getBalance: async () => {
+          getBalance: () => {
             reads += 1;
-            return reads < 3 ? 10n : 12n;
+            return Promise.resolve(reads < 3 ? 10n : 12n);
           },
         },
         fpcAddress: FPC,
@@ -76,9 +76,7 @@ describe("confirm", () => {
         },
       },
       {
-        waitForL1ToL2MessageReady: async () => {
-          throw new Error("pxe unavailable");
-        },
+        waitForL1ToL2MessageReady: () => Promise.reject(new Error("pxe unavailable")),
       },
     );
 
@@ -133,9 +131,7 @@ describe("confirm", () => {
           balanceReader: {
             feeJuiceAddress: AztecAddress.zero(),
             addressSource: "node_info",
-            getBalance: async () => {
-              throw new Error("temporary balance rpc failure");
-            },
+            getBalance: () => Promise.reject(new Error("temporary balance rpc failure")),
           },
           fpcAddress: FPC,
           baselineBalance: 10n,
@@ -178,9 +174,10 @@ describe("confirm", () => {
           messageHash: MESSAGE_HASH,
           forPublicConsumption: false,
         },
-        onMessageReady: async () => {
+        onMessageReady: () => {
           actionRuns += 1;
           actionCompleted = true;
+          return Promise.resolve();
         },
       },
       {

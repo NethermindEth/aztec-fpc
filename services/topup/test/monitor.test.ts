@@ -54,9 +54,7 @@ describe("monitor", () => {
     const nodeFeeJuice = AztecAddress.fromString(TEST_FEE_JUICE_ADDRESS);
     const node = {
       getNodeInfo: async () => makeNodeInfo(nodeFeeJuice),
-      getPublicStorageAt: async () => {
-        throw new Error("rpc unavailable");
-      },
+      getPublicStorageAt: () => Promise.reject(new Error("rpc unavailable")),
     } as unknown as AztecNode;
     const owner = AztecAddress.fromString(TEST_AZTEC_ADDRESS);
 

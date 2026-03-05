@@ -44,25 +44,7 @@
   },
   "overrides": [
     {
-      "includes": ["services/**"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noConsole": "warn"
-          },
-          "complexity": {
-            "noExcessiveCognitiveComplexity": {
-              "level": "warn",
-              "options": {
-                "maxAllowedComplexity": 10
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "includes": ["sdk/**"],
+      "includes": ["services/**", "sdk/**"],
       "linter": {
         "rules": {
           "correctness": {

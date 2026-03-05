@@ -175,7 +175,7 @@ async function readPersistedBridgeSubmission(
 export function createBridgeStateStore(filePath: string): BridgeStateStore {
   return {
     filePath,
-    async read(): Promise<PersistedBridgeSubmission | null> {
+    read(): Promise<PersistedBridgeSubmission | null> {
       return readPersistedBridgeSubmission(filePath);
     },
     async write(

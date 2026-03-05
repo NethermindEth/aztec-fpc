@@ -15,11 +15,10 @@ function makeStore(
     filePath: "/tmp/state.json",
     clearCalls: 0,
     read: async () => value,
-    write: async () => {
-      throw new Error("not used");
-    },
-    clear: async function clear() {
+    write: () => Promise.reject(new Error("not used")),
+    clear: function clear() {
       this.clearCalls += 1;
+      return Promise.resolve();
     },
   };
 }
@@ -42,9 +41,7 @@ describe("reconcile", () => {
         maxPollMs: 1,
       },
       {
-        confirmBridge: async () => {
-          throw new Error("not used");
-        },
+        confirmBridge: () => Promise.reject(new Error("not used")),
       },
     );
     assert.equal(result, "none");

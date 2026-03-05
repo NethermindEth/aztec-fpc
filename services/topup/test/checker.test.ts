@@ -14,20 +14,20 @@ describe("checker", () => {
       { threshold: 5n, topUpAmount: 2n },
       {
         getBalance: async () => 5n,
-        bridge: async () => {
+        bridge: () => {
           bridgeCalls += 1;
-          return {
+          return Promise.resolve({
             amount: 2n,
             claimSecret: SECRET,
             claimSecretHash: SECRET_HASH,
             messageHash: HASH,
             messageLeafIndex: 1n,
             submittedAtMs: 1,
-          };
+          });
         },
-        confirm: async (_baselineBalance, _bridgeResult) => {
+        confirm: (_baselineBalance, _bridgeResult) => {
           confirmCalls += 1;
-          return {
+          return Promise.resolve({
             status: "confirmed",
             baselineBalance: 0n,
             maxObservedBalance: 5n,
@@ -39,7 +39,7 @@ describe("checker", () => {
             messageCheckAttempted: true,
             messageReady: true,
             messageCheckFailed: false,
-          };
+          });
         },
       },
     );
@@ -79,14 +79,14 @@ describe("checker", () => {
       { threshold: 5n, topUpAmount: 2n },
       {
         getBalance: async () => 1n,
-        bridge: async () => {
+        bridge: () => {
           bridgeCalls += 1;
           return bridgePromise;
         },
-        confirm: async (baselineBalance, _bridgeResult) => {
+        confirm: (baselineBalance, _bridgeResult) => {
           confirmCalls += 1;
           confirmBaseline = baselineBalance;
-          return {
+          return Promise.resolve({
             status: "timeout",
             baselineBalance,
             maxObservedBalance: 1n,
@@ -98,7 +98,7 @@ describe("checker", () => {
             messageCheckAttempted: true,
             messageReady: false,
             messageCheckFailed: false,
-          };
+          });
         },
       },
     );
@@ -131,20 +131,20 @@ describe("checker", () => {
     const checker = createTopupChecker(
       { threshold: 5n, topUpAmount: 2n },
       {
-        getBalance: async () => {
+        getBalance: () => {
           getBalanceCalls += 1;
-          return 1n;
+          return Promise.resolve(1n);
         },
-        bridge: async () => {
+        bridge: () => {
           bridgeCalls += 1;
-          return {
+          return Promise.resolve({
             amount: 2n,
             claimSecret: SECRET,
             claimSecretHash: SECRET_HASH,
             messageHash: HASH,
             messageLeafIndex: 1n,
             submittedAtMs: 1,
-          };
+          });
         },
         confirm: async () => ({
           status: "confirmed",
@@ -218,9 +218,7 @@ describe("checker", () => {
       { threshold: 5n, topUpAmount: 2n },
       {
         getBalance: async () => 1n,
-        bridge: async () => {
-          throw new Error("bridge rpc unavailable");
-        },
+        bridge: () => Promise.reject(new Error("bridge rpc unavailable")),
         confirm: async () => ({
           status: "confirmed",
           baselineBalance: 1n,

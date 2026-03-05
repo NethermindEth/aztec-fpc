@@ -33,13 +33,14 @@ function makeDeps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
       }) as never) as typeof privateKeyToAccount,
     createPortalManager: async () =>
       ({
-        bridgeTokensPublic: async (_to: AztecAddress, amount: bigint) => ({
-          claimAmount: amount,
-          claimSecret: new Fr(1n),
-          claimSecretHash: new Fr(2n),
-          messageHash: MESSAGE_HASH,
-          messageLeafIndex: 7n,
-        }),
+        bridgeTokensPublic: (_to: AztecAddress, amount: bigint) =>
+          Promise.resolve({
+            claimAmount: amount,
+            claimSecret: new Fr(1n),
+            claimSecretHash: new Fr(2n),
+            messageHash: MESSAGE_HASH,
+            messageLeafIndex: 7n,
+          }),
       }) as never,
     createLogger: () => createLogger("topup:test"),
     knownChains: [
@@ -72,16 +73,16 @@ describe("bridge", () => {
       }) as never,
       createPortalManager: async () =>
         ({
-          bridgeTokensPublic: async (to: AztecAddress, amount: bigint) => {
+          bridgeTokensPublic: (to: AztecAddress, amount: bigint) => {
             capturedTo = to;
             capturedAmount = amount;
-            return {
+            return Promise.resolve({
               claimAmount: amount,
               claimSecret: new Fr(1n),
               claimSecretHash: new Fr(2n),
               messageHash: MESSAGE_HASH,
               messageLeafIndex: 7n,
-            };
+            });
           },
         }) as never,
     });
@@ -135,18 +136,18 @@ describe("bridge", () => {
     const deps = makeDeps({
       createPortalManager: async () =>
         ({
-          bridgeTokensPublic: async (_to: AztecAddress, amount: bigint) => {
+          bridgeTokensPublic: (_to: AztecAddress, amount: bigint) => {
             attempts += 1;
             if (attempts === 1) {
-              throw new Error("nonce too low");
+              return Promise.reject(new Error("nonce too low"));
             }
-            return {
+            return Promise.resolve({
               claimAmount: amount,
               claimSecret: new Fr(11n),
               claimSecretHash: new Fr(22n),
               messageHash: MESSAGE_HASH,
               messageLeafIndex: 99n,
-            };
+            });
           },
         }) as never,
     });
@@ -171,9 +172,9 @@ describe("bridge", () => {
     const deps = makeDeps({
       createPortalManager: async () =>
         ({
-          bridgeTokensPublic: async () => {
+          bridgeTokensPublic: () => {
             attempts += 1;
-            throw new Error("nonce too low");
+            return Promise.reject(new Error("nonce too low"));
           },
         }) as never,
     });

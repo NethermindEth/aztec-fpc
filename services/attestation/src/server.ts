@@ -399,7 +399,7 @@ function consumeQuoteRateLimit(
   };
 }
 
-async function signQuoteForRequest(
+function signQuoteForRequest(
   config: Config,
   quoteSigner: QuoteSchnorrSigner,
   params: {
@@ -510,7 +510,7 @@ export function buildServer(
 
   app.get("/health", async () => ({ status: "ok" }));
 
-  app.get("/metrics", async (_req, reply) => {
+  app.get("/metrics", (_req, reply) => {
     return reply
       .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
       .send(metrics.renderPrometheus());
