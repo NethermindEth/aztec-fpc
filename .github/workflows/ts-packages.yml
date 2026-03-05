@@ -7,6 +7,7 @@ on:
     tags:
       - "**"
     paths:
+      - "sdk/**"
       - "services/**"
       - "scripts/**"
       - "package.json"
@@ -37,6 +38,7 @@ jobs:
         with:
           filters: |
             relevant:
+              - "sdk/**"
               - "services/**"
               - "scripts/**"
               - "package.json"

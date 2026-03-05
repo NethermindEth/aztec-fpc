@@ -15,10 +15,10 @@
       "services/*/package.json",
       "scripts/**/*.ts",
       "scripts/*/package.json",
-      "fpc-sdk/src/**/*.ts",
-      "fpc-sdk/test/**/*.ts",
-      "fpc-sdk/package.json",
-      "fpc-sdk/tsconfig.json"
+      "sdk/src/**/*.ts",
+      "sdk/test/**/*.ts",
+      "sdk/package.json",
+      "sdk/tsconfig.json"
     ]
   },
   "formatter": {

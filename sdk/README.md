@@ -1,11 +1,11 @@
-# `@aztec-fpc/sponsored-counter-sdk`
+# `@aztec-fpc/sdk`
 
 Minimal SDK for FPC-sponsored `Counter.increment(user)` on Aztec devnet.
 
 ## Install
 
 ```bash
-bun add @aztec-fpc/sponsored-counter-sdk
+bun add @aztec-fpc/sdk
 ```
 
 ## Minimal Usage
@@ -13,7 +13,7 @@ bun add @aztec-fpc/sponsored-counter-sdk
 ```ts
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Wallet } from "@aztec/aztec.js/wallet";
-import { createSponsoredCounterClient } from "@aztec-fpc/sponsored-counter-sdk";
+import { createSponsoredCounterClient } from "@aztec-fpc/sdk";
 
 export async function runSponsoredIncrement(input: {
   account: string;
@@ -64,3 +64,19 @@ Suggested UI handling:
 - Runtime values are fixed (node URL, attestation URL, contract addresses, gas limits).
 - Only sponsored `Counter.increment(user)` is supported.
 - No local-network mode.
+
+## Release (No Git Tags)
+
+This package is released independently from the repo root package.
+
+1. Bump only `sdk` version:
+
+```bash
+bun run release:sdk:version:patch
+# or: bun run release:sdk:version:minor
+# or: bun run release:sdk:version:major
+```
+
+2. Update `sdk/CHANGELOG.md` and commit.
+3. Push to `main`.
+4. GitHub Actions `publish-sdk.yml` publishes only when `sdk/package.json` has a version not yet on npm.

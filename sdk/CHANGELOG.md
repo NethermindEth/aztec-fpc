@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial `@aztec-fpc/sponsored-counter-sdk` package scaffolding with Bun/TypeScript build and test setup.
+- Initial `@aztec-fpc/sdk` package scaffolding with Bun/TypeScript build and test setup.
 - Public v1 API surface:
   - `createSponsoredCounterClient({ wallet, account })`
   - `client.increment()`
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Package `LICENSE` for publish readiness.
 
 ### Changed
-- Root workspace quality gates now include `fpc-sdk` formatting, linting, typecheck, and tests.
+- Root workspace quality gates now include `sdk` formatting, linting, typecheck, and tests.
 
 ### Fixed
 - Artifact resolution now verifies required artifact files and falls back to the package `artifacts` directory when a repository-level `artifacts/` directory exists but does not contain SDK artifacts.

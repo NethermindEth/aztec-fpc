@@ -17,14 +17,18 @@
     "ci": "bun run format && bun run biome:ci && bun run lint && bun run typecheck && bun run test:ts && bun run test:contracts",
     "biome:check": "biome check --write",
     "biome:ci": "biome ci",
-    "format": "biome format --write package.json tsconfig.base.json services scripts fpc-sdk",
-    "lint": "biome lint package.json tsconfig.base.json services scripts fpc-sdk",
+    "format": "biome format --write package.json tsconfig.base.json services scripts sdk",
+    "lint": "biome lint package.json tsconfig.base.json services scripts sdk",
     "check:docs:quote-schema": "bash scripts/check-docs-quote-schema.sh",
+    "release:sdk:version:patch": "bash -lc 'cd sdk && npm version patch --no-git-tag-version'",
+    "release:sdk:version:minor": "bash -lc 'cd sdk && npm version minor --no-git-tag-version'",
+    "release:sdk:version:major": "bash -lc 'cd sdk && npm version major --no-git-tag-version'",
+    "release:sdk:publish:dry-run": "npm publish --workspace @aztec-fpc/sdk --dry-run --access public",
     "build": "bun run --workspaces --if-present build",
     "typecheck": "bun run --workspaces --if-present typecheck",
 
     "test": "bun run test:contracts && bun run test:ts",
-    "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test && bun run --filter @aztec-fpc/sponsored-counter-sdk --if-present test",
+    "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test && bun run --filter @aztec-fpc/sdk --if-present test",
     "test:services": "bun run test:ts",
     "test:contracts": "aztec compile --workspace --force && aztec test --package fpc",
 
@@ -77,6 +81,6 @@
   "workspaces": [
     "scripts",
     "services/*",
-    "fpc-sdk"
+    "sdk"
   ]
 }

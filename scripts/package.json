@@ -5,7 +5,7 @@
   "type": "module",
   "dependencies": {
     "@aztec/accounts": "4.0.0-devnet.2-patch.3",
-    "@aztec-fpc/sponsored-counter-sdk": "workspace:*",
+    "@aztec-fpc/sdk": "workspace:*",
     "@aztec/aztec.js": "4.0.0-devnet.2-patch.3",
     "@aztec/foundation": "4.0.0-devnet.2-patch.3",
     "@aztec/stdlib": "4.0.0-devnet.2-patch.3",

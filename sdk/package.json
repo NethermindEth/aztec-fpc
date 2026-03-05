@@ -1,5 +1,5 @@
 {
-  "name": "@aztec-fpc/sponsored-counter-sdk",
+  "name": "@aztec-fpc/sdk",
   "version": "0.1.0",
   "description": "Minimal SDK for FPC-sponsored Counter.increment on Aztec devnet",
   "packageManager": "bun@1.3.9",

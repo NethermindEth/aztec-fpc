@@ -6,7 +6,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { createSponsoredCounterClient } from "@aztec-fpc/sponsored-counter-sdk";
+import { createSponsoredCounterClient } from "@aztec-fpc/sdk";
 
 const DEFAULT_NODE_URL = "https://v4-devnet-2.aztec-labs.com/";
 const ZERO_SALT_HEX =
