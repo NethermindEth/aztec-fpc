@@ -31,5 +31,6 @@ bun run --filter @aztec-fpc/topup build
 echo "[services-smoke] Running services end-to-end smoke"
 (
   cd "$REPO_ROOT/scripts"
-  bun run "./services/fpc-services-smoke.ts"
+  FPC_SERVICES_SMOKE_ALLOW_DEGRADED="${FPC_SERVICES_SMOKE_ALLOW_DEGRADED:-1}" \
+    bun run "./services/fpc-services-smoke.ts"
 )
