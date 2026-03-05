@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generic execution API: `executeSponsoredCall({ wallet, account, sponsorship, buildCall, postChecks })`.
 - Generic execution result metadata (`txHash`, `txFeeJuice`, `expectedCharge`, `userDebited`, `quoteValidUntil`) for non-counter call flows.
 - Legacy `createSponsoredCounterClient` now delegates to `executeSponsoredCall` while preserving the existing increment result fields (`counterBefore`, `counterAfter`, `expectedCharge`, `userDebited`, etc.).
+- SDK README now documents generic sponsorship API usage, token discovery/selection fallback order, and migration from `createSponsoredCounterClient`.
 - Balance bootstrap flow with faucet and shield retries.
 - Sponsored fee-payment construction (`authwit`, `fee_entrypoint`, payment method payload).
 - Post-transaction invariant checks and typed `SponsoredIncrementResult`.

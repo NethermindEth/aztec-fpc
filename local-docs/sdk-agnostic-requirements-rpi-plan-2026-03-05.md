@@ -301,6 +301,8 @@ Failure modes:
 
 ### Step 6: Docs and migration notes
 
+Status: [x] Completed on 2026-03-05.
+
 Files:
 - `sdk/README.md`
 - `services/attestation/README.md`

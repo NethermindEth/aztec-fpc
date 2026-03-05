@@ -80,6 +80,7 @@ Response:
   "endpoints": {
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
+    "accepted_assets": "/accepted-assets",
     "asset": "/asset",
     "quote": "/quote"
   },
@@ -107,7 +108,21 @@ Includes:
 - `attestation_quote_errors_total{error_type=...}`
 - `attestation_quote_latency_seconds_*{outcome=...}`
 
-### `GET /asset`
+### `GET /accepted-assets`
+
+Returns the supported accepted-assets list (address + name).
+This is the primary token-discovery endpoint for SDK clients.
+
+Response:
+
+```json
+[
+  { "name": "humanUSDC", "address": "0x..." },
+  { "name": "ravenETH", "address": "0x..." }
+]
+```
+
+### `GET /asset` (legacy compatibility)
 
 Returns configured accepted asset metadata.
 

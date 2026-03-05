@@ -1,6 +1,6 @@
 # `@aztec-fpc/sdk`
 
-Minimal SDK for FPC-sponsored `Counter.increment(user)` on Aztec devnet.
+SDK for sponsored Aztec calls through an FPC attestation service.
 
 ## Install
 
@@ -8,29 +8,116 @@ Minimal SDK for FPC-sponsored `Counter.increment(user)` on Aztec devnet.
 bun add @aztec-fpc/sdk
 ```
 
-## Minimal Usage
+## APIs
+
+- Generic API: `executeSponsoredCall(...)`
+- Legacy convenience API: `createSponsoredCounterClient(...).increment()`
+
+## Generic API
 
 ```ts
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Wallet } from "@aztec/aztec.js/wallet";
-import { createSponsoredCounterClient } from "@aztec-fpc/sdk";
+import { executeSponsoredCall } from "@aztec-fpc/sdk";
 
-export async function runSponsoredIncrement(input: {
+export async function runSponsoredCall(input: {
   account: string;
+  counterAddress: string;
+  counterArtifact: unknown;
+  tokenArtifact: unknown;
+  fpcArtifact: unknown;
   wallet: Wallet;
 }) {
-  const client = await createSponsoredCounterClient({
+  const account = AztecAddress.fromString(input.account);
+
+  const out = await executeSponsoredCall({
     wallet: input.wallet,
-    account: AztecAddress.fromString(input.account),
+    account,
+    sponsorship: {
+      attestationBaseUrl: "https://attestation.example/v2",
+      resolveFpcFromDiscovery: true,
+      runtimeConfig: {
+        nodeUrl: "https://your-aztec-node",
+        operatorAddress:
+          "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
+        fpc: { artifact: input.fpcArtifact as never },
+        acceptedAsset: { artifact: input.tokenArtifact as never },
+        targets: {
+          counter: {
+            address: input.counterAddress,
+            artifact: input.counterArtifact as never,
+          },
+        },
+      },
+      tokenSelection: {
+        // optional:
+        // explicitAcceptedAsset: "0x...",
+        // selector: (assets) => assets.find((asset) => asset.name === "humanUSDC")?.address,
+      },
+    },
+    buildCall: async (ctx) => {
+      const counter = ctx.contracts.targets.counter as {
+        methods: {
+          increment: (user: AztecAddress) => {
+            send: (args: unknown) => Promise<unknown>;
+          };
+        };
+      };
+      return counter.methods.increment(ctx.user);
+    },
   });
 
-  return client.increment();
+  return out;
 }
 ```
 
-## Returned Result
+`executeSponsoredCall` returns:
 
-`client.increment()` resolves to:
+```ts
+type SponsoredExecutionResult<TReceipt> = {
+  txHash: string;
+  txFeeJuice: bigint;
+  expectedCharge: bigint;
+  userDebited: bigint;
+  fjAmount: bigint;
+  quoteValidUntil: bigint;
+  receipt: TReceipt;
+};
+```
+
+## Token Discovery Behavior
+
+Accepted-asset discovery fallback order is:
+
+1. `GET /accepted-assets` (from discovery `endpoints.accepted_assets` when present)
+2. `supported_assets` from `GET /.well-known/fpc.json`
+3. legacy `GET /asset`
+
+Selection options:
+
+- explicit address: `tokenSelection.explicitAcceptedAsset`
+- strategy callback: `tokenSelection.selector`
+- default fallback: first supported asset
+
+## FPC Address Resolution
+
+`executeSponsoredCall` resolves FPC address in this order:
+
+1. `runtimeConfig.fpc.address` when provided
+2. discovery `fpc_address` when `resolveFpcFromDiscovery: true`
+
+If both are provided and mismatched, execution fails with a typed error.
+
+## Legacy Counter API
+
+```ts
+import { createSponsoredCounterClient } from "@aztec-fpc/sdk";
+
+const client = await createSponsoredCounterClient({ wallet, account });
+const result = await client.increment();
+```
+
+`createSponsoredCounterClient` is now a wrapper over `executeSponsoredCall`, preserving:
 
 ```ts
 type SponsoredIncrementResult = {
@@ -44,30 +131,40 @@ type SponsoredIncrementResult = {
 };
 ```
 
+## Migration Example
+
+Before:
+
+```ts
+const client = await createSponsoredCounterClient({ wallet, account });
+await client.increment();
+```
+
+After:
+
+```ts
+await executeSponsoredCall({
+  wallet,
+  account,
+  sponsorship: { attestationBaseUrl, runtimeConfig },
+  buildCall: async (ctx) => {
+    const target = ctx.contracts.targets.counter as any;
+    return target.methods.increment(ctx.user);
+  },
+});
+```
+
 ## Error Codes
 
-Errors are typed and include stable `code` and optional `details` fields.
+Errors are typed and include stable `code` and optional `details`.
 
-- `PUBLISHED_ACCOUNT_REQUIRED`: user account is not published on node.
-- `INSUFFICIENT_FPC_FEE_JUICE`: FPC lacks FeeJuice for required gas amount.
-- `QUOTE_VALIDATION_FAILED`: attestation quote is invalid or mismatched.
-- `BALANCE_BOOTSTRAP_FAILED`: user private balance could not be prepared.
-- `SPONSORED_TX_FAILED`: sponsorship flow or tx send/invariants failed.
-
-Suggested UI handling:
-- show `error.code` for deterministic branching
-- show `error.message` to users
-- log `error.details` for diagnostics
-
-## v1 Limitations
-
-- Runtime values are fixed (node URL, attestation URL, contract addresses, gas limits).
-- Only sponsored `Counter.increment(user)` is supported.
-- No local-network mode.
+- `PUBLISHED_ACCOUNT_REQUIRED`
+- `INSUFFICIENT_FPC_FEE_JUICE`
+- `QUOTE_VALIDATION_FAILED`
+- `BALANCE_BOOTSTRAP_FAILED`
+- `SPONSORED_TX_FAILED`
 
 ## Release (No Git Tags)
-
-This package is released independently from the repo root package.
 
 1. Bump only `sdk` version:
 
