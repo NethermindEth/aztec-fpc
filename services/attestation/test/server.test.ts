@@ -140,6 +140,7 @@ describe("server", () => {
         endpoints: {
           discovery: "/.well-known/fpc.json",
           health: "/health",
+          accepted_assets: "/accepted-assets",
           asset: "/asset",
           quote: "/quote",
         },
@@ -182,8 +183,10 @@ describe("server", () => {
       });
       assert.equal(response.statusCode, 200);
       const body = response.json() as {
+        endpoints: { accepted_assets: string };
         supported_assets: Array<{ address: string; name: string }>;
       };
+      assert.equal(body.endpoints.accepted_assets, "/accepted-assets");
       assert.deepEqual(body.supported_assets, [
         {
           address:
@@ -195,6 +198,39 @@ describe("server", () => {
             "0x0000000000000000000000000000000000000000000000000000000000000003",
           name: "ravenETH",
         },
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns accepted-assets list", async () => {
+    const app = buildServer(
+      {
+        ...TEST_CONFIG,
+        supported_assets: [
+          {
+            address: DEFAULT_ACCEPTED_ASSET,
+            name: "humanUSDC",
+          },
+          {
+            address: SECONDARY_ACCEPTED_ASSET,
+            name: "ravenETH",
+          },
+        ],
+      },
+      mockSigner(),
+    );
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/accepted-assets",
+      });
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json(), [
+        { address: DEFAULT_ACCEPTED_ASSET, name: "humanUSDC" },
+        { address: SECONDARY_ACCEPTED_ASSET, name: "ravenETH" },
       ]);
     } finally {
       await app.close();

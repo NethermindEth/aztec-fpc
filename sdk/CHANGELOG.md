@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Root workspace quality gates now include `sdk` formatting, linting, typecheck, and tests.
+- RPI Step 1: attestation discovery contract now includes `endpoints.accepted_assets`, and attestation exposes `GET /accepted-assets` (SDK integration prerequisite while preserving legacy `/asset`).
 
 ### Fixed
 - Artifact resolution now verifies required artifact files and falls back to the package `artifacts` directory when a repository-level `artifacts/` directory exists but does not contain SDK artifacts.

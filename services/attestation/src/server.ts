@@ -301,6 +301,7 @@ export function buildServer(
     endpoints: {
       discovery: "/.well-known/fpc.json",
       health: "/health",
+      accepted_assets: "/accepted-assets",
       asset: "/asset",
       quote: "/quote",
     },
@@ -319,6 +320,8 @@ export function buildServer(
     name: config.accepted_asset_name,
     address: config.accepted_asset_address,
   }));
+
+  app.get("/accepted-assets", async () => supportedAssets);
 
   app.get<{
     Querystring: { user?: string; accepted_asset?: string; fj_amount?: string };
