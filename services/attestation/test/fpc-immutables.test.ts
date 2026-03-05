@@ -29,25 +29,23 @@ function mockNodeWithInitializationHash(
   initializationHash: Fr | undefined,
 ): Pick<AztecNode, "getContract"> {
   return {
-    getContract: async () => {
+    getContract: () => {
       if (!initializationHash) {
-        return undefined;
+        return Promise.resolve(undefined);
       }
 
-      return {
+      return Promise.resolve({
         initializationHash,
         currentContractClassId: Fr.fromString("0x02"),
         originalContractClassId: Fr.fromString("0x02"),
-      } as Awaited<ReturnType<AztecNode["getContract"]>>;
+      } as Awaited<ReturnType<AztecNode["getContract"]>>);
     },
   };
 }
 
 function mockNodeGetContractThrows(message: string): Pick<AztecNode, "getContract"> {
   return {
-    getContract: async () => {
-      throw new Error(message);
-    },
+    getContract: () => Promise.reject(new Error(message)),
   };
 }
 

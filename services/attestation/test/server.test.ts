@@ -66,15 +66,13 @@ const TEST_CONFIG: Config = {
   pxe_data_directory: undefined,
 };
 
-function mockSigner(returnValue: string = "0xabc123"): QuoteSchnorrSigner {
-  return { signQuoteHash: async () => returnValue };
+function mockSigner(returnValue = "0xabc123"): QuoteSchnorrSigner {
+  return { signQuoteHash: () => Promise.resolve(returnValue) };
 }
 
 function failingSigner(): QuoteSchnorrSigner {
   return {
-    signQuoteHash: async () => {
-      throw new Error("signing backend unavailable");
-    },
+    signQuoteHash: () => Promise.reject(new Error("signing backend unavailable")),
   };
 }
 
@@ -281,9 +279,9 @@ describe("server", () => {
   it("returns quote payload with required fields on happy path", async () => {
     let calledQuoteHashHex: string | undefined;
     const signer: QuoteSchnorrSigner = {
-      signQuoteHash: async (quoteHash) => {
+      signQuoteHash: (quoteHash) => {
         calledQuoteHashHex = quoteHash.toString();
-        return "0xabc123";
+        return Promise.resolve("0xabc123");
       },
     };
     const app = buildServer(TEST_CONFIG, signer);
@@ -455,9 +453,9 @@ describe("server", () => {
         ],
       },
       {
-        signQuoteHash: async (quoteHash) => {
+        signQuoteHash: (quoteHash) => {
           calledQuoteHashHex = quoteHash.toString();
-          return "0xselectedasset";
+          return Promise.resolve("0xselectedasset");
         },
       },
     );
