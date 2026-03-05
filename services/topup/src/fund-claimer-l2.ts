@@ -302,7 +302,7 @@ function readManifest(manifestPath: string): PartialManifest {
   }
 }
 
-async function deriveAddressFromSecret(secretKey: string): Promise<AztecAddress> {
+function deriveAddressFromSecret(secretKey: string): AztecAddress {
   const secret = Fr.fromHexString(secretKey);
   return getSchnorrAccountContractAddress(secret, Fr.ZERO);
 }
