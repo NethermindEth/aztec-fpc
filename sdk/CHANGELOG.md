@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - legacy `/asset`
 - Accepted-asset selection helper supporting explicit address, default-first, and callback strategy.
 - Discovery FPC-address resolution helper for optional discovery-driven FPC configuration.
+- Runtime sponsorship configuration types (`SponsoredRuntimeConfig`) for explicit node/FPC/token/operator/faucet/target wiring.
+- Devnet convenience runtime factory (`createDevnetRuntimeConfig`) so defaults are optional rather than implicit.
 - Balance bootstrap flow with faucet and shield retries.
 - Sponsored fee-payment construction (`authwit`, `fee_entrypoint`, payment method payload).
 - Post-transaction invariant checks and typed `SponsoredIncrementResult`.
@@ -41,3 +43,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Artifact resolution now verifies required artifact files and falls back to the package `artifacts` directory when a repository-level `artifacts/` directory exists but does not contain SDK artifacts.
+- Contract attach flow now enforces deterministic FPC precedence and rejects explicit/discovery address mismatches.

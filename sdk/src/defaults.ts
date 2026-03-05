@@ -1,3 +1,5 @@
+import type { SponsoredRuntimeConfig } from "./types";
+
 export const DEFAULT_NODE_URL = "https://v4-devnet-2.aztec-labs.com/";
 export const DEFAULT_ATTESTATION_BASE_URL =
   "https://aztec-fpc.staging-nethermind.xyz/v2";
@@ -31,3 +33,16 @@ export const SDK_DEFAULTS = {
   maxFaucetAttempts: DEFAULT_MAX_FAUCET_ATTEMPTS,
   txWaitTimeoutSeconds: DEFAULT_TX_WAIT_TIMEOUT_SECONDS,
 } as const;
+
+export function createDevnetRuntimeConfig(): SponsoredRuntimeConfig {
+  return {
+    acceptedAsset: { address: SDK_DEFAULTS.tokenAddress },
+    faucet: { address: SDK_DEFAULTS.faucetAddress },
+    fpc: { address: SDK_DEFAULTS.fpcAddress },
+    nodeUrl: SDK_DEFAULTS.nodeUrl,
+    operatorAddress: SDK_DEFAULTS.operatorAddress,
+    targets: {
+      counter: { address: SDK_DEFAULTS.counterAddress },
+    },
+  };
+}

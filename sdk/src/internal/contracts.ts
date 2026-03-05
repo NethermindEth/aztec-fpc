@@ -17,11 +17,14 @@ import {
 } from "@aztec/aztec.js/node";
 import type { Wallet as AccountWallet } from "@aztec/aztec.js/wallet";
 
-import { SDK_DEFAULTS } from "../defaults";
 import {
   PublishedAccountRequiredError,
   SponsoredTxFailedError,
 } from "../errors";
+import type {
+  RuntimeContractConfig,
+  SponsoredRuntimeConfig,
+} from "../types";
 
 const currentDir =
   typeof __dirname !== "undefined"
@@ -64,46 +67,89 @@ const ARTIFACTS: readonly ArtifactDescriptor[] = [
 
 type LoadedArtifacts = Record<ArtifactDescriptor["label"], ContractArtifact>;
 
+let cachedDefaultArtifacts: LoadedArtifacts | undefined;
+
 export type RuntimeAddresses = {
-  counter: AztecAddress;
-  faucet: AztecAddress;
+  acceptedAsset: AztecAddress;
+  faucet?: AztecAddress;
   fpc: AztecAddress;
   operator: AztecAddress;
-  token: AztecAddress;
+  targets: Record<string, AztecAddress>;
   user: AztecAddress;
 };
 
 export type AttachedContracts = {
+  acceptedAsset: Contract;
   addresses: RuntimeAddresses;
-  counter: Contract;
-  faucet: Contract;
+  counter?: Contract;
+  faucet?: Contract;
   fpc: Contract;
   node: AztecNode;
+  targets: Record<string, Contract>;
   token: Contract;
 };
 
-function parseAddress(name: string, raw: string): AztecAddress {
+function parseAddress(name: string, raw: AztecAddress | string): AztecAddress {
   try {
-    return AztecAddress.fromString(raw);
+    const parsed =
+      typeof raw === "string" ? AztecAddress.fromString(raw) : raw;
+    if (parsed.isZero()) {
+      throw new Error("zero address");
+    }
+    return parsed;
   } catch {
-    throw new SponsoredTxFailedError(
-      `Invalid ${name} address in SDK defaults.`,
-      {
-        address: raw,
-        name,
-      },
-    );
+    throw new SponsoredTxFailedError(`Invalid ${name} address input.`, {
+      address: typeof raw === "string" ? raw : raw.toString(),
+      name,
+    });
   }
+}
+
+function requireDefaultArtifact(
+  label: ArtifactDescriptor["label"],
+): ContractArtifact {
+  if (!cachedDefaultArtifacts) {
+    cachedDefaultArtifacts = loadArtifacts();
+  }
+  return cachedDefaultArtifacts[label];
+}
+
+function resolveArtifact(input: {
+  artifact?: ContractArtifact;
+  defaultLabel?: ArtifactDescriptor["label"];
+  label: string;
+}): ContractArtifact {
+  if (input.artifact) {
+    return input.artifact;
+  }
+  if (input.defaultLabel) {
+    return requireDefaultArtifact(input.defaultLabel);
+  }
+  throw new SponsoredTxFailedError(
+    `Missing artifact for required contract: ${input.label}.`,
+    {
+      label: input.label,
+    },
+  );
 }
 
 export function parseAccountAddress(
   account: AztecAddress | string,
 ): AztecAddress {
   if (typeof account !== "string") {
+    if (account.isZero()) {
+      throw new SponsoredTxFailedError("Invalid account address input.", {
+        account: account.toString(),
+      });
+    }
     return account;
   }
   try {
-    return AztecAddress.fromString(account);
+    const parsed = AztecAddress.fromString(account);
+    if (parsed.isZero()) {
+      throw new Error("zero address");
+    }
+    return parsed;
   } catch {
     throw new SponsoredTxFailedError("Invalid account address input.", {
       account,
@@ -111,16 +157,69 @@ export function parseAccountAddress(
   }
 }
 
-export function resolveRuntimeAddresses(
-  account: AztecAddress | string,
-): RuntimeAddresses {
+export function resolveFpcAddress(input: {
+  discoveryFpcAddress?: AztecAddress | string;
+  explicitFpcAddress?: AztecAddress | string;
+}): AztecAddress {
+  const explicit = input.explicitFpcAddress
+    ? parseAddress("fpc", input.explicitFpcAddress)
+    : undefined;
+  const discovery = input.discoveryFpcAddress
+    ? parseAddress("discovery fpc", input.discoveryFpcAddress)
+    : undefined;
+
+  if (explicit && discovery) {
+    if (explicit.toString().toLowerCase() !== discovery.toString().toLowerCase()) {
+      throw new SponsoredTxFailedError(
+        "FPC address mismatch between runtime config and attestation discovery.",
+        {
+          discoveryFpcAddress: discovery.toString(),
+          explicitFpcAddress: explicit.toString(),
+        },
+      );
+    }
+    return explicit;
+  }
+
+  if (explicit) {
+    return explicit;
+  }
+  if (discovery) {
+    return discovery;
+  }
+
+  throw new SponsoredTxFailedError(
+    "Missing FPC address. Provide runtime fpc.address or discovery-resolved fpc_address.",
+  );
+}
+
+export function resolveRuntimeAddresses(input: {
+  account: AztecAddress | string;
+  discoveryFpcAddress?: AztecAddress | string;
+  runtimeConfig: SponsoredRuntimeConfig;
+}): RuntimeAddresses {
+  const targets = Object.fromEntries(
+    Object.entries(input.runtimeConfig.targets ?? {}).map(([label, config]) => [
+      label,
+      parseAddress(`target:${label}`, config.address),
+    ]),
+  );
+
   return {
-    counter: parseAddress("counter", SDK_DEFAULTS.counterAddress),
-    faucet: parseAddress("faucet", SDK_DEFAULTS.faucetAddress),
-    fpc: parseAddress("fpc", SDK_DEFAULTS.fpcAddress),
-    operator: parseAddress("operator", SDK_DEFAULTS.operatorAddress),
-    token: parseAddress("token", SDK_DEFAULTS.tokenAddress),
-    user: parseAccountAddress(account),
+    acceptedAsset: parseAddress(
+      "accepted_asset",
+      input.runtimeConfig.acceptedAsset.address,
+    ),
+    faucet: input.runtimeConfig.faucet
+      ? parseAddress("faucet", input.runtimeConfig.faucet.address)
+      : undefined,
+    fpc: resolveFpcAddress({
+      discoveryFpcAddress: input.discoveryFpcAddress,
+      explicitFpcAddress: input.runtimeConfig.fpc.address,
+    }),
+    operator: parseAddress("operator", input.runtimeConfig.operatorAddress),
+    targets,
+    user: parseAccountAddress(input.account),
   };
 }
 
@@ -161,26 +260,44 @@ function loadArtifacts(): LoadedArtifacts {
   }, {} as LoadedArtifacts);
 }
 
-async function attachRegisteredContract(
-  wallet: AccountWallet,
-  node: AztecNode,
-  address: AztecAddress,
-  artifact: ContractArtifact,
-  label: string,
-): Promise<Contract> {
-  const instance = await node.getContract(address);
+async function attachRegisteredContract(input: {
+  address: AztecAddress;
+  artifact: ContractArtifact;
+  label: string;
+  node: AztecNode;
+  wallet: AccountWallet;
+}): Promise<Contract> {
+  const instance = await input.node.getContract(input.address);
   if (!instance) {
     throw new SponsoredTxFailedError(
-      `Missing ${label} contract instance on node.`,
+      `Missing ${input.label} contract instance on node.`,
       {
-        address: address.toString(),
-        label,
+        address: input.address.toString(),
+        label: input.label,
       },
     );
   }
 
-  await wallet.registerContract(instance, artifact);
-  return Contract.at(address, artifact, wallet);
+  await input.wallet.registerContract(instance, input.artifact);
+  return Contract.at(input.address, input.artifact, input.wallet);
+}
+
+function resolveTargetArtifact(input: {
+  config: RuntimeContractConfig;
+  label: string;
+}): ContractArtifact {
+  if (input.config.artifact) {
+    return input.config.artifact;
+  }
+  if (input.label === "counter") {
+    return requireDefaultArtifact("counter");
+  }
+  throw new SponsoredTxFailedError(
+    `Missing artifact for required contract: target:${input.label}.`,
+    {
+      label: input.label,
+    },
+  );
 }
 
 export async function assertPublishedAccount(
@@ -200,51 +317,87 @@ export async function assertPublishedAccount(
 
 export async function connectAndAttachContracts(input: {
   account: AztecAddress | string;
+  discoveryFpcAddress?: AztecAddress | string;
+  runtimeConfig: SponsoredRuntimeConfig;
   wallet: AccountWallet;
 }): Promise<AttachedContracts> {
-  const addresses = resolveRuntimeAddresses(input.account);
-  const artifacts = loadArtifacts();
-  const node = createAztecNodeClient(SDK_DEFAULTS.nodeUrl);
+  const addresses = resolveRuntimeAddresses({
+    account: input.account,
+    discoveryFpcAddress: input.discoveryFpcAddress,
+    runtimeConfig: input.runtimeConfig,
+  });
+
+  const node = createAztecNodeClient(input.runtimeConfig.nodeUrl);
   await waitForNode(node);
   await assertPublishedAccount(node, addresses.user);
 
-  const [token, fpc, faucet, counter] = await Promise.all([
-    attachRegisteredContract(
-      input.wallet,
+  const acceptedAssetArtifact = resolveArtifact({
+    artifact: input.runtimeConfig.acceptedAsset.artifact,
+    defaultLabel: "token",
+    label: "accepted_asset",
+  });
+  const fpcArtifact = resolveArtifact({
+    artifact: input.runtimeConfig.fpc.artifact,
+    defaultLabel: "fpc",
+    label: "fpc",
+  });
+
+  const [acceptedAsset, fpc] = await Promise.all([
+    attachRegisteredContract({
+      address: addresses.acceptedAsset,
+      artifact: acceptedAssetArtifact,
+      label: "accepted_asset",
       node,
-      addresses.token,
-      artifacts.token,
-      "accepted_asset",
-    ),
-    attachRegisteredContract(
-      input.wallet,
+      wallet: input.wallet,
+    }),
+    attachRegisteredContract({
+      address: addresses.fpc,
+      artifact: fpcArtifact,
+      label: "fpc",
       node,
-      addresses.fpc,
-      artifacts.fpc,
-      "fpc",
-    ),
-    attachRegisteredContract(
-      input.wallet,
-      node,
-      addresses.faucet,
-      artifacts.faucet,
-      "faucet",
-    ),
-    attachRegisteredContract(
-      input.wallet,
-      node,
-      addresses.counter,
-      artifacts.counter,
-      "counter",
-    ),
+      wallet: input.wallet,
+    }),
   ]);
 
+  const faucet =
+    addresses.faucet && input.runtimeConfig.faucet
+      ? await attachRegisteredContract({
+          address: addresses.faucet,
+          artifact: resolveArtifact({
+            artifact: input.runtimeConfig.faucet.artifact,
+            defaultLabel: "faucet",
+            label: "faucet",
+          }),
+          label: "faucet",
+          node,
+          wallet: input.wallet,
+        })
+      : undefined;
+
+  const targetPairs = await Promise.all(
+    Object.entries(input.runtimeConfig.targets ?? {}).map(
+      async ([label, targetConfig]) => {
+        const contract = await attachRegisteredContract({
+          address: addresses.targets[label] as AztecAddress,
+          artifact: resolveTargetArtifact({ config: targetConfig, label }),
+          label: `target:${label}`,
+          node,
+          wallet: input.wallet,
+        });
+        return [label, contract] as const;
+      },
+    ),
+  );
+  const targets = Object.fromEntries(targetPairs);
+
   return {
+    acceptedAsset,
     addresses,
-    counter,
+    counter: targets.counter,
     faucet,
     fpc,
     node,
-    token,
+    targets,
+    token: acceptedAsset,
   };
 }

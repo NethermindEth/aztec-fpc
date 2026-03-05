@@ -214,6 +214,8 @@ Failure modes:
 
 ### Step 3: Generalize SDK runtime configuration and contract attachment
 
+Status: [x] Completed on 2026-03-05.
+
 Files:
 - `sdk/src/defaults.ts`
 - `sdk/src/internal/contracts.ts`

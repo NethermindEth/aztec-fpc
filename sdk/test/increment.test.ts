@@ -60,9 +60,12 @@ function buildContext(input: {
 
   return {
     addresses: {
+      acceptedAsset: TOKEN,
       fpc: FPC,
       operator: OPERATOR,
-      token: TOKEN,
+      targets: {
+        counter: USER,
+      },
       user: USER,
     },
     counter: {

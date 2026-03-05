@@ -1,3 +1,4 @@
+import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Wallet as AccountWallet } from "@aztec/aztec.js/wallet";
 
@@ -54,3 +55,22 @@ export type AcceptedAssetSelectionCallback = (
   | string
   | undefined
   | Promise<AttestationAcceptedAsset | AztecAddress | string | undefined>;
+
+export type RuntimeContractConfig = {
+  address: AztecAddress | string;
+  artifact?: ContractArtifact;
+};
+
+export type RuntimeFpcConfig = {
+  address?: AztecAddress | string;
+  artifact?: ContractArtifact;
+};
+
+export type SponsoredRuntimeConfig = {
+  acceptedAsset: RuntimeContractConfig;
+  faucet?: RuntimeContractConfig;
+  fpc: RuntimeFpcConfig;
+  nodeUrl: string;
+  operatorAddress: AztecAddress | string;
+  targets?: Record<string, RuntimeContractConfig>;
+};

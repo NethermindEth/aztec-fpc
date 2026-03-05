@@ -1,6 +1,6 @@
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Gas, GasFees } from "@aztec/stdlib/gas";
-import { SDK_DEFAULTS } from "./defaults";
+import { createDevnetRuntimeConfig, SDK_DEFAULTS } from "./defaults";
 import {
   InsufficientFpcFeeJuiceError,
   SponsoredSdkError,
@@ -31,8 +31,16 @@ export async function createSponsoredCounterClient(
 ): Promise<SponsoredCounterClient> {
   const context = await connectAndAttachContracts({
     account: input.account,
+    runtimeConfig: createDevnetRuntimeConfig(),
     wallet: input.wallet,
   });
+  const counter = context.counter;
+  const counterAddress = context.addresses.targets.counter;
+  if (!counter || !counterAddress || !context.faucet) {
+    throw new SponsoredTxFailedError(
+      "Counter runtime target/faucet is not configured.",
+    );
+  }
 
   return {
     async increment() {
@@ -56,7 +64,7 @@ export async function createSponsoredCounterClient(
         }
 
         const quote = await fetchAndValidateQuote({
-          acceptedAsset: context.addresses.token,
+          acceptedAsset: context.addresses.acceptedAsset,
           attestationBaseUrl: SDK_DEFAULTS.attestationBaseUrl,
           fjAmount,
           user: context.addresses.user,
@@ -72,7 +80,7 @@ export async function createSponsoredCounterClient(
           user: context.addresses.user,
         });
         const counterBefore = toBigInt(
-          await context.counter.methods
+          await counter.methods
             .get_counter(context.addresses.user)
             .simulate({ from: context.addresses.user }),
         );
@@ -90,7 +98,7 @@ export async function createSponsoredCounterClient(
           quoteSignatureBytes: quote.signatureBytes,
           quoteValidUntil: quote.validUntil,
           token: context.token as never,
-          tokenAddress: context.addresses.token,
+          tokenAddress: context.addresses.acceptedAsset,
           user: context.addresses.user,
           wallet: input.wallet,
         });
@@ -110,7 +118,7 @@ export async function createSponsoredCounterClient(
           txHash: { toString(): string };
         };
         try {
-          receipt = await context.counter.methods
+          receipt = await counter.methods
             .increment(context.addresses.user)
             .send({
               fee: {
@@ -129,7 +137,7 @@ export async function createSponsoredCounterClient(
           );
         }
         const counterAfter = toBigInt(
-          await context.counter.methods
+          await counter.methods
             .get_counter(context.addresses.user)
             .simulate({ from: context.addresses.user }),
         );
