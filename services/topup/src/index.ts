@@ -1,3 +1,7 @@
+import pino from "pino";
+
+const pinoLogger = pino();
+
 /**
  * Top-up Service — entry point
  *
@@ -27,18 +31,18 @@ const configPath = process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "c
 
 async function main() {
   const config = loadConfig(configPath);
-  console.log(`Runtime profile: ${config.runtime_profile}`);
+  pinoLogger.info(`Runtime profile: ${config.runtime_profile}`);
 
   if (config.l1_operator_private_key_dual_source) {
-    console.warn(
+    pinoLogger.warn(
       "Both L1_OPERATOR_PRIVATE_KEY and config.l1_operator_private_key are set; using L1_OPERATOR_PRIVATE_KEY",
     );
   }
-  console.log(
+  pinoLogger.info(
     `L1 operator private key provider: ${config.l1_operator_private_key_provider} (resolved source: ${config.l1_operator_private_key_source})`,
   );
   if (config.l1_operator_private_key_source === "config") {
-    console.warn(
+    pinoLogger.warn(
       "L1 operator private key source: config file (l1_operator_private_key); this should only be used in non-production profiles",
     );
   }
@@ -81,9 +85,9 @@ async function main() {
     try {
       autoClaimerFeeJuiceBalance = await balanceReader.getBalance(autoClaimer.claimerAddress);
     } catch (error) {
-      console.warn(
+      pinoLogger.warn(
+        { err: error },
         `Could not read auto-claim claimer Fee Juice balance for ${autoClaimer.claimerAddress.toString()}`,
-        error,
       );
     }
   }
@@ -94,51 +98,53 @@ async function main() {
   const opsServer = createTopupOpsServer(opsState);
   await opsServer.listen("0.0.0.0", config.ops_port);
 
-  console.log(`Top-up service started`);
-  console.log(`  FPC address:   ${config.fpc_address}`);
-  console.log(`  Top-up target: ${topupTargetAddress.toString()}`);
+  pinoLogger.info(`Top-up service started`);
+  pinoLogger.info(`  FPC address:   ${config.fpc_address}`);
+  pinoLogger.info(`  Top-up target: ${topupTargetAddress.toString()}`);
   if (topupTargetAddress.toString().toLowerCase() !== fpcAddress.toString().toLowerCase()) {
-    console.warn(
+    pinoLogger.warn(
       `  Top-up target differs from FPC address; monitoring and claims will target ${topupTargetAddress.toString()}`,
     );
   }
-  console.log(`  Threshold:     ${threshold} wei`);
-  console.log(`  Top-up amount: ${topUpAmount} wei`);
-  console.log(`  Bridge state file: ${bridgeStateStore.filePath}`);
-  console.log(`  Check interval: ${config.check_interval_ms}ms`);
-  console.log(`  L1 chain id:   ${l1ChainId}`);
-  console.log(`  L1 portal:     ${feeJuicePortalAddress.toString()}`);
-  console.log(`  L1 fee juice:  ${feeJuiceAddress.toString()}`);
-  console.log(`  Confirm timeout: ${config.confirmation_timeout_ms}ms`);
-  console.log(
+  pinoLogger.info(`  Threshold:     ${threshold} wei`);
+  pinoLogger.info(`  Top-up amount: ${topUpAmount} wei`);
+  pinoLogger.info(`  Bridge state file: ${bridgeStateStore.filePath}`);
+  pinoLogger.info(`  Check interval: ${config.check_interval_ms}ms`);
+  pinoLogger.info(`  L1 chain id:   ${l1ChainId}`);
+  pinoLogger.info(`  L1 portal:     ${feeJuicePortalAddress.toString()}`);
+  pinoLogger.info(`  L1 fee juice:  ${feeJuiceAddress.toString()}`);
+  pinoLogger.info(`  Confirm timeout: ${config.confirmation_timeout_ms}ms`);
+  pinoLogger.info(
     `  Confirm poll:  ${config.confirmation_poll_initial_ms}ms -> ${config.confirmation_poll_max_ms}ms`,
   );
-  console.log(
+  pinoLogger.info(
     `  Fee Juice contract: ${balanceReader.feeJuiceAddress.toString()} (${balanceReader.addressSource})`,
   );
-  console.log(`  Ops endpoint:  http://0.0.0.0:${config.ops_port}`);
+  pinoLogger.info(`  Ops endpoint:  http://0.0.0.0:${config.ops_port}`);
   if (logClaimSecret) {
-    console.warn(
+    pinoLogger.warn(
       "TOPUP_LOG_CLAIM_SECRET=1 enabled: bridge claim secrets will be printed to logs (for local smoke/debug only)",
     );
   }
   if (autoClaimer) {
-    console.log(
+    pinoLogger.info(
       `  Auto-claim: enabled (claimer=${autoClaimer.claimerAddress.toString()} source=${autoClaimer.claimerSource} payment=${autoClaimer.paymentMode})`,
     );
     if (autoClaimer.sponsoredFpcAddress) {
-      console.log(`  Auto-claim sponsor contract: ${autoClaimer.sponsoredFpcAddress.toString()}`);
+      pinoLogger.info(
+        `  Auto-claim sponsor contract: ${autoClaimer.sponsoredFpcAddress.toString()}`,
+      );
     }
     if (autoClaimerFeeJuiceBalance !== null) {
-      console.log(`  Auto-claim claimer Fee Juice balance: ${autoClaimerFeeJuiceBalance} wei`);
+      pinoLogger.info(`  Auto-claim claimer Fee Juice balance: ${autoClaimerFeeJuiceBalance} wei`);
       if (autoClaimer.paymentMode === "fee_juice" && autoClaimerFeeJuiceBalance <= 0n) {
-        console.warn(
+        pinoLogger.warn(
           "  Auto-claim warning: claimer has zero Fee Juice. Claims will fail unless this account is funded on L2.",
         );
       }
     }
   } else {
-    console.warn("  Auto-claim: disabled (TOPUP_AUTOCLAIM_ENABLED=0)");
+    pinoLogger.warn("  Auto-claim: disabled (TOPUP_AUTOCLAIM_ENABLED=0)");
   }
 
   let intervalHandle: NodeJS.Timeout | undefined;
@@ -199,7 +205,7 @@ async function main() {
                     Math.floor(config.confirmation_timeout_ms / 1000),
                   ),
                 });
-                console.log(
+                pinoLogger.info(
                   `Auto-claim submitted message_hash=${bridgeResult.messageHash} tx_hash=${txHash}`,
                 );
               }
@@ -209,33 +215,33 @@ async function main() {
         opsState.recordBridgeEvent("submitted");
         try {
           await bridgeStateStore.write(baselineBalance, bridgeResult);
-          console.log(
+          pinoLogger.info(
             `Persisted in-flight bridge metadata message_hash=${bridgeResult.messageHash} leaf_index=${bridgeResult.messageLeafIndex}`,
           );
         } catch (error) {
-          console.warn(
+          pinoLogger.warn(
+            { err: error },
             `Failed to persist in-flight bridge metadata message_hash=${bridgeResult.messageHash}; continuing with in-memory confirmation only`,
-            error,
           );
         }
       },
       onBridgeSettled: async (_baselineBalance, bridgeResult, confirmation) => {
         opsState.recordBridgeEvent(confirmation.status);
         if (confirmation.status !== "confirmed") {
-          console.warn(
+          pinoLogger.warn(
             `Retaining persisted bridge metadata message_hash=${bridgeResult.messageHash} outcome=${confirmation.status}`,
           );
           return;
         }
         try {
           await bridgeStateStore.clear();
-          console.log(
+          pinoLogger.info(
             `Cleared persisted bridge metadata message_hash=${bridgeResult.messageHash} outcome=${confirmation.status}`,
           );
         } catch (error) {
-          console.warn(
+          pinoLogger.warn(
+            { err: error },
             `Failed to clear persisted bridge metadata message_hash=${bridgeResult.messageHash} after confirmed bridge`,
-            error,
           );
         }
       },
@@ -249,7 +255,7 @@ async function main() {
     if (shutdownController.signal.aborted) {
       return;
     }
-    console.log(`Received ${signal}. Starting graceful shutdown...`);
+    pinoLogger.info(`Received ${signal}. Starting graceful shutdown...`);
     opsState.markShutdownRequested();
     checker.requestStop();
     shutdownController.abort();
@@ -262,9 +268,9 @@ async function main() {
         await inFlightCheck;
         await opsServer.close();
       } catch (error) {
-        console.error("Failed to stop top-up ops server cleanly:", error);
+        pinoLogger.error({ err: error }, "Failed to stop top-up ops server cleanly:");
       } finally {
-        console.log("Top-up service stopped");
+        pinoLogger.info("Top-up service stopped");
         shutdownResolve?.();
       }
     })();
@@ -292,7 +298,7 @@ async function main() {
       await runCheck();
     })()
       .catch((error) => {
-        console.error("Top-up check failed:", error);
+        pinoLogger.error({ err: error }, "Top-up check failed:");
       })
       .finally(() => {
         inFlightCheck = undefined;
@@ -314,7 +320,7 @@ async function main() {
     });
 
     if (outcome === "timeout") {
-      console.warn(
+      pinoLogger.warn(
         "Skipping new bridge submission: persisted bridge reconciliation did not complete yet",
       );
       return false;
@@ -337,6 +343,6 @@ async function main() {
   await shutdownPromise;
 }
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  pinoLogger.error({ err }, "Fatal error:");
   process.exit(1);
 });

@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
@@ -180,7 +183,7 @@ function parseCliArgs(argv: string[]): CliArgs {
         break;
       case "--help":
       case "-h":
-        console.log(usage());
+        pinoLogger.info(usage());
         process.exit(0);
         break;
       default:
@@ -264,12 +267,12 @@ async function main(): Promise<void> {
   const testAccountIndex = args.testAccountIndex ?? DEFAULT_TEST_ACCOUNT_INDEX;
 
   if (!autoClaimEnabled) {
-    console.log(`${LOG_PREFIX} skipping: TOPUP_AUTOCLAIM_ENABLED is false/0 for this run`);
+    pinoLogger.info(`${LOG_PREFIX} skipping: TOPUP_AUTOCLAIM_ENABLED is false/0 for this run`);
     return;
   }
 
   if (!requirePublishedAccount) {
-    console.log(
+    pinoLogger.info(
       `${LOG_PREFIX} skipping: TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT is false/0 for this run`,
     );
     return;
@@ -291,7 +294,7 @@ async function main(): Promise<void> {
     manifest,
   });
 
-  console.log(
+  pinoLogger.info(
     `${LOG_PREFIX} checking claimer=${claimer.address.toString()} source=${claimer.source} (${claimer.detail}) on node=${nodeUrl}`,
   );
 
@@ -303,7 +306,7 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log(
+  pinoLogger.info(
     `${LOG_PREFIX} ok: claimer account is publicly deployed (${claimer.address.toString()})`,
   );
 
@@ -312,14 +315,14 @@ async function main(): Promise<void> {
     manifestDeployerAddress &&
     manifestDeployerAddress.toLowerCase() !== claimer.address.toString().toLowerCase()
   ) {
-    console.log(
+    pinoLogger.info(
       `${LOG_PREFIX} note: claimer differs from manifest deployment_accounts.l2_deployer.address (${manifestDeployerAddress})`,
     );
   }
 }
 
 main().catch((error) => {
-  console.error(`${LOG_PREFIX} ERROR: ${String(error)}`);
-  console.error(usage());
+  pinoLogger.error(`${LOG_PREFIX} ERROR: ${String(error)}`);
+  pinoLogger.error(usage());
   process.exit(1);
 });

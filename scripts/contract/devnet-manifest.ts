@@ -1,6 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ETH_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -669,7 +672,7 @@ function runSelfCheck(): void {
     validateDevnetDeployManifest(broken);
   });
 
-  console.log("[devnet-manifest] self-check passed");
+  pinoLogger.info("[devnet-manifest] self-check passed");
 }
 
 function usage(): string {
@@ -691,7 +694,7 @@ function main(argv: string[]): void {
   }
 
   if (argv.includes("--help") || argv.includes("-h")) {
-    console.log(usage());
+    pinoLogger.info(usage());
     return;
   }
 
@@ -708,10 +711,10 @@ if (EXECUTED_AS_ENTRYPOINT) {
     main(process.argv.slice(2));
   } catch (error) {
     if (error instanceof ManifestValidationError) {
-      console.error(`[devnet-manifest] ERROR: ${error.message}`);
-      console.error(usage());
+      pinoLogger.error(`[devnet-manifest] ERROR: ${error.message}`);
+      pinoLogger.error(usage());
     } else {
-      console.error("[devnet-manifest] Unexpected error:", error);
+      pinoLogger.error("[devnet-manifest] Unexpected error:", error);
     }
     process.exit(1);
   }

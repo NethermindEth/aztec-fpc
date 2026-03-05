@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
@@ -145,7 +148,7 @@ const DIAGNOSTIC_TAIL_LINES = 200;
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_FILE_CANDIDATES = ["fpc-FPCMultiAsset.json", "fpc-FPC.json"] as const;
 function printHelp(): void {
-  console.log(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
+  pinoLogger.info(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
 
 Config env vars:
 - FPC_FULL_E2E_MODE=fpc
@@ -846,7 +849,7 @@ async function expectFailure(
   } catch (error) {
     const message = errorMessage(error).toLowerCase();
     if (expectedSubstrings.some((fragment) => message.includes(fragment.toLowerCase()))) {
-      console.log(`[full-lifecycle-e2e] PASS: ${scenario}`);
+      pinoLogger.info(`[full-lifecycle-e2e] PASS: ${scenario}`);
       return;
     }
     throw new Error(
@@ -942,7 +945,7 @@ function getConfig(): FullE2EConfig {
 }
 
 function printConfigSummary(config: FullE2EConfig): void {
-  console.log(
+  pinoLogger.info(
     `[full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, l1RpcUrl=${config.l1RpcUrl}, requiredTopupCycles=${config.requiredTopupCycles}`,
   );
 }
@@ -1295,7 +1298,7 @@ async function runFeePaidTargetTxAndAssert(
     );
   }
 
-  console.log(
+  pinoLogger.info(
     `[full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_debited=${userDebited}, operator_credited=${operatorCredited}, user_public_delta=${userPublicDelta}, operator_public_delta=${operatorPublicDelta})`,
   );
   return expectedCharge;
@@ -1689,7 +1692,9 @@ async function runStep7NegativeScenarios(
   await negativeDirectEntrypointCallRejected(config, result, node);
 
   await stopManagedProcess(topup);
-  console.log("[full-lifecycle-e2e] topup stopped before insufficient Fee Juice negative scenario");
+  pinoLogger.info(
+    "[full-lifecycle-e2e] topup stopped before insufficient Fee Juice negative scenario",
+  );
 
   const insufficientFeeJuiceBudgetWei = await negativeInsufficientFeeJuiceSecondTxRejected(
     config,
@@ -1743,7 +1748,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
 
     phase = "step5.attestation_health";
     await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
-    console.log("[full-lifecycle-e2e] PASS: attestation /health");
+    pinoLogger.info("[full-lifecycle-e2e] PASS: attestation /health");
 
     topup = startManagedProcess(
       "full-e2e-topup",
@@ -1772,7 +1777,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
     await waitForHealth(`${topupOpsBaseUrl}/health`, config.httpTimeoutMs);
     await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
     await waitForHealth(`${topupOpsBaseUrl}/ready`, config.topupWaitTimeoutMs);
-    console.log("[full-lifecycle-e2e] PASS: topup /health and /ready");
+    pinoLogger.info("[full-lifecycle-e2e] PASS: topup /health and /ready");
 
     phase = "step5.bridge_cycle_1";
     let topupCounters = getTopupLogCountersFromProcess(topup);
@@ -1790,7 +1795,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
         submission: latestSubmission,
         submissionCount: existingSubmissions.length,
       };
-      console.log(
+      pinoLogger.info(
         `[full-lifecycle-e2e] using existing bridge submission for cycle #1 (message_hash=${latestSubmission.messageHash})`,
       );
     } else {
@@ -1810,7 +1815,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
 
     let feeJuiceAfterCycle1 = await getFeeJuiceBalance(result.fpc.address, node);
     if (feeJuiceAfterCycle1 === 0n) {
-      console.log(
+      pinoLogger.info(
         `[full-lifecycle-e2e] bridge cycle #1 confirmed but Fee Juice is still zero; waiting for auto-claim settlement (message_hash=${cycle1Submission.submission.messageHash})`,
       );
       feeJuiceAfterCycle1 = await waitForPositiveFeeJuiceBalance(
@@ -1821,7 +1826,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
       );
     }
     topupCounters = getTopupLogCountersFromProcess(topup);
-    console.log(
+    pinoLogger.info(
       `[full-lifecycle-e2e] PASS: bridge cycle #1 confirmed before tx1 (message_hash=${cycle1Submission.submission.messageHash}, leaf_index=${cycle1Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle1})`,
     );
 
@@ -1837,7 +1842,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
       1n,
     );
     const feeJuiceAfterTx1 = await getFeeJuiceBalance(result.fpc.address, node);
-    console.log(`[full-lifecycle-e2e] fee_juice_after_tx1=${feeJuiceAfterTx1}`);
+    pinoLogger.info(`[full-lifecycle-e2e] fee_juice_after_tx1=${feeJuiceAfterTx1}`);
 
     let feeJuiceAfterCycle2: bigint | null = null;
     if (config.requiredTopupCycles === 2) {
@@ -1861,7 +1866,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
 
       feeJuiceAfterCycle2 = await getFeeJuiceBalance(result.fpc.address, node);
       if (feeJuiceAfterCycle2 <= feeJuiceAfterTx1) {
-        console.log(
+        pinoLogger.info(
           `[full-lifecycle-e2e] bridge cycle #2 confirmed but Fee Juice did not increase; waiting for auto-claim settlement (message_hash=${cycle2Submission.submission.messageHash})`,
         );
         feeJuiceAfterCycle2 = await waitForFeeJuiceBalanceAboveBaseline(
@@ -1873,11 +1878,11 @@ async function orchestrateServicesAndAssertBridgeCycles(
         );
       }
       topupCounters = getTopupLogCountersFromProcess(topup);
-      console.log(
+      pinoLogger.info(
         `[full-lifecycle-e2e] PASS: bridge cycle #2 confirmed after tx1 and before tx2 (message_hash=${cycle2Submission.submission.messageHash}, leaf_index=${cycle2Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle2})`,
       );
     } else {
-      console.log(
+      pinoLogger.info(
         "[full-lifecycle-e2e] PASS: second bridge cycle requirement skipped (FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES=1)",
       );
     }
@@ -1891,7 +1896,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
       1n,
     );
     const feeJuiceAfterTx2 = await getFeeJuiceBalance(result.fpc.address, node);
-    console.log(`[full-lifecycle-e2e] fee_juice_after_tx2=${feeJuiceAfterTx2}`);
+    pinoLogger.info(`[full-lifecycle-e2e] fee_juice_after_tx2=${feeJuiceAfterTx2}`);
 
     const estimatedSingleTxFeeJuice =
       feeJuiceAfterTx1 > feeJuiceAfterTx2 ? feeJuiceAfterTx1 - feeJuiceAfterTx2 : 0n;
@@ -2009,42 +2014,42 @@ async function main(): Promise<void> {
 
   try {
     result = await deployContractsAndWriteRuntimeConfig(config);
-    console.log(`[full-lifecycle-e2e] operator=${result.operator.toString()}`);
-    console.log(`[full-lifecycle-e2e] user=${result.user.toString()}`);
-    console.log(`[full-lifecycle-e2e] other_user=${result.otherUser.toString()}`);
-    console.log(`[full-lifecycle-e2e] token=${result.token.address.toString()}`);
-    console.log(`[full-lifecycle-e2e] fpc=${result.fpc.address.toString()}`);
-    console.log(`[full-lifecycle-e2e] topup_threshold_wei=${result.topupThresholdWei}`);
-    console.log(`[full-lifecycle-e2e] topup_amount_wei=${result.topupAmountWei}`);
-    console.log(`[full-lifecycle-e2e] attestation_config=${result.attestationConfigPath}`);
-    console.log(`[full-lifecycle-e2e] topup_config=${result.topupConfigPath}`);
-    console.log(`[full-lifecycle-e2e] run_summary=${result.summaryPath}`);
+    pinoLogger.info(`[full-lifecycle-e2e] operator=${result.operator.toString()}`);
+    pinoLogger.info(`[full-lifecycle-e2e] user=${result.user.toString()}`);
+    pinoLogger.info(`[full-lifecycle-e2e] other_user=${result.otherUser.toString()}`);
+    pinoLogger.info(`[full-lifecycle-e2e] token=${result.token.address.toString()}`);
+    pinoLogger.info(`[full-lifecycle-e2e] fpc=${result.fpc.address.toString()}`);
+    pinoLogger.info(`[full-lifecycle-e2e] topup_threshold_wei=${result.topupThresholdWei}`);
+    pinoLogger.info(`[full-lifecycle-e2e] topup_amount_wei=${result.topupAmountWei}`);
+    pinoLogger.info(`[full-lifecycle-e2e] attestation_config=${result.attestationConfigPath}`);
+    pinoLogger.info(`[full-lifecycle-e2e] topup_config=${result.topupConfigPath}`);
+    pinoLogger.info(`[full-lifecycle-e2e] run_summary=${result.summaryPath}`);
 
     recordPhaseResult(result.summaryPath, "step4", "PASS", {
       runDir: result.runDir,
       attestationConfigPath: result.attestationConfigPath,
       topupConfigPath: result.topupConfigPath,
     });
-    console.log("[full-lifecycle-e2e] PASS: step4 deployment and runtime wiring complete");
+    pinoLogger.info("[full-lifecycle-e2e] PASS: step4 deployment and runtime wiring complete");
 
     phase = "step5_to_step7.orchestration";
     const orchestration = await orchestrateServicesAndAssertBridgeCycles(config, result);
     writeStep5Summary(result.summaryPath, orchestration);
 
-    console.log(
+    pinoLogger.info(
       `[full-lifecycle-e2e] PASS: step5 service orchestration and bridge-cycle assertions passed (confirmed_cycles=${orchestration.observedBridgeConfirmed})`,
     );
-    console.log(
+    pinoLogger.info(
       `[full-lifecycle-e2e] PASS: step6 tx invariants and target state deltas passed (tx1_expected_charge=${orchestration.tx1ExpectedCharge}, tx2_expected_charge=${orchestration.tx2ExpectedCharge})`,
     );
-    console.log(
+    pinoLogger.info(
       `[full-lifecycle-e2e] PASS: step7 negative scenarios passed (insufficient_fee_juice_budget_wei=${orchestration.step7.insufficientFeeJuiceBudgetWei})`,
     );
 
     phase = "step8.diagnostics_and_artifacts";
     writeStep8Summary(result.summaryPath, result.runDir);
-    console.log("[full-lifecycle-e2e] PASS: step8 diagnostics and artifacts are persisted");
-    console.log("[full-lifecycle-e2e] PASS: full lifecycle e2e succeeded");
+    pinoLogger.info("[full-lifecycle-e2e] PASS: step8 diagnostics and artifacts are persisted");
+    pinoLogger.info("[full-lifecycle-e2e] PASS: full lifecycle e2e succeeded");
   } catch (error) {
     if (result !== null) {
       const summary = readSummary(result.summaryPath);
@@ -2067,6 +2072,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`[full-lifecycle-e2e] FAIL: ${message}`);
+  pinoLogger.error(`[full-lifecycle-e2e] FAIL: ${message}`);
   process.exitCode = 1;
 });

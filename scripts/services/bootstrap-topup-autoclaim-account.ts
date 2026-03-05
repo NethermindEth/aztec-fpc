@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -236,7 +239,7 @@ function parseCliArgs(argv: string[]): CliArgs {
         break;
       case "--help":
       case "-h":
-        console.log(usage());
+        pinoLogger.info(usage());
         process.exit(0);
         break;
       default:
@@ -490,7 +493,7 @@ function createAccountWithMode(params: {
     if (!shouldAttemptExistingAccountPublicDeployFallback(message)) {
       throw error;
     }
-    console.warn(
+    pinoLogger.warn(
       `${LOG_PREFIX} create-account did not complete cleanly; retrying public deployment with --skip-initialization`,
     );
     runAztecWalletCommand(
@@ -597,7 +600,7 @@ async function deployWithAztecJsFallback(params: {
           wait: { timeout: 120 },
         });
       }
-      console.log(`${LOG_PREFIX} aztec.js fallback deployment sent with mode=${mode}`);
+      pinoLogger.info(`${LOG_PREFIX} aztec.js fallback deployment sent with mode=${mode}`);
       return;
     } catch (error) {
       const message = String(error);
@@ -605,13 +608,16 @@ async function deployWithAztecJsFallback(params: {
       // exists in state (e.g. genesis-deployed test accounts on a local network).
       // The instance IS deployed even though getContract() doesn't index it.
       if (message.includes("Existing nullifier") || message.includes("existing nullifier")) {
-        console.log(
+        pinoLogger.info(
           `${LOG_PREFIX} aztec.js fallback got "Existing nullifier" with mode=${mode} — account already deployed; treating as success`,
         );
         return;
       }
       failures.push(`${mode}: ${message}`);
-      console.warn(`${LOG_PREFIX} aztec.js fallback deployment failed with mode=${mode}`, message);
+      pinoLogger.warn(
+        `${LOG_PREFIX} aztec.js fallback deployment failed with mode=${mode}`,
+        message,
+      );
     }
   }
 
@@ -637,21 +643,23 @@ async function main(): Promise<void> {
   const claimerAddress = await deriveAddress(resolvedSecretKey.secretKey);
   const alias = buildAlias(args.alias, claimerAddress);
 
-  console.log(
+  pinoLogger.info(
     `${LOG_PREFIX} resolved claimer=${claimerAddress.toString()} secret_source=${resolvedSecretKey.source} payment_mode=${paymentMode}`,
   );
 
   if (await isPublished(nodeUrl, claimerAddress)) {
-    console.log(`${LOG_PREFIX} already published: ${claimerAddress.toString()} (no action needed)`);
+    pinoLogger.info(
+      `${LOG_PREFIX} already published: ${claimerAddress.toString()} (no action needed)`,
+    );
     return;
   }
 
   if (paymentMode === "sponsored" && sponsoredFpcAddress) {
-    console.log(`${LOG_PREFIX} registering SponsoredFPC in wallet: ${sponsoredFpcAddress}`);
+    pinoLogger.info(`${LOG_PREFIX} registering SponsoredFPC in wallet: ${sponsoredFpcAddress}`);
     registerSponsoredFpc(nodeUrl, sponsoredFpcAddress);
   }
 
-  console.log(
+  pinoLogger.info(
     `${LOG_PREFIX} deploying/importing claimer account via aztec-wallet alias=accounts:${alias}`,
   );
   let walletBootstrapError: string | null = null;
@@ -665,7 +673,7 @@ async function main(): Promise<void> {
     });
   } catch (error) {
     walletBootstrapError = String(error);
-    console.warn(
+    pinoLogger.warn(
       `${LOG_PREFIX} aztec-wallet bootstrap path failed; will attempt aztec.js fallback`,
       walletBootstrapError,
     );
@@ -674,7 +682,7 @@ async function main(): Promise<void> {
   let publishedAfterBootstrap = await isPublished(nodeUrl, claimerAddress);
   let aztecJsFallbackError: string | null = null;
   if (!publishedAfterBootstrap && paymentMode !== "register_only") {
-    console.log(
+    pinoLogger.info(
       `${LOG_PREFIX} claimer still not published after aztec-wallet path; attempting aztec.js fallback`,
     );
     try {
@@ -705,12 +713,16 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log(`${LOG_PREFIX} success: claimer is publicly deployed (${claimerAddress.toString()})`);
-  console.log(`${LOG_PREFIX} use TOPUP_AUTOCLAIM_SECRET_KEY for this claimer when running topup`);
+  pinoLogger.info(
+    `${LOG_PREFIX} success: claimer is publicly deployed (${claimerAddress.toString()})`,
+  );
+  pinoLogger.info(
+    `${LOG_PREFIX} use TOPUP_AUTOCLAIM_SECRET_KEY for this claimer when running topup`,
+  );
 }
 
 main().catch((error) => {
-  console.error(`${LOG_PREFIX} ERROR: ${String(error)}`);
-  console.error(usage());
+  pinoLogger.error(`${LOG_PREFIX} ERROR: ${String(error)}`);
+  pinoLogger.error(usage());
   process.exit(1);
 });

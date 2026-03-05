@@ -1,6 +1,9 @@
+import pino from "pino";
 import { createAztecNodeClient, waitForNode } from '@aztec/aztec.js/node';
 import { EmbeddedWallet } from '@aztec/wallets/embedded';
 import { AztecAddress } from '@aztec/aztec.js/addresses';
+
+const pinoLogger = pino();
 
 const address = process.argv[2];
 if (!address) {
@@ -15,11 +18,11 @@ async function main() {
   const addr = AztecAddress.fromString(address);
   const contract = await node.getContract(addr);
   const meta = await wallet.getContractMetadata(addr);
-  console.log('node.getContract', !!contract);
-  console.log('metadata', JSON.stringify(meta));
+  pinoLogger.info('node.getContract', !!contract);
+  pinoLogger.info('metadata', JSON.stringify(meta));
 }
 
 main().catch((err) => {
-  console.error(err);
+  pinoLogger.error(err);
   process.exit(1);
 });

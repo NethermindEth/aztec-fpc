@@ -1,3 +1,7 @@
+import pino from "pino";
+
+const pinoLogger = pino();
+
 /**
  * L1 -> L2 Fee Juice bridge via Aztec SDK L1FeeJuicePortalManager.
  */
@@ -156,9 +160,9 @@ export async function bridgeFeeJuice(
       if (!isNonceConflictError(error) || attempt >= MAX_NONCE_RETRY_ATTEMPTS) {
         throw error;
       }
-      console.warn(
+      pinoLogger.warn(
+        { err: error },
         `Bridge nonce conflict detected; retrying bridge submission attempt=${attempt + 1}/${MAX_NONCE_RETRY_ATTEMPTS}`,
-        error,
       );
     }
   }

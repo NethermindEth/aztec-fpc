@@ -1,3 +1,7 @@
+import pino from "pino";
+
+const pinoLogger = pino();
+
 /**
  * FPC Chaos Local Orchestrator
  *
@@ -265,7 +269,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
 
-  console.log(`[chaos-local] Connecting to Aztec node: ${config.nodeUrl}`);
+  pinoLogger.info(`[chaos-local] Connecting to Aztec node: ${config.nodeUrl}`);
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNodeReady(node, config.nodeTimeoutMs);
 
@@ -287,29 +291,29 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   ]);
 
   const operatorSecretHex = opData.secret.toString();
-  console.log(`[chaos-local] Operator: ${operator.toString()}`);
+  pinoLogger.info(`[chaos-local] Operator: ${operator.toString()}`);
 
   // Derive operator Schnorr signing public key (embedded in FPC contract)
   const schnorr = new Schnorr();
   const signingKey = opData.signingKey ?? deriveSigningKey(opData.secret);
   const operatorPubKey = await schnorr.computePublicKey(signingKey);
 
-  console.log("[chaos-local] Deploying Token contract...");
+  pinoLogger.info("[chaos-local] Deploying Token contract...");
   const token = await Contract.deploy(
     wallet,
     tokenArtifact,
     ["ChaosToken", "CTK", 18, operator, operator],
     "constructor_with_minter",
   ).send({ from: operator });
-  console.log(`[chaos-local] Token deployed at ${token.address.toString()}`);
+  pinoLogger.info(`[chaos-local] Token deployed at ${token.address.toString()}`);
 
-  console.log("[chaos-local] Deploying FPC contract...");
+  pinoLogger.info("[chaos-local] Deploying FPC contract...");
   const fpc = await Contract.deploy(wallet, fpcArtifact, [
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
   ]).send({ from: operator });
-  console.log(`[chaos-local] FPC deployed at ${fpc.address.toString()}`);
+  pinoLogger.info(`[chaos-local] FPC deployed at ${fpc.address.toString()}`);
 
   const [minFees, nodeInfo] = await Promise.all([node.getCurrentMinFees(), node.getNodeInfo()]);
   const maxGasCostPerTx =
@@ -353,7 +357,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
         "Start aztec local network and ensure the operator account is pre-funded.",
     );
   }
-  console.log(
+  pinoLogger.info(
     `[chaos-local] L1 FeeJuice balance: ${l1FeeJuiceBalance}, topup amount: ${topupAmountWei}`,
   );
 
@@ -403,7 +407,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
     "utf8",
   );
 
-  console.log(`[chaos-local] Configs written to ${config.runDir}`);
+  pinoLogger.info(`[chaos-local] Configs written to ${config.runDir}`);
 
   return {
     fpcAddress: fpc.address,
@@ -435,7 +439,7 @@ async function startServicesAndFundFpc(
   );
   const topupDistPath = path.join(config.repoRoot, "services", "topup", "dist", "index.js");
 
-  console.log("[chaos-local] Starting attestation service...");
+  pinoLogger.info("[chaos-local] Starting attestation service...");
   const attestation = startManagedProcess(
     "chaos-attestation",
     "bun",
@@ -450,9 +454,9 @@ async function startServicesAndFundFpc(
   );
 
   await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
-  console.log(`[chaos-local] Attestation service ready at ${attestationBaseUrl}`);
+  pinoLogger.info(`[chaos-local] Attestation service ready at ${attestationBaseUrl}`);
 
-  console.log("[chaos-local] Starting topup service...");
+  pinoLogger.info("[chaos-local] Starting topup service...");
   const topup = startManagedProcess(
     "chaos-topup",
     "bun",
@@ -467,29 +471,29 @@ async function startServicesAndFundFpc(
   );
 
   await waitForHealth(`${topupOpsBaseUrl}/health`, config.httpTimeoutMs);
-  console.log(`[chaos-local] Topup service ready at ${topupOpsBaseUrl}`);
+  pinoLogger.info(`[chaos-local] Topup service ready at ${topupOpsBaseUrl}`);
 
   // Wait for topup to submit its first L1 bridge transaction
-  console.log("[chaos-local] Waiting for topup to submit L1→L2 bridge...");
+  pinoLogger.info("[chaos-local] Waiting for topup to submit L1→L2 bridge...");
   const bridgeSub = await waitForBridgeSubmission(topup, config.topupWaitMs);
-  console.log(
+  pinoLogger.info(
     `[chaos-local] Bridge submitted: messageHash=${bridgeSub.messageHash} leafIndex=${bridgeSub.leafIndex}`,
   );
 
   // Advance L2 blocks to make the L1→L2 message available for claiming
-  console.log(
+  pinoLogger.info(
     `[chaos-local] Advancing ${config.relayAdvanceBlocks} L2 blocks to relay L1→L2 message...`,
   );
   for (let i = 0; i < config.relayAdvanceBlocks; i++) {
     await setup.token.methods
       .mint_to_private(setup.user, 1n)
       .send({ from: setup.operator, wait: { timeout: 120 } });
-    console.log(`[chaos-local] relay block ${i + 1}/${config.relayAdvanceBlocks}`);
+    pinoLogger.info(`[chaos-local] relay block ${i + 1}/${config.relayAdvanceBlocks}`);
   }
   const node = createAztecNodeClient(config.nodeUrl);
 
   // Wait for topup to log a confirmed outcome
-  console.log("[chaos-local] Waiting for bridge confirmation...");
+  pinoLogger.info("[chaos-local] Waiting for bridge confirmation...");
   await waitForBridgeConfirmed(topup, config.topupWaitMs);
 
   const feeJuiceBalance = await waitForPositiveFeeJuiceBalance(
@@ -498,7 +502,7 @@ async function startServicesAndFundFpc(
     config.topupWaitMs,
   );
 
-  console.log(`[chaos-local] FPC funded: feeJuice=${feeJuiceBalance}`);
+  pinoLogger.info(`[chaos-local] FPC funded: feeJuice=${feeJuiceBalance}`);
   return { attestation, topup };
 }
 
@@ -509,14 +513,14 @@ async function runChaosTest(config: LocalConfig, setup: SetupResult): Promise<nu
 
   const reportPath = config.reportPath ?? path.join(config.runDir, "chaos-report.json");
 
-  console.log(`\n[chaos-local] ──────────────────────────────────────────`);
-  console.log(`[chaos-local] Launching chaos test suite (mode=${config.chaosMode})`);
-  console.log(`[chaos-local] FPC:    ${setup.fpcAddress.toString()}`);
-  console.log(`[chaos-local] Token:  ${setup.tokenAddress.toString()}`);
-  console.log(`[chaos-local] Attest: ${attestationBaseUrl}`);
-  console.log(`[chaos-local] Topup:  ${topupOpsBaseUrl}`);
-  console.log(`[chaos-local] Report: ${reportPath}`);
-  console.log(`[chaos-local] ──────────────────────────────────────────\n`);
+  pinoLogger.info(`\n[chaos-local] ──────────────────────────────────────────`);
+  pinoLogger.info(`[chaos-local] Launching chaos test suite (mode=${config.chaosMode})`);
+  pinoLogger.info(`[chaos-local] FPC:    ${setup.fpcAddress.toString()}`);
+  pinoLogger.info(`[chaos-local] Token:  ${setup.tokenAddress.toString()}`);
+  pinoLogger.info(`[chaos-local] Attest: ${attestationBaseUrl}`);
+  pinoLogger.info(`[chaos-local] Topup:  ${topupOpsBaseUrl}`);
+  pinoLogger.info(`[chaos-local] Report: ${reportPath}`);
+  pinoLogger.info(`[chaos-local] ──────────────────────────────────────────\n`);
 
   // Chaos test env – passed directly so no shell inheritance issues
   const chaosEnv: NodeJS.ProcessEnv = {
@@ -544,7 +548,7 @@ async function runChaosTest(config: LocalConfig, setup: SetupResult): Promise<nu
 
   // 30 min ceiling for the full suite
   const exitCode = await waitForProcessExit(chaosProc, 30 * 60 * 1000);
-  console.log(`\n[chaos-local] Chaos test process exited with code ${exitCode}`);
+  pinoLogger.info(`\n[chaos-local] Chaos test process exited with code ${exitCode}`);
 
   if (existsSync(reportPath)) {
     try {
@@ -557,11 +561,11 @@ async function runChaosTest(config: LocalConfig, setup: SetupResult): Promise<nu
         };
       };
       const s = report.summary ?? {};
-      console.log(
+      pinoLogger.info(
         `[chaos-local] Report summary: ${s.total ?? "?"} total, ` +
           `${s.passed ?? "?"} passed, ${s.failed ?? "?"} failed, ${s.skipped ?? "?"} skipped`,
       );
-      console.log(`[chaos-local] Full report: ${reportPath}`);
+      pinoLogger.info(`[chaos-local] Full report: ${reportPath}`);
     } catch {
       // ignore parse errors – raw file still exists
     }
@@ -576,29 +580,29 @@ async function main(): Promise<void> {
   const config = getConfig();
   const managed: ManagedProcess[] = [];
 
-  console.log("\n[chaos-local] ════════════════════════════════════════════");
-  console.log("[chaos-local]  FPC Chaos Local – self-contained test run  ");
-  console.log("[chaos-local] ════════════════════════════════════════════");
-  console.log(`[chaos-local] node=${config.nodeUrl}  l1=${config.l1RpcUrl}`);
-  console.log(`[chaos-local] mode=${config.chaosMode}  runDir=${config.runDir}\n`);
+  pinoLogger.info("\n[chaos-local] ════════════════════════════════════════════");
+  pinoLogger.info("[chaos-local]  FPC Chaos Local – self-contained test run  ");
+  pinoLogger.info("[chaos-local] ════════════════════════════════════════════");
+  pinoLogger.info(`[chaos-local] node=${config.nodeUrl}  l1=${config.l1RpcUrl}`);
+  pinoLogger.info(`[chaos-local] mode=${config.chaosMode}  runDir=${config.runDir}\n`);
 
   let exitCode = 0;
 
   try {
-    console.log("[chaos-local] Step 1/3: Deploying contracts...");
+    pinoLogger.info("[chaos-local] Step 1/3: Deploying contracts...");
     const setup = await deployAndConfigure(config);
 
-    console.log("\n[chaos-local] Step 2/3: Starting services and funding FPC...");
+    pinoLogger.info("\n[chaos-local] Step 2/3: Starting services and funding FPC...");
     const { attestation, topup } = await startServicesAndFundFpc(config, setup);
     managed.push(attestation, topup);
 
-    console.log("\n[chaos-local] Step 3/3: Running chaos tests...");
+    pinoLogger.info("\n[chaos-local] Step 3/3: Running chaos tests...");
     exitCode = await runChaosTest(config, setup);
   } catch (err) {
-    console.error("\n[chaos-local] ERROR:", err instanceof Error ? err.message : String(err));
+    pinoLogger.error("\n[chaos-local] ERROR:", err instanceof Error ? err.message : String(err));
     exitCode = 1;
   } finally {
-    console.log("\n[chaos-local] Stopping services...");
+    pinoLogger.info("\n[chaos-local] Stopping services...");
     await Promise.allSettled(managed.map(stopManagedProcess));
   }
 
@@ -606,6 +610,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("[chaos-local] Unhandled error:", err);
+  pinoLogger.error("[chaos-local] Unhandled error:", err);
   process.exit(1);
 });

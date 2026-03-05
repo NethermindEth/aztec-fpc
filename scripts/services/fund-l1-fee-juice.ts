@@ -1,7 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import pino from "pino";
 import { type Address, createPublicClient, createWalletClient, http, isAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+
+const pinoLogger = pino();
 
 type CliArgs = {
   l1RpcUrl: string;
@@ -147,7 +150,7 @@ async function sendWithManagedNonce(params: {
         publicClient: params.publicClient,
         accountAddress: params.accountAddress,
       });
-      console.warn(
+      pinoLogger.warn(
         `[fund-l1-fee-juice] nonce conflict detected; retrying with refreshed_nonce=${refreshedNonce} attempt=${attempt + 1}/${MAX_NONCE_RETRY_ATTEMPTS}`,
       );
       nonce = refreshedNonce;
@@ -304,7 +307,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--help":
       case "-h":
-        console.log(usage());
+        pinoLogger.info(usage());
         return { kind: "help" };
       default:
         throw new CliError(`Unknown argument: ${arg}`);
@@ -556,12 +559,12 @@ async function tryDirectMint(params: {
     if (receipt.status !== "success") {
       throw new CliError(`Direct mint transaction reverted: tx_hash=${receipt.transactionHash}`);
     }
-    console.log(
+    pinoLogger.info(
       `[fund-l1-fee-juice] direct token mint succeeded tx_hash=${receipt.transactionHash}`,
     );
     return true;
   } catch (error) {
-    console.warn(
+    pinoLogger.warn(
       `[fund-l1-fee-juice] direct token mint unavailable (${String(error)}); will try fee asset handler fallback`,
     );
     return false;
@@ -629,7 +632,7 @@ async function mintViaFeeAssetHandler(params: {
       tokenAddress: params.tokenAddress,
       accountAddress: params.recipient,
     });
-    console.log(
+    pinoLogger.info(
       `[fund-l1-fee-juice] faucet mint #${mintCount} tx_hash=${receipt.transactionHash} balance=${balance}`,
     );
   }
@@ -654,24 +657,24 @@ async function main(): Promise<void> {
     accountAddress: recipient,
   });
 
-  console.log(`[fund-l1-fee-juice] l1_rpc_url=${args.l1RpcUrl}`);
-  console.log(`[fund-l1-fee-juice] node_url=${args.nodeUrl ?? "<not provided>"}`);
-  console.log(`[fund-l1-fee-juice] manifest_path=${args.manifestPath ?? "<not provided>"}`);
-  console.log(
+  pinoLogger.info(`[fund-l1-fee-juice] l1_rpc_url=${args.l1RpcUrl}`);
+  pinoLogger.info(`[fund-l1-fee-juice] node_url=${args.nodeUrl ?? "<not provided>"}`);
+  pinoLogger.info(`[fund-l1-fee-juice] manifest_path=${args.manifestPath ?? "<not provided>"}`);
+  pinoLogger.info(
     `[fund-l1-fee-juice] fee_juice_token=${targets.feeJuiceTokenAddress} fee_asset_handler=${targets.feeAssetHandlerAddress ?? "<none>"} source=${targets.source}`,
   );
-  console.log(`[fund-l1-fee-juice] recipient=${recipient}`);
-  console.log(
+  pinoLogger.info(`[fund-l1-fee-juice] recipient=${recipient}`);
+  pinoLogger.info(
     `[fund-l1-fee-juice] target_balance_wei=${args.targetBalanceWei} current_balance_wei=${beforeBalance}`,
   );
 
   if (beforeBalance >= args.targetBalanceWei) {
-    console.log("[fund-l1-fee-juice] recipient already has enough L1 FeeJuice; no mint needed");
+    pinoLogger.info("[fund-l1-fee-juice] recipient already has enough L1 FeeJuice; no mint needed");
     return;
   }
 
   if (args.dryRun) {
-    console.log(
+    pinoLogger.info(
       `[fund-l1-fee-juice] dry-run: would mint deficit_wei=${args.targetBalanceWei - beforeBalance}`,
     );
     return;
@@ -719,18 +722,18 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log(
+  pinoLogger.info(
     `[fund-l1-fee-juice] success: recipient funded on L1. final_balance_wei=${finalBalance}`,
   );
 }
 
 main().catch((error) => {
   if (error instanceof CliError) {
-    console.error(`[fund-l1-fee-juice] ERROR: ${error.message}`);
-    console.error("");
-    console.error(usage());
+    pinoLogger.error(`[fund-l1-fee-juice] ERROR: ${error.message}`);
+    pinoLogger.error("");
+    pinoLogger.error(usage());
   } else {
-    console.error("[fund-l1-fee-juice] Unexpected error:", error);
+    pinoLogger.error("[fund-l1-fee-juice] Unexpected error:", error);
   }
   process.exit(1);
 });

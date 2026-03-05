@@ -1,5 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
@@ -94,7 +97,7 @@ async function expectFailure(
     const message = error instanceof Error ? error.message : JSON.stringify(error);
     const normalized = message.toLowerCase();
     if (expectedSubstrings.some((needle) => normalized.includes(needle.toLowerCase()))) {
-      console.log(`[smoke] PASS: ${scenario}`);
+      pinoLogger.info(`[smoke] PASS: ${scenario}`);
       return;
     }
     throw new Error(`${scenario} failed with unexpected error: ${message}`);
@@ -238,7 +241,7 @@ async function topUpFpcFeeJuice(
   }
   const bridgeAmount = topupWei > l1FeeJuiceBalance ? l1FeeJuiceBalance : topupWei;
   if (bridgeAmount < topupWei) {
-    console.warn(
+    pinoLogger.warn(
       `[smoke] WARN: requested FeeJuice topup ${topupWei} exceeds L1 balance ${l1FeeJuiceBalance}. Clamping bridge amount to ${bridgeAmount}.`,
     );
   }
@@ -253,7 +256,7 @@ async function topUpFpcFeeJuice(
     args: [portalAddress, bridgeAmount],
   });
   await publicClient.waitForTransactionReceipt({ hash: approveHash });
-  console.log(`[smoke] l1_fee_juice_approve_tx=${approveHash}`);
+  pinoLogger.info(`[smoke] l1_fee_juice_approve_tx=${approveHash}`);
 
   const hash = await walletClient.writeContract({
     address: portalAddress,
@@ -262,7 +265,7 @@ async function topUpFpcFeeJuice(
     args: [recipientBytes32, bridgeAmount, claimSecretHash.toString() as Hex],
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  console.log(`[smoke] l1_fee_juice_bridge_tx=${hash}`);
+  pinoLogger.info(`[smoke] l1_fee_juice_bridge_tx=${hash}`);
 
   let messageLeafIndex: bigint | undefined;
   let l1ToL2MessageHash: Fr | undefined;
@@ -352,8 +355,8 @@ async function main() {
     }),
   );
 
-  console.log(`[smoke] operator=${operator.toString()}`);
-  console.log(`[smoke] user=${user.toString()}`);
+  pinoLogger.info(`[smoke] operator=${operator.toString()}`);
+  pinoLogger.info(`[smoke] user=${user.toString()}`);
 
   // Derive operator signing key and public key for inline Schnorr verification.
   const schnorr = new Schnorr();
@@ -366,18 +369,18 @@ async function main() {
     ["SmokeToken", "SMK", 18, operator, operator],
     "constructor_with_minter",
   ).send({ from: operator });
-  console.log(`[smoke] token=${token.address.toString()}`);
+  pinoLogger.info(`[smoke] token=${token.address.toString()}`);
 
   const fpc = await Contract.deploy(wallet, fpcArtifact, [
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
   ]).send({ from: operator });
-  console.log(`[smoke] fpc=${fpc.address.toString()}`);
+  pinoLogger.info(`[smoke] fpc=${fpc.address.toString()}`);
 
-  console.log(`[smoke] fee_per_da_gas=${feePerDaGas}`);
-  console.log(`[smoke] fee_per_l2_gas=${feePerL2Gas}`);
-  console.log(`[smoke] fee_juice_topup_wei=${feeJuiceTopupWei}`);
+  pinoLogger.info(`[smoke] fee_per_da_gas=${feePerDaGas}`);
+  pinoLogger.info(`[smoke] fee_per_l2_gas=${feePerL2Gas}`);
+  pinoLogger.info(`[smoke] fee_juice_topup_wei=${feeJuiceTopupWei}`);
 
   if (feeJuiceTopupWei > 0n) {
     const feeJuiceBalance = await topUpFpcFeeJuice(
@@ -388,16 +391,16 @@ async function main() {
       fpc.address.toString(),
       feeJuiceTopupWei,
     );
-    console.log(`[smoke] fpc_fee_juice_balance=${feeJuiceBalance}`);
+    pinoLogger.info(`[smoke] fpc_fee_juice_balance=${feeJuiceBalance}`);
   } else {
-    console.log("[smoke] skipping fee-juice top-up (FPC_SMOKE_FEE_JUICE_TOPUP_WEI=0)");
+    pinoLogger.info("[smoke] skipping fee-juice top-up (FPC_SMOKE_FEE_JUICE_TOPUP_WEI=0)");
   }
 
   const expectedCharge = ceilDiv(maxGasCostNoTeardown * config.rateNum, config.rateDen);
   const fjFeeAmount = maxGasCostNoTeardown;
   const aaPaymentAmount = expectedCharge;
   const mintAmount = expectedCharge + 1_000_000n;
-  console.log(`[smoke] expected_charge=${expectedCharge}`);
+  pinoLogger.info(`[smoke] expected_charge=${expectedCharge}`);
 
   await token.methods.mint_to_private(user, mintAmount).send({ from: operator });
   await token.methods.mint_to_public(user, 2n).send({ from: operator });
@@ -480,11 +483,11 @@ async function main() {
   const userDebited = userBefore - userAfter;
   const operatorCredited = operatorAfter - operatorBefore;
 
-  console.log(`[smoke] expected_charge=${expectedCharge}`);
-  console.log(`[smoke] user_debited=${userDebited}`);
-  console.log(`[smoke] operator_credited=${operatorCredited}`);
-  console.log(`[smoke] operator_balance_after=${operatorAfter}`);
-  console.log(`[smoke] tx_fee_juice=${receipt.transactionFee}`);
+  pinoLogger.info(`[smoke] expected_charge=${expectedCharge}`);
+  pinoLogger.info(`[smoke] user_debited=${userDebited}`);
+  pinoLogger.info(`[smoke] operator_credited=${operatorCredited}`);
+  pinoLogger.info(`[smoke] operator_balance_after=${operatorAfter}`);
+  pinoLogger.info(`[smoke] tx_fee_juice=${receipt.transactionFee}`);
 
   if (userDebited !== expectedCharge) {
     throw new Error(`User debit mismatch. expected=${expectedCharge} got=${userDebited}`);
@@ -570,12 +573,12 @@ async function main() {
         }),
   );
 
-  console.log("[smoke] PASS: fee_entrypoint end-to-end flow succeeded");
+  pinoLogger.info("[smoke] PASS: fee_entrypoint end-to-end flow succeeded");
 }
 
 try {
   await main();
 } catch (error) {
-  console.error(`[smoke] FAIL: ${(error as Error).message}`);
+  pinoLogger.error(`[smoke] FAIL: ${(error as Error).message}`);
   process.exit(1);
 }

@@ -1,3 +1,7 @@
+import pino from "pino";
+
+const pinoLogger = pino();
+
 /**
  * FPC Chaos / Adversarial Test Suite
  *
@@ -195,7 +199,7 @@ class ChaosRunner {
         durationMs,
         details,
       };
-      console.log(`${GREEN}PASS${RESET} ${DIM}(${durationMs}ms)${RESET}`);
+      pinoLogger.info(`${GREEN}PASS${RESET} ${DIM}(${durationMs}ms)${RESET}`);
     } catch (error) {
       const durationMs = Date.now() - start;
       const msg = error instanceof Error ? error.message : String(error);
@@ -207,8 +211,8 @@ class ChaosRunner {
         durationMs,
         error: msg,
       };
-      console.log(`${RED}FAIL${RESET} ${DIM}(${durationMs}ms)${RESET}`);
-      console.log(`${RED}    ✗ ${msg}${RESET}`);
+      pinoLogger.info(`${RED}FAIL${RESET} ${DIM}(${durationMs}ms)${RESET}`);
+      pinoLogger.info(`${RED}    ✗ ${msg}${RESET}`);
     }
 
     this.results.push(result);
@@ -221,7 +225,7 @@ class ChaosRunner {
   }
 
   skip(id: string, category: string, name: string, reason: string): TestResult {
-    console.log(
+    pinoLogger.info(
       `${DIM}  [${category}]${RESET} ${name} ... ${YELLOW}SKIP${RESET} ${DIM}(${reason})${RESET}`,
     );
     const result: TestResult = {
@@ -246,24 +250,24 @@ class ChaosRunner {
     const skipped = this.results.filter((r) => r.status === "skip").length;
     const total = this.results.length;
 
-    console.log(`\n${"─".repeat(60)}`);
-    console.log(
+    pinoLogger.info(`\n${"─".repeat(60)}`);
+    pinoLogger.info(
       `${BOLD}Chaos Test Summary${RESET}  ${DIM}(${(totalMs / 1000).toFixed(1)}s)${RESET}`,
     );
-    console.log(
+    pinoLogger.info(
       `  ${GREEN}${passed} passed${RESET}  ${RED}${failed} failed${RESET}  ${YELLOW}${skipped} skipped${RESET}  ${DIM}${total} total${RESET}`,
     );
 
     if (failed > 0) {
-      console.log(`\n${RED}${BOLD}Failed tests:${RESET}`);
+      pinoLogger.info(`\n${RED}${BOLD}Failed tests:${RESET}`);
       for (const r of this.results.filter((r) => r.status === "fail")) {
-        console.log(`  ${RED}✗ [${r.category}] ${r.name}${RESET}`);
+        pinoLogger.info(`  ${RED}✗ [${r.category}] ${r.name}${RESET}`);
         if (r.error) {
-          console.log(`    ${DIM}${r.error.split("\n")[0]}${RESET}`);
+          pinoLogger.info(`    ${DIM}${r.error.split("\n")[0]}${RESET}`);
         }
       }
     }
-    console.log("─".repeat(60));
+    pinoLogger.info("─".repeat(60));
   }
 
   buildReport(config: ChaosConfig, totalMs: number): ChaosReport {
@@ -1980,15 +1984,15 @@ async function runStressTests(
 
 async function main(): Promise<void> {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    console.log("FPC Chaos Test – see top of fpc-chaos-test.ts for ENV VAR documentation.");
+    pinoLogger.info("FPC Chaos Test – see top of fpc-chaos-test.ts for ENV VAR documentation.");
     process.exit(0);
   }
 
-  console.log(`\n${BOLD}${CYAN}FPC Chaos / Adversarial Test Suite${RESET}\n`);
+  pinoLogger.info(`\n${BOLD}${CYAN}FPC Chaos / Adversarial Test Suite${RESET}\n`);
 
   const config = getConfig();
 
-  console.log(
+  pinoLogger.info(
     `${DIM}  mode=${config.mode}  attestation=${config.attestationUrl}` +
       (config.topupUrl ? `  topup=${config.topupUrl}` : "") +
       (config.nodeUrl ? `  node=${config.nodeUrl}` : "") +
@@ -1998,7 +2002,7 @@ async function main(): Promise<void> {
   const runner = new ChaosRunner(config);
   const globalStart = Date.now();
 
-  console.log(`${BOLD}Phase 1: API surface tests${RESET}`);
+  pinoLogger.info(`${BOLD}Phase 1: API surface tests${RESET}`);
   await runApiTests(runner, config);
 
   if (config.mode === "onchain" || config.mode === "full") {
@@ -2010,16 +2014,18 @@ async function main(): Promise<void> {
         "FPC_CHAOS_OPERATOR_SECRET_KEY not set – skipping all onchain tests",
       );
     } else {
-      console.log(`\n${BOLD}Phase 2: On-chain security tests${RESET}`);
-      console.log(
+      pinoLogger.info(`\n${BOLD}Phase 2: On-chain security tests${RESET}`);
+      pinoLogger.info(
         `${DIM}  Building on-chain context (loading artifacts + setting up accounts)...${RESET}`,
       );
       let ctx: OnchainContext;
       try {
         ctx = await buildOnchainContext(config);
       } catch (err) {
-        console.error(`${RED}Failed to build on-chain context: ${(err as Error).message}${RESET}`);
-        console.error(
+        pinoLogger.error(
+          `${RED}Failed to build on-chain context: ${(err as Error).message}${RESET}`,
+        );
+        pinoLogger.error(
           `${DIM}  Ensure the Aztec node is reachable and contract artifacts exist in target/.${RESET}`,
         );
         process.exit(1);
@@ -2027,7 +2033,7 @@ async function main(): Promise<void> {
       await runOnchainTests(runner, config, ctx);
 
       if (config.mode === "full") {
-        console.log(`\n${BOLD}Phase 3: Concurrent stress tests${RESET}`);
+        pinoLogger.info(`\n${BOLD}Phase 3: Concurrent stress tests${RESET}`);
         await runStressTests(runner, config, ctx);
       }
     }
@@ -2040,7 +2046,7 @@ async function main(): Promise<void> {
 
   if (config.reportPath) {
     writeFileSync(config.reportPath, JSON.stringify(report, null, 2), "utf8");
-    console.log(`\n${DIM}Report written to ${config.reportPath}${RESET}`);
+    pinoLogger.info(`\n${DIM}Report written to ${config.reportPath}${RESET}`);
   }
 
   const failed = report.summary.failed;
@@ -2050,6 +2056,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(`\n${RED}${BOLD}Unhandled error:${RESET}`, err);
+  pinoLogger.error(`\n${RED}${BOLD}Unhandled error:${RESET}`, err);
   process.exit(1);
 });

@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -252,7 +255,7 @@ function parseCliArgs(argv: string[]): CliArgs {
         break;
       case "--help":
       case "-h":
-        console.log(usage());
+        pinoLogger.info(usage());
         process.exit(0);
         break;
       default:
@@ -425,11 +428,11 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log(`${LOG_PREFIX} node_url=${nodeUrl}`);
-  console.log(`${LOG_PREFIX} l1_rpc_url=${l1RpcUrl}`);
-  console.log(`${LOG_PREFIX} claimer_address=${claimerAddress.toString()}`);
-  console.log(`${LOG_PREFIX} amount_wei=${args.amountWei.toString()}`);
-  console.log(`${LOG_PREFIX} payment_mode=fee_juice (sponsored disabled)`);
+  pinoLogger.info(`${LOG_PREFIX} node_url=${nodeUrl}`);
+  pinoLogger.info(`${LOG_PREFIX} l1_rpc_url=${l1RpcUrl}`);
+  pinoLogger.info(`${LOG_PREFIX} claimer_address=${claimerAddress.toString()}`);
+  pinoLogger.info(`${LOG_PREFIX} amount_wei=${args.amountWei.toString()}`);
+  pinoLogger.info(`${LOG_PREFIX} payment_mode=fee_juice (sponsored disabled)`);
 
   const node = createAztecNodeClient(nodeUrl);
   await waitForNode(node);
@@ -456,23 +459,23 @@ async function main(): Promise<void> {
   const bridgeLogger = createLogger("fund-claimer-l2:bridge");
   const portalManager = await L1FeeJuicePortalManager.new(node, l1Wallet as never, bridgeLogger);
 
-  console.log(`${LOG_PREFIX} bridging FeeJuice to claimer...`);
+  pinoLogger.info(`${LOG_PREFIX} bridging FeeJuice to claimer...`);
   const bridgeClaim = (await portalManager.bridgeTokensPublic(
     claimerAddress,
     args.amountWei,
   )) as BridgeClaim;
 
-  console.log(
+  pinoLogger.info(
     `${LOG_PREFIX} bridge submitted message_hash=${bridgeClaim.messageHash} leaf_index=${bridgeClaim.messageLeafIndex} claim_secret_hash=<hidden>`,
   );
 
   if (args.skipClaim) {
-    console.log(`${LOG_PREFIX} skip-claim enabled; stopping after bridge submission`);
+    pinoLogger.info(`${LOG_PREFIX} skip-claim enabled; stopping after bridge submission`);
     return;
   }
 
   const messageHashFr = Fr.fromHexString(bridgeClaim.messageHash);
-  console.log(`${LOG_PREFIX} waiting for L1->L2 message readiness...`);
+  pinoLogger.info(`${LOG_PREFIX} waiting for L1->L2 message readiness...`);
   const ready = await waitForL1ToL2MessageReady(node, messageHashFr, {
     timeoutSeconds: args.messageReadyTimeoutSeconds,
     forPublicConsumption: false,
@@ -511,14 +514,14 @@ async function main(): Promise<void> {
 
   const claimerBalanceBefore = await getFeeJuiceBalance(claimerAddress, node);
   const feePayerBalanceBefore = await getFeeJuiceBalance(feePayerAddress, node);
-  console.log(
+  pinoLogger.info(
     `${LOG_PREFIX} pre-claim balances claimer=${claimerBalanceBefore} fee_payer=${feePayerBalanceBefore}`,
   );
 
   // Self-pay with the claim when fee payer has no balance and we have the claimer key.
   const useSelfPay = feePayerBalanceBefore <= 0n && claimerSecretKey != null;
   if (useSelfPay) {
-    console.log(
+    pinoLogger.info(
       `${LOG_PREFIX} fee payer has no balance — using FeeJuicePaymentMethodWithClaim (self-pay)`,
     );
   } else if (feePayerBalanceBefore <= 0n) {
@@ -553,7 +556,7 @@ async function main(): Promise<void> {
         });
 
       txHash = receipt.txHash.toString();
-      console.log(
+      pinoLogger.info(
         `${LOG_PREFIX} claim succeeded tx_hash=${txHash} attempt=${attempt}/${args.claimRetries}`,
       );
       break;
@@ -571,7 +574,7 @@ async function main(): Promise<void> {
       if (attempt >= args.claimRetries) {
         break;
       }
-      console.warn(
+      pinoLogger.warn(
         `${LOG_PREFIX} claim attempt failed attempt=${attempt}/${args.claimRetries} retry_in_ms=${args.claimRetryDelayMs} error=${rendered}`,
       );
       await sleep(args.claimRetryDelayMs);
@@ -586,21 +589,21 @@ async function main(): Promise<void> {
 
   const claimerBalanceAfter = await getFeeJuiceBalance(claimerAddress, node);
   const feePayerBalanceAfter = await getFeeJuiceBalance(feePayerAddress, node);
-  console.log(
+  pinoLogger.info(
     `${LOG_PREFIX} post-claim balances claimer=${claimerBalanceAfter} fee_payer=${feePayerBalanceAfter}`,
   );
-  console.log(
+  pinoLogger.info(
     `${LOG_PREFIX} success: claimer delta=${claimerBalanceAfter - claimerBalanceBefore} wei`,
   );
 }
 
 main().catch((error) => {
   if (error instanceof Error) {
-    console.error(`${LOG_PREFIX} ERROR: ${error.message}`);
-    console.error("");
-    console.error(usage());
+    pinoLogger.error(`${LOG_PREFIX} ERROR: ${error.message}`);
+    pinoLogger.error("");
+    pinoLogger.error(usage());
   } else {
-    console.error(`${LOG_PREFIX} Unexpected error:`, error);
+    pinoLogger.error({ err: error }, `${LOG_PREFIX} Unexpected error:`);
   }
   process.exit(1);
 });

@@ -3,7 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import pino from "pino";
 import { writeDevnetDeployManifest } from "./devnet-manifest.ts";
+
+const pinoLogger = pino();
 
 type FpcArtifactName = "FPC" | "FPCMultiAsset";
 
@@ -346,7 +349,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--help":
       case "-h":
-        console.log(usage());
+        pinoLogger.info(usage());
         return { kind: "help" };
       default:
         throw new CliError(`Unknown argument: ${arg}`);
@@ -375,12 +378,14 @@ function parseCliArgs(argv: string[]): CliParseResult {
   );
 
   if (!parsedDeployer.value && !parsedDeployer.ref) {
-    console.warn("WARN: No deployer key provided. Using default devnet test key.");
+    pinoLogger.warn("WARN: No deployer key provided. Using default devnet test key.");
     parsedDeployer.value = DEVNET_DEFAULT_TEST_KEY;
   }
   if (!parsedOperatorSecret.value && !parsedOperatorSecret.ref) {
     parsedOperatorSecret.value = parsedDeployer.value ?? DEVNET_DEFAULT_TEST_KEY;
-    console.warn("WARN: No operator key provided. Using deployer key as operator key for devnet.");
+    pinoLogger.warn(
+      "WARN: No operator key provided. Using deployer key as operator key for devnet.",
+    );
   }
 
   const parsedNodeUrl = parseHttpUrl(nodeUrl, "--node-url");
@@ -516,7 +521,7 @@ async function callContractSendWithAztecWallet(params: {
         throw error;
       }
       const delayMs = retryBackoffMs * attempt;
-      console.warn(
+      pinoLogger.warn(
         `[deploy-fpc-devnet] retrying ${params.context} send after transient wallet error (attempt ${attempt + 1}/${maxAttempts}) in ${delayMs}ms`,
       );
       await sleep(delayMs);
@@ -539,7 +544,7 @@ function ensureOperatorAccountInWallet(
   const existing = tryGetWalletAliasAddress(nodeUrl, walletAlias);
   if (existing) {
     if (existing.toLowerCase() === expectedAddress.toLowerCase()) {
-      console.log(
+      pinoLogger.info(
         `[deploy-fpc-devnet] operator account already registered in wallet as ${walletAlias}`,
       );
       return walletAlias;
@@ -547,7 +552,7 @@ function ensureOperatorAccountInWallet(
 
     alias = `${baseAlias}-${expectedAddress.slice(2, 10).toLowerCase()}`;
     walletAlias = `${WALLET_ACCOUNT_PREFIX}${alias}`;
-    console.warn(
+    pinoLogger.warn(
       `[deploy-fpc-devnet] operator alias conflict: ${WALLET_ACCOUNT_PREFIX}${baseAlias}=${existing}, expected ${expectedAddress}. Using scoped alias ${walletAlias}.`,
     );
 
@@ -558,7 +563,7 @@ function ensureOperatorAccountInWallet(
           `Wallet alias ${walletAlias} points to ${scopedExisting}, but operator address is ${expectedAddress}. Reconcile wallet state before continuing.`,
         );
       }
-      console.log(
+      pinoLogger.info(
         `[deploy-fpc-devnet] operator account already registered in wallet as ${walletAlias}`,
       );
       return walletAlias;
@@ -591,7 +596,7 @@ function ensureOperatorAccountInWallet(
         throw error;
       }
       if (!isCreateAccountConflict(error.message)) {
-        console.warn(
+        pinoLogger.warn(
           `[deploy-fpc-devnet] create-account with payment failed for ${walletAlias}; falling back to register-only import: ${error.message}`,
         );
       }
@@ -614,7 +619,7 @@ function ensureOperatorAccountInWallet(
       `Operator account alias mismatch: ${walletAlias} resolved to ${resolved}, expected ${expectedAddress}.`,
     );
   }
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] operator account registered in wallet as ${walletAlias} address=${resolved}`,
   );
   return walletAlias;
@@ -1253,7 +1258,7 @@ async function deployContractWithAztecWallet(params: {
       }
 
       const delayMs = retryBackoffMs * attempt;
-      console.warn(
+      pinoLogger.warn(
         `[deploy-fpc-devnet] retrying ${params.context} deployment after transient wallet error (attempt ${attempt + 1}/${maxAttempts}) in ${delayMs}ms`,
       );
       await sleep(delayMs);
@@ -1599,24 +1604,24 @@ async function main(): Promise<void> {
   const args = parseResult.args;
   const fpcSelection = loadFpcArtifactSelection(args.fpcArtifact);
 
-  console.log("[deploy-fpc-devnet] starting preflight checks");
-  console.log(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
-  console.log(`[deploy-fpc-devnet] l1_rpc_url=${args.l1RpcUrl ?? "<not provided>"}`);
-  console.log(
+  pinoLogger.info("[deploy-fpc-devnet] starting preflight checks");
+  pinoLogger.info(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
+  pinoLogger.info(`[deploy-fpc-devnet] l1_rpc_url=${args.l1RpcUrl ?? "<not provided>"}`);
+  pinoLogger.info(
     `[deploy-fpc-devnet] sponsored_fpc_address=${args.sponsoredFpcAddress ?? "<none — fee juice payment>"}`,
   );
-  console.log(`[deploy-fpc-devnet] deployer_alias=${args.deployerAlias}`);
-  console.log(`[deploy-fpc-devnet] accepted_asset=${args.acceptedAsset ?? "<deploy token>"}`);
-  console.log(
+  pinoLogger.info(`[deploy-fpc-devnet] deployer_alias=${args.deployerAlias}`);
+  pinoLogger.info(`[deploy-fpc-devnet] accepted_asset=${args.acceptedAsset ?? "<deploy token>"}`);
+  pinoLogger.info(
     `[deploy-fpc-devnet] fpc_artifact=${fpcSelection.artifactPath} variant=${fpcSelection.name}`,
   );
-  console.log(`[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`);
+  pinoLogger.info(`[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`);
 
   assertRequiredArtifactsExistForDevnet(fpcSelection, !args.acceptedAsset);
-  console.log("[deploy-fpc-devnet] artifact preflight passed");
+  pinoLogger.info("[deploy-fpc-devnet] artifact preflight passed");
 
   const nodeState = await assertAztecNodePreflight(args.nodeUrl);
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] node preflight passed. node_version=${nodeState.nodeVersion} l1_chain_id=${nodeState.l1ChainId} l2_chain_id=${nodeState.l2ChainId} rollup_version=${nodeState.rollupVersion}`,
   );
 
@@ -1630,34 +1635,34 @@ async function main(): Promise<void> {
         `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeState.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
       );
     }
-    console.log(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
+    pinoLogger.info(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
   } else {
-    console.log("[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)");
+    pinoLogger.info("[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)");
   }
 
   if (args.sponsoredFpcAddress) {
     ensureSponsoredFpcIsRegistered(args.nodeUrl, args.sponsoredFpcAddress);
-    console.log(
+    pinoLogger.info(
       `[deploy-fpc-devnet] sponsored payment contract is registered in wallet as ${WALLET_CONTRACT_PREFIX}${WALLET_SPONSORED_FPC_ALIAS}`,
     );
   } else {
-    console.log(
+    pinoLogger.info(
       "[deploy-fpc-devnet] no sponsored FPC address provided; using fee juice payment mode",
     );
   }
 
   const deployer = resolveDeployerAccount(args);
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] deployer account resolved. alias=${deployer.alias} wallet_alias=${deployer.walletAlias} address=${deployer.address} source=${deployer.source} key_material=${deployer.secretKey ? "inline" : "ref"}`,
   );
 
   if (!args.operatorSecretKey) {
     if (args.preflightOnly) {
-      console.log(
+      pinoLogger.info(
         "[deploy-fpc-devnet] operator secret key reference detected; pubkey derivation is deferred in preflight-only mode",
       );
-      console.log("[deploy-fpc-devnet] step 3 preflight checks passed");
-      console.log("[deploy-fpc-devnet] preflight-only requested; exiting");
+      pinoLogger.info("[deploy-fpc-devnet] step 3 preflight checks passed");
+      pinoLogger.info("[deploy-fpc-devnet] preflight-only requested; exiting");
       return;
     }
     throw new CliError(
@@ -1671,13 +1676,13 @@ async function main(): Promise<void> {
       `--operator ${args.operator} does not match address derived from --operator-secret-key: ${operatorIdentity.address}. Remove --operator to use the derived address, or provide the matching secret key.`,
     );
   }
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] operator identity derived. address=${operatorIdentity.address} pubkey_x=${operatorIdentity.pubkeyX} pubkey_y=${operatorIdentity.pubkeyY}`,
   );
-  console.log("[deploy-fpc-devnet] step 3 account resolution checks passed");
+  pinoLogger.info("[deploy-fpc-devnet] step 3 account resolution checks passed");
 
   if (args.preflightOnly) {
-    console.log("[deploy-fpc-devnet] preflight-only requested; exiting");
+    pinoLogger.info("[deploy-fpc-devnet] preflight-only requested; exiting");
     return;
   }
 
@@ -1691,11 +1696,11 @@ async function main(): Promise<void> {
   let acceptedAssetDeployTxHash: string | null = null;
   if (args.acceptedAsset) {
     acceptedAssetAddress = args.acceptedAsset;
-    console.log(
+    pinoLogger.info(
       `[deploy-fpc-devnet] accepted_asset provided; skipping token deployment. accepted_asset=${acceptedAssetAddress}`,
     );
   } else {
-    console.log("[deploy-fpc-devnet] deploying Token contract");
+    pinoLogger.info("[deploy-fpc-devnet] deploying Token contract");
     const tokenDeploy = await deployContractWithAztecWallet({
       nodeUrl: args.nodeUrl,
       fromAlias: deployer.walletAlias,
@@ -1714,12 +1719,12 @@ async function main(): Promise<void> {
     });
     acceptedAssetAddress = tokenDeploy.address;
     acceptedAssetDeployTxHash = tokenDeploy.txHash;
-    console.log(
+    pinoLogger.info(
       `[deploy-fpc-devnet] token deployed. address=${acceptedAssetAddress} tx_hash=${acceptedAssetDeployTxHash}`,
     );
   }
 
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] deploying ${fpcSelection.name} contract from ${fpcSelection.artifactPath}`,
   );
   const fpcDeploy = await deployContractWithAztecWallet({
@@ -1731,7 +1736,7 @@ async function main(): Promise<void> {
     constructorArgs: buildFpcConstructorArgs(fpcSelection, operatorIdentity, acceptedAssetAddress),
     context: fpcSelection.name,
   });
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] fpc deployed. address=${fpcDeploy.address} tx_hash=${fpcDeploy.txHash}`,
   );
 
@@ -1739,7 +1744,7 @@ async function main(): Promise<void> {
   let faucetConfig: ReturnType<typeof readFaucetEnvConfig> | undefined;
   if (!args.acceptedAsset) {
     faucetConfig = readFaucetEnvConfig();
-    console.log(
+    pinoLogger.info(
       `[deploy-fpc-devnet] deploying Faucet token=${acceptedAssetAddress} admin=${operatorIdentity.address} drip_amount=${faucetConfig.dripAmount} cooldown_seconds=${faucetConfig.cooldownSeconds}`,
     );
     faucetDeploy = await deployContractWithAztecWallet({
@@ -1756,7 +1761,7 @@ async function main(): Promise<void> {
       ],
       context: "Faucet",
     });
-    console.log(
+    pinoLogger.info(
       `[deploy-fpc-devnet] faucet deployed. address=${faucetDeploy.address} tx_hash=${faucetDeploy.txHash}`,
     );
 
@@ -1770,11 +1775,11 @@ async function main(): Promise<void> {
             operatorIdentity.address,
           );
     if (operatorWalletAlias === deployer.walletAlias) {
-      console.log(
+      pinoLogger.info(
         `[deploy-fpc-devnet] operator address matches deployer; reusing ${operatorWalletAlias} for faucet funding`,
       );
     }
-    console.log(
+    pinoLogger.info(
       `[deploy-fpc-devnet] funding faucet: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorWalletAlias}`,
     );
     try {
@@ -1793,12 +1798,12 @@ async function main(): Promise<void> {
         `Faucet funding failed: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorIdentity.address} failed. Ensure the operator is the token minter. Underlying error: ${String(error)}`,
       );
     }
-    console.log(`[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`);
+    pinoLogger.info(`[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`);
   } else {
-    console.log("[deploy-fpc-devnet] faucet deployment skipped (reusing existing token)");
+    pinoLogger.info("[deploy-fpc-devnet] faucet deployment skipped (reusing existing token)");
   }
 
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] deploying Counter contract owner=${operatorIdentity.address} headstart=0`,
   );
   const counterDeploy = await deployContractWithAztecWallet({
@@ -1811,7 +1816,7 @@ async function main(): Promise<void> {
     constructorArgs: ["0", operatorIdentity.address],
     context: "Counter",
   });
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] counter deployed. address=${counterDeploy.address} tx_hash=${counterDeploy.txHash}`,
   );
 
@@ -1884,21 +1889,21 @@ async function main(): Promise<void> {
     payment_mode: paymentMode,
   });
 
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
-  console.log(
+  pinoLogger.info(
     `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} counter=${manifest.contracts.counter ?? "n/a"} variant=${fpcSelection.name}`,
   );
 }
 
 main().catch((error) => {
   if (error instanceof CliError) {
-    console.error(`[deploy-fpc-devnet] ERROR: ${error.message}`);
-    console.error("");
-    console.error(usage());
+    pinoLogger.error(`[deploy-fpc-devnet] ERROR: ${error.message}`);
+    pinoLogger.error("");
+    pinoLogger.error(usage());
   } else {
-    console.error("[deploy-fpc-devnet] Unexpected error:", error);
+    pinoLogger.error("[deploy-fpc-devnet] Unexpected error:", error);
   }
   process.exit(1);
 });

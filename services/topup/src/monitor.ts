@@ -3,6 +3,9 @@ import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode, NodeInfo } from "@aztec/aztec.js/node";
 import { getFeeJuiceBalance as getSdkFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { deriveStorageSlotInMap } from "@aztec/stdlib/hash";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 const FEE_JUICE_BALANCES_STORAGE_SLOT = new Fr(1);
 
@@ -62,9 +65,9 @@ export async function createFeeJuiceBalanceReader(node: AztecNode): Promise<FeeJ
         } catch (error) {
           sdkPathEnabled = false;
           const nodeInfoSummary = `nodeVersion=${resolution.nodeInfo.nodeVersion}, rollupVersion=${resolution.nodeInfo.rollupVersion}`;
-          console.warn(
+          pinoLogger.warn(
+            { err: error },
             `aztec.js getFeeJuiceBalance failed; falling back to direct storage reads (${nodeInfoSummary})`,
-            error,
           );
         }
       }
