@@ -10,23 +10,14 @@ import {
 } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
-import {
-  type AztecNode,
-  createAztecNodeClient,
-  waitForNode,
-} from "@aztec/aztec.js/node";
+import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import type { Wallet as AccountWallet } from "@aztec/aztec.js/wallet";
 
-import {
-  PublishedAccountRequiredError,
-  SponsoredTxFailedError,
-} from "../errors";
+import { PublishedAccountRequiredError, SponsoredTxFailedError } from "../errors";
 import type { RuntimeContractConfig, SponsoredRuntimeConfig } from "../types";
 
 const currentDir =
-  typeof __dirname !== "undefined"
-    ? __dirname
-    : path.dirname(fileURLToPath(import.meta.url));
+  typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
 type DefaultArtifactLabel = "token" | "fpc" | "faucet" | "counter";
 
@@ -37,9 +28,7 @@ const DEFAULT_ARTIFACT_FILENAMES: Record<DefaultArtifactLabel, string> = {
   token: "token_contract-Token.json",
 };
 
-const defaultArtifactCache: Partial<
-  Record<DefaultArtifactLabel, ContractArtifact>
-> = {};
+const defaultArtifactCache: Partial<Record<DefaultArtifactLabel, ContractArtifact>> = {};
 
 function resolveArtifactSearchDirs(): string[] {
   const dirs = [
@@ -78,10 +67,7 @@ export type AttachedContracts = {
   token: Contract;
 };
 
-function parseAddress(
-  name: string,
-  raw: AztecAddress | string | undefined,
-): AztecAddress {
+function parseAddress(name: string, raw: AztecAddress | string | undefined): AztecAddress {
   try {
     if (!raw) {
       throw new Error("missing address");
@@ -99,13 +85,8 @@ function parseAddress(
   }
 }
 
-function loadArtifactFromPath(
-  artifactPath: string,
-  label: string,
-): ContractArtifact {
-  const parsed = JSON.parse(
-    readFileSync(artifactPath, "utf8"),
-  ) as NoirCompiledContract;
+function loadArtifactFromPath(artifactPath: string, label: string): ContractArtifact {
+  const parsed = JSON.parse(readFileSync(artifactPath, "utf8")) as NoirCompiledContract;
 
   return loadArtifactFromCompiledJson(parsed, label, artifactPath);
 }
@@ -120,9 +101,7 @@ function loadArtifactFromCompiledJson(
   } catch (error) {
     if (
       error instanceof Error &&
-      error.message.includes(
-        "Contract's public bytecode has not been transpiled",
-      )
+      error.message.includes("Contract's public bytecode has not been transpiled")
     ) {
       return loadContractArtifactForPublic(parsed);
     }
@@ -133,9 +112,7 @@ function loadArtifactFromCompiledJson(
   }
 }
 
-function resolveDefaultArtifactPath(
-  label: DefaultArtifactLabel,
-): string | undefined {
+function resolveDefaultArtifactPath(label: DefaultArtifactLabel): string | undefined {
   const filename = DEFAULT_ARTIFACT_FILENAMES[label];
   for (const dir of resolveArtifactSearchDirs()) {
     const candidatePath = path.join(dir, filename);
@@ -176,17 +153,12 @@ function resolveArtifact(input: {
   if (input.defaultLabel) {
     return requireDefaultArtifact(input.defaultLabel);
   }
-  throw new SponsoredTxFailedError(
-    `Missing artifact for required contract: ${input.label}.`,
-    {
-      label: input.label,
-    },
-  );
+  throw new SponsoredTxFailedError(`Missing artifact for required contract: ${input.label}.`, {
+    label: input.label,
+  });
 }
 
-export function parseAccountAddress(
-  account: AztecAddress | string,
-): AztecAddress {
+export function parseAccountAddress(account: AztecAddress | string): AztecAddress {
   if (typeof account !== "string") {
     if (account.isZero()) {
       throw new SponsoredTxFailedError("Invalid account address input.", {
@@ -220,9 +192,7 @@ export function resolveFpcAddress(input: {
     : undefined;
 
   if (explicit && discovery) {
-    if (
-      explicit.toString().toLowerCase() !== discovery.toString().toLowerCase()
-    ) {
+    if (explicit.toString().toLowerCase() !== discovery.toString().toLowerCase()) {
       throw new SponsoredTxFailedError(
         "FPC address mismatch between runtime config and attestation discovery.",
         {
@@ -259,10 +229,7 @@ export function resolveRuntimeAddresses(input: {
   );
 
   return {
-    acceptedAsset: parseAddress(
-      "accepted_asset",
-      input.runtimeConfig.acceptedAsset.address,
-    ),
+    acceptedAsset: parseAddress("accepted_asset", input.runtimeConfig.acceptedAsset.address),
     faucet: input.runtimeConfig.faucet
       ? parseAddress("faucet", input.runtimeConfig.faucet.address)
       : undefined,
@@ -285,13 +252,10 @@ async function attachRegisteredContract(input: {
 }): Promise<Contract> {
   const instance = await input.node.getContract(input.address);
   if (!instance) {
-    throw new SponsoredTxFailedError(
-      `Missing ${input.label} contract instance on node.`,
-      {
-        address: input.address.toString(),
-        label: input.label,
-      },
-    );
+    throw new SponsoredTxFailedError(`Missing ${input.label} contract instance on node.`, {
+      address: input.address.toString(),
+      label: input.label,
+    });
   }
 
   await input.wallet.registerContract(instance, input.artifact);
@@ -303,10 +267,7 @@ function resolveTargetArtifact(input: {
   label: string;
 }): ContractArtifact {
   if (input.config.artifact) {
-    return loadArtifactFromCompiledJson(
-      input.config.artifact,
-      `target:${input.label}`,
-    );
+    return loadArtifactFromCompiledJson(input.config.artifact, `target:${input.label}`);
   }
   if (input.label === "counter") {
     return requireDefaultArtifact("counter");
@@ -394,18 +355,16 @@ export async function connectAndAttachContracts(input: {
       : undefined;
 
   const targetPairs = await Promise.all(
-    Object.entries(input.runtimeConfig.targets ?? {}).map(
-      async ([label, targetConfig]) => {
-        const contract = await attachRegisteredContract({
-          address: addresses.targets[label] as AztecAddress,
-          artifact: resolveTargetArtifact({ config: targetConfig, label }),
-          label: `target:${label}`,
-          node,
-          wallet: input.wallet,
-        });
-        return [label, contract] as const;
-      },
-    ),
+    Object.entries(input.runtimeConfig.targets ?? {}).map(async ([label, targetConfig]) => {
+      const contract = await attachRegisteredContract({
+        address: addresses.targets[label] as AztecAddress,
+        artifact: resolveTargetArtifact({ config: targetConfig, label }),
+        label: `target:${label}`,
+        node,
+        wallet: input.wallet,
+      });
+      return [label, contract] as const;
+    }),
   );
   const targets = Object.fromEntries(targetPairs);
 

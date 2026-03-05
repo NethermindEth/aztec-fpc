@@ -139,10 +139,26 @@ export type SponsoredExecutionResult<TReceipt> = {
 
 export type ExecuteSponsoredCallInput<TReceipt> = {
   account: AztecAddress | string;
-  buildCall: (
-    ctx: SponsoredCallContext,
-  ) => Promise<SponsoredCallInteraction<TReceipt>>;
+  buildCall: (ctx: SponsoredCallContext) => Promise<SponsoredCallInteraction<TReceipt>>;
   postChecks?: (ctx: SponsoredPostCheckContext<TReceipt>) => Promise<void>;
   sponsorship: SponsorshipConfig;
+  wallet: AccountWallet;
+};
+
+export type SponsoredEntrypointConfig = {
+  address?: AztecAddress | string;
+  appendUserToArgs?: boolean;
+  args?: readonly unknown[];
+  artifact?: ContractArtifactJson;
+  label?: string;
+  method: string;
+  userArgPlaceholders?: readonly string[];
+};
+
+export type ExecuteSponsoredEntrypointInput<TReceipt> = {
+  account: AztecAddress | string;
+  postChecks?: (ctx: SponsoredPostCheckContext<TReceipt>) => Promise<void>;
+  sponsorship: SponsorshipConfig;
+  target: SponsoredEntrypointConfig;
   wallet: AccountWallet;
 };

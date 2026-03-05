@@ -26,10 +26,7 @@ export type ResolvedAcceptedAssets = {
   assets: AttestationAcceptedAsset[];
   discovery?: AttestationDiscoveryResponse;
   fpcAddress?: AztecAddress;
-  source:
-    | "accepted_assets_endpoint"
-    | "discovery_supported_assets"
-    | "legacy_asset_endpoint";
+  source: "accepted_assets_endpoint" | "discovery_supported_assets" | "legacy_asset_endpoint";
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -44,9 +41,7 @@ function parseNonZeroAddress(raw: string): string {
   return parsed.toString();
 }
 
-function parseAcceptedAssetCandidate(
-  value: unknown,
-): AttestationAcceptedAsset | undefined {
+function parseAcceptedAssetCandidate(value: unknown): AttestationAcceptedAsset | undefined {
   if (!isObject(value)) {
     return undefined;
   }
@@ -67,9 +62,7 @@ function parseAcceptedAssetCandidate(
   }
 }
 
-function parseAcceptedAssetsPayload(
-  payload: unknown,
-): AttestationAcceptedAsset[] | undefined {
+function parseAcceptedAssetsPayload(payload: unknown): AttestationAcceptedAsset[] | undefined {
   if (!Array.isArray(payload)) {
     return undefined;
   }
@@ -82,24 +75,28 @@ function parseAcceptedAssetsPayload(
   return assets as AttestationAcceptedAsset[];
 }
 
-function parseLegacyAssetPayload(
-  payload: unknown,
-): AttestationAcceptedAsset | undefined {
+function parseLegacyAssetPayload(payload: unknown): AttestationAcceptedAsset | undefined {
   return parseAcceptedAssetCandidate(payload);
 }
 
 function buildWellKnownDiscoveryUrl(attestationBaseUrl: string): string {
   const discoveryUrl = new URL(attestationBaseUrl);
-  discoveryUrl.pathname = "/.well-known/fpc.json";
+  discoveryUrl.pathname = joinBasePath(discoveryUrl.pathname, ".well-known/fpc.json");
   discoveryUrl.search = "";
   discoveryUrl.hash = "";
   return discoveryUrl.toString();
 }
 
-function resolveEndpointUrl(
-  attestationBaseUrl: string,
-  endpointPath: string,
-): string {
+function joinBasePath(basePath: string, pathSuffix: string): string {
+  const normalizedBase = basePath.replace(/\/+$/u, "");
+  const normalizedSuffix = pathSuffix.replace(/^\/+/u, "");
+  if (!normalizedSuffix) {
+    return normalizedBase || "/";
+  }
+  return normalizedBase ? `${normalizedBase}/${normalizedSuffix}` : `/${normalizedSuffix}`;
+}
+
+function resolveEndpointUrl(attestationBaseUrl: string, endpointPath: string): string {
   const trimmedPath = endpointPath.trim();
   if (!trimmedPath) {
     throw new QuoteValidationError("Attestation endpoint path is empty.", {
@@ -119,10 +116,7 @@ function resolveEndpointUrl(
   }
 
   const endpointUrl = new URL(attestationBaseUrl);
-  const basePath = endpointUrl.pathname.replace(/\/+$/u, "");
-  endpointUrl.pathname = trimmedPath.startsWith("/")
-    ? trimmedPath
-    : `${basePath}/${trimmedPath}`;
+  endpointUrl.pathname = joinBasePath(endpointUrl.pathname, trimmedPath);
   endpointUrl.search = "";
   endpointUrl.hash = "";
   return endpointUrl.toString();
@@ -143,9 +137,7 @@ async function fetchJsonPayload(input: {
   }
 }
 
-function parseDiscoveryPayload(
-  payload: unknown,
-): AttestationDiscoveryResponse | undefined {
+function parseDiscoveryPayload(payload: unknown): AttestationDiscoveryResponse | undefined {
   if (!isObject(payload)) {
     return undefined;
   }
@@ -174,9 +166,7 @@ export function resolveDiscoveryFpcAddress(input: {
 
   if (!rawFpcAddress) {
     if (required) {
-      throw new QuoteValidationError(
-        "Discovery payload is missing required fpc_address.",
-      );
+      throw new QuoteValidationError("Discovery payload is missing required fpc_address.");
     }
     return undefined;
   }
@@ -207,12 +197,8 @@ export async function resolveAcceptedAssetsAndDiscovery(input: {
     fetchImpl,
   });
 
-  const acceptedAssetsPath =
-    discovery?.endpoints?.accepted_assets ?? "/accepted-assets";
-  const acceptedAssetsUrl = resolveEndpointUrl(
-    input.attestationBaseUrl,
-    acceptedAssetsPath,
-  );
+  const acceptedAssetsPath = discovery?.endpoints?.accepted_assets ?? "/accepted-assets";
+  const acceptedAssetsUrl = resolveEndpointUrl(input.attestationBaseUrl, acceptedAssetsPath);
   const acceptedAssetsPayload = await fetchJsonPayload({
     fetchImpl,
     url: acceptedAssetsUrl,
@@ -227,9 +213,7 @@ export async function resolveAcceptedAssetsAndDiscovery(input: {
     };
   }
 
-  const discoveryAssets = parseAcceptedAssetsPayload(
-    discovery?.supported_assets,
-  );
+  const discoveryAssets = parseAcceptedAssetsPayload(discovery?.supported_assets);
   if (discoveryAssets && discoveryAssets.length > 0) {
     return {
       assets: discoveryAssets,
@@ -240,10 +224,7 @@ export async function resolveAcceptedAssetsAndDiscovery(input: {
   }
 
   const legacyAssetPath = discovery?.endpoints?.asset ?? "/asset";
-  const legacyAssetUrl = resolveEndpointUrl(
-    input.attestationBaseUrl,
-    legacyAssetPath,
-  );
+  const legacyAssetUrl = resolveEndpointUrl(input.attestationBaseUrl, legacyAssetPath);
   const legacyAssetPayload = await fetchJsonPayload({
     fetchImpl,
     url: legacyAssetUrl,
@@ -258,12 +239,9 @@ export async function resolveAcceptedAssetsAndDiscovery(input: {
     };
   }
 
-  throw new QuoteValidationError(
-    "Unable to resolve accepted assets from attestation metadata.",
-    {
-      attestationBaseUrl: input.attestationBaseUrl,
-    },
-  );
+  throw new QuoteValidationError("Unable to resolve accepted assets from attestation metadata.", {
+    attestationBaseUrl: input.attestationBaseUrl,
+  });
 }
 
 function resolveSelectedAddress(input: {
@@ -313,12 +291,9 @@ export async function selectAcceptedAsset(input: {
       supportedAssets: input.supportedAssets,
     });
     if (!explicitAsset) {
-      throw new QuoteValidationError(
-        "Explicit accepted asset is not supported by attestation.",
-        {
-          acceptedAsset: explicitAddress,
-        },
-      );
+      throw new QuoteValidationError("Explicit accepted asset is not supported by attestation.", {
+        acceptedAsset: explicitAddress,
+      });
     }
     return AztecAddress.fromString(explicitAsset.address);
   }
@@ -329,9 +304,7 @@ export async function selectAcceptedAsset(input: {
       selection: selectedCandidate,
     });
     if (!selectedAddress) {
-      throw new QuoteValidationError(
-        "Accepted asset selector did not return a selection.",
-      );
+      throw new QuoteValidationError("Accepted asset selector did not return a selection.");
     }
 
     const selectedAsset = findSupportedAssetByAddress({
@@ -339,12 +312,9 @@ export async function selectAcceptedAsset(input: {
       supportedAssets: input.supportedAssets,
     });
     if (!selectedAsset) {
-      throw new QuoteValidationError(
-        "Accepted asset selector returned an unsupported asset.",
-        {
-          selectedAddress,
-        },
-      );
+      throw new QuoteValidationError("Accepted asset selector returned an unsupported asset.", {
+        selectedAddress,
+      });
     }
 
     return AztecAddress.fromString(selectedAsset.address);
@@ -371,9 +341,7 @@ export function buildQuoteUrl(input: {
 }
 
 function decodeSignature(signatureHex: string): number[] {
-  const normalized = signatureHex.startsWith("0x")
-    ? signatureHex.slice(2)
-    : signatureHex;
+  const normalized = signatureHex.startsWith("0x") ? signatureHex.slice(2) : signatureHex;
   if (!/^[0-9a-fA-F]*$/u.test(normalized)) {
     throw new QuoteValidationError("Quote signature is not valid hex.", {
       signature: signatureHex,
@@ -427,24 +395,18 @@ export function validateQuote(input: {
   try {
     aaPaymentAmount = BigInt(input.quote.aa_payment_amount);
   } catch {
-    throw new QuoteValidationError(
-      "Quote aa_payment_amount is not a valid integer.",
-      {
-        value: input.quote.aa_payment_amount,
-      },
-    );
+    throw new QuoteValidationError("Quote aa_payment_amount is not a valid integer.", {
+      value: input.quote.aa_payment_amount,
+    });
   }
 
   let validUntil: bigint;
   try {
     validUntil = BigInt(input.quote.valid_until);
   } catch {
-    throw new QuoteValidationError(
-      "Quote valid_until is not a valid integer.",
-      {
-        value: input.quote.valid_until,
-      },
-    );
+    throw new QuoteValidationError("Quote valid_until is not a valid integer.", {
+      value: input.quote.valid_until,
+    });
   }
 
   const signatureBytes = decodeSignature(input.quote.signature);
@@ -474,13 +436,10 @@ export async function fetchAndValidateQuote(input: {
 
   const response = await fetchImpl(url);
   if (!response.ok) {
-    throw new QuoteValidationError(
-      `Quote request failed with status ${response.status}.`,
-      {
-        status: response.status,
-        url,
-      },
-    );
+    throw new QuoteValidationError(`Quote request failed with status ${response.status}.`, {
+      status: response.status,
+      url,
+    });
   }
 
   const quote = (await response.json()) as QuoteResponse;

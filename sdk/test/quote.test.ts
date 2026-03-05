@@ -20,7 +20,7 @@ const TOKEN_TWO = AztecAddress.fromString(
   "0x016fa39000902287772e653a9e6cc2026dbb0f97c08a4d1b2c51ebbad4a4b24f",
 );
 const BASE_URL = "https://attestation.example/v2";
-const DISCOVERY_URL = "https://attestation.example/.well-known/fpc.json";
+const DISCOVERY_URL = "https://attestation.example/v2/.well-known/fpc.json";
 
 type MockRoute = {
   body?: unknown;
@@ -29,26 +29,24 @@ type MockRoute = {
 };
 
 function makeFetch(routes: Record<string, MockRoute>): typeof fetch {
-  return (async (input: RequestInfo | URL) => {
+  return ((input: RequestInfo | URL) => {
     const url =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
+      typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const route = routes[url];
     if (!route) {
-      return new Response("not found", { status: 404 });
+      return Promise.resolve(new Response("not found", { status: 404 }));
     }
 
     const status = route.status ?? 200;
     if (route.rawBody !== undefined) {
-      return new Response(route.rawBody, { status });
+      return Promise.resolve(new Response(route.rawBody, { status }));
     }
-    return new Response(JSON.stringify(route.body), {
-      headers: { "content-type": "application/json" },
-      status,
-    });
+    return Promise.resolve(
+      new Response(JSON.stringify(route.body), {
+        headers: { "content-type": "application/json" },
+        status,
+      }),
+    );
   }) as typeof fetch;
 }
 
@@ -62,9 +60,7 @@ describe("quote url", () => {
     });
     expect(url).toContain("/v2/quote?");
     expect(url).toContain(`user=${encodeURIComponent(USER.toString())}`);
-    expect(url).toContain(
-      `accepted_asset=${encodeURIComponent(TOKEN.toString())}`,
-    );
+    expect(url).toContain(`accepted_asset=${encodeURIComponent(TOKEN.toString())}`);
     expect(url).toContain("fj_amount=123");
   });
 });
@@ -79,11 +75,10 @@ describe("attestation discovery", () => {
             endpoints: {
               accepted_assets: "/accepted-assets",
             },
-            fpc_address:
-              "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b",
+            fpc_address: "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b",
           },
         },
-        "https://attestation.example/accepted-assets": {
+        "https://attestation.example/v2/accepted-assets": {
           body: [
             { address: TOKEN.toString(), name: "humanUSDC" },
             { address: TOKEN_TWO.toString(), name: "humanETH" },
@@ -137,16 +132,14 @@ describe("attestation discovery", () => {
             supported_assets: [],
           },
         },
-        "https://attestation.example/asset": {
+        "https://attestation.example/v2/asset": {
           body: { address: TOKEN.toString(), name: "humanUSDC" },
         },
       }),
     });
 
     expect(out.source).toBe("legacy_asset_endpoint");
-    expect(out.assets).toEqual([
-      { address: TOKEN.toString(), name: "humanUSDC" },
-    ]);
+    expect(out.assets).toEqual([{ address: TOKEN.toString(), name: "humanUSDC" }]);
   });
 
   it("throws when accepted assets payloads are malformed across all fallbacks", async () => {
@@ -163,10 +156,10 @@ describe("attestation discovery", () => {
               supported_assets: [{ address: "0xnotvalid", name: "bad" }],
             },
           },
-          "https://attestation.example/accepted-assets": {
+          "https://attestation.example/v2/accepted-assets": {
             body: [{ address: "0xnotvalid", name: "bad" }],
           },
-          "https://attestation.example/asset": {
+          "https://attestation.example/v2/asset": {
             body: { address: "0xnotvalid", name: "bad" },
           },
         }),
@@ -181,7 +174,7 @@ describe("attestation discovery", () => {
         [DISCOVERY_URL]: {
           rawBody: "{",
         },
-        "https://attestation.example/asset": {
+        "https://attestation.example/v2/asset": {
           body: { address: TOKEN.toString(), name: "humanUSDC" },
         },
       }),
@@ -196,8 +189,7 @@ describe("discovery fpc address resolution", () => {
   it("parses valid discovery fpc address", () => {
     const out = resolveDiscoveryFpcAddress({
       discovery: {
-        fpc_address:
-          "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b",
+        fpc_address: "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b",
       },
       required: true,
     });
@@ -208,9 +200,9 @@ describe("discovery fpc address resolution", () => {
   });
 
   it("throws when required discovery fpc address is missing", () => {
-    expect(() =>
-      resolveDiscoveryFpcAddress({ discovery: {}, required: true }),
-    ).toThrow(QuoteValidationError);
+    expect(() => resolveDiscoveryFpcAddress({ discovery: {}, required: true })).toThrow(
+      QuoteValidationError,
+    );
   });
 
   it("throws when required discovery fpc address is invalid", () => {
@@ -256,8 +248,7 @@ describe("accepted asset selection", () => {
   it("throws when explicit accepted asset is unsupported", async () => {
     await expect(
       selectAcceptedAsset({
-        explicitAcceptedAsset:
-          "0x0000000000000000000000000000000000000000000000000000000000000099",
+        explicitAcceptedAsset: "0x0000000000000000000000000000000000000000000000000000000000000099",
         supportedAssets,
       }),
     ).rejects.toBeInstanceOf(QuoteValidationError);
@@ -297,8 +288,7 @@ describe("quote validation", () => {
         expectedAcceptedAsset: TOKEN,
         expectedFjAmount: 100n,
         quote: {
-          accepted_asset:
-            "0x016fa39000902287772e653a9e6cc2026dbb0f97c08a4d1b2c51ebbad4a4b24f",
+          accepted_asset: "0x016fa39000902287772e653a9e6cc2026dbb0f97c08a4d1b2c51ebbad4a4b24f",
           aa_payment_amount: "77",
           fj_amount: "100",
           signature: `0x${"11".repeat(64)}`,

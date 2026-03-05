@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type {
-  ContractArtifact,
-  NoirCompiledContract,
-} from "@aztec/aztec.js/abi";
+import type { ContractArtifact, NoirCompiledContract } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SponsoredTxFailedError } from "../src/errors";
@@ -15,12 +12,10 @@ import {
 import type { SponsoredRuntimeConfig } from "../src/types";
 
 const { contractAtMock, getContractMock, waitForNodeMock } = vi.hoisted(() => ({
-  contractAtMock: vi.fn(
-    (address: AztecAddress, artifact: ContractArtifact) => ({
-      address,
-      artifact,
-    }),
-  ),
+  contractAtMock: vi.fn((address: AztecAddress, artifact: ContractArtifact) => ({
+    address,
+    artifact,
+  })),
   getContractMock: vi.fn(async () => ({ mocked: true })),
   waitForNodeMock: vi.fn(async () => undefined),
 }));
@@ -38,33 +33,21 @@ vi.mock("@aztec/aztec.js/contracts", () => ({
   },
 }));
 
-const USER =
-  "0x21ebdcefd5de2700314f50cbf3fb67b988cb0ed3e0f3e9e0726f1f2e7f58b6a1";
-const TOKEN =
-  "0x0000000000000000000000000000000000000000000000000000000000000011";
-const FPC_EXPLICIT =
-  "0x0000000000000000000000000000000000000000000000000000000000000012";
-const FPC_DISCOVERY =
-  "0x0000000000000000000000000000000000000000000000000000000000000013";
-const OPERATOR =
-  "0x0000000000000000000000000000000000000000000000000000000000000014";
-const FAUCET =
-  "0x0000000000000000000000000000000000000000000000000000000000000015";
-const TARGET =
-  "0x0000000000000000000000000000000000000000000000000000000000000016";
+const USER = "0x21ebdcefd5de2700314f50cbf3fb67b988cb0ed3e0f3e9e0726f1f2e7f58b6a1";
+const TOKEN = "0x0000000000000000000000000000000000000000000000000000000000000011";
+const FPC_EXPLICIT = "0x0000000000000000000000000000000000000000000000000000000000000012";
+const FPC_DISCOVERY = "0x0000000000000000000000000000000000000000000000000000000000000013";
+const OPERATOR = "0x0000000000000000000000000000000000000000000000000000000000000014";
+const FAUCET = "0x0000000000000000000000000000000000000000000000000000000000000015";
+const TARGET = "0x0000000000000000000000000000000000000000000000000000000000000016";
 
 function loadArtifactJson(filename: string): NoirCompiledContract {
   return JSON.parse(
-    readFileSync(
-      path.resolve(__dirname, "..", "..", "target", filename),
-      "utf8",
-    ),
+    readFileSync(path.resolve(__dirname, "..", "..", "target", filename), "utf8"),
   ) as NoirCompiledContract;
 }
 
-function runtimeConfig(
-  overrides: Partial<SponsoredRuntimeConfig> = {},
-): SponsoredRuntimeConfig {
+function runtimeConfig(overrides: Partial<SponsoredRuntimeConfig> = {}): SponsoredRuntimeConfig {
   return {
     acceptedAsset: {
       address: TOKEN,

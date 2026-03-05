@@ -59,12 +59,7 @@ export async function createSponsoredPaymentMethod(input: {
 
   try {
     const transferCall = await input.token.methods
-      .transfer_private_to_private(
-        input.user,
-        input.operatorAddress,
-        input.aaPaymentAmount,
-        nonce,
-      )
+      .transfer_private_to_private(input.user, input.operatorAddress, input.aaPaymentAmount, nonce)
       .getFunctionCall();
     const transferAuthwit = await input.wallet.createAuthWit(input.user, {
       caller: input.fpc.address,
@@ -103,11 +98,8 @@ export async function createSponsoredPaymentMethod(input: {
       transferAuthwit,
     };
   } catch (error) {
-    throw new SponsoredTxFailedError(
-      "Failed to build sponsored payment method.",
-      {
-        cause: error instanceof Error ? error.message : String(error),
-      },
-    );
+    throw new SponsoredTxFailedError("Failed to build sponsored payment method.", {
+      cause: error instanceof Error ? error.message : String(error),
+    });
   }
 }

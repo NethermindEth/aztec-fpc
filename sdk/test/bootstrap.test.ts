@@ -8,10 +8,10 @@ describe("bootstrap", () => {
     let privateBalance = 0n;
     let publicBalance = 0n;
 
-    const drip = vi.fn(async () => {
+    const drip = vi.fn(() => {
       publicBalance = 25n;
     });
-    const shield = vi.fn(async () => {
+    const shield = vi.fn(() => {
       privateBalance += publicBalance;
       publicBalance = 0n;
     });
@@ -48,8 +48,8 @@ describe("bootstrap", () => {
   });
 
   it("fails after max faucet attempts when public balance stays zero", async () => {
-    const drip = vi.fn(async () => {});
-    const shield = vi.fn(async () => {});
+    const drip = vi.fn(() => {});
+    const shield = vi.fn(() => {});
 
     await expect(
       ensurePrivateBalance({

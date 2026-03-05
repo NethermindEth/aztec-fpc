@@ -8,13 +8,11 @@ vi.mock("../src/internal/contracts", () => ({
     addresses: {
       targets: {
         counter: {
-          toString: () =>
-            "0x0000000000000000000000000000000000000000000000000000000000000001",
+          toString: () => "0x0000000000000000000000000000000000000000000000000000000000000001",
         },
       },
       user: {
-        toString: () =>
-          "0x0000000000000000000000000000000000000000000000000000000000000000",
+        toString: () => "0x0000000000000000000000000000000000000000000000000000000000000000",
       },
     },
     counter: {},
@@ -30,8 +28,7 @@ describe("createSponsoredCounterClient scaffold", () => {
   it("returns a client with increment()", async () => {
     const client = await createSponsoredCounterClient({
       wallet: {} as never,
-      account:
-        "0x0000000000000000000000000000000000000000000000000000000000000000",
+      account: "0x0000000000000000000000000000000000000000000000000000000000000000",
     });
 
     expect(typeof client.increment).toBe("function");

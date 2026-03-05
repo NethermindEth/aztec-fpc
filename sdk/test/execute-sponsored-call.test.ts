@@ -3,7 +3,7 @@ import * as feeJuiceUtils from "@aztec/aztec.js/utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SponsoredTxFailedError } from "../src/errors";
-import { executeSponsoredCall } from "../src/index";
+import { executeSponsoredCall, executeSponsoredEntrypoint } from "../src/index";
 import * as contracts from "../src/internal/contracts";
 import * as feePayment from "../src/internal/fee-payment";
 import * as quote from "../src/internal/quote";
@@ -64,6 +64,7 @@ function buildContext() {
       operator: OPERATOR,
       targets: {
         custom: TARGET,
+        target: TARGET,
       },
       user: USER,
     },
@@ -89,6 +90,16 @@ function buildContext() {
           }),
         },
       },
+      target: {
+        methods: {
+          increment: () => ({
+            send: async () => ({
+              transactionFee: 123n,
+              txHash: { toString: () => "0xabc" },
+            }),
+          }),
+        },
+      },
     },
     token: {
       methods: {
@@ -103,9 +114,7 @@ function buildContext() {
 describe("executeSponsoredCall", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(
-      buildContext() as never,
-    );
+    vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(buildContext() as never);
     vi.mocked(quote.resolveAcceptedAssetsAndDiscovery).mockResolvedValue({
       assets: [{ address: TOKEN.toString(), name: "humanUSDC" }],
       source: "accepted_assets_endpoint",
@@ -133,9 +142,9 @@ describe("executeSponsoredCall", () => {
 
     const out = await executeSponsoredCall({
       account: USER,
-      buildCall: async (ctx) => {
+      buildCall: (ctx) => {
         expect(ctx.contracts.targets.custom).toBeDefined();
-        return { send };
+        return Promise.resolve({ send });
       },
       sponsorship: {
         attestationBaseUrl: "https://attestation.example/v2",
@@ -197,9 +206,7 @@ describe("executeSponsoredCall", () => {
             txHash: { toString: () => "0xabc" },
           }),
         }),
-        postChecks: async () => {
-          throw new Error("post-check failed");
-        },
+        postChecks: () => Promise.reject(new Error("post-check failed")),
         sponsorship: {
           attestationBaseUrl: "https://attestation.example/v2",
           runtimeConfig: {
@@ -285,5 +292,109 @@ describe("executeSponsoredCall", () => {
     });
 
     expect(feePayment.createSponsoredPaymentMethod).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("executeSponsoredEntrypoint", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(contracts.connectAndAttachContracts).mockResolvedValue(buildContext() as never);
+    vi.mocked(quote.resolveAcceptedAssetsAndDiscovery).mockResolvedValue({
+      assets: [{ address: TOKEN.toString(), name: "humanUSDC" }],
+      source: "accepted_assets_endpoint",
+    } as never);
+    vi.mocked(quote.selectAcceptedAsset).mockResolvedValue(TOKEN);
+    vi.mocked(quote.resolveDiscoveryFpcAddress).mockReturnValue(FPC);
+    vi.mocked(quote.fetchAndValidateQuote).mockResolvedValue({
+      aaPaymentAmount: 10n,
+      accepted_asset: TOKEN.toString(),
+      fjAmount: 2_000_000n,
+      fj_amount: "2000000",
+      signature: "0x",
+      signatureBytes: [1, 2, 3],
+      validUntil: 999n,
+      valid_until: "999",
+    });
+    vi.mocked(feeJuiceUtils.getFeeJuiceBalance).mockResolvedValue(999_999_999n);
+  });
+
+  it("executes target entrypoint without custom buildCall plumbing", async () => {
+    const callMethod = vi.fn(() => ({
+      send: async () => ({
+        transactionFee: 123n,
+        txHash: { toString: () => "0xdef" },
+      }),
+    }));
+
+    vi.mocked(contracts.connectAndAttachContracts).mockResolvedValueOnce({
+      ...buildContext(),
+      addresses: {
+        ...buildContext().addresses,
+        targets: { target: TARGET },
+      },
+      targets: {
+        target: {
+          methods: {
+            increment: callMethod,
+          },
+        },
+      },
+    } as never);
+
+    const out = await executeSponsoredEntrypoint({
+      account: USER,
+      sponsorship: {
+        attestationBaseUrl: "https://attestation.example/v2",
+        runtimeConfig: {
+          acceptedAsset: { artifact: {} as never },
+          fpc: { address: FPC, artifact: {} as never },
+          nodeUrl: "http://node.example:8080",
+          operatorAddress: OPERATOR,
+        },
+      },
+      target: {
+        address: TARGET,
+        appendUserToArgs: true,
+        args: ["$USER"],
+        artifact: {} as never,
+        method: "increment",
+      },
+      wallet: {} as never,
+    });
+
+    expect(out.txHash).toBe("0xdef");
+    expect(callMethod).toHaveBeenCalledWith(USER, USER);
+    expect(contracts.connectAndAttachContracts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeConfig: expect.objectContaining({
+          targets: expect.objectContaining({
+            target: expect.objectContaining({
+              address: TARGET,
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("throws when target is not provided and not registered in runtime config", () => {
+    expect(() =>
+      executeSponsoredEntrypoint({
+        account: USER,
+        sponsorship: {
+          attestationBaseUrl: "https://attestation.example/v2",
+          runtimeConfig: {
+            acceptedAsset: { artifact: {} as never },
+            fpc: { address: FPC, artifact: {} as never },
+            nodeUrl: "http://node.example:8080",
+            operatorAddress: OPERATOR,
+          },
+        },
+        target: {
+          method: "increment",
+        },
+        wallet: {} as never,
+      }),
+    ).toThrow(SponsoredTxFailedError);
   });
 });

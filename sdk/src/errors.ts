@@ -4,11 +4,7 @@ export abstract class SponsoredSdkError extends Error {
   public readonly code: string;
   public readonly details?: SponsoredSdkErrorDetails;
 
-  protected constructor(
-    code: string,
-    message: string,
-    details?: SponsoredSdkErrorDetails,
-  ) {
+  protected constructor(code: string, message: string, details?: SponsoredSdkErrorDetails) {
     super(message);
     this.name = new.target.name;
     this.code = code;

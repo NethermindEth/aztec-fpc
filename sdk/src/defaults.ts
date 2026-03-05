@@ -1,8 +1,7 @@
 import type { SponsoredRuntimeConfig } from "./types";
 
 export const DEFAULT_NODE_URL = "https://v4-devnet-2.aztec-labs.com/";
-export const DEFAULT_ATTESTATION_BASE_URL =
-  "https://aztec-fpc.staging-nethermind.xyz/v2";
+export const DEFAULT_ATTESTATION_BASE_URL = "https://aztec-fpc.staging-nethermind.xyz/v2";
 export const DEFAULT_TOKEN_ADDRESS =
   "0x10600e2f256b6500de5a79367d70b4c7d8121c408a2127dbcba995a1abc0d6f8";
 export const DEFAULT_FPC_ADDRESS =

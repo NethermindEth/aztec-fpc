@@ -1,10 +1,7 @@
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import * as feeJuiceUtils from "@aztec/aztec.js/utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  InsufficientFpcFeeJuiceError,
-  SponsoredTxFailedError,
-} from "../src/errors";
+import { InsufficientFpcFeeJuiceError, SponsoredTxFailedError } from "../src/errors";
 import { createSponsoredCounterClient } from "../src/index";
 import * as balanceBootstrap from "../src/internal/balance-bootstrap";
 import * as contracts from "../src/internal/contracts";
@@ -56,10 +53,7 @@ function buildContext(input: {
   privateBefore?: bigint;
 }): unknown {
   const counterValues = [0n, input.counterAfter];
-  const privateValues = [
-    input.privateBefore ?? 100n,
-    input.privateAfter ?? 90n,
-  ];
+  const privateValues = [input.privateBefore ?? 100n, input.privateAfter ?? 90n];
 
   const counterContract = {
     methods: {
@@ -173,9 +167,7 @@ describe("increment", () => {
       wallet: {} as never,
     });
 
-    await expect(client.increment()).rejects.toBeInstanceOf(
-      SponsoredTxFailedError,
-    );
+    await expect(client.increment()).rejects.toBeInstanceOf(SponsoredTxFailedError);
   });
 
   it("throws when debit/accounting invariant fails", async () => {
@@ -192,9 +184,7 @@ describe("increment", () => {
       wallet: {} as never,
     });
 
-    await expect(client.increment()).rejects.toBeInstanceOf(
-      SponsoredTxFailedError,
-    );
+    await expect(client.increment()).rejects.toBeInstanceOf(SponsoredTxFailedError);
   });
 
   it("throws typed error when fpc fee juice is insufficient", async () => {
@@ -208,8 +198,6 @@ describe("increment", () => {
       wallet: {} as never,
     });
 
-    await expect(client.increment()).rejects.toBeInstanceOf(
-      InsufficientFpcFeeJuiceError,
-    );
+    await expect(client.increment()).rejects.toBeInstanceOf(InsufficientFpcFeeJuiceError);
   });
 });
