@@ -44,6 +44,16 @@
   },
   "overrides": [
     {
+      "includes": ["services/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "warn"
+          }
+        }
+      }
+    },
+    {
       "includes": ["sdk/**"],
       "linter": {
         "rules": {
