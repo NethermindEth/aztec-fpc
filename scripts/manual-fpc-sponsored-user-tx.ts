@@ -18,7 +18,6 @@ import { Gas, GasFees } from "@aztec/stdlib/gas";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { advanceLocalNetworkBlocks } from "./advance-local-network-blocks.ts";
 
 /**
  * This script executes one manually-constructed sponsored transaction using this
@@ -59,8 +58,6 @@ type Config = {
   counterArtifactPath: string;
   mockCounterAddress?: string;
   ephemeralWallet: boolean;
-  relayAdvanceBlocks: number;
-  relayAdvanceEveryPolls: number;
   daGasLimit: number;
   l2GasLimit: number;
   feeJuiceWaitMs: number;
@@ -90,10 +87,6 @@ function readConfig(): Config {
       path.join(repoRoot, "target", "mock_counter-Counter.json"),
     mockCounterAddress: process.env.MOCK_COUNTER_ADDRESS,
     ephemeralWallet,
-    relayAdvanceBlocks: Number(process.env.RELAY_ADVANCE_BLOCKS ?? "2"),
-    relayAdvanceEveryPolls: Number(
-      process.env.RELAY_ADVANCE_EVERY_POLLS ?? "5",
-    ),
     daGasLimit: Number(process.env.DA_GAS_LIMIT ?? "1000000"),
     l2GasLimit: Number(process.env.L2_GAS_LIMIT ?? "1000000"),
     feeJuiceWaitMs: Number(process.env.FEE_JUICE_WAIT_MS ?? "120000"),
@@ -135,24 +128,11 @@ async function waitForFeeJuice(
   waitMs: number,
   pollMs: number,
   minimumBalance: bigint,
-  onZeroBalancePoll?: (pollNumber: number) => Promise<void>,
-  zeroBalancePollInterval = 1,
 ): Promise<bigint> {
   const deadline = Date.now() + waitMs;
   let balance = await getFeeJuiceBalance(fpcAddress, node);
-  let pollNumber = 0;
 
-  // The topup service may still be bridging funds. Poll until fee balance
-  // reaches the minimum required for this transaction's estimated max gas cost.
   while (balance < minimumBalance && Date.now() < deadline) {
-    pollNumber += 1;
-    if (
-      onZeroBalancePoll &&
-      zeroBalancePollInterval > 0 &&
-      pollNumber % zeroBalancePollInterval === 0
-    ) {
-      await onZeroBalancePoll(pollNumber);
-    }
     await sleep(pollMs);
     balance = await getFeeJuiceBalance(fpcAddress, node);
   }
@@ -209,13 +189,6 @@ async function main() {
   assertPositiveInt("L2_GAS_LIMIT", cfg.l2GasLimit);
   assertPositiveInt("FEE_JUICE_WAIT_MS", cfg.feeJuiceWaitMs);
   assertPositiveInt("FEE_JUICE_POLL_MS", cfg.feeJuicePollMs);
-  if (!Number.isInteger(cfg.relayAdvanceBlocks) || cfg.relayAdvanceBlocks < 0) {
-    throw new Error(
-      `RELAY_ADVANCE_BLOCKS must be an integer >= 0. Got: ${cfg.relayAdvanceBlocks}`,
-    );
-  }
-  assertPositiveInt("RELAY_ADVANCE_EVERY_POLLS", cfg.relayAdvanceEveryPolls);
-
   // Step 0: load deployment addresses + artifacts produced by local deploy.
   const manifest = JSON.parse(fs.readFileSync(cfg.manifestPath, "utf8")) as {
     contracts: { fpc: string; accepted_asset: string };
@@ -308,32 +281,12 @@ async function main() {
     BigInt(cfg.daGasLimit) * feePerDaGas + BigInt(cfg.l2GasLimit) * feePerL2Gas;
 
   // Step 3: ensure FPC has Fee Juice to sponsor this tx.
-  // Local-network often needs tx activity to progress relay state, so while the
-  // balance is still zero we periodically force a small number of extra blocks.
-  const onZeroFeeJuicePoll =
-    cfg.relayAdvanceBlocks > 0
-      ? async (pollNumber: number) => {
-          console.log(
-            `[manual-fpc] fee_juice_zero poll=${pollNumber}; advancing ${cfg.relayAdvanceBlocks} local block(s)`,
-          );
-          await advanceLocalNetworkBlocks(
-            token,
-            operator,
-            user,
-            cfg.relayAdvanceBlocks,
-            "[manual-fpc:block-advance]",
-          );
-        }
-      : undefined;
-
   const fpcFeeJuiceBalance = await waitForFeeJuice(
     fpcAddress,
     node,
     cfg.feeJuiceWaitMs,
     cfg.feeJuicePollMs,
     fjAmount,
-    onZeroFeeJuicePoll,
-    cfg.relayAdvanceEveryPolls,
   );
   if (fpcFeeJuiceBalance < fjAmount) {
     throw new Error(

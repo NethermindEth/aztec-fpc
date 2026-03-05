@@ -17,7 +17,6 @@
  *   FPC_CHAOS_LOCAL_L1_PRIVATE_KEY     default: Anvil account #0
  *   FPC_CHAOS_LOCAL_ATTESTATION_PORT   default: 3300
  *   FPC_CHAOS_LOCAL_TOPUP_OPS_PORT     default: 3401
- *   FPC_CHAOS_LOCAL_RELAY_BLOCKS       default: 2
  *   FPC_CHAOS_LOCAL_TOPUP_WAIT_MS      default: 300000
  *   FPC_CHAOS_LOCAL_HTTP_TIMEOUT_MS    default: 30000
  *   FPC_CHAOS_LOCAL_NODE_TIMEOUT_MS    default: 60000
@@ -76,7 +75,6 @@ type LocalConfig = {
   l1PrivateKey: string;
   attestationPort: number;
   topupOpsPort: number;
-  relayAdvanceBlocks: number;
   topupWaitMs: number;
   httpTimeoutMs: number;
   nodeTimeoutMs: number;
@@ -135,7 +133,6 @@ function getConfig(): LocalConfig {
     ),
     attestationPort: readEnvInt("FPC_CHAOS_LOCAL_ATTESTATION_PORT", 3300),
     topupOpsPort: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_OPS_PORT", 3401),
-    relayAdvanceBlocks: readEnvInt("FPC_CHAOS_LOCAL_RELAY_BLOCKS", 2),
     topupWaitMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_WAIT_MS", 300_000),
     httpTimeoutMs: readEnvInt("FPC_CHAOS_LOCAL_HTTP_TIMEOUT_MS", 30_000),
     nodeTimeoutMs: readEnvInt("FPC_CHAOS_LOCAL_NODE_TIMEOUT_MS", 60_000),
@@ -549,19 +546,6 @@ async function startServicesAndFundFpc(
   console.log(
     `[chaos-local] Bridge submitted: messageHash=${bridgeSub.messageHash} leafIndex=${bridgeSub.leafIndex}`,
   );
-
-  // Advance L2 blocks to make the L1→L2 message available for claiming
-  console.log(
-    `[chaos-local] Advancing ${config.relayAdvanceBlocks} L2 blocks to relay L1→L2 message...`,
-  );
-  for (let i = 0; i < config.relayAdvanceBlocks; i++) {
-    await setup.token.methods
-      .mint_to_private(setup.user, 1n)
-      .send({ from: setup.operator, wait: { timeout: 120 } });
-    console.log(
-      `[chaos-local] relay block ${i + 1}/${config.relayAdvanceBlocks}`,
-    );
-  }
 
   const node = createAztecNodeClient(config.nodeUrl);
 

@@ -162,7 +162,6 @@ Optional overrides:
 - `FPC_SMOKE_DA_GAS_LIMIT`, `FPC_SMOKE_L2_GAS_LIMIT`
 - `FPC_SMOKE_FEE_PER_DA_GAS`, `FPC_SMOKE_FEE_PER_L2_GAS` (default: current node min fees)
 - `FPC_SMOKE_FEE_JUICE_TOPUP_WEI` (default: conservative auto-top-up from configured gas settings)
-- `FPC_SMOKE_RELAY_ADVANCE_BLOCKS` (default: `2`; sends this many mock L2 txs after L1 bridge submit to unblock local relay)
 - `FPC_SMOKE_QUOTE_TTL_SECONDS`
 - `FPC_SMOKE_RESET_LOCAL_STATE` (default `1`; set `0` to reuse existing `wallet_data_*`/`pxe_data_*`)
 
@@ -191,7 +190,6 @@ Useful overrides:
 - `FPC_SERVICES_SMOKE_TOPUP_WEI`, `FPC_SERVICES_SMOKE_THRESHOLD_WEI`
 - `FPC_SERVICES_SMOKE_ATTESTATION_PORT` (default `3300`)
 - `FPC_SERVICES_SMOKE_TOPUP_OPS_PORT` (default `3401`)
-- `FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS` (default: `2`; sends mock L2 txs after bridge submit so local relay can finalize)
 
 ### 7. Deploy contracts (recommended)
 
@@ -233,7 +231,6 @@ Useful overrides:
 - `FPC_DEPLOY_SMOKE_START_LOCAL_NETWORK` (default `1`)
 - `FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE` (default: `1` only when smoke starts local-network, otherwise `0`)
 - `FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT` (default temp path under `/tmp`)
-- `FPC_DEPLOY_SMOKE_RELAY_ADVANCE_BLOCKS` (default `2`, must be `>=2`)
 - `FPC_DEPLOY_SMOKE_TOPUP_WEI` (default `1000000`)
 
 ### Devnet deployment and validation (live network)

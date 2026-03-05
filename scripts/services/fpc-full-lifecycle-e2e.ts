@@ -45,7 +45,6 @@ type FullE2EConfig = {
   nodeUrl: string;
   l1RpcUrl: string;
   l1PrivateKey: string;
-  relayAdvanceBlocks: number;
   requiredTopupCycles: 1 | 2;
   topupCheckIntervalMs: number;
   topupWei: bigint | null;
@@ -162,7 +161,6 @@ function printHelp(): void {
 
 Config env vars:
 - FPC_FULL_E2E_MODE=fpc
-- FPC_FULL_E2E_RELAY_ADVANCE_BLOCKS (default: 2, must be >=2)
 - FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES (default: 2, allowed: 1|2)
 - FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS (default: 2000)
 - FPC_FULL_E2E_TOPUP_WEI (optional bigint > 0)
@@ -474,19 +472,24 @@ async function waitForNextBridgeConfirmedOutcome(
   );
 }
 
-async function advanceL2Blocks(
-  token: Contract,
-  operator: AztecAddress,
-  user: AztecAddress,
-  blocks: number,
+async function waitForNextBlock(
+  node: ReturnType<typeof createAztecNodeClient>,
+  timeoutMs: number,
 ): Promise<void> {
-  for (let i = 0; i < blocks; i += 1) {
-    await token.methods.mint_to_private(user, 1n).send({
-      from: operator,
-      wait: { timeout: 180 },
-    });
-    console.log(`[full-lifecycle-e2e] relay_block_advanced=${i + 1}/${blocks}`);
+  const startBlock = await node.getBlock("latest");
+  if (!startBlock) {
+    throw new Error("Could not read latest L2 block for waitForNextBlock");
   }
+  const startNumber = startBlock.number;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await sleep(500);
+    const current = await node.getBlock("latest");
+    if (current && current.number > startNumber) return;
+  }
+  throw new Error(
+    `Timed out waiting for next L2 block (stuck at #${startNumber}) after ${timeoutMs}ms`,
+  );
 }
 
 async function waitForPositiveFeeJuiceBalance(
@@ -933,10 +936,6 @@ async function expectFailure(
 
 function getConfig(): FullE2EConfig {
   const mode = parseMode(process.env.FPC_FULL_E2E_MODE);
-  const relayAdvanceBlocks = readEnvPositiveInteger(
-    "FPC_FULL_E2E_RELAY_ADVANCE_BLOCKS",
-    2,
-  );
   const requiredTopupCyclesRaw = readEnvPositiveInteger(
     "FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES",
     2,
@@ -975,11 +974,6 @@ function getConfig(): FullE2EConfig {
     process.env.FPC_FULL_E2E_L1_PRIVATE_KEY ?? DEFAULT_LOCAL_L1_PRIVATE_KEY;
   assertPrivateKeyHex(l1PrivateKey, "FPC_FULL_E2E_L1_PRIVATE_KEY");
 
-  if (relayAdvanceBlocks < 2) {
-    throw new Error(
-      `FPC_FULL_E2E_RELAY_ADVANCE_BLOCKS must be an integer >= 2, got ${relayAdvanceBlocks}`,
-    );
-  }
   if (requiredTopupCyclesRaw !== 1 && requiredTopupCyclesRaw !== 2) {
     throw new Error(
       `FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES must be 1 or 2, got ${requiredTopupCyclesRaw}`,
@@ -1014,7 +1008,6 @@ function getConfig(): FullE2EConfig {
       `http://${nodeHost}:${nodePort}`,
     l1RpcUrl: l1RpcUrlOverride ?? `http://${l1Host}:${l1Port}`,
     l1PrivateKey,
-    relayAdvanceBlocks,
     requiredTopupCycles: requiredTopupCyclesRaw,
     topupCheckIntervalMs: readEnvPositiveInteger(
       "FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS",
@@ -1055,7 +1048,7 @@ function getConfig(): FullE2EConfig {
 
 function printConfigSummary(config: FullE2EConfig): void {
   console.log(
-    `[full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, l1RpcUrl=${config.l1RpcUrl}, relayAdvanceBlocks=${config.relayAdvanceBlocks}, requiredTopupCycles=${config.requiredTopupCycles}`,
+    `[full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, l1RpcUrl=${config.l1RpcUrl}, requiredTopupCycles=${config.requiredTopupCycles}`,
   );
 }
 
@@ -1520,7 +1513,7 @@ async function negativeExpiredQuoteRejected(
     result.user,
   );
 
-  await advanceL2Blocks(result.token, result.operator, result.user, 1);
+  await waitForNextBlock(node, 60_000);
 
   await expectFailure(
     "negative expired quote rejected",
@@ -1781,12 +1774,6 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
       config.topupWaitTimeoutMs,
       0,
     );
-    await advanceL2Blocks(
-      isolatedToken,
-      result.operator,
-      result.user,
-      config.relayAdvanceBlocks,
-    );
     await waitForNextBridgeConfirmedOutcome(
       isolatedTopup,
       config.topupWaitTimeoutMs,
@@ -2007,12 +1994,6 @@ async function orchestrateServicesAndAssertBridgeCycles(
       );
     }
     topupCounters.submissionCount = cycle1Submission.submissionCount;
-    await advanceL2Blocks(
-      result.token,
-      result.operator,
-      result.user,
-      config.relayAdvanceBlocks,
-    );
     const cycle1Outcome = await waitForNextBridgeConfirmedOutcome(
       topup,
       config.topupWaitTimeoutMs,
@@ -2069,12 +2050,6 @@ async function orchestrateServicesAndAssertBridgeCycles(
         cycle2Baseline.submissionCount,
       );
       topupCounters.submissionCount = cycle2Submission.submissionCount;
-      await advanceL2Blocks(
-        result.token,
-        result.operator,
-        result.user,
-        config.relayAdvanceBlocks,
-      );
       const cycle2Outcome = await waitForNextBridgeConfirmedOutcome(
         topup,
         config.topupWaitTimeoutMs,

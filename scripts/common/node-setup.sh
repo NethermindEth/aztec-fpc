@@ -22,6 +22,7 @@ _NODESETUP_TMP_DIR=""
 _NODESETUP_NODE_PORT=""
 _NODESETUP_L1_PORT=""
 _NODESETUP_STARTED_LOCAL=0
+_NODESETUP_BLOCK_PRODUCER_PID=""
 
 function _nodesetup_parse_host_port() {
   local url="$1"
@@ -37,6 +38,11 @@ function _nodesetup_parse_host_port() {
 }
 
 function _nodesetup_cleanup() {
+  if [[ -n "$_NODESETUP_BLOCK_PRODUCER_PID" ]] && kill -0 "$_NODESETUP_BLOCK_PRODUCER_PID" >/dev/null 2>&1; then
+    echo "$_NODESETUP_LOG_PREFIX Stopping block-producer (pid=$_NODESETUP_BLOCK_PRODUCER_PID)"
+    kill "$_NODESETUP_BLOCK_PRODUCER_PID" >/dev/null 2>&1 || true
+    wait "$_NODESETUP_BLOCK_PRODUCER_PID" >/dev/null 2>&1 || true
+  fi
   if [[ "$_NODESETUP_STARTED_LOCAL" -eq 1 ]]; then
     localnet_stop_started "$_NODESETUP_LOG_PREFIX"
     test_cleanup_kill_listener_ports \
@@ -205,6 +211,17 @@ function setup_node() {
   echo "$log_prefix Aztec node ready at $AZTEC_NODE_URL"
 
   _NODESETUP_INITIALIZED=1
+
+  if [[ "$_NODESETUP_STARTED_LOCAL" -eq 1 ]]; then
+    local bp_script="$_NODESETUP_COMMON_DIR/../services/block-producer.sh"
+    if [[ -f "$bp_script" ]]; then
+      echo "$log_prefix Starting block-producer in background"
+      AZTEC_NODE_URL="$AZTEC_NODE_URL" bash "$bp_script" \
+        >"$tmp_dir/block-producer.log" 2>&1 &
+      _NODESETUP_BLOCK_PRODUCER_PID=$!
+      echo "$log_prefix block-producer started (pid=$_NODESETUP_BLOCK_PRODUCER_PID)"
+    fi
+  fi
 }
 
 function setup_node_url() {

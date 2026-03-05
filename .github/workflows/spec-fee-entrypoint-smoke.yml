@@ -105,7 +105,6 @@ jobs:
       - name: Run fee-entrypoint smoke flow
         env:
           FPC_SMOKE_RESET_LOCAL_STATE: "1"
-          FPC_SMOKE_RELAY_ADVANCE_BLOCKS: "2"
         run: |
           set -euo pipefail
 

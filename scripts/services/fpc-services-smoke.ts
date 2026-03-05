@@ -94,7 +94,6 @@ type SmokeConfig = {
   topupConfirmTimeoutMs: number;
   topupConfirmPollInitialMs: number;
   topupConfirmPollMaxMs: number;
-  relayAdvanceBlocks: number;
 };
 
 type QuoteResponse = {
@@ -339,17 +338,7 @@ function getConfig(): SmokeConfig {
       "FPC_SERVICES_SMOKE_TOPUP_CONFIRM_POLL_MAX_MS",
       15_000,
     ),
-    relayAdvanceBlocks: readEnvNumber(
-      "FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS",
-      2,
-    ),
   };
-
-  if (config.relayAdvanceBlocks < 2) {
-    throw new Error(
-      `FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS must be >= 2, got ${config.relayAdvanceBlocks}`,
-    );
-  }
 
   return config;
 }
@@ -509,21 +498,6 @@ async function getCurrentChainUnixSeconds(
     return latest.timestamp;
   }
   return BigInt(Math.floor(Date.now() / 1000));
-}
-
-async function advanceL2Blocks(
-  token: Contract,
-  operator: AztecAddress,
-  user: AztecAddress,
-  blocks: number,
-): Promise<void> {
-  for (let i = 0; i < blocks; i += 1) {
-    await token.methods.mint_to_private(user, 1n).send({
-      from: operator,
-      wait: { timeout: 180 },
-    });
-    console.log(`[services-smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`);
-  }
 }
 
 async function fetchQuote(
@@ -743,7 +717,6 @@ async function runServiceScenario(
   tmpDir: string,
   node: ReturnType<typeof createAztecNodeClient>,
   token: Contract,
-  operator: AztecAddress,
   user: AztecAddress,
   feePayerAddress: AztecAddress,
   schnorr: Schnorr,
@@ -890,9 +863,6 @@ async function runServiceScenario(
       config.topupWaitTimeoutMs,
     );
 
-    // Local devnet requires additional L2 blocks before the L1->L2 bridge
-    // message becomes consumable. Force block production with lightweight txs.
-    await advanceL2Blocks(token, operator, user, config.relayAdvanceBlocks);
     const topupOutcome = await waitForTopupBridgeOutcome(
       topup,
       config.topupWaitTimeoutMs,
@@ -1424,7 +1394,6 @@ async function main() {
       tmpDir,
       node,
       token,
-      operator,
       user,
       fpc.address,
       schnorr,

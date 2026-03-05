@@ -16,7 +16,6 @@ type CliArgs = {
   nodeReadyTimeoutMs: number;
   bridgeWaitTimeoutMs: number;
   bridgePollMs: number;
-  relayAdvanceBlocks: number;
   quoteTtlSeconds: bigint;
   daGasLimit: number;
   l2GasLimit: number;
@@ -204,7 +203,6 @@ function usage(): string {
     "    [--node-ready-timeout-ms <positive_integer>] \\",
     "    [--bridge-wait-timeout-ms <positive_integer>] \\",
     "    [--bridge-poll-ms <positive_integer>] \\",
-    "    [--relay-advance-blocks <integer>=2] \\",
     "    [--quote-ttl-seconds <positive_integer>] \\",
     "    [--da-gas-limit <positive_integer>] \\",
     "    [--l2-gas-limit <positive_integer>] \\",
@@ -218,7 +216,6 @@ function usage(): string {
     "  --node-ready-timeout-ms 45000",
     "  --bridge-wait-timeout-ms 240000",
     "  --bridge-poll-ms 2000",
-    "  --relay-advance-blocks 2",
     "  --quote-ttl-seconds 3600",
     "  --da-gas-limit 1000000",
     "  --l2-gas-limit 1000000",
@@ -327,10 +324,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
     readEnvString("FPC_DEVNET_SMOKE_BRIDGE_POLL_MS") ?? "2000",
     "FPC_DEVNET_SMOKE_BRIDGE_POLL_MS",
   );
-  let relayAdvanceBlocks = parsePositiveInteger(
-    readEnvString("FPC_DEVNET_SMOKE_RELAY_ADVANCE_BLOCKS") ?? "2",
-    "FPC_DEVNET_SMOKE_RELAY_ADVANCE_BLOCKS",
-  );
   let quoteTtlSeconds = parsePositiveBigInt(
     readEnvString("FPC_DEVNET_SMOKE_QUOTE_TTL_SECONDS") ?? "3600",
     "FPC_DEVNET_SMOKE_QUOTE_TTL_SECONDS",
@@ -392,10 +385,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
         bridgePollMs = parsePositiveInteger(nextArg(argv, i, arg), arg);
         i += 1;
         break;
-      case "--relay-advance-blocks":
-        relayAdvanceBlocks = parsePositiveInteger(nextArg(argv, i, arg), arg);
-        i += 1;
-        break;
       case "--quote-ttl-seconds":
         quoteTtlSeconds = parsePositiveBigInt(nextArg(argv, i, arg), arg);
         i += 1;
@@ -433,11 +422,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
     }
   }
 
-  if (relayAdvanceBlocks < 2) {
-    throw new CliError(
-      "Invalid relay-advance-blocks: expected >= 2 for bridge relay progression",
-    );
-  }
   if (fpcRateDen === 0n) {
     throw new CliError("Rate denominator cannot be zero");
   }
@@ -457,7 +441,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
       nodeReadyTimeoutMs,
       bridgeWaitTimeoutMs,
       bridgePollMs,
-      relayAdvanceBlocks,
       quoteTtlSeconds,
       daGasLimit,
       l2GasLimit,
@@ -833,29 +816,12 @@ async function waitForFeeJuiceBalanceAtLeast(
   );
 }
 
-async function advanceL2Blocks(
-  operatorAddress: AztecAddressLike,
-  token: ContractLike,
-  blocks: number,
-): Promise<void> {
-  for (let i = 0; i < blocks; i += 1) {
-    await token.methods.mint_to_private(operatorAddress, 1n).send({
-      from: operatorAddress,
-      wait: { timeout: 180 },
-    });
-    console.log(
-      `[devnet-postdeploy-smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`,
-    );
-  }
-}
-
 async function topUpFeePayer(params: {
   deps: AztecDeps;
   args: CliArgs;
   node: NodeLike;
   wallet: WalletLike;
   operatorAddress: AztecAddressLike;
-  token: ContractLike;
   l1PublicClient: L1PublicClientLike;
   l1WalletClient: L1WalletClientLike;
   feePayerAddress: AztecAddressLike;
@@ -868,7 +834,6 @@ async function topUpFeePayer(params: {
     node,
     wallet,
     operatorAddress,
-    token,
     l1PublicClient,
     l1WalletClient,
     feePayerAddress,
@@ -963,8 +928,6 @@ async function topUpFeePayer(params: {
         `Could not decode DepositToAztecPublic event for ${label} bridge`,
       );
     }
-
-    await advanceL2Blocks(operatorAddress, token, args.relayAdvanceBlocks);
 
     await deps.waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
       timeoutSeconds: Math.max(1, Math.floor(args.bridgeWaitTimeoutMs / 1000)),
@@ -1142,7 +1105,6 @@ async function runSmoke(args: CliArgs): Promise<void> {
     node,
     wallet,
     operatorAddress,
-    token,
     l1PublicClient,
     l1WalletClient,
     feePayerAddress: fpc.address,

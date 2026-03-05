@@ -65,7 +65,6 @@ type SmokeConfig = {
   l2GasLimit: number;
   feePerDaGasOverride: bigint | null;
   feePerL2GasOverride: bigint | null;
-  relayAdvanceBlocks: number;
 };
 
 function readEnvBigInt(name: string, fallback: bigint): bigint {
@@ -194,8 +193,6 @@ function getConfig(): SmokeConfig {
   const l2GasLimit = readEnvNumber("FPC_SMOKE_L2_GAS_LIMIT", 1_000_000);
   const feePerDaGasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_DA_GAS");
   const feePerL2GasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_L2_GAS");
-  const relayAdvanceBlocks = readEnvNumber("FPC_SMOKE_RELAY_ADVANCE_BLOCKS", 2);
-
   if (rateDen === 0n) {
     throw new Error("FPC_SMOKE_RATE_DEN must be non-zero");
   }
@@ -219,7 +216,6 @@ function getConfig(): SmokeConfig {
     l2GasLimit,
     feePerDaGasOverride,
     feePerL2GasOverride,
-    relayAdvanceBlocks,
   };
 }
 
@@ -227,28 +223,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function advanceL2Blocks(
-  token: Contract,
-  operator: AztecAddress,
-  user: AztecAddress,
-  blocks: number,
-): Promise<void> {
-  for (let i = 0; i < blocks; i += 1) {
-    await token.methods.mint_to_private(user, 1n).send({
-      from: operator,
-      wait: { timeout: 180 },
-    });
-    console.log(`[smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`);
-  }
-}
-
 async function topUpFpcFeeJuice(
   config: SmokeConfig,
   node: ReturnType<typeof createAztecNodeClient>,
   wallet: EmbeddedWallet,
   operator: AztecAddress,
-  token: Contract,
-  user: AztecAddress,
   fpcAddress: string,
   topupWei: bigint,
 ): Promise<bigint> {
@@ -346,10 +325,6 @@ async function topUpFpcFeeJuice(
       "Could not decode DepositToAztecPublic event for Fee Juice bridge",
     );
   }
-
-  // Local network requires additional L2 blocks before an L1->L2 message can
-  // be consumed. Force block production with lightweight mock txs.
-  await advanceL2Blocks(token, operator, user, config.relayAdvanceBlocks);
 
   await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
     timeoutSeconds: Math.floor(config.feeJuiceWaitTimeoutMs / 1000),
@@ -471,8 +446,6 @@ async function main() {
       node,
       wallet,
       operator,
-      token,
-      user,
       fpc.address.toString(),
       feeJuiceTopupWei,
     );

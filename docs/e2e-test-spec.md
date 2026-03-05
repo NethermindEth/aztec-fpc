@@ -143,7 +143,6 @@ For the test to pass, all must hold:
 - `FPC_FULL_E2E_START_LOCAL_NETWORK` (`1|0`)
 - `FPC_FULL_E2E_RESET_LOCAL_STATE` (`1|0`)
 - `FPC_FULL_E2E_MODE` (`fpc`, default `fpc`)
-- `FPC_FULL_E2E_RELAY_ADVANCE_BLOCKS` (default `2`)
 - `FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES` (allowed `1` or `2`, default `2`)
 - `FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS`
 - `FPC_FULL_E2E_TOPUP_WEI`, `FPC_FULL_E2E_THRESHOLD_WEI`
