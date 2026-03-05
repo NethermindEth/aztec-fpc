@@ -92,8 +92,7 @@ test -n "$COUNTER_ADDRESS"
 Note:
 - the helper script defaults to ephemeral embedded-wallet state (`EMBEDDED_WALLET_EPHEMERAL=1`) to avoid stale-anchor errors after node restarts.
 - set `EMBEDDED_WALLET_EPHEMERAL=0` only if you explicitly want persistent wallet/PXE local state.
-- if you need to manually force local block progression, run:
-  - `bunx tsx ./scripts/advance-local-network-blocks.ts`
+- if you need continuous local block progression, the `block-producer` service handles this automatically when started via shell setup scripts or docker compose
 
 ## 7. Reproduce Sponsored User Tx Against Counter (No Repo Smoke Scripts)
 
@@ -101,7 +100,7 @@ Goal:
 - execute a normal user call (`y.x()`) = `Counter.increment(...)`
 - pay fees via `FPC.fee_entrypoint(...)`
 - have protocol Fee Juice charged to `fpc_address`
-- while waiting for topup, the script auto-advances local blocks using [advance-local-network-blocks.ts](/home/ametel/source/aztec-fpc/scripts/advance-local-network-blocks.ts)
+- while waiting for topup, the block-producer service (started by the shell setup scripts) continuously produces L2 blocks
 
 Important CLI note:
 - `aztec-wallet send --payment method=fpc-private|fpc-public` targets the canonical paymaster ABI (`fee_entrypoint_private/public`), not this repo's custom `FPCMultiAsset.fee_entrypoint(...)`.
@@ -123,8 +122,6 @@ AZTEC_NODE_URL=http://localhost:8080 \
 QUOTE_BASE_URL=http://localhost:3000 \
 EMBEDDED_WALLET_EPHEMERAL=1 \
 MOCK_COUNTER_ADDRESS="$COUNTER_ADDRESS" \
-RELAY_ADVANCE_BLOCKS=2 \
-RELAY_ADVANCE_EVERY_POLLS=5 \
 DA_GAS_LIMIT=1000000 \
 L2_GAS_LIMIT=1000000 \
 bunx tsx ./scripts/manual-fpc-sponsored-user-tx.ts
@@ -139,7 +136,7 @@ Expected terminal output includes:
 If you see `FPC Fee Juice balance is still zero ...`:
 - wait for topup to bridge and claim Fee Juice, then rerun Step 7
 - verify topup readiness with `curl -fsS http://localhost:3001/ready`
-- optionally force relay progress with `bunx tsx ./scripts/advance-local-network-blocks.ts`
+- ensure the block-producer service is running (started automatically by shell setup scripts or docker compose)
 
 ## 8. Verify Quote Response Shape (No `rate_num` / `rate_den`)
 

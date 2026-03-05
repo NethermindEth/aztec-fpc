@@ -106,5 +106,4 @@ jobs:
         env:
           FPC_DEPLOY_SMOKE_START_LOCAL_NETWORK: "1"
           FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE: "1"
-          FPC_DEPLOY_SMOKE_RELAY_ADVANCE_BLOCKS: "2"
         run: bun run smoke:deploy:fpc:local
