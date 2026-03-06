@@ -8,6 +8,9 @@
  */
 
 import { Contract } from "@aztec/aztec.js/contracts";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 type DeployParams = Parameters<typeof Contract.deploy>;
 
@@ -33,9 +36,7 @@ export async function deployContract(
     );
   } catch (error) {
     if (isClassPublicationRace(error)) {
-      console.log(
-        "[deploy] Contract class publication race detected, waiting for sync before retry",
-      );
+      pinoLogger.info("Contract class publication race detected, waiting for sync before retry");
       // Give the PXE time to sync the block containing the class publication
       // from the winning script before retrying with skipClassPublication.
       await new Promise((resolve) => setTimeout(resolve, 3000));

@@ -21,8 +21,11 @@ import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { createLogger } from "@aztec/foundation/log";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { createWalletClient, type Hex, http, publicActions } from "viem";
+import pino from "pino";
+import { createWalletClient, fallback, type Hex, http, publicActions } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+
+const pinoLogger = pino();
 
 /** Timeout for L1→L2 message readiness. */
 const L1_TO_L2_MESSAGE_TIMEOUT_SECONDS = 120;
@@ -64,7 +67,7 @@ export async function resolveScriptAccounts(
   // Generate a random L1 account and fund it via Anvil.
   const l1Key = generatePrivateKey();
   const l1Account = privateKeyToAccount(l1Key);
-  console.log(`[script-credentials] generated L1 account ${l1Account.address}`);
+  pinoLogger.info(`generated L1 account ${l1Account.address}`);
 
   await fundL1Account(l1RpcUrl, l1Account.address);
 
@@ -73,11 +76,11 @@ export async function resolveScriptAccounts(
   // Set up L1 portal for bridging FeeJuice.
   const l1WalletClient = createWalletClient({
     account: l1Account,
-    transport: http(l1RpcUrl),
+    transport: fallback([http(l1RpcUrl)]),
   }).extend(publicActions);
   const portal = await L1FeeJuicePortalManager.new(
     node,
-    l1WalletClient as Parameters<typeof L1FeeJuicePortalManager.new>[1],
+    l1WalletClient,
     createLogger("script-credentials:bridge"),
   );
 
@@ -91,7 +94,7 @@ export async function resolveScriptAccounts(
 
   // Mint additional L1 FeeJuice so the L1 account retains a balance.
   await portal.getTokenManager().mint(l1Account.address);
-  console.log(`[script-credentials] minted L1 FeeJuice for ${l1Account.address}`);
+  pinoLogger.info(`minted L1 FeeJuice for ${l1Account.address}`);
 
   // Wait for L1→L2 messages, then deploy accounts with claimed FeeJuice.
   for (let i = 0; i < preResults.length; i++) {
@@ -127,7 +130,7 @@ async function fundL1Account(l1RpcUrl: string, address: string): Promise<void> {
   if (result.error) {
     throw new Error(`anvil_setBalance RPC error: ${result.error.message}`);
   }
-  console.log(`[script-credentials] funded L1 account ${address} with 1 ETH`);
+  pinoLogger.info(`funded L1 account ${address} with 1 ETH`);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,14 +163,12 @@ async function preClaim(
     account.signingKey,
   );
   const l2Address = accountManager.address;
-  console.log(`[script-credentials] registered L2 account ${role}=${l2Address.toString()}`);
+  pinoLogger.info(`registered L2 account ${role}=${l2Address.toString()}`);
 
   // 2. Bridge FeeJuice L1→L2 for this account.
   const l2Claim = await portal.bridgeTokensPublic(l2Address, undefined, true);
   const messageHash = Fr.fromHexString(l2Claim.messageHash as string);
-  console.log(
-    `[script-credentials] bridged FeeJuice L1→L2 for account[${index}]=${l2Address.toString()}`,
-  );
+  pinoLogger.info(`bridged FeeJuice L1→L2 for account[${index}]=${l2Address.toString()}`);
 
   return {
     account,
@@ -193,7 +194,7 @@ async function deployWithClaim(
     timeoutSeconds: L1_TO_L2_MESSAGE_TIMEOUT_SECONDS,
     forPublicConsumption: false,
   });
-  console.log(`[script-credentials] L1→L2 message ready for account[${index}]`);
+  pinoLogger.info(`L1→L2 message ready for account[${index}]`);
 
   const feePayment = new FeeJuicePaymentMethodWithClaim(l2Address, pending.claim);
   const deployMethod = await accountManager.getDeployMethod();
@@ -203,5 +204,5 @@ async function deployWithClaim(
     skipClassPublication: true,
     skipInstancePublication: false,
   });
-  console.log(`[script-credentials] deployed L2 account[${index}]=${l2Address.toString()}`);
+  pinoLogger.info(`deployed L2 account[${index}]=${l2Address.toString()}`);
 }
