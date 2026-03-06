@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Compile contracts and benchmark the FPC contract via aztec-benchmark.
-#
-# Benchmarks:
-#   fpc — FPC.fee_entrypoint
+# Compile contracts and profile FPC.fee_entrypoint gate counts.
 #
 # Produces structured JSON (profiling/benchmarks/*.benchmark.json) and
-# human-readable console summaries (gate counts, gas, proving time).
+# human-readable console summaries.
 #
 # Run ./profiling/setup.sh once first, then re-run this after every contract change.
 #
@@ -14,14 +11,12 @@
 #
 # Environment:
 #   AZTEC_NODE_URL  — override node endpoint (default http://127.0.0.1:8080)
-#   L1_RPC_URL      — L1 (anvil) endpoint  (default http://127.0.0.1:8545)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
-L1_URL="${L1_RPC_URL:-http://127.0.0.1:8545}"
 
 # Preflight checks
 if [[ ! -d "$SCRIPT_DIR/node_modules/@aztec" ]]; then
@@ -48,19 +43,10 @@ rm -rf "$REPO_ROOT/target"
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# Step 2: Benchmark each variant in its own process
-# Running benchmarks in separate processes avoids a bb.js socket corruption
-# issue: the CLI's post-benchmark cleanup destroys all active sockets, which
-# breaks the bb native backend for any subsequent benchmark in the same process.
-
 echo ""
-echo "[profile] Running benchmark: fpc ..."
-AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
-  npx --prefix "$SCRIPT_DIR" aztec-benchmark \
-    --config "$REPO_ROOT/Nargo.toml" \
-    --output-dir "$SCRIPT_DIR/benchmarks" \
-    --contracts fpc
-echo "[profile] Finished benchmark: fpc"
+echo "[profile] Running profiler..."
+AZTEC_NODE_URL="$NODE_URL" node "$SCRIPT_DIR/profile-gates.mjs"
+echo "[profile] Finished profiler run"
 
 echo ""
 echo "[profile] Benchmark JSONs saved to profiling/benchmarks/"

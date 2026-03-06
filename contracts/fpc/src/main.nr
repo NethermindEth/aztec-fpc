@@ -156,7 +156,9 @@ pub contract FPCMultiAsset {
             .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
             .call(self.context);
 
-        self.context.set_as_fee_payer();
+        if enforce_setup_phase {
+            self.context.set_as_fee_payer();
+        }
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
