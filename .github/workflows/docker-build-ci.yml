@@ -79,7 +79,7 @@ jobs:
             *.cache-to=type=gha,mode=max
 
       - name: Run services and tests
-        run: docker compose --profile full up wait --wait
+        run: bash scripts/services/compose-mode.sh full
 
       - name: Test logs
         run: docker compose --profile full logs --timestamps smoke-services smoke-fee-entrypoint e2e-fpc

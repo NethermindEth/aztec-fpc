@@ -366,7 +366,7 @@ The compose stack (`docker-compose.yaml`) includes:
 | `aztec-node` | Aztec sandbox node | 8080 |
 | `attestation` | FPC attestation service | 3000 |
 | `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
-| `e2e-fpc` (profile `e2e-fpc`) | Compose-backed `FPC` full lifecycle runner | — |
+| `e2e-fpc` (profiles `e2e-fpc`, `full`) | Compose-backed `FPC` full lifecycle runner | — |
 
 Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
 
@@ -381,7 +381,7 @@ Run compose in mode-based flows:
 # Infra only (no tests)
 bun run compose:infra
 
-# Full mode (deployment + smoke tests, exits with smoke status)
+# Full mode (deployment + smoke tests + compose e2e runner)
 bun run compose:full
 
 # Or directly with docker compose for infra-only

@@ -179,7 +179,7 @@ services:
 
   e2e-fpc:
     image: nethermind/aztec-fpc-smoke:local
-    profiles: ["e2e-fpc"]
+    profiles: ["e2e-fpc", "full"]
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     command:
       - "scripts/services/fpc-full-lifecycle-e2e.ts"
