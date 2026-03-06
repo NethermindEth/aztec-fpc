@@ -44,7 +44,7 @@
   },
   "overrides": [
     {
-      "includes": ["services/**", "sdk/**", "scripts/**"],
+      "includes": ["services/**", "sdk/**"],
       "linter": {
         "rules": {
           "correctness": {
@@ -76,6 +76,9 @@
       "includes": ["scripts/**"],
       "linter": {
         "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          },
           "complexity": {
             "noExcessiveCognitiveComplexity": {
               "level": "error",
