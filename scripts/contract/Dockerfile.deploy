@@ -1,68 +1,9 @@
-ARG AZTEC_VERSION=4.0.0-devnet.2-patch.3
-
-# ══════════════════════════════════════════════════════════════
-# Stage 1: aztec — base image with aztec toolchain
-# ══════════════════════════════════════════════════════════════
-FROM node:24-trixie-slim AS aztec
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates curl git g++ jq make python3 && \
-    rm -rf /var/lib/apt/lists/*
-
-ARG AZTEC_VERSION
-RUN curl -sL https://install.aztec.network/${AZTEC_VERSION} | VERSION=${AZTEC_VERSION} bash -i
-
-ENV PATH="/root/.aztec/versions/${AZTEC_VERSION}/bin:/root/.aztec/versions/${AZTEC_VERSION}/node_modules/.bin:$PATH"
-
-# ══════════════════════════════════════════════════════════════
-# Stage 2: compile — contract compilation only
-#
-# The compile-base context is the aztec stage pinned to
-# linux/amd64 via docker-bake.hcl, because the Aztec bb binary
-# does not have the AVM Transpiler enabled on arm64.  Contract
-# artifacts are platform-independent JSON, so cross-copy is safe.
-# ══════════════════════════════════════════════════════════════
-FROM aztec AS compile
-
-WORKDIR /app
-
-COPY .aztecrc ./
-COPY Nargo.toml ./
-COPY contracts/ contracts/
-COPY mock/counter/ mock/counter/
-COPY vendor/ vendor/
-
-RUN aztec compile --workspace --force
-
-# ══════════════════════════════════════════════════════════════
-# Stage 3: runtime — common runtime image with JS dependencies
-# ══════════════════════════════════════════════════════════════
-FROM aztec AS runtime
+FROM deps
 
 ENV CRS_PATH=/app/.bb-crs
 
-# ── Install Bun ──
-COPY --from=oven/bun:1.3.9-slim /usr/local/bin/bun /usr/local/bin/bun
-COPY --from=oven/bun:1.3.9-slim /usr/local/bin/bunx /usr/local/bin/bunx
-
-WORKDIR /app
-
-# ── JS dependencies (reused from deps stage via bake context) ──
-COPY package.json bun.lock ./
-COPY sdk/package.json sdk/
-COPY scripts/package.json scripts/
-COPY services/attestation/package.json services/attestation/
-COPY services/topup/package.json services/topup/
-COPY --from=deps /app/node_modules node_modules/
-COPY --from=deps /app/scripts/node_modules scripts/node_modules/
-
 # ── Pull compiled contract artifacts from compile stage ──
 COPY --from=contract /app/target/ target/
-
-# ══════════════════════════════════════════════════════════════
-# Stage 4: deploy — deploying compiled contracts
-# ══════════════════════════════════════════════════════════════
-FROM runtime AS deploy
 
 # Install yq for YAML processing during config generation
 COPY --from=mikefarah/yq:4.45.4 /usr/bin/yq /usr/local/bin/yq

@@ -20,7 +20,7 @@ variable "PLATFORM_SUFFIX" {
 }
 
 group "default" {
-  targets = ["attestation", "topup", "deploy", "smoke"]
+  targets = ["attestation", "topup", "deploy", "contract", "smoke"]
 }
 
 group "services" {
@@ -83,9 +83,12 @@ target "deps" {
 
 target "contract" {
   context    = "."
-  dockerfile = "scripts/contract/Dockerfile.deploy"
-  target     = "compile"
+  dockerfile = "scripts/contract/Dockerfile.contract"
   platforms  = ["linux/amd64"]
+  tags = compact([
+    "${REGISTRY}nethermind/aztec-fpc-contract-artifact:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-artifact:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+  ])
 }
 
 target "deploy" {
@@ -97,7 +100,6 @@ target "deploy" {
     contract = "target:contract"
   }
   platforms  = PLATFORMS
-  target     = "deploy"
   tags = compact([
     "${REGISTRY}nethermind/aztec-fpc-contract-deployment:${TAG}${PLATFORM_SUFFIX}",
     GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-deployment:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
