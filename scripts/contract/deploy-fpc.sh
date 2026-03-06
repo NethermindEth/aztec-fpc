@@ -11,7 +11,7 @@ if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPCMultiAsset.jso
   aztec compile --workspace --force
 fi
 
-bunx tsx scripts/contract/deploy-fpc-devnet.ts "$@"
+bun run scripts/contract/deploy-fpc-devnet.ts "$@"
 
 # Generate service configs if manifest was written (skipped for preflight-only).
 # Set FPC_SKIP_CONFIG_GEN=1 to handle config generation externally.

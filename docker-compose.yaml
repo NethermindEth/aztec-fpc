@@ -54,7 +54,6 @@ services:
       FPC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       FPC_L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
       PXE_PROVER: "${PXE_PROVER:-wasm}"
-      FPC_DEPLOYER_ALIAS: "${FPC_DEPLOYER_ALIAS:-test0}"
       FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       FPC_DATA_DIR: "/app/data"
@@ -119,7 +118,7 @@ services:
         condition: service_completed_successfully
 
   block-producer:
-    image: nethermind/aztec-fpc-contract-deployment:local
+    image: nethermind/aztec-fpc-contract-artifact:local
     entrypoint: ["bash", "/app/scripts/services/block-producer.sh"]
     volumes:
       - ./scripts:/app/scripts:ro
@@ -158,8 +157,6 @@ services:
     depends_on:
       block-producer:
         condition: service_started
-      deploy:
-        condition: service_completed_successfully
 
   smoke-services:
     image: nethermind/aztec-fpc-smoke:local
@@ -173,8 +170,6 @@ services:
     depends_on:
       block-producer:
         condition: service_started
-      deploy:
-        condition: service_completed_successfully
 
   e2e-fpc:
     image: nethermind/aztec-fpc-smoke:local
@@ -190,8 +185,6 @@ services:
     depends_on:
       block-producer:
         condition: service_started
-      deploy:
-        condition: service_completed_successfully
 
   wait:
     image: busybox
@@ -206,9 +199,8 @@ services:
         condition: service_completed_successfully
       attestation:
         condition: service_healthy
-      # TODO: uncomment this when topup is ready
-      # topup:
-      #   condition: service_healthy
+      topup:
+        condition: service_healthy
 
 volumes:
   deploy-crs-cache:

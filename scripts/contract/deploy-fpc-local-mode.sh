@@ -7,7 +7,6 @@
 # docker-compose, which manages its own node).
 #
 # Environment variables (all optional):
-#   FPC_LOCAL_DEPLOYER_ALIAS          default: test0
 #   FPC_LOCAL_DEPLOYER_SECRET_KEY     default: sandbox test account #0
 #   FPC_LOCAL_OPERATOR_SECRET_KEY     default: sandbox test account #0
 #   FPC_LOCAL_DATA_DIR                default: ./tmp/local-deploy
@@ -69,7 +68,6 @@ LOCAL_TEST_KEY="0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c2
 
 export FPC_NODE_URL="${AZTEC_NODE_URL}"
 export FPC_L1_RPC_URL="${L1_RPC_URL}"
-export FPC_DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
 export FPC_DEPLOYER_SECRET_KEY="${FPC_LOCAL_DEPLOYER_SECRET_KEY:-$LOCAL_TEST_KEY}"
 export FPC_OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-$LOCAL_TEST_KEY}"
 export FPC_DATA_DIR="${FPC_LOCAL_DATA_DIR:-./tmp/local-deploy}"

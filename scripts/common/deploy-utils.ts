@@ -4,10 +4,21 @@
  * When multiple scripts deploy contracts from the same artifact simultaneously,
  * they race on contract class publication — the first to publish wins and the
  * rest get NULLIFIER_CONFLICT. This wrapper catches that specific error and
- * retries the deployment with `skipClassPublication: true`.
+ * retries the deployment, querying the PXE to determine whether the class is
+ * already published before each attempt.
  */
 
-import { Contract } from "@aztec/aztec.js/contracts";
+import {
+  Contract,
+  type DeployOptions,
+  getContractClassFromArtifact,
+} from "@aztec/aztec.js/contracts";
+import pino from "pino";
+
+const pinoLogger = pino();
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 3000;
 
 type DeployParams = Parameters<typeof Contract.deploy>;
 
@@ -24,31 +35,41 @@ export async function deployContract(
   wallet: DeployParams[0],
   artifact: DeployParams[1],
   args: DeployParams[2],
-  sendOptions: Record<string, unknown> = {},
+  sendOptions: DeployOptions,
   constructorName?: DeployParams[3],
 ) {
-  try {
-    return await Contract.deploy(wallet, artifact, args, constructorName).send(
-      sendOptions as Parameters<ReturnType<typeof Contract.deploy>["send"]>[0],
-    );
-  } catch (error) {
-    if (isClassPublicationRace(error)) {
-      console.log(
-        "[deploy] Contract class publication race detected, waiting for sync before retry",
-      );
-      // Give the PXE time to sync the block containing the class publication
-      // from the winning script before retrying with skipClassPublication.
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      return await Contract.deploy(wallet, artifact, args, constructorName).send({
-        ...sendOptions,
-        skipClassPublication: true,
-      } as Parameters<ReturnType<typeof Contract.deploy>["send"]>[0]);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const opts = { ...sendOptions };
+
+      const classId = (await getContractClassFromArtifact(artifact)).id;
+      const metadata = await wallet.getContractClassMetadata(classId);
+      if (metadata.isContractClassPubliclyRegistered) {
+        pinoLogger.info("Contract class already publicly registered, skipping class publication");
+        opts.skipClassPublication = true;
+      }
+
+      return await Contract.deploy(wallet, artifact, args, constructorName).send(opts);
+    } catch (error) {
+      if (isClassPublicationRace(error) && attempt < MAX_RETRIES) {
+        pinoLogger.info(
+          `Contract class publication race detected (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying after ${RETRY_DELAY_MS}ms`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue;
+      }
+      throw error;
     }
-    throw error;
   }
+
+  throw new Error("Unreachable: deployment loop exited without returning or throwing");
 }
 
 function isClassPublicationRace(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
-  return msg.includes("NULLIFIER_CONFLICT") || msg.includes("Nullifier conflict");
+  return (
+    msg.includes("Nullifier conflict") ||
+    msg.includes("Existing nullifier") ||
+    msg.includes("dropped by P2P node")
+  );
 }

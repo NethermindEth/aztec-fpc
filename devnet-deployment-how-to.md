@@ -48,14 +48,12 @@ If unset, wrapper defaults are:
 
 - `FPC_NODE_URL=https://v4-devnet-2.aztec-labs.com/`
 - `FPC_SPONSORED_FPC_ADDRESS=0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2`
-- `FPC_DEPLOYER_ALIAS=my-wallet`
 - `FPC_OUT=./deployments/devnet-manifest-v2.json`
 
 Key behavior when key env vars are unset:
 
 - uses default devnet test key `0x1111111111111111111111111111111111111111111111111111111111111111`
 - sets operator key equal to deployer key
-- may import/create local wallet alias `accounts:${FPC_DEPLOYER_ALIAS}`
 
 Artifact behavior:
 
@@ -69,7 +67,6 @@ If you want explicit control, set env vars before running:
 ```bash
 export FPC_NODE_URL="https://v4-devnet-2.aztec-labs.com/"
 export FPC_SPONSORED_FPC_ADDRESS="0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2"
-export FPC_DEPLOYER_ALIAS="my-wallet"
 export FPC_OUT="./deployments/devnet-manifest-v2.json"
 ```
 
@@ -122,7 +119,6 @@ Manual TypeScript invocation:
 bunx tsx scripts/contract/deploy-fpc-devnet.ts \
   --node-url "https://v4-devnet-2.aztec-labs.com/" \
   --sponsored-fpc-address "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2" \
-  --deployer-alias "my-wallet" \
   --deployer-secret-key "0x..." \
   --operator-secret-key "0x..." \
   --out "./deployments/devnet-manifest-v2.json"
@@ -134,7 +130,7 @@ Manifest contains:
 
 - network metadata (`node_url`, `node_version`, `l1_chain_id`, `rollup_version`)
 - required Aztec/L1/protocol addresses from live `node_getNodeInfo`
-- deployer alias/address and key material (`private_key` or `private_key_ref`)
+- deployer address and key material (`private_key` or `private_key_ref`)
 - deployed contract addresses
 - operator address and pubkeys
 - tx hashes

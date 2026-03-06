@@ -1,0 +1,22 @@
+ARG AZTEC_VERSION=4.0.0-devnet.2-patch.3
+
+FROM node:24-trixie-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl git g++ jq make python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG AZTEC_VERSION
+RUN curl -sL https://install.aztec.network/${AZTEC_VERSION} | VERSION=${AZTEC_VERSION} bash -i
+
+ENV PATH="/root/.aztec/versions/${AZTEC_VERSION}/bin:/root/.aztec/versions/${AZTEC_VERSION}/node_modules/.bin:$PATH"
+
+WORKDIR /app
+
+COPY .aztecrc ./
+COPY Nargo.toml ./
+COPY contracts/ contracts/
+COPY mock/counter/ mock/counter/
+COPY vendor/ vendor/
+
+RUN aztec compile --workspace --force

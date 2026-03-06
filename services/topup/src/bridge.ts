@@ -10,7 +10,15 @@ import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { L1FeeJuicePortalManager, type L2AmountClaim } from "@aztec/aztec.js/ethereum";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import { createLogger, type Logger } from "@aztec/foundation/log";
-import { type Chain, createWalletClient, defineChain, type Hex, http, publicActions } from "viem";
+import {
+  type Chain,
+  createWalletClient,
+  defineChain,
+  fallback,
+  type Hex,
+  http,
+  publicActions,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import * as viemChains from "viem/chains";
 
@@ -149,9 +157,9 @@ export async function bridgeFeeJuice(
       const walletClient = deps.createWalletClient({
         account,
         chain,
-        transport: deps.http(l1RpcUrl),
+        transport: fallback([deps.http(l1RpcUrl)]),
       });
-      const extendedClient = walletClient.extend(publicActions) as unknown as ExtendedWalletClient;
+      const extendedClient = walletClient.extend(publicActions) as ExtendedWalletClient;
       const portalManager = await deps.createPortalManager(node, extendedClient, logger);
       claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
       break;
