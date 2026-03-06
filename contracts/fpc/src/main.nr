@@ -55,11 +55,7 @@ pub contract FPCMultiAsset {
     struct Storage<Context> {
         config: PublicImmutable<Config, Context>,
         /// Per-asset acceptability flag. Unwritten slots default to false.
-        accepted_assets: Map<
-            AztecAddress,
-            DelayedPublicMutable<bool, ACCEPTED_ASSET_DELAY_SECONDS, Context>,
-            Context,
-        >,
+        accepted_assets: Map<AztecAddress, DelayedPublicMutable<bool, ACCEPTED_ASSET_DELAY_SECONDS, Context>, Context>,
     }
 
     #[external("public")]
