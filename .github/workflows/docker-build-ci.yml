@@ -93,6 +93,18 @@ jobs:
         if: always()
         run: docker compose --profile full logs --timestamps e2e-fpc
 
+      - name: Print deploy logs
+        if: always()
+        run: docker compose --profile full logs --timestamps deploy
+
+      - name: Print attestation logs
+        if: always()
+        run: docker compose --profile full logs --timestamps attestation
+
+      - name: Print topup logs
+        if: always()
+        run: docker compose --profile full logs --timestamps topup
+
       - name: Tear down
         if: always()
         run: docker compose --profile full down -v --remove-orphans
