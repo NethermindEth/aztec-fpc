@@ -202,6 +202,8 @@ function usage(): string {
     "    contracts are deployed with fee juice payment.",
     "  - --operator is optional; if omitted, the operator address is derived from --operator-secret-key.",
     "    If both are provided, they must match.",
+    "  - Sponsorship is disabled by default (constructor gets 0,0 sponsor key).",
+    "    Provide --sponsor-secret-key to enable it.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
   ].join("\n");
 }
@@ -441,11 +443,11 @@ function parseCliArgs(argv: string[]): CliParseResult {
       operatorSecretKeyRef: parsedOperatorSecret.ref
         ? parseNonEmptyString(parsedOperatorSecret.ref, "--operator-secret-key-ref")
         : null,
-      sponsorSecretKey: sponsorSecretKey
-        ? parseHex32(sponsorSecretKey, "--sponsor-secret-key")
+      sponsorSecretKey: parsedSponsorSecret.value
+        ? parseHex32(parsedSponsorSecret.value, "--sponsor-secret-key")
         : null,
-      sponsorSecretKeyRef: sponsorSecretKeyRef
-        ? parseNonEmptyString(sponsorSecretKeyRef, "--sponsor-secret-key-ref")
+      sponsorSecretKeyRef: parsedSponsorSecret.ref
+        ? parseNonEmptyString(parsedSponsorSecret.ref, "--sponsor-secret-key-ref")
         : null,
       operator: parsedOperator,
       acceptedAsset: acceptedAsset ? parseAztecAddress(acceptedAsset, "--accepted-asset") : null,
@@ -1413,9 +1415,7 @@ async function deriveOperatorIdentity(operatorSecretKey: string): Promise<Operat
   }
 }
 
-async function deriveSponsorIdentity(
-  sponsorSecretKey: string,
-): Promise<SponsorIdentity> {
+async function deriveSponsorIdentity(sponsorSecretKey: string): Promise<SponsorIdentity> {
   const deps = await loadOperatorDerivationDeps();
 
   let secretKeyFr: unknown;
@@ -1618,10 +1618,7 @@ function loadFpcArtifactSelection(artifactPathInput: string): FpcArtifactSelecti
   }
   const functions = (parsed as { functions?: unknown[] }).functions ?? [];
   const ctorFn = functions.find(
-    (f: unknown) =>
-      f &&
-      typeof f === "object" &&
-      (f as { name?: string }).name === "constructor",
+    (f: unknown) => f && typeof f === "object" && (f as { name?: string }).name === "constructor",
   ) as
     | {
         parameters?: Array<{ name?: string }>;
@@ -1640,8 +1637,12 @@ function buildFpcConstructorArgs(
   acceptedAssetAddress: string,
 ): string[] {
   const baseArgs = [operatorIdentity.address, operatorIdentity.pubkeyX, operatorIdentity.pubkeyY];
-  if (selection.hasSponsorPubkey && sponsorIdentity) {
-    baseArgs.push(sponsorIdentity.pubkeyX, sponsorIdentity.pubkeyY);
+  if (selection.hasSponsorPubkey) {
+    if (sponsorIdentity) {
+      baseArgs.push(sponsorIdentity.pubkeyX, sponsorIdentity.pubkeyY);
+    } else {
+      baseArgs.push("0", "0");
+    }
   }
   if (selection.name === "FPCMultiAsset") {
     return baseArgs;
@@ -1674,6 +1675,136 @@ function assertRequiredArtifactsExistForDevnet(
   }
 }
 
+async function assertL1RpcPreflight(args: CliArgs, nodeState: NodePreflightState): Promise<void> {
+  if (args.validateTopupPath || args.l1RpcUrl) {
+    if (!args.l1RpcUrl) {
+      throw new CliError("L1 RPC preflight requested, but --l1-rpc-url was not provided");
+    }
+    const l1RpcChainId = await assertL1RpcReachable(args.l1RpcUrl);
+    if (l1RpcChainId !== nodeState.l1ChainId) {
+      throw new CliError(
+        `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeState.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
+      );
+    }
+    pinoLogger.info(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
+  } else {
+    pinoLogger.info("[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)");
+  }
+}
+
+async function resolveOperatorAndSponsor(
+  args: CliArgs,
+  fpcSelection: FpcArtifactSelection,
+): Promise<{
+  operatorIdentity: OperatorIdentity;
+  sponsorIdentity: SponsorIdentity | null;
+}> {
+  if (!args.operatorSecretKey) {
+    throw new CliError(
+      "Operator pubkey derivation requires --operator-secret-key. The provided --operator-secret-key-ref cannot be resolved by this script yet.",
+    );
+  }
+
+  const operatorIdentity = await deriveOperatorIdentity(args.operatorSecretKey);
+  if (args.operator && args.operator.toLowerCase() !== operatorIdentity.address.toLowerCase()) {
+    throw new CliError(
+      `--operator ${args.operator} does not match address derived from --operator-secret-key: ${operatorIdentity.address}. Remove --operator to use the derived address, or provide the matching secret key.`,
+    );
+  }
+  pinoLogger.info(
+    `[deploy-fpc-devnet] operator identity derived. address=${operatorIdentity.address} pubkey_x=${operatorIdentity.pubkeyX} pubkey_y=${operatorIdentity.pubkeyY}`,
+  );
+
+  let sponsorIdentity: SponsorIdentity | null = null;
+  if (fpcSelection.hasSponsorPubkey) {
+    if (args.sponsorSecretKey) {
+      sponsorIdentity = await deriveSponsorIdentity(args.sponsorSecretKey);
+      pinoLogger.info(
+        `[deploy-fpc-devnet] sponsor identity derived (dedicated). pubkey_x=${sponsorIdentity.pubkeyX} pubkey_y=${sponsorIdentity.pubkeyY}`,
+      );
+    } else {
+      pinoLogger.info(
+        "[deploy-fpc-devnet] no --sponsor-secret-key provided; sponsorship disabled (constructor gets 0, 0)",
+      );
+    }
+  }
+
+  return { operatorIdentity, sponsorIdentity };
+}
+
+async function deployFaucetAndFund(params: {
+  nodeUrl: string;
+  deployerWalletAlias: string;
+  deployerAddress: string;
+  operatorSecretKey: string;
+  operatorAddress: string;
+  acceptedAssetAddress: string;
+  payment: string | undefined;
+  aliasSuffix: string;
+}): Promise<{
+  faucetDeploy: ContractDeployResult;
+  faucetConfig: ReturnType<typeof readFaucetEnvConfig>;
+}> {
+  const faucetConfig = readFaucetEnvConfig();
+  pinoLogger.info(
+    `[deploy-fpc-devnet] deploying Faucet token=${params.acceptedAssetAddress} admin=${params.operatorAddress} drip_amount=${faucetConfig.dripAmount} cooldown_seconds=${faucetConfig.cooldownSeconds}`,
+  );
+  const faucetDeploy = await deployContractWithAztecWallet({
+    nodeUrl: params.nodeUrl,
+    fromAlias: params.deployerWalletAlias,
+    payment: params.payment,
+    artifactPath: REQUIRED_ARTIFACTS.faucet,
+    alias: `devnet-faucet-${params.aliasSuffix}`,
+    constructorArgs: [
+      params.acceptedAssetAddress,
+      params.operatorAddress,
+      faucetConfig.dripAmount.toString(),
+      faucetConfig.cooldownSeconds.toString(),
+    ],
+    context: "Faucet",
+  });
+  pinoLogger.info(
+    `[deploy-fpc-devnet] faucet deployed. address=${faucetDeploy.address} tx_hash=${faucetDeploy.txHash}`,
+  );
+
+  const operatorWalletAlias =
+    params.operatorAddress.toLowerCase() === params.deployerAddress.toLowerCase()
+      ? params.deployerWalletAlias
+      : ensureOperatorAccountInWallet(
+          params.nodeUrl,
+          params.operatorSecretKey,
+          params.payment,
+          params.operatorAddress,
+        );
+  if (operatorWalletAlias === params.deployerWalletAlias) {
+    pinoLogger.info(
+      `[deploy-fpc-devnet] operator address matches deployer; reusing ${operatorWalletAlias} for faucet funding`,
+    );
+  }
+  pinoLogger.info(
+    `[deploy-fpc-devnet] funding faucet: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorWalletAlias}`,
+  );
+  try {
+    await callContractSendWithAztecWallet({
+      nodeUrl: params.nodeUrl,
+      fromAlias: operatorWalletAlias,
+      payment: params.payment,
+      contractAddress: params.acceptedAssetAddress,
+      artifactPath: REQUIRED_ARTIFACTS.token,
+      method: "mint_to_public",
+      methodArgs: [faucetDeploy.address, faucetConfig.initialSupply.toString()],
+      context: "Token.mint_to_public for Faucet funding",
+    });
+  } catch (error) {
+    throw new CliError(
+      `Faucet funding failed: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${params.operatorAddress} failed. Ensure the operator is the token minter. Underlying error: ${String(error)}`,
+    );
+  }
+  pinoLogger.info(`[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`);
+
+  return { faucetDeploy, faucetConfig };
+}
+
 async function main(): Promise<void> {
   const parseResult = parseCliArgs(process.argv.slice(2));
   if (parseResult.kind === "help") {
@@ -1703,20 +1834,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] node preflight passed. node_version=${nodeState.nodeVersion} l1_chain_id=${nodeState.l1ChainId} l2_chain_id=${nodeState.l2ChainId} rollup_version=${nodeState.rollupVersion}`,
   );
 
-  if (args.validateTopupPath || args.l1RpcUrl) {
-    if (!args.l1RpcUrl) {
-      throw new CliError("L1 RPC preflight requested, but --l1-rpc-url was not provided");
-    }
-    const l1RpcChainId = await assertL1RpcReachable(args.l1RpcUrl);
-    if (l1RpcChainId !== nodeState.l1ChainId) {
-      throw new CliError(
-        `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeState.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
-      );
-    }
-    pinoLogger.info(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
-  } else {
-    pinoLogger.info("[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)");
-  }
+  await assertL1RpcPreflight(args, nodeState);
 
   if (args.sponsoredFpcAddress) {
     ensureSponsoredFpcIsRegistered(args.nodeUrl, args.sponsoredFpcAddress);
@@ -1743,37 +1861,9 @@ async function main(): Promise<void> {
       pinoLogger.info("[deploy-fpc-devnet] preflight-only requested; exiting");
       return;
     }
-    throw new CliError(
-      "Operator pubkey derivation requires --operator-secret-key. The provided --operator-secret-key-ref cannot be resolved by this script yet.",
-    );
   }
 
-  const operatorIdentity = await deriveOperatorIdentity(args.operatorSecretKey);
-  if (args.operator && args.operator.toLowerCase() !== operatorIdentity.address.toLowerCase()) {
-    throw new CliError(
-      `--operator ${args.operator} does not match address derived from --operator-secret-key: ${operatorIdentity.address}. Remove --operator to use the derived address, or provide the matching secret key.`,
-    );
-  }
-  pinoLogger.info(
-    `[deploy-fpc-devnet] operator identity derived. address=${operatorIdentity.address} pubkey_x=${operatorIdentity.pubkeyX} pubkey_y=${operatorIdentity.pubkeyY}`,
-  );
-
-  let sponsorIdentity: SponsorIdentity | null = null;
-  if (fpcSelection.hasSponsorPubkey) {
-    const sponsorKey = args.sponsorSecretKey ?? args.operatorSecretKey;
-    if (!sponsorKey) {
-      throw new CliError(
-        "FPC artifact requires sponsor pubkey but neither --sponsor-secret-key nor --operator-secret-key was provided for derivation.",
-      );
-    }
-    sponsorIdentity = await deriveSponsorIdentity(sponsorKey);
-    const keySource = args.sponsorSecretKey
-      ? "dedicated"
-      : "operator (default)";
-    pinoLogger.info(
-      `[deploy-fpc-devnet] sponsor identity derived (${keySource}). pubkey_x=${sponsorIdentity.pubkeyX} pubkey_y=${sponsorIdentity.pubkeyY}`,
-    );
-  }
+  const { operatorIdentity, sponsorIdentity } = await resolveOperatorAndSponsor(args, fpcSelection);
 
   pinoLogger.info("[deploy-fpc-devnet] step 3 account resolution checks passed");
 
@@ -1829,72 +1919,33 @@ async function main(): Promise<void> {
     payment: paymentArg,
     artifactPath: fpcSelection.artifactPath,
     alias: `devnet-fpc-${aliasSuffix}`,
-    constructorArgs: buildFpcConstructorArgs(fpcSelection, operatorIdentity, sponsorIdentity, acceptedAssetAddress),
+    constructorArgs: buildFpcConstructorArgs(
+      fpcSelection,
+      operatorIdentity,
+      sponsorIdentity,
+      acceptedAssetAddress,
+    ),
     context: fpcSelection.name,
   });
   pinoLogger.info(
     `[deploy-fpc-devnet] fpc deployed. address=${fpcDeploy.address} tx_hash=${fpcDeploy.txHash}`,
   );
 
-  let faucetDeploy: { address: string; txHash: string } | undefined;
+  let faucetDeploy: ContractDeployResult | undefined;
   let faucetConfig: ReturnType<typeof readFaucetEnvConfig> | undefined;
   if (!args.acceptedAsset) {
-    faucetConfig = readFaucetEnvConfig();
-    pinoLogger.info(
-      `[deploy-fpc-devnet] deploying Faucet token=${acceptedAssetAddress} admin=${operatorIdentity.address} drip_amount=${faucetConfig.dripAmount} cooldown_seconds=${faucetConfig.cooldownSeconds}`,
-    );
-    faucetDeploy = await deployContractWithAztecWallet({
+    const faucetResult = await deployFaucetAndFund({
       nodeUrl: args.nodeUrl,
-      fromAlias: deployer.walletAlias,
+      deployerWalletAlias: deployer.walletAlias,
+      deployerAddress: deployer.address,
+      operatorSecretKey: args.operatorSecretKey ?? "",
+      operatorAddress: operatorIdentity.address,
+      acceptedAssetAddress,
       payment: paymentArg,
-      artifactPath: REQUIRED_ARTIFACTS.faucet,
-      alias: `devnet-faucet-${aliasSuffix}`,
-      constructorArgs: [
-        acceptedAssetAddress,
-        operatorIdentity.address,
-        faucetConfig.dripAmount.toString(),
-        faucetConfig.cooldownSeconds.toString(),
-      ],
-      context: "Faucet",
+      aliasSuffix,
     });
-    pinoLogger.info(
-      `[deploy-fpc-devnet] faucet deployed. address=${faucetDeploy.address} tx_hash=${faucetDeploy.txHash}`,
-    );
-
-    const operatorWalletAlias =
-      operatorIdentity.address.toLowerCase() === deployer.address.toLowerCase()
-        ? deployer.walletAlias
-        : ensureOperatorAccountInWallet(
-            args.nodeUrl,
-            args.operatorSecretKey,
-            paymentArg,
-            operatorIdentity.address,
-          );
-    if (operatorWalletAlias === deployer.walletAlias) {
-      pinoLogger.info(
-        `[deploy-fpc-devnet] operator address matches deployer; reusing ${operatorWalletAlias} for faucet funding`,
-      );
-    }
-    pinoLogger.info(
-      `[deploy-fpc-devnet] funding faucet: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorWalletAlias}`,
-    );
-    try {
-      await callContractSendWithAztecWallet({
-        nodeUrl: args.nodeUrl,
-        fromAlias: operatorWalletAlias,
-        payment: paymentArg,
-        contractAddress: acceptedAssetAddress,
-        artifactPath: REQUIRED_ARTIFACTS.token,
-        method: "mint_to_public",
-        methodArgs: [faucetDeploy.address, faucetConfig.initialSupply.toString()],
-        context: "Token.mint_to_public for Faucet funding",
-      });
-    } catch (error) {
-      throw new CliError(
-        `Faucet funding failed: Token.mint_to_public(${faucetDeploy.address}, ${faucetConfig.initialSupply}) from operator=${operatorIdentity.address} failed. Ensure the operator is the token minter. Underlying error: ${String(error)}`,
-      );
-    }
-    pinoLogger.info(`[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`);
+    faucetDeploy = faucetResult.faucetDeploy;
+    faucetConfig = faucetResult.faucetConfig;
   } else {
     pinoLogger.info("[deploy-fpc-devnet] faucet deployment skipped (reusing existing token)");
   }

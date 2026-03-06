@@ -9,7 +9,7 @@
 
 - `operator`
 - operator Schnorr pubkey (`operator_pubkey_x`, `operator_pubkey_y`) — signs paid quotes
-- sponsor Schnorr pubkey (`sponsor_pubkey_x`, `sponsor_pubkey_y`) — signs sponsored quotes
+- sponsor Schnorr pubkey (`sponsor_pubkey_x`, `sponsor_pubkey_y`) — signs sponsored quotes, or `(0, 0)` to disable sponsorship
 
 ### `fee_entrypoint` flow
 
@@ -29,18 +29,23 @@ Sponsorship lets the FPC cover a user's Fee Juice cost without any token transfe
 
 `fee_entrypoint_sponsored(accepted_asset, fj_fee_amount, valid_until, quote_sig)`:
 
-1. Verifies **sponsor** quote signature (using `sponsor_pubkey`, not `operator_pubkey`) over `accepted_asset`, `fj_fee_amount`, and caller address with `SPONSORED_QUOTE_DOMAIN_SEPARATOR`.
-2. Rejects replay by nullifying quote hash.
-3. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
-4. For fee-paying txs, rejects revertible-phase execution.
-5. Enforces `fj_fee_amount == get_max_gas_cost(...)` to bound sponsor exposure.
-6. Marks contract as fee payer and ends setup. **No token transfer occurs.**
+1. Rejects immediately with `"sponsorship not enabled"` if the sponsor key is `(0, 0)`.
+2. Verifies **sponsor** quote signature (using `sponsor_pubkey`, not `operator_pubkey`) over `accepted_asset`, `fj_fee_amount`, and caller address with `SPONSORED_QUOTE_DOMAIN_SEPARATOR`.
+3. Rejects replay by nullifying quote hash.
+4. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
+5. For fee-paying txs, rejects revertible-phase execution.
+6. Enforces `fj_fee_amount == get_max_gas_cost(...)` to bound sponsor exposure.
+7. Marks contract as fee payer and ends setup. **No token transfer occurs.**
 
 #### Why a separate entrypoint and key?
 
 - **Structural separation**: paid quotes and sponsored quotes use different domain separators (`0x465043` vs `0x46504353`) and different signing keys, so they cannot be confused or replayed across paths.
 - **Separation of duties**: compromising the operator key (paid quotes) does not grant sponsorship authority, and vice versa.
 - **No mutable state**: both keys live in the same `PublicImmutable<Config>`, preserving the fully-immutable-after-construction design.
+
+#### Disabling sponsorship
+
+Passing `(0, 0)` as the sponsor pubkey at deploy time disables sponsorship entirely. The constructor accepts this sentinel without an on-curve check. At runtime, `fee_entrypoint_sponsored` rejects immediately with `"sponsorship not enabled"` before attempting signature verification. The standard paid path (`fee_entrypoint`) is unaffected. This is the default deploy behavior — provide `--sponsor-secret-key` to enable sponsorship.
 
 ## Quote Model (Amount-Based)
 
@@ -79,7 +84,7 @@ For `FPC`, attestation must be configured with:
 - `fpc_address = <fpc_address>`
 - `accepted_asset_address = <token_address>`
 - operator key matching constructor `operator_pubkey_x/y` (for paid quotes)
-- sponsor key matching constructor `sponsor_pubkey_x/y` (for sponsored quotes)
+- sponsor key matching constructor `sponsor_pubkey_x/y` (for sponsored quotes; not needed if deployed with `(0, 0)` sponsor key)
 
 Client flow:
 
@@ -115,7 +120,7 @@ If authwit is missing, stale, or mismatched to amount/nonce, the call fails.
 
 ## Public/Private Interface
 
-- `constructor(operator, operator_pubkey_x, operator_pubkey_y, sponsor_pubkey_x, sponsor_pubkey_y)` (`public`, initializer)
+- `constructor(operator, operator_pubkey_x, operator_pubkey_y, sponsor_pubkey_x, sponsor_pubkey_y)` (`public`, initializer; pass `(0, 0)` for sponsor to disable sponsorship)
 - `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` (`private`)
 - `fee_entrypoint_sponsored(accepted_asset, fj_fee_amount, valid_until, quote_sig)` (`private`)
 
@@ -151,4 +156,7 @@ Contract tests in `contracts/fpc/src/test` cover:
 - cross-path domain separation (standard quote rejected in `fee_entrypoint_sponsored`),
 - expired sponsored quote rejection,
 - wrong signer rejection (operator key cannot authorize sponsorship),
-- sponsored quote replay rejection (nullifier conflict).
+- sponsored quote replay rejection (nullifier conflict),
+- constructor accepts `(0, 0)` sponsor key (sponsorship disabled),
+- `fee_entrypoint_sponsored` rejects when sponsorship is disabled,
+- `fee_entrypoint` still works when sponsorship is disabled.

@@ -75,9 +75,14 @@ pub contract FPCMultiAsset {
                 == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - GRUMPKIN_CURVE_B,
             "operator pubkey not on curve",
         );
+        // (0, 0) disables sponsorship; otherwise enforce on-curve.
+        let sponsor_disabled = (sponsor_pubkey_x == 0) & (sponsor_pubkey_y == 0);
         assert(
-            sponsor_pubkey_y * sponsor_pubkey_y
-                == sponsor_pubkey_x * sponsor_pubkey_x * sponsor_pubkey_x - 17,
+            sponsor_disabled
+                | (
+                    sponsor_pubkey_y * sponsor_pubkey_y
+                        == sponsor_pubkey_x * sponsor_pubkey_x * sponsor_pubkey_x - GRUMPKIN_CURVE_B
+                ),
             "sponsor pubkey not on curve",
         );
         self.storage.config.initialize(
@@ -163,6 +168,10 @@ pub contract FPCMultiAsset {
         }
 
         let config = self.storage.config.read();
+        assert(
+            (config.sponsor_pubkey_x != 0) | (config.sponsor_pubkey_y != 0),
+            "sponsorship not enabled",
+        );
         let sender = self.msg_sender();
 
         assert_valid_sponsored_quote(

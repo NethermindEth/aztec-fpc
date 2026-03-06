@@ -262,6 +262,31 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
     (env, fpc_address, token_address, operator, user)
 }
 
+/// Deploy FPC with sponsor key = (0, 0) to disable sponsorship.
+pub unconstrained fn setup_no_sponsor() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress) {
+    let mut env = TestEnvironment::new();
+
+    let user = env.create_contract_account();
+    let operator = env.create_contract_account();
+
+    let token_initializer = Token::interface().constructor_with_minter(
+        "TestToken0000000000000000000000",
+        "TT00000000000000000000000000000",
+        18,
+        operator,
+        AztecAddress::zero(),
+    );
+    let token_address =
+        env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
+
+    let pk = test_operator_pubkey();
+    let fpc_initializer = FPCMultiAsset::interface().constructor(operator, pk.x, pk.y, 0, 0);
+    let fpc_address =
+        env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
+
+    (env, fpc_address, token_address, operator, user)
+}
+
 pub unconstrained fn max_gas_cost_no_teardown(env: TestEnvironment) -> u128 {
     env.private_context(|context| {
         let s = context.gas_settings();

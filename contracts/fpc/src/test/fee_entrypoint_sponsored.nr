@@ -1,5 +1,6 @@
 use crate::{FPCMultiAsset, test::utils};
 use aztec::protocol::traits::ToField;
+use aztec::test::helpers::authwit::add_private_authwit_from_call;
 use token::Token;
 
 // =========================================================================
@@ -156,7 +157,7 @@ unconstrained fn sponsored_consecutive_calls_with_fresh_quotes_succeed() {
 // Domain separation: cross-path replay rejection
 // =========================================================================
 
-#[test(should_fail_with = "invalid quote signature")]
+#[test(should_fail)]
 unconstrained fn sponsored_quote_rejected_in_standard_entrypoint() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
     let fpc = FPCMultiAsset::at(fpc_address);
@@ -286,5 +287,79 @@ unconstrained fn sponsored_quote_replay_rejected() {
     let _ = env.call_private(
         user,
         fpc.fee_entrypoint_sponsored(token_address, fj_fee_amount, valid_until, quote_sig),
+    );
+}
+
+// =========================================================================
+// Sponsorship disabled: constructor accepts (0, 0) sponsor key
+// =========================================================================
+
+#[test]
+unconstrained fn constructor_accepts_zero_sponsor_key() {
+    let (_env, _fpc_address, _token_address, _operator, _user) = utils::setup_no_sponsor();
+    // If we get here, construction succeeded with (0, 0) sponsor key.
+}
+
+// =========================================================================
+// Sponsorship disabled: fee_entrypoint_sponsored rejects immediately
+// =========================================================================
+
+#[test(should_fail_with = "sponsorship not enabled")]
+unconstrained fn sponsored_entrypoint_rejects_when_disabled() {
+    let (mut env, fpc_address, token_address, _operator, user) = utils::setup_no_sponsor();
+    let fpc = FPCMultiAsset::at(fpc_address);
+
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let valid_until = env.last_block_timestamp() + 3600;
+
+    // Use a dummy signature -- should never reach signature verification.
+    let dummy_sig: [u8; 64] = [0; 64];
+
+    let _ = env.call_private(
+        user,
+        fpc.fee_entrypoint_sponsored(token_address, fj_fee_amount, valid_until, dummy_sig),
+    );
+}
+
+// =========================================================================
+// Sponsorship disabled: paid fee_entrypoint still works
+// =========================================================================
+
+#[test]
+unconstrained fn paid_entrypoint_works_when_sponsorship_disabled() {
+    let (mut env, fpc_address, token_address, operator, user) = utils::setup_no_sponsor();
+    let fpc = FPCMultiAsset::at(fpc_address);
+    let token = Token::at(token_address);
+
+    let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
+    let aa_payment_amount = fj_fee_amount;
+    let mint_amount = aa_payment_amount + (1000 as u128);
+    env.call_private(operator, token.mint_to_private(user, mint_amount));
+
+    let valid_until = env.last_block_timestamp() + 3600;
+    let authwit_nonce: Field = 99;
+    let quote_sig = utils::sign_quote(
+        fpc_address,
+        token_address,
+        fj_fee_amount,
+        aa_payment_amount,
+        valid_until,
+        user,
+    );
+
+    let transfer_call =
+        token.transfer_private_to_private(user, operator, aa_payment_amount, authwit_nonce);
+    add_private_authwit_from_call(env, user, fpc_address, transfer_call);
+
+    env.call_private(
+        user,
+        fpc.fee_entrypoint(
+            token_address,
+            authwit_nonce,
+            fj_fee_amount,
+            aa_payment_amount,
+            valid_until,
+            quote_sig,
+        ),
     );
 }

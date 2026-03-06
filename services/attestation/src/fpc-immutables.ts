@@ -149,10 +149,7 @@ export async function verifyFpcImmutablesOnStartup(
   if (
     !onChainInitializationHash.equals(expectedInitializationHash) &&
     !onChainInitializationHash.equals(expectedLegacyInitializationHash) &&
-    !(
-      expectedV2NoSponsorHash &&
-      onChainInitializationHash.equals(expectedV2NoSponsorHash)
-    )
+    !(expectedV2NoSponsorHash && onChainInitializationHash.equals(expectedV2NoSponsorHash))
   ) {
     const currentClassId = deployed.currentContractClassId?.toString() ?? "unknown";
     const originalClassId = deployed.originalContractClassId?.toString() ?? "unknown";

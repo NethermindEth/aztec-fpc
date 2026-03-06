@@ -98,7 +98,6 @@ export async function signRateQuote(
   return signer.signQuoteHash(quoteHash);
 }
 
-
 export interface SponsoredQuoteParams {
   fpcAddress: AztecAddress;
   /** Bound for intent tracking — no token transfer occurs in the sponsored path. */
@@ -114,9 +113,7 @@ export interface SponsoredQuoteParams {
  * Compute the sponsored quote hash, matching assert_valid_sponsored_quote
  * in main.nr. Uses SPONSORED_QUOTE_DOMAIN_SEPARATOR.
  */
-export function computeSponsoredQuoteHash(
-  params: SponsoredQuoteParams,
-): Promise<Fr> {
+export function computeSponsoredQuoteHash(params: SponsoredQuoteParams): Promise<Fr> {
   return computeInnerAuthWitHash([
     SPONSORED_QUOTE_DOMAIN_SEPARATOR,
     params.fpcAddress.toField(),

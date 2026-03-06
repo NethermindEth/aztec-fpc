@@ -57,7 +57,7 @@ Aztec L2
 |---|---|---|
 | `config` | `PublicImmutable<Config>` | Packed immutable config (5 fields): `operator`, `operator_pubkey_x`, `operator_pubkey_y`, `sponsor_pubkey_x`, `sponsor_pubkey_y`. |
 
-The operator pubkey signs paid quotes (`fee_entrypoint`). The sponsor pubkey signs sponsored quotes (`fee_entrypoint_sponsored`). Both keys are set at deploy time and are immutable.
+The operator pubkey signs paid quotes (`fee_entrypoint`). The sponsor pubkey signs sponsored quotes (`fee_entrypoint_sponsored`). Both keys are set at deploy time and are immutable. Passing `(0, 0)` as the sponsor pubkey disables sponsorship entirely — `fee_entrypoint_sponsored` will reject immediately with `"sponsorship not enabled"`.
 
 The contract keeps one packed immutable config slot and no mutable admin state after deployment.
 
@@ -161,7 +161,7 @@ The sponsor signs this hash with their Schnorr key (separate from the operator k
 
 #### `fee_entrypoint_sponsored(accepted_asset, fj_fee_amount, valid_until, quote_sig)`
 
-1. Reads packed `config` from storage
+1. Reads packed `config` from storage; rejects with `"sponsorship not enabled"` if `sponsor_pubkey == (0, 0)`
 2. Verifies Schnorr sponsored quote signature against `sponsor_pubkey` and binds `user_address = msg_sender`
 3. Pushes quote nullifier (replay protection)
 4. Asserts `anchor_block_timestamp ≤ valid_until`
@@ -321,6 +321,7 @@ aztec compile --workspace --force
 
 # Deploy FPC (manual)
 # operator_pubkey_x/y sign paid quotes; sponsor_pubkey_x/y sign sponsored quotes.
+# Pass 0 0 as sponsor pubkey to disable sponsorship entirely.
 aztec deploy \
   --artifact target/fpc-FPCMultiAsset.json \
   --args <operator_address> <operator_pubkey_x> <operator_pubkey_y> \
@@ -451,6 +452,7 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 ### Sponsor key
 - The `sponsor` key signs sponsored quotes only. Compromise allows unauthorized free transactions but does **not** grant access to paid-quote signing or fee revenue.
 - The sponsor key is separate from the operator key, providing separation of duties between the paid and sponsored paths.
+- Deploying with `(0, 0)` sponsor key disables sponsorship entirely. `fee_entrypoint_sponsored` rejects before reaching signature verification, so no sponsor key management is needed in this mode.
 - Like the operator key, there is no on-chain rotation. Sponsor key compromise requires redeployment.
 
 ### Quote replay
