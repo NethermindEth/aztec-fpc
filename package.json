@@ -39,6 +39,9 @@
     "topup:dev": "bun run --filter @aztec-fpc/topup dev",
     "topup:start": "bun run --filter @aztec-fpc/topup start",
 
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down -v --remove-orphans",
+    "docker:logs": "docker compose logs --follow",
     "docker:build": "docker buildx bake",
     "docker:build:attestation": "docker buildx bake attestation",
     "docker:build:deploy": "docker buildx bake deploy",
@@ -68,6 +71,7 @@
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-smoke-local.sh",
     "smoke:fee-entrypoint:local": "bash scripts/contract/fee-entrypoint-local-smoke.sh",
     "smoke:services:local": "bash scripts/services/fpc-services-smoke.sh",
+    "smoke:services:compose": "docker compose --profile full up wait --wait",
     "e2e:full-lifecycle:fpc:local": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
     "e2e:full-lifecycle:fpc:compose": "bash scripts/services/full-lifecycle-compose.sh",
 
