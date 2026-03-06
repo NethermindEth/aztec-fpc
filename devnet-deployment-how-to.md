@@ -6,7 +6,7 @@ Repository: `aztec-fpc`
 This is the current deployment flow for Aztec devnet using:
 
 - `scripts/contract/deploy-fpc.sh` (recommended)
-- `scripts/contract/deploy-fpc-devnet.ts` (advanced/manual)
+- `contract-deployment/src/index.ts` (advanced/manual)
 - `scripts/contract/verify-fpc-devnet-deployment.ts` (post-deploy verification)
 - `scripts/contract/devnet-postdeploy-smoke.ts` (post-deploy runtime smoke)
 
@@ -116,7 +116,7 @@ bun run deploy:fpc
 Manual TypeScript invocation:
 
 ```bash
-bunx tsx scripts/contract/deploy-fpc-devnet.ts \
+bunx tsx contract-deployment/src/index.ts \
   --node-url "https://v4-devnet-2.aztec-labs.com/" \
   --sponsored-fpc-address "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2" \
   --deployer-secret-key "0x..." \

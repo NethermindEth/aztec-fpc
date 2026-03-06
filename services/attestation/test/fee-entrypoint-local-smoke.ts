@@ -19,6 +19,7 @@ import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { deployContract } from "@aztec-fpc/contract-deployment/src/deploy-utils.ts";
 import {
   createPublicClient,
   createWalletClient,
@@ -28,7 +29,6 @@ import {
   parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { deployContract } from "../../../scripts/common/deploy-utils.ts";
 import { resolveScriptAccounts } from "../../../scripts/common/script-credentials.ts";
 
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");

@@ -10,6 +10,8 @@
     "includes": [
       "package.json",
       "tsconfig.base.json",
+      "contract-deployment/src/**/*.ts",
+      "contract-deployment/package.json",
       "services/*/src/**/*.ts",
       "services/*/test/**/*.ts",
       "services/*/package.json",
@@ -44,7 +46,7 @@
   },
   "overrides": [
     {
-      "includes": ["services/**", "sdk/**", "scripts/**"],
+      "includes": ["services/**", "sdk/**", "scripts/**", "contract-deployment/**"],
       "linter": {
         "rules": {
           "correctness": {
@@ -73,7 +75,7 @@
       }
     },
     {
-      "includes": ["scripts/**"],
+      "includes": ["scripts/**", "contract-deployment/**"],
       "linter": {
         "rules": {
           "complexity": {

@@ -2,12 +2,15 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  type DevnetDeployManifest,
+  validateDevnetDeployManifest,
+} from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
 import pino from "pino";
 import {
   FpcImmutableVerificationError,
   verifyFpcImmutablesOnStartup,
 } from "../../services/attestation/src/fpc-immutables.ts";
-import { type DevnetDeployManifest, validateDevnetDeployManifest } from "./devnet-manifest.ts";
 
 const pinoLogger = pino();
 

@@ -128,7 +128,7 @@ if [[ "$MODE" == "local" ]]; then
     local extra_args=("$@")
 
     local cmd=(
-      bunx tsx scripts/contract/deploy-fpc-devnet.ts
+      bunx tsx contract-deployment/src/index.ts
       --node-url "${NODE_URL}"
       --l1-rpc-url "${L1_RPC_URL}"
       --deployer-secret-key "${DEPLOYER_SECRET_KEY}"
@@ -204,7 +204,7 @@ if [[ -z "${OPERATOR_SECRET_KEY}" && -z "${OPERATOR_SECRET_KEY_REF}" ]]; then
 fi
 
 cmd=(
-  bunx tsx scripts/contract/deploy-fpc-devnet.ts
+  bunx tsx contract-deployment/src/index.ts
   --node-url "${NODE_URL}"
   --sponsored-fpc-address "${SPONSORED_FPC_ADDRESS}"
   --fpc-artifact "${FPC_ARTIFACT}"

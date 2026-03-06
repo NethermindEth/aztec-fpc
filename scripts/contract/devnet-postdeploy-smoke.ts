@@ -2,8 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  type DevnetDeployManifest,
+  validateDevnetDeployManifest,
+} from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
 import pino from "pino";
-import { type DevnetDeployManifest, validateDevnetDeployManifest } from "./devnet-manifest.ts";
 
 const pinoLogger = pino();
 

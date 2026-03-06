@@ -17,8 +17,8 @@
     "ci": "bun run format && bun run biome:ci && bun run lint && bun run typecheck && bun run test:ts && bun run test:contracts",
     "biome:check": "biome check --write",
     "biome:ci": "biome ci --config-path ./biome.json",
-    "format": "biome format --write package.json tsconfig.base.json services scripts sdk",
-    "lint": "biome lint package.json tsconfig.base.json services scripts sdk",
+    "format": "biome format --write package.json tsconfig.base.json services scripts sdk contract-deployment",
+    "lint": "biome lint package.json tsconfig.base.json services scripts sdk contract-deployment",
     "check:docs:quote-schema": "bash scripts/check-docs-quote-schema.sh",
     "release:sdk:version:patch": "bash -lc 'cd sdk && npm version patch --no-git-tag-version'",
     "release:sdk:version:minor": "bash -lc 'cd sdk && npm version minor --no-git-tag-version'",
@@ -35,6 +35,7 @@
     "attestation:build": "bun run --filter @aztec-fpc/attestation build",
     "attestation:dev": "bun run --filter @aztec-fpc/attestation dev",
     "attestation:start": "bun run --filter @aztec-fpc/attestation start",
+    "contract-deployment:build": "bun run --filter @aztec-fpc/contract-deployment build",
     "topup:build": "bun run --filter @aztec-fpc/topup build",
     "topup:dev": "bun run --filter @aztec-fpc/topup dev",
     "topup:start": "bun run --filter @aztec-fpc/topup start",
@@ -85,6 +86,7 @@
   "workspaces": [
     "scripts",
     "services/*",
-    "sdk"
+    "sdk",
+    "contract-deployment"
   ]
 }

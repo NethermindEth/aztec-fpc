@@ -1,19 +1,20 @@
 import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract } from "@aztec/aztec.js/contracts";
+import { Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
-import { deployContract } from "../common/deploy-utils.ts";
-import { writeDevnetDeployManifest } from "./devnet-manifest.ts";
+import { deployContract } from "./deploy-utils.js";
+import { writeDevnetDeployManifest } from "./devnet-manifest.js";
 
 const pinoLogger = pino();
 
@@ -95,21 +96,6 @@ type FpcArtifactSelection = {
   name: FpcArtifactName;
 };
 
-type OperatorDerivationDeps = {
-  getSchnorrAccountContractAddress: (secretKey: unknown, salt: unknown) => Promise<unknown>;
-  Fr: {
-    fromHexString: (value: string) => unknown;
-    ZERO: unknown;
-  };
-  deriveSigningKey: (secretKey: unknown) => unknown;
-  Schnorr: new () => {
-    computePublicKey: (signingKey: unknown) => Promise<{
-      x: unknown;
-      y: unknown;
-    }>;
-  };
-};
-
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_AZTEC_ADDRESS_PATTERN = /^0x0{64}$/i;
 const L1_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -124,7 +110,7 @@ const DEVNET_DEFAULT_TEST_KEY =
   "0x1111111111111111111111111111111111111111111111111111111111111111";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
+const REPO_ROOT = path.resolve(SCRIPT_DIR, "../..");
 // Keep the legacy FPC artifact only as a non-default compatibility fallback.
 const FPC_ARTIFACT_PATH_CANDIDATES = [
   path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
@@ -162,7 +148,7 @@ function loadArtifact(artifactPath: string): ContractArtifact {
 function usage(): string {
   return [
     "Usage:",
-    "  bunx tsx scripts/contract/deploy-fpc-devnet.ts [options]",
+    "  bun run contract-deployment/dist/index.js [options]",
     "",
     "All arguments are optional. CLI args take precedence over env vars.",
     "",
@@ -662,116 +648,21 @@ function parseFieldValueString(value: unknown, context: string): string {
   return raw;
 }
 
-async function importWithWorkspaceFallback(moduleId: string): Promise<Record<string, unknown>> {
-  const errors: string[] = [];
-  try {
-    return (await import(moduleId)) as Record<string, unknown>;
-  } catch (error) {
-    errors.push(`direct import failed: ${String(error)}`);
-  }
-
-  const fallbackPackageJsons = [
-    path.join(REPO_ROOT, "services", "attestation", "package.json"),
-    path.join(REPO_ROOT, "services", "topup", "package.json"),
-  ];
-
-  for (const packageJsonPath of fallbackPackageJsons) {
-    try {
-      const requireFromWorkspace = createRequire(packageJsonPath);
-      const resolved = requireFromWorkspace.resolve(moduleId);
-      return (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
-    } catch (error) {
-      errors.push(`workspace import failed via ${packageJsonPath}: ${String(error)}`);
-    }
-  }
-
-  throw new CliError(
-    `Failed to load ${moduleId} for operator key derivation.\n${errors.join("\n")}`,
-  );
-}
-
-async function loadOperatorDerivationDeps(): Promise<OperatorDerivationDeps> {
-  const [schnorrAccountApi, fieldApi, schnorrApi, keysApi] = await Promise.all([
-    importWithWorkspaceFallback("@aztec/accounts/schnorr"),
-    importWithWorkspaceFallback("@aztec/aztec.js/fields"),
-    importWithWorkspaceFallback("@aztec/foundation/crypto/schnorr"),
-    importWithWorkspaceFallback("@aztec/stdlib/keys"),
-  ]);
-
-  const getSchnorrAccountContractAddress = schnorrAccountApi.getSchnorrAccountContractAddress;
-  const Fr = fieldApi.Fr;
-  const Schnorr = schnorrApi.Schnorr;
-  const deriveSigningKey = keysApi.deriveSigningKey;
-
-  if (typeof getSchnorrAccountContractAddress !== "function") {
-    throw new CliError(
-      "Loaded @aztec/accounts/schnorr, but getSchnorrAccountContractAddress is not available",
-    );
-  }
-  if (
-    !Fr ||
-    typeof Fr !== "function" ||
-    typeof (Fr as { fromHexString?: unknown }).fromHexString !== "function" ||
-    !("ZERO" in (Fr as object))
-  ) {
-    throw new CliError(
-      "Loaded @aztec/aztec.js/fields, but Fr.fromHexString/Fr.ZERO are not available",
-    );
-  }
-  if (typeof Schnorr !== "function") {
-    throw new CliError("Loaded @aztec/foundation/crypto/schnorr, but Schnorr is not available");
-  }
-  if (typeof deriveSigningKey !== "function") {
-    throw new CliError("Loaded @aztec/stdlib/keys, but deriveSigningKey is not available");
-  }
-
-  return {
-    getSchnorrAccountContractAddress:
-      getSchnorrAccountContractAddress as OperatorDerivationDeps["getSchnorrAccountContractAddress"],
-    Fr: Fr as OperatorDerivationDeps["Fr"],
-    Schnorr: Schnorr as OperatorDerivationDeps["Schnorr"],
-    deriveSigningKey: deriveSigningKey as OperatorDerivationDeps["deriveSigningKey"],
-  };
-}
-
 async function deriveOperatorIdentity(operatorSecretKey: string): Promise<OperatorIdentity> {
-  const deps = await loadOperatorDerivationDeps();
+  const secretKeyFr = Fr.fromHexString(operatorSecretKey);
+  const signingKey = deriveSigningKey(secretKeyFr);
+  const schnorr = new Schnorr();
+  const pubkey = await schnorr.computePublicKey(signingKey);
+  const operatorAddressRaw = await getSchnorrAccountContractAddress(secretKeyFr, Fr.ZERO);
 
-  let secretKeyFr: unknown;
-  try {
-    secretKeyFr = deps.Fr.fromHexString(operatorSecretKey);
-  } catch (error) {
-    throw new CliError(
-      `Operator key derivation failed: invalid operator secret key. Underlying error: ${String(error)}`,
-    );
-  }
+  const address = parseNonZeroAztecAddress(
+    stringifyWithToString(operatorAddressRaw, "operator address derivation"),
+    "operator address derivation",
+  );
+  const pubkeyX = parseFieldValueString(pubkey.x, "operator pubkey x");
+  const pubkeyY = parseFieldValueString(pubkey.y, "operator pubkey y");
 
-  try {
-    const signingKey = deps.deriveSigningKey(secretKeyFr);
-    const schnorr = new deps.Schnorr();
-    const pubkey = await schnorr.computePublicKey(signingKey);
-    const operatorAddressRaw = await deps.getSchnorrAccountContractAddress(
-      secretKeyFr,
-      deps.Fr.ZERO,
-    );
-
-    const address = parseNonZeroAztecAddress(
-      stringifyWithToString(operatorAddressRaw, "operator address derivation"),
-      "operator address derivation",
-    );
-    const pubkeyX = parseFieldValueString(pubkey.x, "operator pubkey x");
-    const pubkeyY = parseFieldValueString(pubkey.y, "operator pubkey y");
-
-    return {
-      address,
-      pubkeyX,
-      pubkeyY,
-    };
-  } catch (error) {
-    throw new CliError(
-      `Operator key derivation failed: could not derive operator address/pubkey. Underlying error: ${String(error)}`,
-    );
-  }
+  return { address, pubkeyX, pubkeyY };
 }
 
 async function assertAztecNodePreflight(nodeUrl: string): Promise<NodePreflightState> {
@@ -1092,14 +983,19 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] embedded wallet ready. deployer=${deployerAddress.toString()}`,
   );
 
-  const deployOpts: Record<string, unknown> = { from: deployerAddress };
+  let deployOpts: DeployOptions;
   if (args.sponsoredFpcAddress) {
     const { SponsoredFeePaymentMethod } = await import("@aztec/aztec.js/fee");
-    deployOpts.fee = {
-      paymentMethod: new SponsoredFeePaymentMethod(
-        AztecAddress.fromString(args.sponsoredFpcAddress),
-      ),
+    deployOpts = {
+      from: deployerAddress,
+      fee: {
+        paymentMethod: new SponsoredFeePaymentMethod(
+          AztecAddress.fromString(args.sponsoredFpcAddress),
+        ),
+      },
     };
+  } else {
+    deployOpts = { from: deployerAddress };
   }
 
   const tokenArtifact = loadArtifact(REQUIRED_ARTIFACTS.token);
@@ -1282,7 +1178,9 @@ main().catch((error) => {
     pinoLogger.error("");
     pinoLogger.error(usage());
   } else {
-    pinoLogger.error("[deploy-fpc-devnet] Unexpected error:", error);
+    pinoLogger.error(
+      `[deploy-fpc-devnet] Unexpected error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    );
   }
   process.exit(1);
 });

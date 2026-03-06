@@ -20,9 +20,9 @@ import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { deployContract } from "@aztec-fpc/contract-deployment/src/deploy-utils.ts";
 import { createPublicClient, createWalletClient, type Hex, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { deployContract } from "../common/deploy-utils.ts";
 import {
   installManagedProcessSignalHandlers,
   type ManagedProcess,

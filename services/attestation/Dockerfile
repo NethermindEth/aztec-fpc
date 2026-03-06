@@ -1,5 +1,7 @@
 FROM common
 
+COPY services/attestation/config.example.yaml services/attestation/
+
 EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
