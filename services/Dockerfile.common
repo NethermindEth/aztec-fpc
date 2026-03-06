@@ -1,16 +1,16 @@
 ARG SERVICE
 
 # ---------- deps: install all dependencies (dev + prod) ----------
-FROM oven/bun:1.3.9-slim AS deps
+FROM oven/bun:1.3.9-slim AS base
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      python3 \
-      make \
-      g++ && \
+    apt-get install -y --no-install-recommends g++ jq make python3 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# ---------- deps: install all dependencies (dev + prod) ----------
+FROM base AS deps
 
 # Bun workspace resolution requires every member's package.json present
 # before `bun install` will accept the lockfile.
@@ -34,14 +34,7 @@ COPY services/${SERVICE}/src/ services/${SERVICE}/src/
 RUN cd services/${SERVICE} && bun run build
 
 # ---------- external-deps: only packages excluded from the bundle ----------
-FROM oven/bun:1.3.9-slim AS external-deps
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      python3 \
-      make \
-      g++ && \
-    rm -rf /var/lib/apt/lists/*
+FROM base AS external-deps
 
 WORKDIR /deps
 

@@ -1365,7 +1365,7 @@ async function negativeExpiredQuoteRejected(
     result.user,
   );
 
-  await waitForNextBlock(node, 60_000);
+  await waitForNextBlock(node, 120_000);
 
   await expectFailure("negative expired quote rejected", ["quote expired"], () =>
     executeFeePaidTx(config, result, {

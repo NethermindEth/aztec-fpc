@@ -8,7 +8,11 @@
  * already published before each attempt.
  */
 
-import { Contract, getContractClassFromArtifact } from "@aztec/aztec.js/contracts";
+import {
+  Contract,
+  type DeployOptions,
+  getContractClassFromArtifact,
+} from "@aztec/aztec.js/contracts";
 import pino from "pino";
 
 const pinoLogger = pino();
@@ -17,7 +21,6 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 3000;
 
 type DeployParams = Parameters<typeof Contract.deploy>;
-type SendOptions = Parameters<ReturnType<typeof Contract.deploy>["send"]>[0];
 
 /**
  * Deploy a contract with automatic retry on class publication races.
@@ -32,25 +35,21 @@ export async function deployContract(
   wallet: DeployParams[0],
   artifact: DeployParams[1],
   args: DeployParams[2],
-  sendOptions: Record<string, unknown> = {},
+  sendOptions: DeployOptions,
   constructorName?: DeployParams[3],
 ) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const opts = { ...sendOptions };
 
-      if (attempt > 0) {
-        const classId = getContractClassFromArtifact(artifact).id;
-        const metadata = await wallet.getContractClassMetadata(classId);
-        if (metadata.isContractClassPubliclyRegistered) {
-          pinoLogger.info("Contract class already publicly registered, skipping class publication");
-          opts.skipClassPublication = true;
-        }
+      const classId = (await getContractClassFromArtifact(artifact)).id;
+      const metadata = await wallet.getContractClassMetadata(classId);
+      if (metadata.isContractClassPubliclyRegistered) {
+        pinoLogger.info("Contract class already publicly registered, skipping class publication");
+        opts.skipClassPublication = true;
       }
 
-      return await Contract.deploy(wallet, artifact, args, constructorName).send(
-        opts as SendOptions,
-      );
+      return await Contract.deploy(wallet, artifact, args, constructorName).send(opts);
     } catch (error) {
       if (isClassPublicationRace(error) && attempt < MAX_RETRIES) {
         pinoLogger.info(

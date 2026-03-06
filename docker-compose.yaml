@@ -118,7 +118,7 @@ services:
         condition: service_completed_successfully
 
   block-producer:
-    image: nethermind/aztec-fpc-contract-deployment:local
+    image: nethermind/aztec-fpc-contract-artifact:local
     entrypoint: ["bash", "/app/scripts/services/block-producer.sh"]
     volumes:
       - ./scripts:/app/scripts:ro
