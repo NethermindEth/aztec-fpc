@@ -3,10 +3,6 @@ use aztec::protocol::traits::ToField;
 use aztec::test::helpers::authwit::add_private_authwit_from_call;
 use token::Token;
 
-// =========================================================================
-// Happy path
-// =========================================================================
-
 #[test]
 unconstrained fn sponsored_happy_path_no_token_transfer() {
     let (mut env, fpc_address, token_address, operator, user) = utils::setup();
@@ -36,10 +32,6 @@ unconstrained fn sponsored_happy_path_no_token_transfer() {
     assert_eq(operator_balance_after, operator_balance_before);
 }
 
-// =========================================================================
-// fj_fee_amount mismatch
-// =========================================================================
-
 #[test(should_fail_with = "quoted fee amount mismatch")]
 unconstrained fn sponsored_rejects_mismatched_fj_fee_amount() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
@@ -62,10 +54,6 @@ unconstrained fn sponsored_rejects_mismatched_fj_fee_amount() {
     );
 }
 
-// =========================================================================
-// Overlong TTL
-// =========================================================================
-
 #[test(should_fail_with = "sponsored quote ttl too large")]
 unconstrained fn sponsored_rejects_overlong_quote_ttl() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
@@ -82,10 +70,6 @@ unconstrained fn sponsored_rejects_overlong_quote_ttl() {
     );
 }
 
-// =========================================================================
-// User binding: sponsored quote signed for one user cannot be used by another
-// =========================================================================
-
 #[test(should_fail_with = "invalid sponsored quote signature")]
 unconstrained fn sponsored_rejects_quote_bound_to_another_user() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
@@ -95,7 +79,7 @@ unconstrained fn sponsored_rejects_quote_bound_to_another_user() {
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
     let valid_until = env.last_block_timestamp() + 3600;
 
-    // Sign the sponsored quote for `user`, but call from `other_user`.
+    // Sign for `user`, call from `other_user`.
     let quote_sig =
         utils::sign_sponsored_quote(fpc_address, token_address, fj_fee_amount, valid_until, user);
 
@@ -104,10 +88,6 @@ unconstrained fn sponsored_rejects_quote_bound_to_another_user() {
         fpc.fee_entrypoint_sponsored(token_address, fj_fee_amount, valid_until, quote_sig),
     );
 }
-
-// =========================================================================
-// Consecutive sponsored calls with different quotes succeed
-// =========================================================================
 
 #[test]
 unconstrained fn sponsored_consecutive_calls_with_fresh_quotes_succeed() {
@@ -148,14 +128,9 @@ unconstrained fn sponsored_consecutive_calls_with_fresh_quotes_succeed() {
         fpc.fee_entrypoint_sponsored(token_address, fj_fee_amount, valid_until_2, quote_sig_2),
     );
 
-    // Balances unchanged -- no token transfer in either call.
     let user_balance = utils::private_balance(env, token_address, user);
     assert_eq(user_balance, mint_amount);
 }
-
-// =========================================================================
-// Domain separation: cross-path replay rejection
-// =========================================================================
 
 #[test(should_fail)]
 unconstrained fn sponsored_quote_rejected_in_standard_entrypoint() {
@@ -166,11 +141,10 @@ unconstrained fn sponsored_quote_rejected_in_standard_entrypoint() {
     let aa_payment_amount = fj_fee_amount;
     let valid_until = env.last_block_timestamp() + 3600;
 
-    // Sign with the SPONSORED domain separator + sponsor key ...
     let sponsored_sig =
         utils::sign_sponsored_quote(fpc_address, token_address, fj_fee_amount, valid_until, user);
 
-    // ... then try to use it in the standard fee_entrypoint.
+    // Try to use sponsored sig in the standard fee_entrypoint.
     let _ = env.call_private(
         user,
         fpc.fee_entrypoint(
@@ -193,7 +167,6 @@ unconstrained fn standard_quote_rejected_in_sponsored_entrypoint() {
     let aa_payment_amount = fj_fee_amount;
     let valid_until = env.last_block_timestamp() + 3600;
 
-    // Sign with the STANDARD domain separator + operator key ...
     let standard_sig = utils::sign_quote(
         fpc_address,
         token_address,
@@ -203,16 +176,12 @@ unconstrained fn standard_quote_rejected_in_sponsored_entrypoint() {
         user,
     );
 
-    // ... then try to use it in fee_entrypoint_sponsored.
+    // Try to use standard sig in fee_entrypoint_sponsored.
     let _ = env.call_private(
         user,
         fpc.fee_entrypoint_sponsored(token_address, fj_fee_amount, valid_until, standard_sig),
     );
 }
-
-// =========================================================================
-// Expiry
-// =========================================================================
 
 #[test(should_fail_with = "sponsored quote expired")]
 unconstrained fn sponsored_expired_quote_rejected() {
@@ -232,10 +201,6 @@ unconstrained fn sponsored_expired_quote_rejected() {
     );
 }
 
-// =========================================================================
-// Wrong signer: operator key cannot authorize sponsorship
-// =========================================================================
-
 #[test(should_fail_with = "invalid sponsored quote signature")]
 unconstrained fn sponsored_quote_wrong_signer_rejected() {
     let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
@@ -244,9 +209,7 @@ unconstrained fn sponsored_quote_wrong_signer_rejected() {
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
     let valid_until = env.last_block_timestamp() + 3600;
 
-    // Compute the sponsored quote hash but sign it with the OPERATOR key
-    // (test_schnorr_sign) instead of the sponsor key. The contract verifies
-    // against sponsor_pubkey, so this must fail.
+    // Sign sponsored quote hash with the OPERATOR key instead of sponsor key.
     let quote_hash = aztec::authwit::auth::compute_inner_authwit_hash([
         utils::SPONSORED_QUOTE_DOMAIN_SEPARATOR,
         fpc_address.to_field(),
@@ -263,10 +226,6 @@ unconstrained fn sponsored_quote_wrong_signer_rejected() {
         fpc.fee_entrypoint_sponsored(token_address, fj_fee_amount, valid_until, wrong_sig),
     );
 }
-
-// =========================================================================
-// Replay rejection: same sponsored quote used twice
-// =========================================================================
 
 #[test(should_fail)]
 unconstrained fn sponsored_quote_replay_rejected() {
@@ -290,19 +249,10 @@ unconstrained fn sponsored_quote_replay_rejected() {
     );
 }
 
-// =========================================================================
-// Sponsorship disabled: constructor accepts (0, 0) sponsor key
-// =========================================================================
-
 #[test]
 unconstrained fn constructor_accepts_zero_sponsor_key() {
     let (_env, _fpc_address, _token_address, _operator, _user) = utils::setup_no_sponsor();
-    // If we get here, construction succeeded with (0, 0) sponsor key.
 }
-
-// =========================================================================
-// Sponsorship disabled: fee_entrypoint_sponsored rejects immediately
-// =========================================================================
 
 #[test(should_fail_with = "sponsorship not enabled")]
 unconstrained fn sponsored_entrypoint_rejects_when_disabled() {
@@ -312,7 +262,6 @@ unconstrained fn sponsored_entrypoint_rejects_when_disabled() {
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
     let valid_until = env.last_block_timestamp() + 3600;
 
-    // Use a dummy signature -- should never reach signature verification.
     let dummy_sig: [u8; 64] = [0; 64];
 
     let _ = env.call_private(
@@ -320,10 +269,6 @@ unconstrained fn sponsored_entrypoint_rejects_when_disabled() {
         fpc.fee_entrypoint_sponsored(token_address, fj_fee_amount, valid_until, dummy_sig),
     );
 }
-
-// =========================================================================
-// Sponsorship disabled: paid fee_entrypoint still works
-// =========================================================================
 
 #[test]
 unconstrained fn paid_entrypoint_works_when_sponsorship_disabled() {
