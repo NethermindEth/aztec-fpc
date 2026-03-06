@@ -1,6 +1,11 @@
 import pino from "pino";
 
-const pinoLogger = pino();
+const pinoLogger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: { colorize: true, translateTime: 'HH:MM:ss.l', ignore: 'pid,hostname' },
+  },
+});
 /**
  * FPC benchmark using @defi-wonderland/aztec-benchmark.
  *
@@ -174,18 +179,24 @@ function detectFeeEntrypointMode(fpcArtifact: any): FeeEntrypointMode {
   return 'fixed_amount';
 }
 
+function findConstructorInArtifact(fpcArtifact: any): any {
+  // The constructor is a public initializer, so loadContractArtifact may place
+  // it in nonDispatchPublicFunctions instead of functions.
+  const allFns = [
+    ...(fpcArtifact.functions ?? []),
+    ...(fpcArtifact.nonDispatchPublicFunctions ?? []),
+  ];
+  return allFns.find((f: any) => f.name === 'constructor');
+}
+
 function constructorHasAcceptedAsset(fpcArtifact: any): boolean {
-  const constructor = (fpcArtifact.functions ?? []).find(
-    (f: any) => f.name === 'constructor',
-  );
+  const constructor = findConstructorInArtifact(fpcArtifact);
   const params = constructor?.parameters ?? constructor?.abi?.parameters ?? [];
   return params.some((p: any) => p?.name === 'accepted_asset');
 }
 
 function constructorHasSponsorPubkey(fpcArtifact: any): boolean {
-  const constructor = (fpcArtifact.functions ?? []).find(
-    (f: any) => f.name === 'constructor',
-  );
+  const constructor = findConstructorInArtifact(fpcArtifact);
   const params = constructor?.parameters ?? constructor?.abi?.parameters ?? [];
   return params.some((p: any) => p?.name === 'sponsor_pubkey_x');
 }
@@ -815,18 +826,19 @@ export default class FPCBenchmark {
     const numFmt = (n: number) => n.toLocaleString();
     const msFmt = (n: number | null) => n != null ? n.toFixed(1) : '-';
     const LINE = '\u2500'.repeat(100);
+    const row = (...cols: string[]) => pinoLogger.info(cols.join(''));
 
     pinoLogger.info(`\n=== FPC Benchmark Results: ${r.name} ===`);
 
     // FPC-only gate counts.
     if (r.fpcGateCounts?.length) {
       pinoLogger.info('\nFPC-Only Gate Counts:');
-      pinoLogger.info(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      row(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
       pinoLogger.info(LINE);
       let sub = 0;
       for (const gc of r.fpcGateCounts) {
         sub += gc.gateCount ?? 0;
-        pinoLogger.info(
+        row(
           pad(gc.circuitName, 50),
           pad(numFmt(gc.gateCount ?? 0), 14),
           pad(msFmt(gc.witgenMs), 14),
@@ -834,7 +846,7 @@ export default class FPCBenchmark {
         );
       }
       pinoLogger.info(LINE);
-      pinoLogger.info(
+      row(
         pad('FPC TOTAL', 50),
         pad(numFmt(r.fpcTotalGateCount), 14),
         pad(msFmt(r.fpcTotalWitgenMs), 14),
@@ -845,12 +857,12 @@ export default class FPCBenchmark {
     // Full transaction trace.
     if (r.fullTrace?.length) {
       pinoLogger.info('\nFull Transaction Trace:');
-      pinoLogger.info(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      row(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
       pinoLogger.info(LINE);
       let sub = 0;
       for (const gc of r.fullTrace) {
         sub += gc.gateCount ?? 0;
-        pinoLogger.info(
+        row(
           pad(gc.circuitName, 50),
           pad(numFmt(gc.gateCount ?? 0), 14),
           pad(msFmt(gc.witgenMs), 14),
@@ -858,7 +870,7 @@ export default class FPCBenchmark {
         );
       }
       pinoLogger.info(LINE);
-      pinoLogger.info(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
+      row(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
     }
 
     // Proving time + gas summary.

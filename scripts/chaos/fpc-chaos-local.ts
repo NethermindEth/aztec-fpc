@@ -312,6 +312,8 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
     operator,
     operatorPubKey.x,
     operatorPubKey.y,
+    0,
+    0,
   ]).send({ from: operator });
   pinoLogger.info(`[chaos-local] FPC deployed at ${fpc.address.toString()}`);
 
