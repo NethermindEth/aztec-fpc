@@ -81,8 +81,17 @@ jobs:
       - name: Run services and tests
         run: docker compose --profile full up wait --wait
 
-      - name: Test logs
-        run: docker compose --profile full logs --timestamps smoke-services smoke-fee-entrypoint e2e-fpc
+      - name: Print smoke-services logs
+        if: always()
+        run: docker compose --profile full logs --timestamps smoke-services
+
+      - name: Print smoke-fee-entrypoint logs
+        if: always()
+        run: docker compose --profile full logs --timestamps smoke-fee-entrypoint
+
+      - name: Print e2e-fpc logs
+        if: always()
+        run: docker compose --profile full logs --timestamps e2e-fpc
 
       - name: Tear down
         if: always()
