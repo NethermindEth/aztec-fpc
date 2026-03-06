@@ -18,8 +18,8 @@ NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
 PID_FILE="$SCRIPT_DIR/.aztec-network.pid"
 
 # ── Prerequisite checks ──────────────────────────────────────────────────────
-# Profiling is pinned to patch.1.
-PROFILING_DEFAULT_AZTEC_VERSION="4.0.0-devnet.2-patch.1"
+# Profiling follows the repo/toolchain patch level to avoid SDK/node skew.
+PROFILING_DEFAULT_AZTEC_VERSION="4.0.0-devnet.2-patch.3"
 AZTEC_VERSION="${PROFILING_AZTEC_VERSION:-$PROFILING_DEFAULT_AZTEC_VERSION}"
 REPO_AZTEC_VERSION="$(tr -d '\n' < "$REPO_ROOT/.aztecrc")"
 
@@ -55,19 +55,19 @@ echo "[setup] Submodules initialized."
 AZTEC_PKGS=(
   "@aztec/aztec.js"
   "@aztec/accounts"
+  "@aztec/bb-prover"
   "@aztec/constants"
   "@aztec/foundation"
   "@aztec/protocol-contracts"
   "@aztec/pxe"
+  "@aztec/simulator"
   "@aztec/stdlib"
   "@aztec/wallet-sdk"
 )
 
-# Non-Aztec packages needed for benchmarking (viem for L1 bridging,
-# aztec-benchmark for the structured profiler).
+# Non-Aztec packages needed for profiling.
 VIEM_VERSION="${PROFILING_VIEM_VERSION:-2.31.0}"
 EXTRA_PKGS=(
-  "@defi-wonderland/aztec-benchmark@${AZTEC_VERSION}"
   "viem@${VIEM_VERSION}"
 )
 
@@ -93,12 +93,7 @@ if [[ -d "$SCRIPT_DIR/node_modules/@aztec/aztec.js" ]]; then
   INSTALLED_VERSION=$(node -e "console.log(require('$SCRIPT_DIR/node_modules/@aztec/aztec.js/package.json').version)" 2>/dev/null || echo "")
 fi
 
-BENCHMARK_INSTALLED_VERSION=""
-if [[ -d "$SCRIPT_DIR/node_modules/@defi-wonderland/aztec-benchmark" ]]; then
-  BENCHMARK_INSTALLED_VERSION=$(node -e "console.log(require('$SCRIPT_DIR/node_modules/@defi-wonderland/aztec-benchmark/package.json').version)" 2>/dev/null || echo "")
-fi
-
-if [[ "$INSTALLED_VERSION" != "$AZTEC_VERSION" || "$BENCHMARK_INSTALLED_VERSION" != "$AZTEC_VERSION" ]]; then
+if [[ "$INSTALLED_VERSION" != "$AZTEC_VERSION" ]]; then
   echo "[setup] Installing Aztec SDK packages ($AZTEC_VERSION)..."
   install_deps
 else
