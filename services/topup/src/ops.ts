@@ -1,15 +1,6 @@
-import {
-  createServer,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
-export type BridgeMetricEvent =
-  | "submitted"
-  | "confirmed"
-  | "timeout"
-  | "aborted"
-  | "failed";
+export type BridgeMetricEvent = "submitted" | "confirmed" | "timeout" | "aborted" | "failed";
 
 const BRIDGE_EVENTS: BridgeMetricEvent[] = [
   "submitted",
@@ -60,10 +51,7 @@ export class TopupOpsState {
   private shutdownRequested = false;
 
   constructor(options: TopupOpsStateOptions) {
-    this.staleBalanceCheckAfterMs = Math.max(
-      options.checkIntervalMs * 3,
-      30_000,
-    );
+    this.staleBalanceCheckAfterMs = Math.max(options.checkIntervalMs * 3, 30_000);
     for (const event of BRIDGE_EVENTS) {
       this.bridgeEventTotals.set(event, 0);
     }
@@ -84,10 +72,7 @@ export class TopupOpsState {
   }
 
   recordBridgeEvent(event: BridgeMetricEvent): void {
-    this.bridgeEventTotals.set(
-      event,
-      (this.bridgeEventTotals.get(event) ?? 0) + 1,
-    );
+    this.bridgeEventTotals.set(event, (this.bridgeEventTotals.get(event) ?? 0) + 1);
   }
 
   markShutdownRequested(): void {
@@ -179,26 +164,15 @@ export class TopupOpsState {
   }
 }
 
-function sendJson(
-  response: ServerResponse,
-  statusCode: number,
-  payload: unknown,
-): void {
+function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
   response.statusCode = statusCode;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
 }
 
-function sendText(
-  response: ServerResponse,
-  statusCode: number,
-  body: string,
-): void {
+function sendText(response: ServerResponse, statusCode: number, body: string): void {
   response.statusCode = statusCode;
-  response.setHeader(
-    "content-type",
-    "text/plain; version=0.0.4; charset=utf-8",
-  );
+  response.setHeader("content-type", "text/plain; version=0.0.4; charset=utf-8");
   response.end(body);
 }
 

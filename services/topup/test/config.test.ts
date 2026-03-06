@@ -5,13 +5,9 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import { loadConfig } from "../src/config.js";
 
-const VALID_PRIVATE_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const VALID_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
-function withEnv(
-  overrides: Record<string, string | undefined>,
-  fn: () => void,
-): void {
+function withEnv(overrides: Record<string, string | undefined>, fn: () => void): void {
   const original = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(overrides)) {
     original.set(key, process.env[key]);
@@ -111,10 +107,7 @@ describe("topup config secret providers", () => {
         TOPUP_OPS_PORT: undefined,
       },
       () => {
-        assert.throws(
-          () => loadConfig(configPath),
-          /plaintext config secrets are not allowed/,
-        );
+        assert.throws(() => loadConfig(configPath), /plaintext config secrets are not allowed/);
       },
     );
 
@@ -124,10 +117,7 @@ describe("topup config secret providers", () => {
   it("uses env secret in production profile", () => {
     const configPath = writeConfig(
       baseConfigYaml(
-        [
-          "runtime_profile: production",
-          "l1_operator_secret_provider: auto",
-        ].join("\n"),
+        ["runtime_profile: production", "l1_operator_secret_provider: auto"].join("\n"),
       ),
     );
 
@@ -170,10 +160,7 @@ describe("topup config secret providers", () => {
         TOPUP_OPS_PORT: undefined,
       },
       () => {
-        assert.throws(
-          () => loadConfig(configPath),
-          /plaintext config secrets are not allowed/,
-        );
+        assert.throws(() => loadConfig(configPath), /plaintext config secrets are not allowed/);
       },
     );
 

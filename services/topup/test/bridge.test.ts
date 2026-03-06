@@ -10,8 +10,7 @@ import type { BridgeDeps } from "../src/bridge.js";
 import { bridgeFeeJuice } from "../src/bridge.js";
 
 const MESSAGE_HASH = `0x${"ab".repeat(32)}` as `0x${string}`;
-const PRIVATE_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const FPC = AztecAddress.fromString(
   "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
 );
@@ -34,13 +33,14 @@ function makeDeps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
       }) as never) as typeof privateKeyToAccount,
     createPortalManager: async () =>
       ({
-        bridgeTokensPublic: async (_to: AztecAddress, amount: bigint) => ({
-          claimAmount: amount,
-          claimSecret: new Fr(1n),
-          claimSecretHash: new Fr(2n),
-          messageHash: MESSAGE_HASH,
-          messageLeafIndex: 7n,
-        }),
+        bridgeTokensPublic: (_to: AztecAddress, amount: bigint) =>
+          Promise.resolve({
+            claimAmount: amount,
+            claimSecret: new Fr(1n),
+            claimSecretHash: new Fr(2n),
+            messageHash: MESSAGE_HASH,
+            messageLeafIndex: 7n,
+          }),
       }) as never,
     createLogger: () => createLogger("topup:test"),
     knownChains: [
@@ -73,16 +73,16 @@ describe("bridge", () => {
       }) as never,
       createPortalManager: async () =>
         ({
-          bridgeTokensPublic: async (to: AztecAddress, amount: bigint) => {
+          bridgeTokensPublic: (to: AztecAddress, amount: bigint) => {
             capturedTo = to;
             capturedAmount = amount;
-            return {
+            return Promise.resolve({
               claimAmount: amount,
               claimSecret: new Fr(1n),
               claimSecretHash: new Fr(2n),
               messageHash: MESSAGE_HASH,
               messageLeafIndex: 7n,
-            };
+            });
           },
         }) as never,
     });
@@ -126,16 +126,63 @@ describe("bridge", () => {
 
   it("fails fast on non-positive top-up amount", async () => {
     await assert.rejects(
-      () =>
-        bridgeFeeJuice(
-          makeNode(),
-          "http://localhost:8545",
-          31337,
-          PRIVATE_KEY,
-          FPC,
-          0n,
-        ),
+      () => bridgeFeeJuice(makeNode(), "http://localhost:8545", 31337, PRIVATE_KEY, FPC, 0n),
       /Invalid top_up_amount/,
     );
+  });
+
+  it("retries bridge submission on nonce conflicts", async () => {
+    let attempts = 0;
+    const deps = makeDeps({
+      createPortalManager: async () =>
+        ({
+          bridgeTokensPublic: (_to: AztecAddress, amount: bigint) => {
+            attempts += 1;
+            if (attempts === 1) {
+              return Promise.reject(new Error("nonce too low"));
+            }
+            return Promise.resolve({
+              claimAmount: amount,
+              claimSecret: new Fr(11n),
+              claimSecretHash: new Fr(22n),
+              messageHash: MESSAGE_HASH,
+              messageLeafIndex: 99n,
+            });
+          },
+        }) as never,
+    });
+
+    const result = await bridgeFeeJuice(
+      makeNode(),
+      "http://localhost:8545",
+      31337,
+      PRIVATE_KEY,
+      FPC,
+      321n,
+      deps,
+    );
+
+    assert.equal(attempts, 2);
+    assert.equal(result.amount, 321n);
+    assert.equal(result.messageLeafIndex, 99n);
+  });
+
+  it("fails after exhausting nonce conflict retries", async () => {
+    let attempts = 0;
+    const deps = makeDeps({
+      createPortalManager: async () =>
+        ({
+          bridgeTokensPublic: () => {
+            attempts += 1;
+            return Promise.reject(new Error("nonce too low"));
+          },
+        }) as never,
+    });
+
+    await assert.rejects(
+      () => bridgeFeeJuice(makeNode(), "http://localhost:8545", 31337, PRIVATE_KEY, FPC, 1n, deps),
+      /nonce too low/,
+    );
+    assert.equal(attempts, 3);
   });
 });

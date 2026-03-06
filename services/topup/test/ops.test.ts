@@ -10,9 +10,7 @@ describe("topup ops", () => {
     assert.equal(initial.ready, false);
     assert.equal(initial.status, "not_ready");
     assert.equal(
-      initial.reasons.some(
-        (reason) => reason.code === "no_successful_balance_checks",
-      ),
+      initial.reasons.some((reason) => reason.code === "no_successful_balance_checks"),
       true,
     );
 
@@ -25,9 +23,7 @@ describe("topup ops", () => {
     const failed = state.snapshotReadiness();
     assert.equal(failed.ready, false);
     assert.equal(
-      failed.reasons.some(
-        (reason) => reason.code === "last_balance_check_failed",
-      ),
+      failed.reasons.some((reason) => reason.code === "last_balance_check_failed"),
       true,
     );
   });
@@ -54,9 +50,7 @@ describe("topup ops", () => {
       };
       assert.equal(notReadyBody.ready, false);
       assert.equal(
-        notReadyBody.reasons.some(
-          (reason) => reason.code === "no_successful_balance_checks",
-        ),
+        notReadyBody.reasons.some((reason) => reason.code === "no_successful_balance_checks"),
         true,
       );
 
@@ -73,18 +67,9 @@ describe("topup ops", () => {
       const metrics = await fetch(`${baseUrl}/metrics`);
       assert.equal(metrics.status, 200);
       const metricsBody = await metrics.text();
-      assert.match(
-        metricsBody,
-        /topup_bridge_events_total\{event="submitted"\} 1/,
-      );
-      assert.match(
-        metricsBody,
-        /topup_bridge_events_total\{event="confirmed"\} 1/,
-      );
-      assert.match(
-        metricsBody,
-        /topup_bridge_events_total\{event="timeout"\} 1/,
-      );
+      assert.match(metricsBody, /topup_bridge_events_total\{event="submitted"\} 1/);
+      assert.match(metricsBody, /topup_bridge_events_total\{event="confirmed"\} 1/);
+      assert.match(metricsBody, /topup_bridge_events_total\{event="timeout"\} 1/);
     } finally {
       await server.close();
     }

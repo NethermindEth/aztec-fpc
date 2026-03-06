@@ -1,3 +1,6 @@
+import pino from "pino";
+
+const pinoLogger = pino();
 /**
  * FPC benchmark using @defi-wonderland/aztec-benchmark.
  *
@@ -65,7 +68,6 @@ import {
   extractFpcSteps,
 } from '../profile-utils.mjs';
 
-// ── Constants ────────────────────────────────────────────────────────────────
 
 const NODE_URL = process.env.AZTEC_NODE_URL || 'http://127.0.0.1:8080';
 const L1_RPC_URL = process.env.L1_RPC_URL || 'http://127.0.0.1:8545';
@@ -83,7 +85,6 @@ const SPONSORED_QUOTE_DOMAIN_SEP = 0x46504353n; // "FPCS" as field
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ── CustomFPCPaymentMethod ───────────────────────────────────────────────────
 
 class CustomFPCPaymentMethod {
   fpcAddress: any;
@@ -195,8 +196,6 @@ function hasSponsoredEntrypoint(fpcArtifact: any): boolean {
   );
 }
 
-// ── L1 helpers (Fee Juice bridging) ──────────────────────────────────────────
-
 async function createL1Client(node: any) {
   const nodeInfo = await node.getNodeInfo();
   const chain = defineChain({
@@ -222,7 +221,7 @@ async function mineL1Blocks(l1Client: any, count: number) {
 
 /**
  * Bridge Fee Juice from L1 and claim on L2 so the FPC can act as fee payer.
- * Reuses the pattern from profile-gates-credit-fpc.mjs.
+ * Bridges Fee Juice from L1 to L2 so the FPC can act as fee payer.
  */
 async function fundFpcWithFeeJuice(
   node: any,
@@ -240,13 +239,13 @@ async function fundFpcWithFeeJuice(
   );
 
   const MINT_AMOUNT = 10n ** 21n;
-  console.log(`Bridging ${MINT_AMOUNT} Fee Juice to FPC (L1 deposit)...`);
+  pinoLogger.info(`Bridging ${MINT_AMOUNT} Fee Juice to FPC (L1 deposit)...`);
   const claim = await portalManager.bridgeTokensPublic(
     fpcAddress,
     MINT_AMOUNT,
     true,
   );
-  console.log(
+  pinoLogger.info(
     `L1 deposit confirmed (messageLeafIndex=${claim.messageLeafIndex})`,
   );
 
@@ -267,7 +266,7 @@ async function fundFpcWithFeeJuice(
     );
   }
 
-  console.log('Waiting for L2 to process L1 deposit...');
+  pinoLogger.info('Waiting for L2 to process L1 deposit...');
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     await new Promise((r) => setTimeout(r, 3000));
 
@@ -277,7 +276,7 @@ async function fundFpcWithFeeJuice(
         .send({ from: userAddress });
     } catch (e: any) {
       const msg = e.originalMessage || e.message || '';
-      console.log(
+      pinoLogger.info(
         `  [${attempt}/${MAX_ATTEMPTS}] dummy tx failed: ${msg.substring(0, 80)}`,
       );
       try {
@@ -295,12 +294,12 @@ async function fundFpcWithFeeJuice(
           claim.messageLeafIndex,
         )
         .send({ from: userAddress });
-      console.log(`Fee Juice claimed (attempt ${attempt}).`);
+      pinoLogger.info(`Fee Juice claimed (attempt ${attempt}).`);
       return;
     } catch (e: any) {
       const msg = e.originalMessage || e.message || '';
       if (isRetryable(msg) && attempt < MAX_ATTEMPTS) {
-        console.log(
+        pinoLogger.info(
           `  [${attempt}/${MAX_ATTEMPTS}] ${msg.substring(0, 80)}`,
         );
         try {
@@ -316,7 +315,6 @@ async function fundFpcWithFeeJuice(
   );
 }
 
-// ── Action wrapper ───────────────────────────────────────────────────────────
 // The installed aztec-benchmark profiler expects each item from getMethods() to
 // be either a plain {caller, action} (ContractFunctionInteractionCallIntent) or
 // a {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
@@ -405,7 +403,6 @@ class FPCActionWrapper {
   }
 }
 
-// ── Benchmark context ────────────────────────────────────────────────────────
 
 interface FPCBenchmarkContext {
   pxe: any;
@@ -421,7 +418,6 @@ interface FPCBenchmarkContext {
   hasSponsored?: boolean;
 }
 
-// ── Benchmark class ──────────────────────────────────────────────────────────
 // The aztec-benchmark CLI duck-types this class (checks for getMethods/setup/
 // teardown methods). We don't extend BenchmarkBase to avoid a runtime import
 // of the @defi-wonderland/aztec-benchmark package from inside the benchmark
@@ -431,15 +427,13 @@ export default class FPCBenchmark {
   #actions: FPCActionWrapper[] = [];
 
   async setup(): Promise<FPCBenchmarkContext> {
-    console.log('=== FPC Benchmark Setup ===\n');
+    pinoLogger.info('=== FPC Benchmark Setup ===\n');
 
-    // ── Connect to node ────────────────────────────────────────────────────
     const node = createAztecNodeClient(NODE_URL);
-    console.log('Connected to node at', NODE_URL);
+    pinoLogger.info('Connected to node at', NODE_URL);
 
-    console.log('Connected to node, will compute VALID_UNTIL after setup deploys.');
+    pinoLogger.info('Connected to node, will compute VALID_UNTIL after setup deploys.');
 
-    // ── Start embedded PXE (clean slate each run) ──────────────────────────
     rmSync(PXE_DATA_DIR, { recursive: true, force: true });
     mkdirSync(PXE_DATA_DIR, { recursive: true });
     const pxeConfig = {
@@ -448,9 +442,8 @@ export default class FPCBenchmark {
       l1Contracts: await node.getL1ContractAddresses(),
     };
     const pxe = await createPXE(node, pxeConfig);
-    console.log('PXE started');
+    pinoLogger.info('PXE started');
 
-    // ── Create wallet + register test accounts ─────────────────────────────
     const wallet = new SimpleWallet(pxe, node);
     const testAccounts = await getInitialTestAccountsData();
     const [userData, operatorData] = testAccounts;
@@ -463,10 +456,9 @@ export default class FPCBenchmark {
       operatorData.secret,
       operatorData.salt,
     );
-    console.log('user:    ', userAddress.toString());
-    console.log('operator:', operatorAddress.toString());
+    pinoLogger.info('user:    ', userAddress.toString());
+    pinoLogger.info('operator:', operatorAddress.toString());
 
-    // ── Derive operator + sponsor Schnorr signing keys ─────────────────────
     const schnorr = new Schnorr();
     const operatorSigningKey = deriveSigningKey(operatorData.secret);
     const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
@@ -477,7 +469,6 @@ export default class FPCBenchmark {
       : operatorSigningKey;
     const sponsorPubKey = await schnorr.computePublicKey(sponsorSigningKey);
 
-    // ── Load & normalise artifacts ─────────────────────────────────────────
     const tokenArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Token'), 'utf8')),
     );
@@ -488,14 +479,13 @@ export default class FPCBenchmark {
     const hasAcceptedAssetInConstructor = constructorHasAcceptedAsset(fpcArtifact);
     const hasSponsorPubkeyInConstructor = constructorHasSponsorPubkey(fpcArtifact);
     const hasSponsored = hasSponsoredEntrypoint(fpcArtifact);
-    console.log(`Detected fee_entrypoint mode: ${feeEntrypointMode}`);
-    console.log(`Sponsored entrypoint: ${hasSponsored ? 'yes' : 'no'}`);
+    pinoLogger.info(`Detected fee_entrypoint mode: ${feeEntrypointMode}`);
+    pinoLogger.info(`Sponsored entrypoint: ${hasSponsored ? 'yes' : 'no'}`);
     const noopArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Noop'), 'utf8')),
     );
 
-    // ── Deploy Token ───────────────────────────────────────────────────────
-    console.log('\nDeploying Token...');
+    pinoLogger.info('\nDeploying Token...');
     const tokenDeploy = await Contract.deploy(wallet, tokenArtifact, [
       'TestToken',
       'TST',
@@ -504,10 +494,9 @@ export default class FPCBenchmark {
       AztecAddress.ZERO,
     ], 'constructor_with_minter').send({ from: userAddress });
     const tokenAddress = tokenDeploy.address;
-    console.log('Token:', tokenAddress.toString());
+    pinoLogger.info('Token:', tokenAddress.toString());
 
-    // ── Deploy FPC ─────────────────────────────────────────────────────────
-    console.log('Deploying FPC...');
+    pinoLogger.info('Deploying FPC...');
     let constructorArgs: any[];
     if (hasAcceptedAssetInConstructor) {
       constructorArgs = [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress];
@@ -524,19 +513,17 @@ export default class FPCBenchmark {
       ...constructorArgs,
     ]).send({ from: userAddress });
     const fpcAddress = fpcDeploy.address;
-    console.log('FPC:  ', fpcAddress.toString());
+    pinoLogger.info('FPC:  ', fpcAddress.toString());
 
-    // ── Deploy Noop (minimal app tx placeholder for profiling) ────────────
-    console.log('Deploying Noop...');
+    pinoLogger.info('Deploying Noop...');
     const noopDeploy = await Contract.deploy(wallet, noopArtifact, []).send({
       from: userAddress,
     });
-    console.log('Noop: ', noopDeploy.address.toString());
+    pinoLogger.info('Noop: ', noopDeploy.address.toString());
 
     const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
     const noopAsUser = Contract.at(noopDeploy.address, noopArtifact, wallet);
 
-    // ── Bridge Fee Juice to FPC via L1 ─────────────────────────────────────
     const l1Client = await createL1Client(node);
     await fundFpcWithFeeJuice(
       node,
@@ -547,7 +534,6 @@ export default class FPCBenchmark {
       l1Client,
     );
 
-    // ── Compute gas-dependent charge ───────────────────────────────────────
     const minFees = await node.getCurrentMinFees();
     const PADDING = 1.5;
     const feeDa = BigInt(Math.ceil(Number(minFees.feePerDaGas) * PADDING));
@@ -557,24 +543,21 @@ export default class FPCBenchmark {
     const maxGasCost = feeDa * DA_GAS + feeL2 * L2_GAS;
     const charge = feeJuiceToAsset(maxGasCost, RATE_NUM, RATE_DEN);
 
-    console.log(`\nfeePerDaGas=${feeDa} feePerL2Gas=${feeL2}`);
-    console.log(`max gas cost: ${maxGasCost} | token charge: ${charge}`);
+    pinoLogger.info(`\nfeePerDaGas=${feeDa} feePerL2Gas=${feeL2}`);
+    pinoLogger.info(`max gas cost: ${maxGasCost} | token charge: ${charge}`);
 
-    // ── Mint tokens to user ────────────────────────────────────────────────
     const mintAmount = charge + 1000n;
-    console.log(`\nMinting ${mintAmount} tokens to user...`);
+    pinoLogger.info(`\nMinting ${mintAmount} tokens to user...`);
     await tokenAsUser.methods
       .mint_to_private(userAddress, mintAmount)
       .send({ from: userAddress });
-    console.log('Minted.');
+    pinoLogger.info('Minted.');
 
-    // ── Refresh L2 timestamp for quote (blocks mined during setup) ────────
     const latestHeader = await node.getBlockHeader('latest');
     const l2Timestamp = latestHeader!.globalVariables.timestamp;
     const VALID_UNTIL = l2Timestamp + QUOTE_TTL_SECONDS;
-    console.log(`L2 timestamp: ${l2Timestamp}, VALID_UNTIL: ${VALID_UNTIL}`);
+    pinoLogger.info(`L2 timestamp: ${l2Timestamp}, VALID_UNTIL: ${VALID_UNTIL}`);
 
-    // ── Quote signature ────────────────────────────────────────────────────
     const quoteSigFields =
       feeEntrypointMode === 'multi_asset_rate'
         ? await signRateQuote(
@@ -599,9 +582,8 @@ export default class FPCBenchmark {
             userAddress,
             QUOTE_DOMAIN_SEP,
           );
-    console.log('Quote signature created.');
+    pinoLogger.info('Quote signature created.');
 
-    // ── Transfer authwit ───────────────────────────────────────────────────
     const TX_NONCE = BigInt(Date.now());
     const transferAuthWit = await wallet.createAuthWit(userAddress, {
       caller: fpcAddress,
@@ -612,9 +594,8 @@ export default class FPCBenchmark {
         TX_NONCE,
       ),
     });
-    console.log('Transfer authwit created.');
+    pinoLogger.info('Transfer authwit created.');
 
-    // ── Gas settings ───────────────────────────────────────────────────────
     const gasSettings = GasSettings.default({
       gasLimits: new Gas(Number(DA_GAS), Number(L2_GAS)),
       teardownGasLimits: new Gas(0, 0),
@@ -661,7 +642,6 @@ export default class FPCBenchmark {
       gasSettings,
     );
 
-    // ── Sponsored quote + payment method (if artifact supports it) ────────
     let sponsoredFeePaymentMethod: SponsoredFPCPaymentMethod | undefined;
     if (hasSponsored) {
       const sponsoredSigFields = await signSponsoredQuote(
@@ -674,7 +654,7 @@ export default class FPCBenchmark {
         userAddress,
         SPONSORED_QUOTE_DOMAIN_SEP,
       );
-      console.log('Sponsored quote signature created.');
+      pinoLogger.info('Sponsored quote signature created.');
 
       const sponsoredEntrypointCall = await fpcDeploy.methods
         .fee_entrypoint_sponsored(
@@ -692,7 +672,7 @@ export default class FPCBenchmark {
       );
     }
 
-    console.log('\n=== FPC Benchmark Setup Complete ===\n');
+    pinoLogger.info('\n=== FPC Benchmark Setup Complete ===\n');
 
     return {
       pxe,
@@ -747,7 +727,7 @@ export default class FPCBenchmark {
       .sort((a: string, b: string) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 
     if (!jsonPath) {
-      console.warn('No fpc*.benchmark.json found in', __dirname);
+      pinoLogger.warn('No fpc*.benchmark.json found in', __dirname);
       return;
     }
     try {
@@ -815,16 +795,16 @@ export default class FPCBenchmark {
 
       if (report.systemInfo) {
         const si = report.systemInfo;
-        console.log('System Info:');
-        console.log(`  CPU:    ${si.cpuModel} (${si.cpuCores} threads)`);
-        console.log(`  Memory: ${si.totalMemoryGiB} GiB`);
-        console.log(`  Arch:   ${si.arch}`);
-        console.log('');
+        pinoLogger.info('System Info:');
+        pinoLogger.info(`  CPU:    ${si.cpuModel} (${si.cpuCores} threads)`);
+        pinoLogger.info(`  Memory: ${si.totalMemoryGiB} GiB`);
+        pinoLogger.info(`  Arch:   ${si.arch}`);
+        pinoLogger.info('');
       }
 
       writeFileSync(jsonPath, JSON.stringify(report, null, 2));
     } catch (e: any) {
-      console.warn('Could not post-process benchmark JSON:', e.message);
+      pinoLogger.warn('Could not post-process benchmark JSON:', e.message);
     }
 
     rmSync(PXE_DATA_DIR, { recursive: true, force: true });
@@ -836,25 +816,25 @@ export default class FPCBenchmark {
     const msFmt = (n: number | null) => n != null ? n.toFixed(1) : '-';
     const LINE = '\u2500'.repeat(100);
 
-    console.log(`\n=== FPC Benchmark Results: ${r.name} ===`);
+    pinoLogger.info(`\n=== FPC Benchmark Results: ${r.name} ===`);
 
     // FPC-only gate counts.
     if (r.fpcGateCounts?.length) {
-      console.log('\nFPC-Only Gate Counts:');
-      console.log(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
-      console.log(LINE);
+      pinoLogger.info('\nFPC-Only Gate Counts:');
+      pinoLogger.info(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      pinoLogger.info(LINE);
       let sub = 0;
       for (const gc of r.fpcGateCounts) {
         sub += gc.gateCount ?? 0;
-        console.log(
+        pinoLogger.info(
           pad(gc.circuitName, 50),
           pad(numFmt(gc.gateCount ?? 0), 14),
           pad(msFmt(gc.witgenMs), 14),
           numFmt(sub),
         );
       }
-      console.log(LINE);
-      console.log(
+      pinoLogger.info(LINE);
+      pinoLogger.info(
         pad('FPC TOTAL', 50),
         pad(numFmt(r.fpcTotalGateCount), 14),
         pad(msFmt(r.fpcTotalWitgenMs), 14),
@@ -864,33 +844,33 @@ export default class FPCBenchmark {
 
     // Full transaction trace.
     if (r.fullTrace?.length) {
-      console.log('\nFull Transaction Trace:');
-      console.log(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
-      console.log(LINE);
+      pinoLogger.info('\nFull Transaction Trace:');
+      pinoLogger.info(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      pinoLogger.info(LINE);
       let sub = 0;
       for (const gc of r.fullTrace) {
         sub += gc.gateCount ?? 0;
-        console.log(
+        pinoLogger.info(
           pad(gc.circuitName, 50),
           pad(numFmt(gc.gateCount ?? 0), 14),
           pad(msFmt(gc.witgenMs), 14),
           numFmt(sub),
         );
       }
-      console.log(LINE);
-      console.log(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
+      pinoLogger.info(LINE);
+      pinoLogger.info(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
     }
 
     // Proving time + gas summary.
     const provingStr = r.provingTime != null
       ? `${numFmt(Math.round(r.provingTime))}ms (hardware-dependent, full tx)`
       : 'N/A';
-    console.log(`\nProving time:  ${provingStr}`);
+    pinoLogger.info(`\nProving time:  ${provingStr}`);
     if (r.gas) {
       const da = r.gas.gasLimits?.daGas ?? 'N/A';
       const l2 = r.gas.gasLimits?.l2Gas ?? 'N/A';
-      console.log(`Gas:           DA ${typeof da === 'number' ? numFmt(da) : da} | L2 ${typeof l2 === 'number' ? numFmt(l2) : l2}`);
+      pinoLogger.info(`Gas:           DA ${typeof da === 'number' ? numFmt(da) : da} | L2 ${typeof l2 === 'number' ? numFmt(l2) : l2}`);
     }
-    console.log('');
+    pinoLogger.info('');
   }
 }

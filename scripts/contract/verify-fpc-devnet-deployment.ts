@@ -2,14 +2,14 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import pino from "pino";
 import {
   FpcImmutableVerificationError,
   verifyFpcImmutablesOnStartup,
 } from "../../services/attestation/src/fpc-immutables.ts";
-import {
-  type DevnetDeployManifest,
-  validateDevnetDeployManifest,
-} from "./devnet-manifest.ts";
+import { type DevnetDeployManifest, validateDevnetDeployManifest } from "./devnet-manifest.ts";
+
+const pinoLogger = pino();
 
 type CliArgs = {
   manifestPath: string;
@@ -44,11 +44,7 @@ type AztecDeps = {
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
-const DEFAULT_MANIFEST_PATH = path.join(
-  REPO_ROOT,
-  "deployments",
-  "devnet-manifest-v2.json",
-);
+const DEFAULT_MANIFEST_PATH = path.join(REPO_ROOT, "deployments", "manifest.json");
 
 class CliError extends Error {
   constructor(message: string) {
@@ -111,10 +107,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let manifestPath = process.env.FPC_DEVNET_VERIFY_MANIFEST
     ? path.resolve(process.env.FPC_DEVNET_VERIFY_MANIFEST)
     : DEFAULT_MANIFEST_PATH;
-  let maxAttempts = readEnvPositiveInteger(
-    "FPC_DEVNET_VERIFY_MAX_ATTEMPTS",
-    20,
-  );
+  let maxAttempts = readEnvPositiveInteger("FPC_DEVNET_VERIFY_MAX_ATTEMPTS", 20);
   let pollMs = readEnvPositiveInteger("FPC_DEVNET_VERIFY_POLL_MS", 3_000);
   let nodeReadyTimeoutMs = readEnvPositiveInteger(
     "FPC_DEVNET_VERIFY_NODE_READY_TIMEOUT_MS",
@@ -142,7 +135,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--help":
       case "-h":
-        console.log(usage());
+        pinoLogger.info(usage());
         return { kind: "help" };
       default:
         throw new CliError(`Unknown argument: ${arg}`);
@@ -169,32 +162,24 @@ function readManifestFromDisk(manifestPath: string): DevnetDeployManifest {
   try {
     raw = readFileSync(manifestPath, "utf8");
   } catch (error) {
-    throw new CliError(
-      `Failed to read manifest at ${manifestPath}: ${String(error)}`,
-    );
+    throw new CliError(`Failed to read manifest at ${manifestPath}: ${String(error)}`);
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch (error) {
-    throw new CliError(
-      `Manifest at ${manifestPath} is not valid JSON: ${String(error)}`,
-    );
+    throw new CliError(`Manifest at ${manifestPath} is not valid JSON: ${String(error)}`);
   }
 
   try {
     return validateDevnetDeployManifest(parsed);
   } catch (error) {
-    throw new CliError(
-      `Manifest validation failed for ${manifestPath}: ${String(error)}`,
-    );
+    throw new CliError(`Manifest validation failed for ${manifestPath}: ${String(error)}`);
   }
 }
 
-async function importWithWorkspaceFallback(
-  moduleId: string,
-): Promise<Record<string, unknown>> {
+async function importWithWorkspaceFallback(moduleId: string): Promise<Record<string, unknown>> {
   const errors: string[] = [];
   try {
     return (await import(moduleId)) as Record<string, unknown>;
@@ -211,14 +196,9 @@ async function importWithWorkspaceFallback(
     try {
       const requireFromWorkspace = createRequire(packageJsonPath);
       const resolved = requireFromWorkspace.resolve(moduleId);
-      return (await import(pathToFileURL(resolved).href)) as Record<
-        string,
-        unknown
-      >;
+      return (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
     } catch (error) {
-      errors.push(
-        `workspace import failed via ${packageJsonPath}: ${String(error)}`,
-      );
+      errors.push(`workspace import failed via ${packageJsonPath}: ${String(error)}`);
     }
   }
 
@@ -238,14 +218,10 @@ async function loadAztecDeps(): Promise<AztecDeps> {
   const Fr = fieldsApi.Fr;
 
   if (typeof createAztecNodeClient !== "function") {
-    throw new CliError(
-      "Loaded @aztec/aztec.js/node, but createAztecNodeClient is unavailable",
-    );
+    throw new CliError("Loaded @aztec/aztec.js/node, but createAztecNodeClient is unavailable");
   }
   if (typeof waitForNode !== "function") {
-    throw new CliError(
-      "Loaded @aztec/aztec.js/node, but waitForNode is unavailable",
-    );
+    throw new CliError("Loaded @aztec/aztec.js/node, but waitForNode is unavailable");
   }
   if (
     !AztecAddress ||
@@ -268,8 +244,7 @@ async function loadAztecDeps(): Promise<AztecDeps> {
   }
 
   return {
-    createAztecNodeClient:
-      createAztecNodeClient as AztecDeps["createAztecNodeClient"],
+    createAztecNodeClient: createAztecNodeClient as AztecDeps["createAztecNodeClient"],
     waitForNode: waitForNode as AztecDeps["waitForNode"],
     AztecAddress: AztecAddress as AztecDeps["AztecAddress"],
     Fr: Fr as AztecDeps["Fr"],
@@ -284,8 +259,7 @@ function formatCheckIssues(issues: string[]): string {
 }
 
 function isRetryableVerificationError(error: unknown): boolean {
-  const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error);
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error);
   return (
     (message.includes("block") && message.includes("not found")) ||
     message.includes("reorg") ||
@@ -294,11 +268,7 @@ function isRetryableVerificationError(error: unknown): boolean {
   );
 }
 
-function parseFieldToFr(
-  rawField: string,
-  FrApi: AztecDeps["Fr"],
-  fieldName: string,
-): unknown {
+function parseFieldToFr(rawField: string, FrApi: AztecDeps["Fr"], fieldName: string): unknown {
   try {
     if (rawField.startsWith("0x") || rawField.startsWith("0X")) {
       return FrApi.fromHexString(rawField);
@@ -374,10 +344,7 @@ async function verifyAttempt(params: {
 
   const parsedAddresses = new Map<string, unknown>();
   for (const contract of contracts) {
-    parsedAddresses.set(
-      contract.key,
-      AztecAddressApi.fromString(contract.address),
-    );
+    parsedAddresses.set(contract.key, AztecAddressApi.fromString(contract.address));
   }
 
   for (const contract of contracts) {
@@ -389,17 +356,13 @@ async function verifyAttempt(params: {
 
     const deployed = await node.getContract(address);
     if (!deployed) {
-      issues.push(
-        `on-chain contract missing: ${contract.key} at ${contract.address}`,
-      );
+      issues.push(`on-chain contract missing: ${contract.key} at ${contract.address}`);
       continue;
     }
 
     const deployedRecord = asObjectRecord(deployed);
     if (!deployedRecord) {
-      issues.push(
-        `invalid on-chain contract payload for ${contract.key} at ${contract.address}`,
-      );
+      issues.push(`invalid on-chain contract payload for ${contract.key} at ${contract.address}`);
       continue;
     }
 
@@ -412,9 +375,7 @@ async function verifyAttempt(params: {
         `${contract.key} initialization hash`,
       );
       if (isZeroFieldLike(initializationHash)) {
-        issues.push(
-          `contract appears uninitialized (zero initialization hash): ${contract.key}`,
-        );
+        issues.push(`contract appears uninitialized (zero initialization hash): ${contract.key}`);
       }
     }
 
@@ -433,9 +394,7 @@ async function verifyAttempt(params: {
     await verifyFpcImmutablesOnStartup(node, {
       fpcAddress: parsedAddresses.get("fpc") as never,
       acceptedAsset: parsedAddresses.get("accepted_asset") as never,
-      operatorAddress: AztecAddressApi.fromString(
-        manifest.operator.address,
-      ) as never,
+      operatorAddress: AztecAddressApi.fromString(manifest.operator.address) as never,
       operatorPubkeyX: parseFieldToFr(
         manifest.operator.pubkey_x,
         deps.Fr,
@@ -448,10 +407,7 @@ async function verifyAttempt(params: {
       ) as never,
     });
   } catch (error) {
-    if (
-      error instanceof FpcImmutableVerificationError &&
-      error.reason === "IMMUTABLE_MISMATCH"
-    ) {
+    if (error instanceof FpcImmutableVerificationError && error.reason === "IMMUTABLE_MISMATCH") {
       throw new CliError(
         `[verify-fpc-devnet] FPC immutable mismatch detected and will not recover with retries: ${error.message}`,
       );
@@ -469,11 +425,11 @@ async function main(): Promise<void> {
   }
   const args = parseResult.args;
 
-  console.log(
+  pinoLogger.info(
     `[verify-fpc-devnet] manifest=${path.resolve(args.manifestPath)} max_attempts=${args.maxAttempts} poll_ms=${args.pollMs}`,
   );
   const manifest = readManifestFromDisk(args.manifestPath);
-  console.log(
+  pinoLogger.info(
     `[verify-fpc-devnet] loaded manifest for node=${manifest.network.node_url} fpc=${manifest.contracts.fpc}`,
   );
 
@@ -486,15 +442,13 @@ async function main(): Promise<void> {
       setTimeout(
         () =>
           reject(
-            new CliError(
-              `Timed out waiting for node readiness at ${manifest.network.node_url}`,
-            ),
+            new CliError(`Timed out waiting for node readiness at ${manifest.network.node_url}`),
           ),
         args.nodeReadyTimeoutMs,
       ),
     ),
   ]);
-  console.log("[verify-fpc-devnet] node connectivity check passed");
+  pinoLogger.info("[verify-fpc-devnet] node connectivity check passed");
 
   let lastIssues: string[] = [];
 
@@ -510,21 +464,19 @@ async function main(): Promise<void> {
         throw error;
       }
       const delayMs = args.pollMs;
-      console.warn(
+      pinoLogger.warn(
         `[verify-fpc-devnet] transient verification error on attempt ${attempt}/${args.maxAttempts}: ${String(error)}`,
       );
-      console.warn(
-        `[verify-fpc-devnet] retrying in ${delayMs}ms after transient error`,
-      );
+      pinoLogger.warn(`[verify-fpc-devnet] retrying in ${delayMs}ms after transient error`);
       await sleep(delayMs);
       continue;
     }
 
     if (lastIssues.length === 0) {
-      console.log(
+      pinoLogger.info(
         `[verify-fpc-devnet] verification passed on attempt ${attempt}/${args.maxAttempts}`,
       );
-      console.log(
+      pinoLogger.info(
         `[verify-fpc-devnet] contracts ready: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc}`,
       );
       return;
@@ -532,12 +484,10 @@ async function main(): Promise<void> {
 
     if (attempt < args.maxAttempts) {
       const delayMs = args.pollMs;
-      console.warn(
+      pinoLogger.warn(
         `[verify-fpc-devnet] verification pending on attempt ${attempt}/${args.maxAttempts}:\n${formatCheckIssues(lastIssues)}`,
       );
-      console.warn(
-        `[verify-fpc-devnet] retrying in ${delayMs}ms while metadata/state settles`,
-      );
+      pinoLogger.warn(`[verify-fpc-devnet] retrying in ${delayMs}ms while metadata/state settles`);
       await sleep(delayMs);
     }
   }
@@ -549,11 +499,11 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
   if (error instanceof CliError) {
-    console.error(`[verify-fpc-devnet] ERROR: ${error.message}`);
-    console.error("");
-    console.error(usage());
+    pinoLogger.error(`[verify-fpc-devnet] ERROR: ${error.message}`);
+    pinoLogger.error("");
+    pinoLogger.error(usage());
   } else {
-    console.error("[verify-fpc-devnet] Unexpected error:", error);
+    pinoLogger.error("[verify-fpc-devnet] Unexpected error:", error);
   }
   process.exit(1);
 });

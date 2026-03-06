@@ -27,6 +27,7 @@ AZTEC_PID=""
 AZTEC_PGID=""
 SCRIPT_PGID="$(ps -o pgid= "$$" 2>/dev/null | tr -d '[:space:]')"
 STARTED_LOCAL_NETWORK=0
+BLOCK_PRODUCER_PID=""
 
 function usage() {
   cat <<'EOF'
@@ -90,6 +91,10 @@ function cleanup() {
   local topup_ops_port
   topup_ops_port="${FPC_CHAOS_LOCAL_TOPUP_OPS_PORT:-3401}"
 
+  if [[ -n "$BLOCK_PRODUCER_PID" ]] && kill -0 "$BLOCK_PRODUCER_PID" >/dev/null 2>&1; then
+    kill "$BLOCK_PRODUCER_PID" >/dev/null 2>&1 || true
+    wait "$BLOCK_PRODUCER_PID" >/dev/null 2>&1 || true
+  fi
   if [[ "$STARTED_LOCAL_NETWORK" -eq 1 ]]; then
     stop_aztec_local_network
   fi
@@ -192,6 +197,12 @@ if [[ "$START_NETWORK" == "1" ]]; then
       exit 1
     fi
     echo "[chaos-local] Local network ready."
+
+    echo "[chaos-local] Starting block-producer in background..."
+    AZTEC_NODE_URL="http://${NODE_HOST}:${NODE_PORT}" \
+      bash "$REPO_ROOT/scripts/services/block-producer.sh" \
+      >"$TMP_DIR/block-producer.log" 2>&1 &
+    BLOCK_PRODUCER_PID=$!
   fi
 else
   if [[ "$NODE_RUNNING" -ne 1 || "$L1_RUNNING" -ne 1 ]]; then

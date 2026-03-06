@@ -1,4 +1,3 @@
-mod fee_math;
 mod test;
 
 use ::aztec::macros::aztec;
@@ -39,6 +38,7 @@ pub contract FPCMultiAsset {
     global SPONSORED_QUOTE_DOMAIN_SEPARATOR: Field = 0x46504353;
     // Quotes must expire within this many seconds from the tx anchor timestamp.
     global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
+    global GRUMPKIN_CURVE_B: Field = 17;
 
     /// Packed configuration stored as a single PublicImmutable slot.
     /// 5 fields (no accepted_asset -- that is now a per-quote parameter).
@@ -55,18 +55,10 @@ pub contract FPCMultiAsset {
         sponsor_pubkey_y: Field,
     }
 
-    // =========================================================================
-    // Storage
-    // =========================================================================
-
     #[storage]
     struct Storage<Context> {
         config: PublicImmutable<Config, Context>,
     }
-
-    // =========================================================================
-    // Constructor
-    // =========================================================================
 
     #[external("public")]
     #[initializer]
@@ -80,7 +72,7 @@ pub contract FPCMultiAsset {
         assert(!operator.is_zero(), "invalid operator");
         assert(
             operator_pubkey_y * operator_pubkey_y
-                == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - 17,
+                == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - GRUMPKIN_CURVE_B,
             "operator pubkey not on curve",
         );
         assert(
@@ -99,13 +91,9 @@ pub contract FPCMultiAsset {
         );
     }
 
-    // =========================================================================
-    // Fee entrypoint
-    //
     // Transfers the fee charge from the user's private balance directly to the
     // operator's private balance. The quote signature is verified inline using
     // the operator's stored public key -- no cross-circuit authwit call needed.
-    // =========================================================================
 
     #[external("private")]
     #[allow_phase_change]
@@ -141,7 +129,7 @@ pub contract FPCMultiAsset {
             quote_sig,
         );
 
-        let max_fee = get_max_gas_cost_no_teardown(self.context);
+        let max_fee = get_max_gas_cost(self.context);
         assert(fj_fee_amount == max_fee, "quoted fee amount mismatch");
 
         Token::at(accepted_asset)
@@ -154,12 +142,8 @@ pub contract FPCMultiAsset {
         }
     }
 
-    // =========================================================================
-    // Sponsored fee entrypoint
-    //
     // Covers the user's Fee Juice cost without any token transfer. The sponsor
     // key (separate from the operator key) must sign the sponsored quote.
-    // =========================================================================
 
     #[external("private")]
     #[allow_phase_change]
@@ -195,7 +179,7 @@ pub contract FPCMultiAsset {
             quote_sig,
         );
 
-        let max_fee = get_max_gas_cost_no_teardown(self.context);
+        let max_fee = get_max_gas_cost(self.context);
         assert(fj_fee_amount == max_fee, "quoted fee amount mismatch");
 
         self.context.set_as_fee_payer();
@@ -203,10 +187,6 @@ pub contract FPCMultiAsset {
             self.context.end_setup();
         }
     }
-
-    // =========================================================================
-    // Internal helpers
-    // =========================================================================
 
     /// Compute the quote hash and verify the operator's Schnorr signature
     /// inline. Pushes a nullifier to prevent replay.
@@ -235,10 +215,7 @@ pub contract FPCMultiAsset {
             user_address.to_field(),
         ]);
 
-        assert(
-            schnorr::verify_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>()),
-            "invalid quote signature",
-        );
+        schnorr::assert_valid_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>());
 
         context.push_nullifier(quote_hash);
 
@@ -288,9 +265,9 @@ pub contract FPCMultiAsset {
         context.set_expiration_timestamp(valid_until);
     }
 
-    /// Maximum possible fee for this tx excluding teardown gas.
+    /// Maximum possible fee for this tx.
     #[contract_library_method]
-    fn get_max_gas_cost_no_teardown(context: &mut PrivateContext) -> u128 {
+    fn get_max_gas_cost(context: &mut PrivateContext) -> u128 {
         let s = context.gas_settings();
         s.max_fees_per_gas.fee_per_da_gas * (s.gas_limits.da_gas as u128)
             + s.max_fees_per_gas.fee_per_l2_gas * (s.gas_limits.l2_gas as u128)

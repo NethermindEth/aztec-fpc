@@ -35,7 +35,7 @@ On each cycle, it:
 
 ## Wiring to `/contracts/fpc`
 
-Contract reference: `/home/ametel/source/aztec-fpc/contracts/fpc/src/main.nr`
+Contract reference: `contracts/fpc/src/main.nr`
 
 How it is wired:
 
@@ -44,21 +44,6 @@ How it is wired:
 - There is no direct ABI call into `FPC`; wiring is address-level through protocol Fee Juice balance monitoring and L1 bridge deposits.
 
 Operationally: if `fpc_address` points to the deployed `FPC`, this service funds the address used to pay fees for transactions using `fee_entrypoint`.
-
-## Wiring to `/contracts/credit_fpc`
-
-Contract reference: `/home/ametel/source/aztec-fpc/contracts/credit_fpc/src/main.nr`
-
-How it is wired:
-
-- `CreditFPC.pay_and_mint(...)` and `CreditFPC.pay_with_credit()` call `self.context.set_as_fee_payer()` and spend Fee Juice from the `CreditFPC` contract address.
-- To support CreditFPC, run this service with `fpc_address` set to the deployed `CreditFPC` address.
-- As with FPC, wiring is address-level and protocol-level (Fee Juice balance + bridge), not contract-method integration.
-
-Important:
-
-- The config key name remains `fpc_address`, but it is effectively "fee payer contract address" and can be either `FPC` or `CreditFPC`.
-- If both contracts must stay funded simultaneously, run two top-up instances with different `fpc_address`, ports, and state files.
 
 ## Endpoints
 

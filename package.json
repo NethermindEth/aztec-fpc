@@ -16,17 +16,21 @@
   "scripts": {
     "ci": "bun run format && bun run biome:ci && bun run lint && bun run typecheck && bun run test:ts && bun run test:contracts",
     "biome:check": "biome check --write",
-    "biome:ci": "biome ci",
-    "format": "biome format --write package.json tsconfig.base.json services scripts",
-    "lint": "biome lint package.json tsconfig.base.json services scripts",
+    "biome:ci": "biome ci --config-path ./biome.json",
+    "format": "biome format --write package.json tsconfig.base.json services scripts sdk",
+    "lint": "biome lint package.json tsconfig.base.json services scripts sdk",
     "check:docs:quote-schema": "bash scripts/check-docs-quote-schema.sh",
+    "release:sdk:version:patch": "bash -lc 'cd sdk && npm version patch --no-git-tag-version'",
+    "release:sdk:version:minor": "bash -lc 'cd sdk && npm version minor --no-git-tag-version'",
+    "release:sdk:version:major": "bash -lc 'cd sdk && npm version major --no-git-tag-version'",
+    "release:sdk:publish:dry-run": "npm publish --workspace @aztec-fpc/sdk --dry-run --access public",
     "build": "bun run --workspaces --if-present build",
     "typecheck": "bun run --workspaces --if-present typecheck",
 
     "test": "bun run test:contracts && bun run test:ts",
-    "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test",
+    "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test && bun run --filter @aztec-fpc/sdk --if-present test",
     "test:services": "bun run test:ts",
-    "test:contracts": "aztec compile --workspace --force && aztec test --package fpc && aztec test --package credit_fpc",
+    "test:contracts": "aztec compile --workspace --force && aztec test --package fpc",
 
     "attestation:build": "bun run --filter @aztec-fpc/attestation build",
     "attestation:dev": "bun run --filter @aztec-fpc/attestation dev",
@@ -43,21 +47,29 @@
     "docker:build:topup": "docker buildx bake topup",
     "compose:infra": "bash scripts/services/compose-mode.sh infra",
     "compose:full": "bash scripts/services/compose-mode.sh full",
+    "compose:services:devnet": "bash scripts/services/compose-mode.sh services-devnet",
+    "compose:teardown": "docker compose down -v --remove-orphans || true",
 
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
+    "generate:configs:devnet": "FPC_DEPLOY_MANIFEST=./deployments/devnet-manifest-v2.json bash scripts/config/generate-service-configs.sh",
+    "bootstrap:topup:autoclaim-account": "bunx tsx scripts/services/bootstrap-topup-autoclaim-account.ts",
+    "preflight:topup:autoclaim": "bunx tsx scripts/services/preflight-topup-autoclaim.ts",
+    "fund:l1:fee-juice": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; bunx tsx scripts/services/fund-l1-fee-juice.ts \"$@\"' --",
+    "fund:l2:claimer:fee-juice": "bash -lc 'set -a; [ -f ./.env ] && source ./.env; set +a; bun run --filter @aztec-fpc/topup fund:claimer:l2 -- \"$@\"' --",
+    "manual:fpc:sponsored:devnet": "bunx tsx scripts/manual-fpc-sponsored-user-tx-devnet.ts",
+    "manual:fpc:sponsored:devnet:v2:sdk": "bunx tsx scripts/manual-fpc-sponsored-user-tx-devnet-attestation-v2-sdk.ts",
+    "deploy:fpc": "bash scripts/contract/deploy-fpc.sh",
     "deploy:fpc:devnet": "bash scripts/contract/deploy-fpc-devnet.sh",
-    "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/devnet-manifest-v2.json",
-    "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
+    "verify:deploy:fpc:devnet": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/manifest.json",
+    "verify:deploy:fpc:devnet:v2": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/devnet-manifest-v2.json",
+    "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/manifest.json",
+    "smoke:deploy:fpc:devnet:v2": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
 
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-smoke-local.sh",
     "smoke:fee-entrypoint:local": "bash scripts/contract/fee-entrypoint-local-smoke.sh",
-    "smoke:credit-fpc:local": "bash scripts/contract/credit-fpc-local-smoke.sh",
     "smoke:services:local": "bash scripts/services/fpc-services-smoke.sh",
     "e2e:full-lifecycle:fpc:local": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
-    "e2e:full-lifecycle:credit:local": "bash scripts/services/credit-fpc-full-lifecycle-e2e.sh",
-    "e2e:full-lifecycle:fpc:compose": "bash scripts/services/full-lifecycle-compose.sh fpc",
-    "e2e:full-lifecycle:credit:compose": "bash scripts/services/full-lifecycle-compose.sh credit",
-    "e2e:full-lifecycle:compose": "bash scripts/services/full-lifecycle-compose.sh both",
+    "e2e:full-lifecycle:fpc:compose": "bash scripts/services/full-lifecycle-compose.sh",
 
     "teardown": "pkill -f '[a]ztec' || true",
 
@@ -68,6 +80,7 @@
   },
   "workspaces": [
     "scripts",
-    "services/*"
+    "services/*",
+    "sdk"
   ]
 }

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Compile contracts and benchmark all FPC variants via aztec-benchmark.
+# Compile contracts and benchmark the FPC contract via aztec-benchmark.
 #
-# Currently benchmarks:
-#   fpc         — FPC.fee_entrypoint
-#   credit_fpc  — CreditFPC.pay_and_mint + CreditFPC.pay_with_credit
+# Benchmarks:
+#   fpc — FPC.fee_entrypoint
 #
 # Produces structured JSON (profiling/benchmarks/*.benchmark.json) and
 # human-readable console summaries (gate counts, gas, proving time).
@@ -24,7 +23,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
 L1_URL="${L1_RPC_URL:-http://127.0.0.1:8545}"
 
-# ── Preflight checks ─────────────────────────────────────────────────────────
+# Preflight checks
 if [[ ! -d "$SCRIPT_DIR/node_modules/@aztec" ]]; then
   echo "[profile] ERROR: Aztec SDK packages not installed. Run ./profiling/setup.sh first." >&2
   exit 1
@@ -42,25 +41,26 @@ if ! node_is_up; then
   exit 1
 fi
 
-# ── Step 1: Compile contracts ─────────────────────────────────────────────────
+# Step 1: Cleanup and compile contracts
+echo "[profile] Cleaning stale artifacts..."
+rm -rf "$REPO_ROOT/target"
+
 echo "[profile] Compiling contracts..."
 (cd "$REPO_ROOT" && aztec compile)
 
-# ── Step 2: Benchmark each variant in its own process ────────────────────────
+# Step 2: Benchmark each variant in its own process
 # Running benchmarks in separate processes avoids a bb.js socket corruption
 # issue: the CLI's post-benchmark cleanup destroys all active sockets, which
 # breaks the bb native backend for any subsequent benchmark in the same process.
 
-for contract in fpc credit_fpc; do
-  echo ""
-  echo "[profile] Running benchmark: $contract ..."
-  AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
-    npx --prefix "$SCRIPT_DIR" aztec-benchmark \
-      --config "$REPO_ROOT/Nargo.toml" \
-      --output-dir "$SCRIPT_DIR/benchmarks" \
-      --contracts "$contract"
-  echo "[profile] Finished benchmark: $contract"
-done
+echo ""
+echo "[profile] Running benchmark: fpc ..."
+AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
+  npx --prefix "$SCRIPT_DIR" aztec-benchmark \
+    --config "$REPO_ROOT/Nargo.toml" \
+    --output-dir "$SCRIPT_DIR/benchmarks" \
+    --contracts fpc
+echo "[profile] Finished benchmark: fpc"
 
 echo ""
 echo "[profile] Benchmark JSONs saved to profiling/benchmarks/"

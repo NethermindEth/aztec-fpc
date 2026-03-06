@@ -1,18 +1,20 @@
+import pino from "pino";
+
+const pinoLogger = pino();
+
 /**
  * L1 -> L2 Fee Juice bridge via Aztec SDK L1FeeJuicePortalManager.
  */
 
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import {
-  L1FeeJuicePortalManager,
-  type L2AmountClaim,
-} from "@aztec/aztec.js/ethereum";
+import { L1FeeJuicePortalManager, type L2AmountClaim } from "@aztec/aztec.js/ethereum";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import { createLogger, type Logger } from "@aztec/foundation/log";
 import {
   type Chain,
   createWalletClient,
   defineChain,
+  fallback,
   type Hex,
   http,
   publicActions,
@@ -41,14 +43,23 @@ type CreatePortalManager = (
   logger: Logger,
 ) => Promise<FeeJuicePortalManagerLike>;
 
-const createPortalManager: CreatePortalManager = async (
-  node,
-  extendedClient,
-  logger,
-) => L1FeeJuicePortalManager.new(node, extendedClient, logger);
+const createPortalManager: CreatePortalManager = async (node, extendedClient, logger) =>
+  L1FeeJuicePortalManager.new(node, extendedClient, logger);
 
 function makeBridgeLogger(): Logger {
   return createLogger("topup:bridge");
+}
+
+const MAX_NONCE_RETRY_ATTEMPTS = 3;
+
+function isNonceConflictError(error: unknown): boolean {
+  const normalized = String(error).toLowerCase();
+  return (
+    normalized.includes("replacementnotallowed") ||
+    normalized.includes("replacement not allowed") ||
+    normalized.includes("nonce too low") ||
+    normalized.includes("already known")
+  );
 }
 
 export interface BridgeDeps {
@@ -91,11 +102,7 @@ function isChain(value: unknown): value is Chain {
   );
 }
 
-function resolveL1Chain(
-  chainId: number,
-  rpcUrl: string,
-  deps: BridgeDeps,
-): Chain {
+function resolveL1Chain(chainId: number, rpcUrl: string, deps: BridgeDeps): Chain {
   const known = deps.knownChains.find((chain) => chain.id === chainId);
   if (known) {
     return {
@@ -141,21 +148,37 @@ export async function bridgeFeeJuice(
   const deps: BridgeDeps = { ...DEFAULT_BRIDGE_DEPS, ...depsOverride };
   const chain = resolveL1Chain(l1ChainId, l1RpcUrl, deps);
   const account = deps.privateKeyToAccount(privateKey as Hex);
-  const walletClient = deps.createWalletClient({
-    account,
-    chain,
-    transport: deps.http(l1RpcUrl),
-  });
-  const extendedClient = walletClient.extend(
-    publicActions,
-  ) as unknown as ExtendedWalletClient;
-  const portalManager = await deps.createPortalManager(
-    node,
-    extendedClient,
-    deps.createLogger(),
-  );
+  const logger = deps.createLogger();
+  let lastError: unknown;
+  let claim: L2AmountClaim | undefined;
 
-  const claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
+  for (let attempt = 1; attempt <= MAX_NONCE_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const walletClient = deps.createWalletClient({
+        account,
+        chain,
+        transport: fallback([deps.http(l1RpcUrl)]),
+      });
+      const extendedClient = walletClient.extend(publicActions) as ExtendedWalletClient;
+      const portalManager = await deps.createPortalManager(node, extendedClient, logger);
+      claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
+      break;
+    } catch (error) {
+      lastError = error;
+      if (!isNonceConflictError(error) || attempt >= MAX_NONCE_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      pinoLogger.warn(
+        { err: error },
+        `Bridge nonce conflict detected; retrying bridge submission attempt=${attempt + 1}/${MAX_NONCE_RETRY_ATTEMPTS}`,
+      );
+    }
+  }
+  if (!claim) {
+    throw new Error(
+      `Failed to submit bridge after nonce retry attempts. Last error: ${String(lastError)}`,
+    );
+  }
 
   return {
     amount: claim.claimAmount,

@@ -3,15 +3,10 @@ import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode, NodeInfo } from "@aztec/aztec.js/node";
-import {
-  createFeeJuiceBalanceReader,
-  resolveFeeJuiceAddress,
-} from "../src/monitor.js";
+import { createFeeJuiceBalanceReader, resolveFeeJuiceAddress } from "../src/monitor.js";
 
-const TEST_AZTEC_ADDRESS =
-  "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac";
-const TEST_FEE_JUICE_ADDRESS =
-  "0x0000000000000000000000000000000000000000000000000000000000000005";
+const TEST_AZTEC_ADDRESS = "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac";
+const TEST_FEE_JUICE_ADDRESS = "0x0000000000000000000000000000000000000000000000000000000000000005";
 
 function makeNodeInfo(feeJuiceAddress: AztecAddress): NodeInfo {
   return {
@@ -59,9 +54,7 @@ describe("monitor", () => {
     const nodeFeeJuice = AztecAddress.fromString(TEST_FEE_JUICE_ADDRESS);
     const node = {
       getNodeInfo: async () => makeNodeInfo(nodeFeeJuice),
-      getPublicStorageAt: async () => {
-        throw new Error("rpc unavailable");
-      },
+      getPublicStorageAt: () => Promise.reject(new Error("rpc unavailable")),
     } as unknown as AztecNode;
     const owner = AztecAddress.fromString(TEST_AZTEC_ADDRESS);
 
@@ -77,9 +70,6 @@ describe("monitor", () => {
       getNodeInfo: async () => makeNodeInfo(AztecAddress.zero()),
     } as unknown as AztecNode;
 
-    await assert.rejects(
-      () => resolveFeeJuiceAddress(node),
-      /protocolContractAddresses\.feeJuice/,
-    );
+    await assert.rejects(() => resolveFeeJuiceAddress(node), /protocolContractAddresses\.feeJuice/);
   });
 });

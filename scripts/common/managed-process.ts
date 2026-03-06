@@ -1,5 +1,8 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { type createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 export type ManagedProcess = {
   name: string;
@@ -116,9 +119,7 @@ export function installManagedProcessSignalHandlers(logPrefix: string): void {
     }
     shutdownInProgress = true;
     void (async () => {
-      console.error(
-        `[${logPrefix}] Received ${signal}; stopping managed processes...`,
-      );
+      pinoLogger.error(`[${logPrefix}] Received ${signal}; stopping managed processes...`);
       await stopAllManagedProcesses();
       process.exit(signal === "SIGINT" ? 130 : 143);
     })();
@@ -136,20 +137,14 @@ export async function waitForNodeReady(
     waitForNode(node),
     new Promise((_, reject) =>
       setTimeout(
-        () =>
-          reject(
-            new Error(`Timed out waiting for Aztec node after ${timeoutMs}ms`),
-          ),
+        () => reject(new Error(`Timed out waiting for Aztec node after ${timeoutMs}ms`)),
         timeoutMs,
       ),
     ),
   ]);
 }
 
-export async function waitForHealth(
-  url: string,
-  timeoutMs: number,
-): Promise<void> {
+export async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
     try {

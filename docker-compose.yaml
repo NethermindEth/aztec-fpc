@@ -13,7 +13,7 @@ services:
       start_period: 5s
 
   aztec-node:
-    image: aztecprotocol/aztec:4.0.0-devnet.2-patch.2
+    image: aztecprotocol/aztec:4.0.0-devnet.2-patch.3
     command: ["start", "--local-network"]
     ports:
       - "8080:8080"
@@ -47,32 +47,46 @@ services:
 
   deploy:
     image: nethermind/aztec-fpc-contract-deployment:local
-    configs:
-      - source: fpc-config
-        target: /app/fpc-config.yaml
     volumes:
-      - ./configs:/app/configs
+      - ./deployments:/app/data
+      - deploy-crs-cache:/app/.bb-crs
     environment:
-      FPC_VARIANT: "${FPC_VARIANT:-fpc}"
-      AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
-      L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
-      FPC_DEVNET_DEPLOYER_ALIAS: "${FPC_DEVNET_DEPLOYER_ALIAS:-test0}"
-      FPC_DEVNET_DEPLOYER_PRIVATE_KEY: "${FPC_DEVNET_DEPLOYER_PRIVATE_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
-      FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_DEVNET_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
-      FPC_DEVNET_OUT: "/app/configs/deploy-manifest.json"
-      FPC_MASTER_CONFIG: "/app/fpc-config.yaml"
-      FPC_CONFIGS_OUT: "/app/configs"
+      FPC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
+      FPC_L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
+      PXE_PROVER: "${PXE_PROVER:-wasm}"
+      FPC_DEPLOYER_ALIAS: "${FPC_DEPLOYER_ALIAS:-test0}"
+      FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      FPC_DATA_DIR: "/app/data"
     depends_on:
       aztec-node:
         condition: service_healthy
+
+  fund-l1-fee-juice:
+    image: ghcr.io/foundry-rs/foundry:v1.4.1
+    volumes:
+      - ./deployments:/app/data:ro
+      - ./scripts:/app/scripts:ro
+    entrypoint: ["bash", "/app/scripts/services/fund-l1-fee-juice.sh"]
+    environment:
+      L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
+      FPC_DATA_DIR: "/app/data"
+      L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+      L1_FEE_JUICE_FUNDER_PRIVATE_KEY: "${L1_FEE_JUICE_FUNDER_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+      L1_FEE_JUICE_FUND_AMOUNT_WEI: "${L1_FEE_JUICE_FUND_AMOUNT_WEI:-1000000000000000000000}"
+    depends_on:
+      anvil:
+        condition: service_healthy
+      deploy:
+        condition: service_completed_successfully
 
   attestation:
     image: nethermind/aztec-fpc-attestation:local
     ports:
       - "3000:3000"
     volumes:
-      - ./configs:/app/configs:ro
-    command: ["--config", "/app/configs/attestation/config.yaml"]
+      - ./deployments:/app/data:ro
+    command: ["--config", "/app/data/attestation/config.yaml"]
     environment:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
@@ -85,16 +99,35 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - ./configs:/app/configs:ro
-    command: ["--config", "/app/configs/topup/config.yaml"]
+      - ./deployments:/app/data:ro
+    command: ["--config", "/app/data/topup/config.yaml"]
     environment:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
       L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+      OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      TOPUP_AUTOCLAIM_SECRET_KEY: "${TOPUP_AUTOCLAIM_SECRET_KEY:-${OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}}"
+      TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY: "${TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY:-1}"
+      TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: "${TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS:-${FPC_DEVNET_SPONSORED_FPC_ADDRESS:-${SPONSORED_FPC_ADDRESS:-}}}"
+      TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "${TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT:-0}"
       TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
+      TOPUP_BRIDGE_STATE_PATH: "${TOPUP_BRIDGE_STATE_PATH:-/tmp/.topup-bridge-state.json}"
+      TOPUP_AUTOCLAIM_ENABLED: "${TOPUP_AUTOCLAIM_ENABLED:-1}"
+      TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX: "${TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX:-0}"
     depends_on:
-      deploy:
+      fund-l1-fee-juice:
         condition: service_completed_successfully
+
+  block-producer:
+    image: nethermind/aztec-fpc-contract-deployment:local
+    entrypoint: ["bash", "/app/scripts/services/block-producer.sh"]
+    volumes:
+      - ./scripts:/app/scripts:ro
+    environment:
+      AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
+    depends_on:
+      aztec-node:
+        condition: service_healthy
 
   postdeploy:
     image: nethermind/aztec-fpc-smoke:local
@@ -102,37 +135,50 @@ services:
     command:
       - "scripts/contract/devnet-postdeploy-smoke.ts"
     volumes:
-      - ./configs:/app/configs:ro
+      - ./deployments:/app/data:ro
     environment:
-      FPC_VARIANT: "${FPC_VARIANT:-fpc}"
-      FPC_DEVNET_SMOKE_MANIFEST: "/app/configs/deploy-manifest.json"
+      FPC_DEVNET_SMOKE_MANIFEST: "/app/data/manifest.json"
       L1_RPC_URL: "http://anvil:8545"
-      FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_DEVNET_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
     depends_on:
+      block-producer:
+        condition: service_started
       deploy:
         condition: service_completed_successfully
 
-  smoke:
+  smoke-fee-entrypoint:
+    image: nethermind/aztec-fpc-smoke:local
+    profiles: ["smoke", "full"]
+    command:
+      - "services/attestation/test/fee-entrypoint-local-smoke.ts"
+    environment:
+      AZTEC_NODE_URL: "http://aztec-node:8080"
+      FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"
+    depends_on:
+      block-producer:
+        condition: service_started
+      deploy:
+        condition: service_completed_successfully
+
+  smoke-services:
     image: nethermind/aztec-fpc-smoke:local
     profiles: ["smoke", "full"]
     command:
       - "scripts/services/fpc-services-smoke.ts"
-      - "services/attestation/test/fee-entrypoint-local-smoke.ts"
-      - "services/attestation/test/credit-fpc-local-smoke.ts"
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
-      FPC_DEVNET_OPERATOR_SECRET_KEY: "${FPC_DEVNET_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
-      FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"
-      CREDIT_FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"
+      FPC_LOCAL_OPERATOR_SECRET_KEY: "${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       FPC_SERVICES_SMOKE_L1_RPC_URL: "http://anvil:8545"
     depends_on:
+      block-producer:
+        condition: service_started
       deploy:
         condition: service_completed_successfully
 
   e2e-fpc:
     image: nethermind/aztec-fpc-smoke:local
-    profiles: ["e2e-fpc"]
+    profiles: ["e2e", "full"]
     command:
       - "scripts/services/fpc-full-lifecycle-e2e.ts"
     volumes:
@@ -141,26 +187,31 @@ services:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_FULL_E2E_L1_RPC_URL: "http://anvil:8545"
       FPC_FULL_E2E_ARTIFACTS_DIR: "/artifacts/fpc"
-      FPC_FULL_E2E_L1_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
     depends_on:
+      block-producer:
+        condition: service_started
       deploy:
         condition: service_completed_successfully
 
-  e2e-credit:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["e2e-credit"]
-    command:
-      - "scripts/services/credit-fpc-full-lifecycle-e2e.ts"
-    volumes:
-      - ./artifacts/compose-e2e/credit:/artifacts/credit
-    environment:
-      AZTEC_NODE_URL: "http://aztec-node:8080"
-      FPC_CREDIT_FULL_E2E_L1_RPC_URL: "http://anvil:8545"
-      FPC_CREDIT_FULL_E2E_ARTIFACTS_DIR: "/artifacts/credit"
-      FPC_CREDIT_FULL_E2E_L1_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+  wait:
+    image: busybox
+    profiles: ["full"]
+    command: ["sh", "-c", "sleep 5"]
     depends_on:
-      deploy:
+      smoke-fee-entrypoint:
         condition: service_completed_successfully
+      smoke-services:
+        condition: service_completed_successfully
+      e2e-fpc:
+        condition: service_completed_successfully
+      attestation:
+        condition: service_healthy
+      # TODO: uncomment this when topup is ready
+      # topup:
+      #   condition: service_healthy
+
+volumes:
+  deploy-crs-cache:
 
 configs:
   fpc-config:

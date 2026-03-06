@@ -1,8 +1,7 @@
-# FPC Contracts — `FPC` + `CreditFPC`
+# FPC Contracts
 
 Operator-run fee payment contracts for Aztec L2:
 - `FPC`: pay fees directly in one fixed token via private transfer to the operator.
-- `CreditFPC`: pay once in token + mint private fee credit, then spend that credit in later transactions.
 
 Full protocol specification: [docs/spec.md](docs/spec.md)
 
@@ -12,7 +11,7 @@ Operational probes and metrics: [docs/operational-metrics.md](docs/operational-m
 
 Alpha asset model decision: [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md)
 
-Current contract surface is multi-asset for both active variants: `FPCMultiAsset` and `BackedCreditFPC`.
+Current contract surface is multi-asset: `FPCMultiAsset`.
 
 ---
 
@@ -25,22 +24,15 @@ aztec-fpc/
 │   │   ├── Nargo.toml          ← Noir package (git-pinned Aztec deps)
 │   │   └── src/
 │   │       ├── main.nr         ← FPC contract
-│   │       ├── fee_math.nr     ← Fee math helpers
 │   │       └── test/           ← Contract integration/unit tests
-│   └── credit_fpc/
-│       ├── Nargo.toml          ← Noir package (git-pinned Aztec deps)
-│       └── src/
-│           ├── main.nr         ← CreditFPC contract
-│           ├── fee_math.nr     ← Fee math helpers
-│           └── test/           ← Contract integration/unit tests
 ├── services/
 │   ├── attestation/            ← Quote-signing REST service (TypeScript)
 │   │   └── test/               ← Contract + service smoke harnesses
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
 ├── scripts/
 │   ├── chaos/                  ← FPC chaos / adversarial test suite (see scripts/chaos/README.md)
-│   ├── contract/               ← Deploy + contract smoke wrappers (FPC and CreditFPC)
-│   └── services/               ← Service-integrated smoke wrapper (fpc|credit|both)
+│   ├── contract/               ← Deploy + contract smoke wrappers
+│   └── services/               ← Service-integrated smoke wrapper
 ├── vendor/
 │   └── aztec-standards/        ← Git submodule (token contract dependency)
 └── docs/
@@ -57,12 +49,12 @@ aztec-fpc/
 - Aztec CLI
 
 ```bash
-VERSION=4.0.0-devnet.2-patch.2 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.2)
+VERSION=4.0.0-devnet.2-patch.3 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.3)
 ```
 
 ### 1. Clone the repository with submodules (required)
 
-The `fpc` and `credit_fpc` tests deploy the token contract from `vendor/aztec-standards`. If submodules are not initialized, tests will fail.
+The `fpc` tests deploy the token contract from `vendor/aztec-standards`. If submodules are not initialized, tests will fail.
 
 Fresh clone:
 
@@ -96,7 +88,6 @@ bun install
 
 Compile the full workspace so all required artifacts exist:
 - `target/fpc-FPCMultiAsset.json`
-- `target/credit_fpc-BackedCreditFPC.json`
 - `target/generic_proxy-GenericProxy.json`
 - `target/token_contract-Token.json`
 
@@ -111,7 +102,7 @@ nargo fmt
 bun run test:contracts
 ```
 
-If you run `aztec test --package fpc` or `aztec test --package credit_fpc` directly on a clean checkout, run
+If you run `aztec test --package fpc` directly on a clean checkout, run
 `aztec compile --workspace --force` first so external resolver artifacts are present.
 
 ### TypeScript quality checks
@@ -128,10 +119,9 @@ bun run ci
 - `build-contract.yml`: noir format + compile + `aztec test --package fpc`
 - `ts-packages.yml`: biome + typecheck + TS build/tests
 - `spec-fee-entrypoint-smoke.yml`: local-devnet smoke for `FPC.fee_entrypoint`
-- `spec-credit-fpc-smoke.yml`: local-devnet smoke for `CreditFPC.pay_and_mint` + `pay_with_credit`
 - `spec-deploy-smoke.yml`: local deploy smoke for `deploy-fpc-local` output validation
-- `spec-services-smoke.yml`: service-integrated local-network smoke (`FPC_SERVICES_SMOKE_MODE=fpc|credit|both`) covering quote + topup + contract fee flow
-- `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suites for `FPC` and `CreditFPC`, with uploaded diagnostics artifacts
+- `spec-services-smoke.yml`: service-integrated local-network smoke covering quote + topup + contract fee flow
+- `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suite for `FPC`, with uploaded diagnostics artifacts
 
 ### 5. Run local-devnet FPC fee-entrypoint smoke test
 
@@ -172,49 +162,15 @@ Optional overrides:
 - `FPC_SMOKE_DA_GAS_LIMIT`, `FPC_SMOKE_L2_GAS_LIMIT`
 - `FPC_SMOKE_FEE_PER_DA_GAS`, `FPC_SMOKE_FEE_PER_L2_GAS` (default: current node min fees)
 - `FPC_SMOKE_FEE_JUICE_TOPUP_WEI` (default: conservative auto-top-up from configured gas settings)
-- `FPC_SMOKE_RELAY_ADVANCE_BLOCKS` (default: `2`; sends this many mock L2 txs after L1 bridge submit to unblock local relay)
 - `FPC_SMOKE_QUOTE_TTL_SECONDS`
 - `FPC_SMOKE_RESET_LOCAL_STATE` (default `1`; set `0` to reuse existing `wallet_data_*`/`pxe_data_*`)
 
-### 6. Run local-devnet CreditFPC smoke test
-
-This runs a full CreditFPC flow outside TXE tests:
-
-1. compile artifacts,
-2. deploy `Token` + `CreditFPC`,
-3. mint user private token balance,
-4. execute `pay_and_mint` with a signed quote,
-5. assert quote replay protection via `quote_used`,
-6. execute `pay_with_credit`.
-
-```bash
-bun run smoke:credit-fpc:local
-# or:
-bash scripts/contract/credit-fpc-local-smoke.sh
-```
-
-Smoke implementation file:
-`services/attestation/test/credit-fpc-local-smoke.ts`
-
-Useful overrides:
-
-- `AZTEC_NODE_URL` (default `http://localhost:8080`)
-- `CREDIT_FPC_SMOKE_L1_RPC_URL` (default `http://localhost:8545`)
-- `CREDIT_FPC_SMOKE_START_LOCAL_NETWORK` (default `1`; auto-starts `aztec start --local-network` when `8080/8545` are unavailable)
-- `CREDIT_FPC_SMOKE_NODE_TIMEOUT_MS` (default `30000`)
-- `CREDIT_FPC_SMOKE_RATE_NUM`, `CREDIT_FPC_SMOKE_RATE_DEN` (defaults: `1` / `1`)
-- `CREDIT_FPC_SMOKE_QUOTE_TTL_SECONDS` (default `3600`)
-- `CREDIT_FPC_SMOKE_RELAY_ADVANCE_BLOCKS` (default `2`, must be `>=2`)
-- `CREDIT_FPC_SMOKE_MINT_MULTIPLIER` (default `5`, must be `>1`)
-- `CREDIT_FPC_SMOKE_MINT_BUFFER` (default `1000000`, must be `>0`)
-- `CREDIT_FPC_SMOKE_RESET_LOCAL_STATE` (default `1`; set `0` to reuse existing `wallet_data_*`/`pxe_data_*`)
-
-### 7. Run local-devnet services smoke test (attestation + topup + contract flows)
+### 6. Run local-devnet services smoke test (attestation + topup + contract flows)
 
 This script implements Step 8 from the services plan:
 
 1. builds both services,
-2. deploys `Token` + `FPC` + `CreditFPC`,
+2. deploys `Token` + `FPC`,
 3. starts attestation and topup with generated test configs,
 4. requests `/quote?user=<address>&fj_amount=<u128>`,
 5. submits transactions using quote fields (`fj_amount`, `aa_payment_amount`, `valid_until`, `signature`),
@@ -230,20 +186,16 @@ Useful overrides:
 
 - `FPC_SERVICES_SMOKE_START_LOCAL_NETWORK` (default `1`; auto-starts `aztec start --local-network` if 8080/8545 are unavailable)
 - `FPC_SERVICES_SMOKE_RESET_LOCAL_STATE` (default `1`)
-- `FPC_SERVICES_SMOKE_MODE` (default `both`; options: `fpc`, `credit`, `both`)
 - `FPC_SERVICES_SMOKE_L1_PRIVATE_KEY` (default local anvil key)
 - `FPC_SERVICES_SMOKE_TOPUP_WEI`, `FPC_SERVICES_SMOKE_THRESHOLD_WEI`
 - `FPC_SERVICES_SMOKE_ATTESTATION_PORT` (default `3300`)
 - `FPC_SERVICES_SMOKE_TOPUP_OPS_PORT` (default `3401`)
-- `FPC_SERVICES_SMOKE_RELAY_ADVANCE_BLOCKS` (default: `2`; sends mock L2 txs after bridge submit so local relay can finalize)
-- `FPC_SERVICES_SMOKE_CREDIT_MINT_MULTIPLIER` (default `5`)
-- `FPC_SERVICES_SMOKE_CREDIT_MINT_BUFFER` (default `1000000`)
 
-### 8. Deploy contracts (recommended)
+### 7. Deploy contracts (recommended)
 
-Use the local deploy wrapper (deploys `Token`, `FPC`, and `CreditFPC`):
+Use the local deploy wrapper (deploys `Token` and `FPC`):
 
-For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; local deploy scripts should only deploy L2 contracts (`Token`, `FPC`, `CreditFPC`) and consume node-reported L1 addresses.
+For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; local deploy scripts should only deploy L2 contracts (`Token`, `FPC`) and consume node-reported L1 addresses.
 
 ```bash
 bun run deploy:fpc:local
@@ -262,11 +214,11 @@ Pass through extra deploy args when needed (for example reuse mode):
 bun run deploy:fpc:local -- --reuse
 ```
 
-### 9. Run local deploy smoke (deploy output + relay claim validation)
+### 8. Run local deploy smoke (deploy output + relay claim validation)
 
 This smoke flow:
 1. runs `deploy:fpc:local`,
-2. validates deploy output addresses for `FPC` and `CreditFPC`,
+2. validates deploy output addresses for `FPC`,
 3. bridges Fee Juice from L1 to the deployed FPC,
 4. runs relay-aware L1->L2 claim checks against the deployed FPC.
 
@@ -279,7 +231,6 @@ Useful overrides:
 - `FPC_DEPLOY_SMOKE_START_LOCAL_NETWORK` (default `1`)
 - `FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE` (default: `1` only when smoke starts local-network, otherwise `0`)
 - `FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT` (default temp path under `/tmp`)
-- `FPC_DEPLOY_SMOKE_RELAY_ADVANCE_BLOCKS` (default `2`, must be `>=2`)
 - `FPC_DEPLOY_SMOKE_TOPUP_WEI` (default `1000000`)
 
 ### Devnet deployment and validation (live network)
@@ -292,12 +243,12 @@ For the current devnet deployment flow, use:
 Canonical command sequence:
 
 ```bash
-cd /home/ametel/source/aztec-fpc
+cd <repo-root>
 
 # Load your local env file if used by your setup
 set -a; source .env; set +a
 
-# 1) Deploy Token/FPC/CreditFPC and write canonical manifest
+# 1) Deploy Token/FPC and write canonical manifest
 bun run deploy:fpc:devnet
 
 # 2) Verify deployed contracts and FPC immutables from manifest
@@ -306,17 +257,17 @@ bun run verify:deploy:fpc:devnet
 # 3) Generate attestation/topup configs from manifest + master config
 bun run generate:configs
 
-# 4) Execute post-deploy runtime smoke (FPC + CreditFPC paths)
+# 4) Execute post-deploy runtime smoke
 bun run smoke:deploy:fpc:devnet
 ```
 
 Manifest secret-handling warning:
 
-- `deployments/devnet-manifest-v2.json` can contain raw private keys if you use `FPC_DEVNET_DEPLOYER_PRIVATE_KEY` or `L1_OPERATOR_PRIVATE_KEY`.
+- `deployments/devnet-manifest-v2.json` can contain raw private keys if you use `FPC_DEVNET_DEPLOYER_SECRET_KEY` or `L1_OPERATOR_PRIVATE_KEY`.
 - Treat the manifest as secret material and do not commit it to public repos.
-- Prefer key reference inputs (`*_PRIVATE_KEY_REF`, `*_SECRET_REF`) where supported.
+- Prefer key reference inputs (`*_SECRET_KEY_REF`, `*_SECRET_REF`) where supported.
 
-### 10. Deploy contracts manually (alternative)
+### 9. Deploy contracts manually (alternative)
 
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
@@ -325,15 +276,11 @@ Manifest secret-handling warning:
 aztec deploy \
   --artifact target/fpc-FPCMultiAsset.json \
   --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
-
-aztec deploy \
-  --artifact target/credit_fpc-BackedCreditFPC.json \
-  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
 ```
 
 Record the deployed address.
 
-### 11. Configure and start the attestation service
+### 10. Configure and start the attestation service
 
 ```bash
 cd services/attestation
@@ -356,7 +303,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 12. Configure and start the top-up service
+### 11. Configure and start the top-up service
 
 ```bash
 cd services/topup
@@ -379,7 +326,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 13. Docker
+### 12. Docker
 
 #### Building images
 
@@ -420,7 +367,6 @@ The compose stack (`docker-compose.yaml`) includes:
 | `attestation` | FPC attestation service | 3000 |
 | `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
 | `e2e-fpc` (profile `e2e-fpc`) | Compose-backed `FPC` full lifecycle runner | — |
-| `e2e-credit` (profile `e2e-credit`) | Compose-backed `CreditFPC` full lifecycle runner | — |
 
 Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
 
@@ -442,24 +388,16 @@ bun run compose:full
 docker compose up
 ```
 
-Run compose-backed full lifecycle suites:
+Run compose-backed full lifecycle suite:
 
 ```bash
-# FPC only
 bun run e2e:full-lifecycle:fpc:compose
-
-# CreditFPC only
-bun run e2e:full-lifecycle:credit:compose
-
-# both suites sequentially
-bun run e2e:full-lifecycle:compose
 ```
 
 Compose full-lifecycle artifacts are persisted under:
 
 ```text
 artifacts/compose-e2e/fpc
-artifacts/compose-e2e/credit
 ```
 
 #### Environment variable overrides
@@ -494,7 +432,7 @@ L1_OPERATOR_PRIVATE_KEY=0x... \
 docker compose up
 ```
 
-### 14. Verify
+### 13. Verify
 
 ```bash
 curl http://localhost:3000/health
@@ -524,7 +462,6 @@ git submodule sync --recursive
 git submodule update --init --recursive
 aztec compile --workspace --force
 aztec test --package fpc
-aztec test --package credit_fpc
 ```
 
 ---
@@ -536,19 +473,14 @@ Fully private entry-points:
 | Entry-point | Source | Destination | Quote |
 |---|---|---|---|
 | `fee_entrypoint` | User private balance | Operator private balance | User-specific |
-| `pay_and_mint` | User private balance | Operator private balance + user credit note | User-specific |
-| `pay_with_credit` | User credit note | Fee settlement (no token transfer) | Not required |
 
 ```
 User private token balance →[transfer_private_to_private]→ Operator private token balance
-User private token balance →[pay_and_mint]→ User private credit balance
-User private credit balance →[pay_with_credit]→ Fee payment
 ```
 
 - Signed quote flows return exact amounts: `fj_amount` and `aa_payment_amount`.
 - Quote binds to `msg_sender` and is nullified after first use.
 - `FPC.fee_entrypoint` pays directly with token each transaction.
-- `CreditFPC.pay_and_mint` converts token payment into private fee credit for subsequent `pay_with_credit` calls.
 
 See [docs/spec.md](docs/spec.md) for the base quote/topup/fee design and security considerations.
 

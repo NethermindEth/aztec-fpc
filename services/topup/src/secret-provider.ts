@@ -4,14 +4,9 @@ export type SecretProvider = "auto" | "env" | "config" | "kms" | "hsm";
 export type SecretSource = Exclude<SecretProvider, "auto">;
 export type ExternalSecretProvider = Extract<SecretSource, "kms" | "hsm">;
 
-export type SecretAdapter = (args: {
-  secretRef: string;
-  env: NodeJS.ProcessEnv;
-}) => string;
+export type SecretAdapter = (args: { secretRef: string; env: NodeJS.ProcessEnv }) => string;
 
-export type SecretAdapterRegistry = Partial<
-  Record<ExternalSecretProvider, SecretAdapter>
->;
+export type SecretAdapterRegistry = Partial<Record<ExternalSecretProvider, SecretAdapter>>;
 
 export interface ResolveSecretOptions {
   secretLabel: string;
@@ -63,59 +58,93 @@ function resolveFromExternalProvider(
   );
 }
 
+function assertNoPlaintextConfigSecret(
+  runtimeProfile: RuntimeProfile,
+  configSecret: string | null,
+  secretLabel: string,
+): void {
+  if (runtimeProfile !== "production" || !configSecret) {
+    return;
+  }
+  throw new Error(
+    `Insecure secret source for ${secretLabel}: plaintext config secrets are not allowed when runtime_profile=production`,
+  );
+}
+
+function assertNoPlaintextConfigSource(
+  runtimeProfile: RuntimeProfile,
+  source: SecretSource,
+  secretLabel: string,
+): void {
+  if (runtimeProfile !== "production" || source !== "config") {
+    return;
+  }
+  throw new Error(
+    `Insecure secret source for ${secretLabel}: plaintext config secrets are not allowed when runtime_profile=production`,
+  );
+}
+
+function resolveAutoSecret(
+  envSecret: string | null,
+  configSecret: string | null,
+  options: ResolveSecretOptions,
+): { source: SecretSource; value: string } {
+  if (envSecret) {
+    return { source: "env", value: envSecret };
+  }
+  if (configSecret) {
+    return { source: "config", value: configSecret };
+  }
+  throw new Error(
+    `Missing ${options.secretLabel}: set ${options.envVarName} env var or configure plaintext value in config for non-production mode`,
+  );
+}
+
+function resolveProviderSecret(
+  provider: SecretProvider,
+  envSecret: string | null,
+  configSecret: string | null,
+  options: ResolveSecretOptions,
+): { source: SecretSource; value: string } {
+  switch (provider) {
+    case "auto":
+      return resolveAutoSecret(envSecret, configSecret, options);
+    case "env":
+      return {
+        source: "env",
+        value: requireValue(
+          envSecret,
+          `Missing ${options.secretLabel}: ${options.envVarName} is required when provider=env`,
+        ),
+      };
+    case "config":
+      return {
+        source: "config",
+        value: requireValue(
+          configSecret,
+          `Missing ${options.secretLabel} in config file when provider=config`,
+        ),
+      };
+    case "kms":
+    case "hsm":
+      return {
+        source: provider,
+        value: resolveFromExternalProvider(provider, options),
+      };
+  }
+}
+
 export function resolveSecret(options: ResolveSecretOptions): ResolvedSecret {
   const envSecret = normalize(options.envValue);
   const configSecret = normalize(options.configValue);
-
-  if (options.runtimeProfile === "production" && configSecret) {
-    throw new Error(
-      `Insecure secret source for ${options.secretLabel}: plaintext config secrets are not allowed when runtime_profile=production`,
-    );
-  }
-
-  let source: SecretSource;
-  let value: string;
-
-  switch (options.provider) {
-    case "auto":
-      if (envSecret) {
-        source = "env";
-        value = envSecret;
-      } else if (configSecret) {
-        source = "config";
-        value = configSecret;
-      } else {
-        throw new Error(
-          `Missing ${options.secretLabel}: set ${options.envVarName} env var or configure plaintext value in config for non-production mode`,
-        );
-      }
-      break;
-    case "env":
-      source = "env";
-      value = requireValue(
-        envSecret,
-        `Missing ${options.secretLabel}: ${options.envVarName} is required when provider=env`,
-      );
-      break;
-    case "config":
-      source = "config";
-      value = requireValue(
-        configSecret,
-        `Missing ${options.secretLabel} in config file when provider=config`,
-      );
-      break;
-    case "kms":
-    case "hsm":
-      source = options.provider;
-      value = resolveFromExternalProvider(options.provider, options);
-      break;
-  }
-
-  if (options.runtimeProfile === "production" && source === "config") {
-    throw new Error(
-      `Insecure secret source for ${options.secretLabel}: plaintext config secrets are not allowed when runtime_profile=production`,
-    );
-  }
+  assertNoPlaintextConfigSecret(options.runtimeProfile, configSecret, options.secretLabel);
+  const { source, value } = resolveProviderSecret(
+    options.provider,
+    envSecret,
+    configSecret,
+    options,
+  );
+  assertNoPlaintextConfigSource(options.runtimeProfile, source, options.secretLabel);
 
   return {
     value,

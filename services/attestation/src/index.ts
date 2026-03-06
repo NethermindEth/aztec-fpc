@@ -1,3 +1,7 @@
+import pino from "pino";
+
+const pinoLogger = pino();
+
 /**
  * Attestation Service — entry point
  *
@@ -17,64 +21,49 @@ import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { loadConfig } from "./config.js";
-import {
-  FpcImmutableVerificationError,
-  verifyFpcImmutablesOnStartup,
-} from "./fpc-immutables.js";
+import { FpcImmutableVerificationError, verifyFpcImmutablesOnStartup } from "./fpc-immutables.js";
 import { buildServer } from "./server.js";
 import type { QuoteSchnorrSigner } from "./signer.js";
 
-const configPath =
-  process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
+const configPath = process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
 
 async function main() {
   const config = loadConfig(configPath);
-  console.log(`Runtime profile: ${config.runtime_profile}`);
+  pinoLogger.info(`Runtime profile: ${config.runtime_profile}`);
 
   if (config.operator_secret_key_dual_source) {
-    console.warn(
+    pinoLogger.warn(
       "Both OPERATOR_SECRET_KEY and config.operator_secret_key are set; using OPERATOR_SECRET_KEY",
     );
   }
 
-  console.log(
+  pinoLogger.info(
     `Operator secret key provider: ${config.operator_secret_key_provider} (resolved source: ${config.operator_secret_key_source})`,
   );
   if (config.operator_secret_key_source === "config") {
-    console.warn(
+    pinoLogger.warn(
       "Operator secret key source: config file (operator_secret_key); this should only be used in non-production profiles",
     );
   }
 
-  // ── Connect to Aztec node ────────────────────────────────────────────────────
   const node = createAztecNodeClient(config.aztec_node_url);
 
-  // ── Derive operator address and signing key ───────────────────────────────────
   // Secret resolution happens in config loading. Production mode rejects
   // plaintext config secrets and supports env/external providers.
   const secretKey = Fr.fromHexString(config.operator_secret_key);
   const signingKey = deriveSigningKey(secretKey);
-  const derivedOperatorAddress = await getSchnorrAccountContractAddress(
-    secretKey,
-    Fr.ZERO,
-  );
+  const derivedOperatorAddress = await getSchnorrAccountContractAddress(secretKey, Fr.ZERO);
   const operatorAddress = config.operator_address
     ? AztecAddress.fromString(config.operator_address)
     : derivedOperatorAddress;
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
-  const acceptedAssetAddress = AztecAddress.fromString(
-    config.accepted_asset_address,
-  );
-  if (
-    config.operator_address &&
-    !operatorAddress.equals(derivedOperatorAddress)
-  ) {
-    console.warn(
+  const acceptedAssetAddress = AztecAddress.fromString(config.accepted_asset_address);
+  if (config.operator_address && !operatorAddress.equals(derivedOperatorAddress)) {
+    pinoLogger.warn(
       `[startup] operator_address override is set to ${operatorAddress.toString()} (signer-derived with salt=0 is ${derivedOperatorAddress.toString()})`,
     );
   }
 
-  // ── Build Schnorr signer ────────────────────────────────────────────────────
   const schnorrSigner = new Schnorr();
   const operatorPubKey = await schnorrSigner.computePublicKey(signingKey);
 
@@ -86,40 +75,34 @@ async function main() {
       operatorPubkeyX: Fr.fromString(operatorPubKey.x.toString()),
       operatorPubkeyY: Fr.fromString(operatorPubKey.y.toString()),
     });
-    console.log(
-      `[startup] On-chain FPC immutables verified for ${fpcAddress.toString()}`,
-    );
+    pinoLogger.info(`[startup] On-chain FPC immutables verified for ${fpcAddress.toString()}`);
   } catch (error) {
     if (error instanceof FpcImmutableVerificationError) {
-      console.error(error.message);
+      pinoLogger.error(error.message);
     }
     throw error;
   }
 
   const quoteSigner: QuoteSchnorrSigner = {
     async signQuoteHash(quoteHash: Fr): Promise<string> {
-      const sig = await schnorrSigner.constructSignature(
-        quoteHash.toBuffer(),
-        signingKey,
-      );
+      const sig = await schnorrSigner.constructSignature(quoteHash.toBuffer(), signingKey);
       return `0x${Buffer.from(sig.toBuffer()).toString("hex")}`;
     },
   };
 
-  console.log(`Operator address:  ${operatorAddress.toString()}`);
+  pinoLogger.info(`Operator address:  ${operatorAddress.toString()}`);
   if (!operatorAddress.equals(derivedOperatorAddress)) {
-    console.log(
+    pinoLogger.info(
       `Signer-derived operator address (salt=0): ${derivedOperatorAddress.toString()}`,
     );
   }
-  console.log(`Operator pubkey x: ${operatorPubKey.x.toString()}`);
-  console.log(`Operator pubkey y: ${operatorPubKey.y.toString()}`);
-  console.log(`FPC address:       ${fpcAddress.toString()}`);
-  console.log(
+  pinoLogger.info(`Operator pubkey x: ${operatorPubKey.x.toString()}`);
+  pinoLogger.info(`Operator pubkey y: ${operatorPubKey.y.toString()}`);
+  pinoLogger.info(`FPC address:       ${fpcAddress.toString()}`);
+  pinoLogger.info(
     `Accepted asset:    ${config.accepted_asset_name} (${acceptedAssetAddress.toString()})`,
   );
 
-  // ── Start HTTP server ────────────────────────────────────────────────────────
   const app = buildServer(config, quoteSigner, {
     nowUnixSeconds: async () => {
       const latest = await node.getBlock("latest");
@@ -131,10 +114,10 @@ async function main() {
   });
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
-  console.log(`Attestation service listening on port ${config.port}`);
+  pinoLogger.info(`Attestation service listening on port ${config.port}`);
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  pinoLogger.error({ err }, "Fatal error:");
   process.exit(1);
 });

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.5/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -14,14 +14,123 @@
       "services/*/test/**/*.ts",
       "services/*/package.json",
       "scripts/**/*.ts",
-      "scripts/*/package.json"
+      "scripts/*/package.json",
+      "sdk/src/**/*.ts",
+      "sdk/test/**/*.ts",
+      "sdk/package.json",
+      "sdk/tsconfig.json"
     ]
   },
   "formatter": {
     "enabled": true,
-    "indentStyle": "space"
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "arrowParentheses": "always",
+      "bracketSpacing": true,
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
   },
   "linter": {
-    "enabled": true
-  }
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["services/**", "sdk/**", "scripts/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "error",
+            "noUnusedPrivateClassMembers": "error",
+            "noUnusedFunctionParameters": "error"
+          },
+          "suspicious": {
+            "noConsole": "warn",
+            "noExplicitAny": "error",
+            "noImplicitAnyLet": "error",
+            "useAwait": "error"
+          },
+          "style": {
+            "noInferrableTypes": "error",
+            "noNonNullAssertion": "error",
+            "noParameterAssign": "error",
+            "noUnusedTemplateLiteral": "error",
+            "noUselessElse": "error",
+            "useImportType": "error"
+          },
+          "performance": {
+            "noAccumulatingSpread": "warn"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["scripts/**"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveCognitiveComplexity": {
+              "level": "error",
+              "options": {
+                "maxAllowedComplexity": 40
+              }
+            },
+            "noExcessiveLinesPerFunction": {
+              "level": "error",
+              "options": {
+                "maxLines": 650
+              }
+            },
+            "noForEach": "warn"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["services/**", "sdk/**"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noExcessiveCognitiveComplexity": {
+              "level": "error",
+              "options": {
+                "maxAllowedComplexity": 20
+              }
+            },
+            "noExcessiveLinesPerFunction": {
+              "level": "error",
+              "options": {
+                "maxLines": 160
+              }
+            },
+            "noForEach": "warn"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/test/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "complexity": {
+            "noExcessiveLinesPerFunction": "off"
+          },
+          "correctness": {
+            "noUnusedFunctionParameters": "off"
+          }
+        }
+      }
+    }
+  ]
 }

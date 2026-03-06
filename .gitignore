@@ -146,3 +146,10 @@ tmp/
 configs/
 .topup-bridge-state.json
 artifacts/
+
+# Generated deploy artifacts
+deployments/manifest.json
+deployments/attestation/
+deployments/topup/
+
+local-docs/

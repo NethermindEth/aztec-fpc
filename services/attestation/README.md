@@ -36,11 +36,11 @@ Notes:
 
 - Quotes are user-specific (`user` must match `msg_sender` in contract execution).
 - Replays are prevented on-chain by nullifying quote hash.
-- The service name/config key uses `fpc_address`, but the target can be either `FPC` or `CreditFPC` because both verify the same quote preimage structure.
+- The service name/config key uses `fpc_address`, targeting the `FPC` contract which verifies the quote preimage structure.
 
 ## Wiring to `/contracts/fpc`
 
-Contract reference: `/home/ametel/source/aztec-fpc/contracts/fpc/src/main.nr`
+Contract reference: `contracts/fpc/src/main.nr`
 
 How it connects:
 
@@ -52,28 +52,11 @@ How it connects:
 
 Implication: for `FPC`, clients should request `/quote` with `fj_amount = max_gas_cost_no_teardown` for the transaction they are building.
 
-## Wiring to `/contracts/credit_fpc`
-
-Contract reference: `/home/ametel/source/aztec-fpc/contracts/credit_fpc/src/main.nr`
-
-How it connects:
-
-1. `CreditFPC.pay_and_mint(accepted_asset, authwit_nonce, fj_credit_amount, aa_payment_amount, valid_until, quote_sig)` consumes the same payload shape from `/quote`.
-2. `CreditFPC.assert_valid_quote(...)` uses the same preimage format and signature verification logic as `FPC`.
-3. It transfers exactly `aa_payment_amount` of `accepted_asset` from user to operator.
-4. It mints exactly `fj_credit_amount` into the caller's private credit balance.
-5. It immediately subtracts current `max_gas_cost_no_teardown` to pay this transaction from minted credit.
-
-Important semantic difference:
-
-- For `FPC`, `fj_amount` means quoted fee amount for this transaction.
-- For `CreditFPC`, `fj_amount` is interpreted as `fj_credit_amount` (credit to mint), and should be chosen high enough to cover current setup cost and leave desired remaining credit.
-
 ## Single-Instance vs Multi-Instance Setup
 
 Each attestation instance is bound to one contract address (`fpc_address`) and can support multiple assets via `supported_assets`.
 
-- Use one instance per deployed `FPC`/`CreditFPC` address.
+- Use one instance per deployed `FPC` address.
 - Configure `supported_assets` with all wallet-facing assets.
 - Optional per-asset pricing overrides are read from each `supported_assets` entry (`market_rate_num`, `market_rate_den`, `fee_bips`).
 
@@ -97,6 +80,7 @@ Response:
   "endpoints": {
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
+    "accepted_assets": "/accepted-assets",
     "asset": "/asset",
     "quote": "/quote"
   },
@@ -124,7 +108,21 @@ Includes:
 - `attestation_quote_errors_total{error_type=...}`
 - `attestation_quote_latency_seconds_*{outcome=...}`
 
-### `GET /asset`
+### `GET /accepted-assets`
+
+Returns the supported accepted-assets list (address + name).
+This is the primary token-discovery endpoint for SDK clients.
+
+Response:
+
+```json
+[
+  { "name": "humanUSDC", "address": "0x..." },
+  { "name": "ravenETH", "address": "0x..." }
+]
+```
+
+### `GET /asset` (legacy compatibility)
 
 Returns configured accepted asset metadata.
 

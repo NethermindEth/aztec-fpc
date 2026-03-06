@@ -78,11 +78,7 @@ export interface FpcImmutableInputs {
 export async function computeExpectedFpcInitializationHash(
   inputs: Pick<
     FpcImmutableInputs,
-    | "operatorAddress"
-    | "operatorPubkeyX"
-    | "operatorPubkeyY"
-    | "sponsorPubkeyX"
-    | "sponsorPubkeyY"
+    "operatorAddress" | "operatorPubkeyX" | "operatorPubkeyY" | "sponsorPubkeyX" | "sponsorPubkeyY"
   >,
 ): Promise<Fr> {
   if (inputs.sponsorPubkeyX && inputs.sponsorPubkeyY) {
@@ -137,10 +133,8 @@ export async function verifyFpcImmutablesOnStartup(
     );
   }
 
-  const expectedInitializationHash =
-    await computeExpectedFpcInitializationHash(inputs);
-  const expectedLegacyInitializationHash =
-    await computeExpectedLegacyFpcInitializationHash(inputs);
+  const expectedInitializationHash = await computeExpectedFpcInitializationHash(inputs);
+  const expectedLegacyInitializationHash = await computeExpectedLegacyFpcInitializationHash(inputs);
   const onChainInitializationHash = deployed.initializationHash;
 
   const expectedV2NoSponsorHash =
@@ -160,10 +154,8 @@ export async function verifyFpcImmutablesOnStartup(
       onChainInitializationHash.equals(expectedV2NoSponsorHash)
     )
   ) {
-    const currentClassId =
-      deployed.currentContractClassId?.toString() ?? "unknown";
-    const originalClassId =
-      deployed.originalContractClassId?.toString() ?? "unknown";
+    const currentClassId = deployed.currentContractClassId?.toString() ?? "unknown";
+    const originalClassId = deployed.originalContractClassId?.toString() ?? "unknown";
     throw new FpcImmutableVerificationError(
       "IMMUTABLE_MISMATCH",
       `[startup] on-chain FPC immutable mismatch: expected operator=${inputs.operatorAddress.toString()} (pubkey_x=${inputs.operatorPubkeyX.toString()}, pubkey_y=${inputs.operatorPubkeyY.toString()}) for contract ${inputs.fpcAddress.toString()}, but deployment initialization_hash differs (expected_v2=${expectedInitializationHash.toString()}, expected_legacy=${expectedLegacyInitializationHash.toString()}, on_chain=${onChainInitializationHash.toString()}, current_class_id=${currentClassId}, original_class_id=${originalClassId})`,

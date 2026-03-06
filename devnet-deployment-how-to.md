@@ -5,7 +5,7 @@ Repository: `aztec-fpc`
 
 This is the current deployment flow for Aztec devnet using:
 
-- `scripts/contract/deploy-fpc-devnet.sh` (recommended)
+- `scripts/contract/deploy-fpc.sh` (recommended)
 - `scripts/contract/deploy-fpc-devnet.ts` (advanced/manual)
 - `scripts/contract/verify-fpc-devnet-deployment.ts` (post-deploy verification)
 - `scripts/contract/devnet-postdeploy-smoke.ts` (post-deploy runtime smoke)
@@ -14,7 +14,6 @@ Live deployment snapshot (from `deployments/devnet-manifest-v2.json`, generated 
 
 - `contracts.accepted_asset=0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a`
 - `contracts.fpc=0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5`
-- `contracts.credit_fpc=0x2c41d74d8b079453af4dfc865e44ccdbb68821ecf63b43aecdfde56e7f1587c3`
 
 ## 1. One Command Deploy
 
@@ -22,14 +21,13 @@ From repo root:
 
 ```bash
 cd /home/ametel/source/aztec-fpc
-bun run deploy:fpc:devnet
+bun run deploy:fpc
 ```
 
 This command deploys:
 
-- `Token` (unless you provide `FPC_DEVNET_ACCEPTED_ASSET`)
+- `Token` (unless you provide `FPC_ACCEPTED_ASSET`)
 - `FPC`
-- `CreditFPC`
 
 It writes the manifest to:
 
@@ -41,23 +39,23 @@ To run checks only (no contract deploy txs):
 
 ```bash
 cd /home/ametel/source/aztec-fpc
-FPC_DEVNET_PREFLIGHT_ONLY=1 bun run deploy:fpc:devnet
+FPC_PREFLIGHT_ONLY=1 bun run deploy:fpc
 ```
 
 ## 3. Current Defaults
 
 If unset, wrapper defaults are:
 
-- `FPC_DEVNET_NODE_URL=https://v4-devnet-2.aztec-labs.com/`
-- `FPC_DEVNET_SPONSORED_FPC_ADDRESS=0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2`
-- `FPC_DEVNET_DEPLOYER_ALIAS=my-wallet`
-- `FPC_DEVNET_OUT=./deployments/devnet-manifest-v2.json`
+- `FPC_NODE_URL=https://v4-devnet-2.aztec-labs.com/`
+- `FPC_SPONSORED_FPC_ADDRESS=0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2`
+- `FPC_DEPLOYER_ALIAS=my-wallet`
+- `FPC_OUT=./deployments/devnet-manifest-v2.json`
 
 Key behavior when key env vars are unset:
 
 - uses default devnet test key `0x1111111111111111111111111111111111111111111111111111111111111111`
 - sets operator key equal to deployer key
-- may import/create local wallet alias `accounts:${FPC_DEVNET_DEPLOYER_ALIAS}`
+- may import/create local wallet alias `accounts:${FPC_DEPLOYER_ALIAS}`
 
 Artifact behavior:
 
@@ -69,32 +67,32 @@ Artifact behavior:
 If you want explicit control, set env vars before running:
 
 ```bash
-export FPC_DEVNET_NODE_URL="https://v4-devnet-2.aztec-labs.com/"
-export FPC_DEVNET_SPONSORED_FPC_ADDRESS="0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2"
-export FPC_DEVNET_DEPLOYER_ALIAS="my-wallet"
-export FPC_DEVNET_OUT="./deployments/devnet-manifest-v2.json"
+export FPC_NODE_URL="https://v4-devnet-2.aztec-labs.com/"
+export FPC_SPONSORED_FPC_ADDRESS="0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2"
+export FPC_DEPLOYER_ALIAS="my-wallet"
+export FPC_OUT="./deployments/devnet-manifest-v2.json"
 ```
 
 Deployer key material (set exactly one):
 
 ```bash
-export FPC_DEVNET_DEPLOYER_PRIVATE_KEY="0x..."
+export FPC_DEPLOYER_SECRET_KEY="0x..."
 # or
-export FPC_DEVNET_DEPLOYER_PRIVATE_KEY_REF="secret-manager://devnet/l2-deployer"
+export FPC_DEPLOYER_SECRET_KEY_REF="secret-manager://devnet/l2-deployer"
 ```
 
 Operator key material (set exactly one):
 
 ```bash
-export FPC_DEVNET_OPERATOR_SECRET_KEY="0x..."
+export FPC_OPERATOR_SECRET_KEY="0x..."
 # or (preflight-only use-case)
-export FPC_DEVNET_OPERATOR_SECRET_KEY_REF="secret-manager://devnet/operator"
+export FPC_OPERATOR_SECRET_KEY_REF="secret-manager://devnet/operator"
 ```
 
 Then run:
 
 ```bash
-bun run deploy:fpc:devnet
+bun run deploy:fpc
 ```
 
 ## 5. Reuse Existing Accepted Asset
@@ -102,8 +100,8 @@ bun run deploy:fpc:devnet
 To skip Token deployment and reuse an existing token:
 
 ```bash
-export FPC_DEVNET_ACCEPTED_ASSET="0x<existing_token_address>"
-bun run deploy:fpc:devnet
+export FPC_ACCEPTED_ASSET="0x<existing_token_address>"
+bun run deploy:fpc
 ```
 
 ## 6. Optional L1 Chain Validation
@@ -111,9 +109,9 @@ bun run deploy:fpc:devnet
 To enforce node/L1 RPC chain-id match:
 
 ```bash
-export FPC_DEVNET_L1_RPC_URL="https://..."
-export FPC_DEVNET_VALIDATE_TOPUP_PATH=1
-bun run deploy:fpc:devnet
+export FPC_L1_RPC_URL="https://..."
+export FPC_VALIDATE_TOPUP_PATH=1
+bun run deploy:fpc
 ```
 
 ## 7. Direct Script (Advanced)
@@ -125,7 +123,7 @@ bunx tsx scripts/contract/deploy-fpc-devnet.ts \
   --node-url "https://v4-devnet-2.aztec-labs.com/" \
   --sponsored-fpc-address "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2" \
   --deployer-alias "my-wallet" \
-  --deployer-private-key "0x..." \
+  --deployer-secret-key "0x..." \
   --operator-secret-key "0x..." \
   --out "./deployments/devnet-manifest-v2.json"
 ```
@@ -155,7 +153,7 @@ bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts \
 
 Checks performed:
 
-- contract existence on node for `accepted_asset`, `fpc`, `credit_fpc`
+- contract existence on node for `accepted_asset`, `fpc`
 - FPC immutable verification against manifest operator/pubkeys/accepted asset
 - contract instance readiness (published instance + non-zero initialization hash)
 - contract class readiness (class publicly registered)
@@ -207,7 +205,7 @@ Run runtime validation against deployed contracts in the manifest:
 cd /home/ametel/source/aztec-fpc
 set -a; source .env; set +a
 export L1_OPERATOR_PRIVATE_KEY="$L1_ADDRESS_PK"
-export FPC_DEVNET_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
+export FPC_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
 bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \
   --manifest ./deployments/devnet-manifest-v2.json
 ```
@@ -215,13 +213,12 @@ bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \
 What this validates:
 
 - one successful FPC fee path tx
-- one successful CreditFPC path tx (`pay_and_mint` and `pay_with_credit`)
-- L1 FeeJuice bridge/topup path to both FPC and CreditFPC
+- L1 FeeJuice bridge/topup path to FPC
 
 Optional explicit operator override (only needed when manifest fallback is not usable):
 
 ```bash
-export FPC_DEVNET_OPERATOR_SECRET_KEY="0x..."
+export FPC_OPERATOR_SECRET_KEY="0x..."
 ```
 
 ## 12. Current Caveats
@@ -243,7 +240,7 @@ export FPC_WALLET_DEPLOY_RETRY_BACKOFF_MS=3000
 Use an isolated wallet data dir for troubleshooting:
 
 ```bash
-export FPC_DEVNET_WALLET_DATA_DIR="$(mktemp -d /tmp/aztec-wallet-devnet.XXXXXX)"
+export FPC_WALLET_DATA_DIR="$(mktemp -d /tmp/aztec-wallet-devnet.XXXXXX)"
 # or equivalent:
 export AZTEC_WALLET_DATA_DIR="$(mktemp -d /tmp/aztec-wallet-devnet.XXXXXX)"
 ```
@@ -251,7 +248,7 @@ export AZTEC_WALLET_DATA_DIR="$(mktemp -d /tmp/aztec-wallet-devnet.XXXXXX)"
 Then run:
 
 ```bash
-bun run deploy:fpc:devnet
+bun run deploy:fpc
 ```
 
 ## 14. Quick Verify Manifest
@@ -264,6 +261,5 @@ Check non-zero:
 
 - `contracts.accepted_asset`
 - `contracts.fpc`
-- `contracts.credit_fpc`
 - `aztec_required_addresses.l1_contract_addresses.*`
 - `aztec_required_addresses.protocol_contract_addresses.*`

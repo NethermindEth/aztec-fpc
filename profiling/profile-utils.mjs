@@ -17,11 +17,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const TARGET    = join(__dirname, '../target');
 const ARTIFACT_ALIASES = {
   FPC: ['FPCMultiAsset'],
-  BackedCreditFPC: ['CreditFPC'],
-  CreditFPC: ['BackedCreditFPC'],
 };
 
-// ── Artifact lookup ─────────────────────────────────────────────────────────
 export function findArtifact(contractName) {
   const candidates = [contractName, ...(ARTIFACT_ALIASES[contractName] ?? [])];
 
@@ -40,14 +37,12 @@ export function findArtifact(contractName) {
   throw new Error(`No artifact matching ${expected} in ${TARGET}. Did you run 'aztec compile'?`);
 }
 
-// ── fee_juice_to_asset: ceiling division (mirrors fee_math.nr) ──────────────
 export function feeJuiceToAsset(feeJuice, rateNum, rateDen) {
   if (feeJuice === 0n) return 0n;
   const product = feeJuice * rateNum;
   return (product + rateDen - 1n) / rateDen;
 }
 
-// ── Minimal wallet backed by an embedded PXE ────────────────────────────────
 export class SimpleWallet extends BaseWallet {
   #accounts = new Map();
 
@@ -83,7 +78,6 @@ export class SimpleWallet extends BaseWallet {
   }
 }
 
-// ── Sign amount-based quote with the operator's Schnorr key ─────────────────
 export async function signQuote(
   schnorr,
   operatorSigningKey,
@@ -108,7 +102,6 @@ export async function signQuote(
   return Array.from(sig.toBuffer()).map(b => new Fr(b));
 }
 
-// ── Sign legacy rate-based quote with the operator's Schnorr key ────────────
 export async function signRateQuote(
   schnorr,
   operatorSigningKey,
@@ -133,7 +126,6 @@ export async function signRateQuote(
   return Array.from(sig.toBuffer()).map(b => new Fr(b));
 }
 
-// ── Sign sponsored quote with the sponsor's Schnorr key ─────────────────────
 export async function signSponsoredQuote(
   schnorr,
   sponsorSigningKey,
@@ -156,7 +148,6 @@ export async function signSponsoredQuote(
   return Array.from(sig.toBuffer()).map(b => new Fr(b));
 }
 
-// ── Extract FPC-only execution steps ────────────────────────────────────────
 // Profile trace has the shape: [A] [FPC] [B]
 //   A = tx overhead (account entrypoint, kernel init, etc.)
 //   FPC = fee payment entrypoint + all sub-calls it triggers
@@ -183,7 +174,6 @@ export function extractFpcSteps(executionSteps, fpcContractName) {
   return executionSteps.slice(fpcStart, noopIdx);
 }
 
-// ── Pretty-print FPC-only gate count table ──────────────────────────────────
 export function printFpcGateTable(title, executionSteps, fpcContractName) {
   const fpcSteps = extractFpcSteps(executionSteps, fpcContractName);
   console.log(`\n=== FPC Gate Count: ${title} ===\n`);

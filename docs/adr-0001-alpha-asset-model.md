@@ -19,7 +19,6 @@ This ambiguity causes conflicting acceptance criteria, operator guidance, and im
 For Alpha, the product model is:
 
 - One FPC deployment should handle multiple accepted assets.
-- One CreditFPC deployment should handle multiple accepted assets.
 - "USDC + ETH variants" is satisfied only when a single deployed contract instance can accept at least one USDC variant and at least one ETH variant without redeploying the contract for each asset.
 - Deploying separate single-asset stacks per token is an interim workaround and does not satisfy Alpha done criteria.
 

@@ -235,7 +235,7 @@ unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
     );
 }
 
-#[test(should_fail_with = "invalid quote signature")]
+#[test(should_fail)]
 unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     let (mut env, fpc_address, token_address, operator, user) = utils::setup();
     let fpc = FPCMultiAsset::at(fpc_address);

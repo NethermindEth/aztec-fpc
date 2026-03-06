@@ -54,6 +54,9 @@ pub unconstrained fn test_schnorr_sign(message: [u8; 32]) -> [u8; 64] {
     let r = multi_scalar_mul([G1], [EmbeddedCurveScalar::new(k as Field, 0)]);
 
     // e = blake2s(pedersen_hash(R.x, PK.x, PK.y) || message)
+    r.x.assert_max_bit_size::<253>();
+    pk.x.assert_max_bit_size::<253>();
+    pk.y.assert_max_bit_size::<253>();
     let ped = std::hash::pedersen_hash([r.x, pk.x, pk.y]);
     let ped_bytes: [u8; 32] = ped.to_be_bytes();
     let mut hash_input: [u8; 64] = [0; 64];

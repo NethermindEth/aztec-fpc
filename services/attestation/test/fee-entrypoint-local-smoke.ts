@@ -1,24 +1,19 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import pino from "pino";
 
-import { getInitialTestAccountsData } from "@aztec/accounts/testing";
+const pinoLogger = pino();
+
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
-import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
-import {
-  FeeJuiceContract,
-  ProtocolContractAddress,
-} from "@aztec/aztec.js/protocol";
+import { FeeJuiceContract, ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import {
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
+import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeSecretHash } from "@aztec/stdlib/hash";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
@@ -33,10 +28,10 @@ import {
   parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { deployContract } from "../../../scripts/common/deploy-utils.ts";
+import { resolveScriptAccounts } from "../../../scripts/common/script-credentials.ts";
 
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
-const DEFAULT_LOCAL_L1_PRIVATE_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as Hex;
 const FEE_JUICE_TOPUP_SAFETY_MULTIPLIER = 5n;
 const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
@@ -46,10 +41,7 @@ const FEE_JUICE_PORTAL_ABI = parseAbi([
   "function depositToAztecPublic(bytes32 to, uint256 amount, bytes32 secretHash) returns (bytes32, uint256)",
   "event DepositToAztecPublic(bytes32 indexed to, uint256 amount, bytes32 secretHash, bytes32 key, uint256 index)",
 ]);
-const FPC_ARTIFACT_FILE_CANDIDATES = [
-  "fpc-FPCMultiAsset.json",
-  "fpc-FPC.json",
-] as const;
+const FPC_ARTIFACT_FILE_CANDIDATES = ["fpc-FPCMultiAsset.json", "fpc-FPC.json"] as const;
 
 type SmokeConfig = {
   nodeUrl: string;
@@ -65,7 +57,6 @@ type SmokeConfig = {
   l2GasLimit: number;
   feePerDaGasOverride: bigint | null;
   feePerL2GasOverride: bigint | null;
-  relayAdvanceBlocks: number;
 };
 
 function readEnvBigInt(name: string, fallback: bigint): bigint {
@@ -101,15 +92,10 @@ async function expectFailure(
   try {
     await action();
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : JSON.stringify(error);
+    const message = error instanceof Error ? error.message : JSON.stringify(error);
     const normalized = message.toLowerCase();
-    if (
-      expectedSubstrings.some((needle) =>
-        normalized.includes(needle.toLowerCase()),
-      )
-    ) {
-      console.log(`[smoke] PASS: ${scenario}`);
+    if (expectedSubstrings.some((needle) => normalized.includes(needle.toLowerCase()))) {
+      pinoLogger.info(`[smoke] PASS: ${scenario}`);
       return;
     }
     throw new Error(`${scenario} failed with unexpected error: ${message}`);
@@ -161,11 +147,7 @@ function resolveFpcArtifactPath(repoRoot: string): string {
     }
   }
 
-  const fallback = path.join(
-    repoRoot,
-    "target",
-    FPC_ARTIFACT_FILE_CANDIDATES[0],
-  );
+  const fallback = path.join(repoRoot, "target", FPC_ARTIFACT_FILE_CANDIDATES[0]);
   throw new Error(
     `FPC artifact not found. Looked for ${FPC_ARTIFACT_FILE_CANDIDATES.map((entry) => path.join(repoRoot, "target", entry)).join(", ")}. Set FPC_FPC_ARTIFACT to override. Default fallback path: ${fallback}`,
   );
@@ -175,15 +157,9 @@ function getConfig(): SmokeConfig {
   const nodeUrl = process.env.AZTEC_NODE_URL ?? "http://localhost:8080";
   const nodeTimeoutMs = readEnvNumber("FPC_SMOKE_NODE_TIMEOUT_MS", 30_000);
   const l1RpcUrl = process.env.FPC_SMOKE_L1_RPC_URL ?? "http://localhost:8545";
-  const l1PrivateKey = (process.env.FPC_SMOKE_L1_PRIVATE_KEY ??
-    DEFAULT_LOCAL_L1_PRIVATE_KEY) as Hex;
-  const feeJuiceTopupWei = readOptionalEnvBigInt(
-    "FPC_SMOKE_FEE_JUICE_TOPUP_WEI",
-  );
-  const feeJuiceWaitTimeoutMs = readEnvNumber(
-    "FPC_SMOKE_FEE_JUICE_WAIT_TIMEOUT_MS",
-    120_000,
-  );
+  const l1PrivateKey = "" as Hex; // Set by resolveScriptAccounts
+  const feeJuiceTopupWei = readOptionalEnvBigInt("FPC_SMOKE_FEE_JUICE_TOPUP_WEI");
+  const feeJuiceWaitTimeoutMs = readEnvNumber("FPC_SMOKE_FEE_JUICE_WAIT_TIMEOUT_MS", 120_000);
   // Match default attestation config effective rate:
   // market_rate_num=1, market_rate_den=1000, fee_bips=200
   // => rate_num=10200, rate_den=10000000
@@ -194,15 +170,11 @@ function getConfig(): SmokeConfig {
   const l2GasLimit = readEnvNumber("FPC_SMOKE_L2_GAS_LIMIT", 1_000_000);
   const feePerDaGasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_DA_GAS");
   const feePerL2GasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_L2_GAS");
-  const relayAdvanceBlocks = readEnvNumber("FPC_SMOKE_RELAY_ADVANCE_BLOCKS", 2);
-
   if (rateDen === 0n) {
     throw new Error("FPC_SMOKE_RATE_DEN must be non-zero");
   }
   if (rateNum <= 0n) {
-    throw new Error(
-      "FPC_SMOKE_RATE_NUM must be > 0 for meaningful fee smoke coverage",
-    );
+    throw new Error("FPC_SMOKE_RATE_NUM must be > 0 for meaningful fee smoke coverage");
   }
 
   return {
@@ -219,7 +191,6 @@ function getConfig(): SmokeConfig {
     l2GasLimit,
     feePerDaGasOverride,
     feePerL2GasOverride,
-    relayAdvanceBlocks,
   };
 }
 
@@ -227,100 +198,119 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function advanceL2Blocks(
-  token: Contract,
-  operator: AztecAddress,
-  user: AztecAddress,
-  blocks: number,
-): Promise<void> {
-  for (let i = 0; i < blocks; i += 1) {
-    await token.methods.mint_to_private(user, 1n).send({
-      from: operator,
-      wait: { timeout: 180 },
-    });
-    console.log(`[smoke] mock_relay_tx_confirmed=${i + 1}/${blocks}`);
-  }
+type PublicClient = ReturnType<typeof createPublicClient>;
+type WalletClient = ReturnType<typeof createWalletClient>;
+type L1Receipt = Awaited<ReturnType<PublicClient["waitForTransactionReceipt"]>>;
+
+interface FeeJuiceBridgeContracts {
+  feeJuiceTokenAddress: Hex;
+  portalAddress: Hex;
+  recipientBytes32: Hex;
 }
 
-async function topUpFpcFeeJuice(
-  config: SmokeConfig,
+interface L1Clients {
+  accountAddress: Hex;
+  walletClient: WalletClient;
+  publicClient: PublicClient;
+}
+
+interface FeeJuiceBridgeMessage {
+  bridgeAmount: bigint;
+  claimSecret: Fr;
+  messageLeafIndex: bigint;
+  l1ToL2MessageHash: Fr;
+}
+
+async function resolveFeeJuiceBridgeContracts(
   node: ReturnType<typeof createAztecNodeClient>,
-  wallet: EmbeddedWallet,
-  operator: AztecAddress,
-  token: Contract,
-  user: AztecAddress,
   fpcAddress: string,
-  topupWei: bigint,
-): Promise<bigint> {
+): Promise<FeeJuiceBridgeContracts> {
   const nodeInfo = await node.getNodeInfo();
   const l1Addresses = nodeInfo.l1ContractAddresses as Record<string, unknown>;
   const tokenAddressValue = l1Addresses.feeJuiceAddress ?? l1Addresses.feeJuice;
-  const portalAddressValue =
-    l1Addresses.feeJuicePortalAddress ?? l1Addresses.feeJuicePortal;
+  const portalAddressValue = l1Addresses.feeJuicePortalAddress ?? l1Addresses.feeJuicePortal;
   if (!tokenAddressValue || !portalAddressValue) {
     throw new Error("Node info is missing FeeJuice L1 contract addresses");
   }
-  const feeJuiceTokenAddress = normalizeHexAddress(
-    tokenAddressValue,
-    "feeJuiceAddress",
-  );
-  const portalAddress = normalizeHexAddress(
-    portalAddressValue,
-    "feeJuicePortalAddress",
-  );
-  const recipientBytes32 =
-    `0x${fpcAddress.replace("0x", "").padStart(64, "0")}` as Hex;
 
+  return {
+    feeJuiceTokenAddress: normalizeHexAddress(tokenAddressValue, "feeJuiceAddress"),
+    portalAddress: normalizeHexAddress(portalAddressValue, "feeJuicePortalAddress"),
+    recipientBytes32: `0x${fpcAddress.replace("0x", "").padStart(64, "0")}` as Hex,
+  };
+}
+
+function createL1Clients(config: SmokeConfig): L1Clients {
   const account = privateKeyToAccount(config.l1PrivateKey);
-  const walletClient = createWalletClient({
-    account,
-    transport: http(config.l1RpcUrl),
-  });
-  const publicClient = createPublicClient({
-    transport: http(config.l1RpcUrl),
-  });
+  return {
+    accountAddress: account.address,
+    walletClient: createWalletClient({
+      account,
+      transport: http(config.l1RpcUrl),
+    }),
+    publicClient: createPublicClient({
+      transport: http(config.l1RpcUrl),
+    }),
+  };
+}
+
+async function resolveBridgeAmount(
+  publicClient: PublicClient,
+  feeJuiceTokenAddress: Hex,
+  accountAddress: Hex,
+  requestedTopupWei: bigint,
+): Promise<bigint> {
   const l1FeeJuiceBalance = (await publicClient.readContract({
     address: feeJuiceTokenAddress,
     abi: ERC20_ABI,
     functionName: "balanceOf",
-    args: [account.address],
+    args: [accountAddress],
   })) as bigint;
   if (l1FeeJuiceBalance === 0n) {
-    throw new Error(
-      `L1 FeeJuice balance is zero for ${account.address}; cannot fund FPC fee payer`,
-    );
-  }
-  const bridgeAmount =
-    topupWei > l1FeeJuiceBalance ? l1FeeJuiceBalance : topupWei;
-  if (bridgeAmount < topupWei) {
-    console.warn(
-      `[smoke] WARN: requested FeeJuice topup ${topupWei} exceeds L1 balance ${l1FeeJuiceBalance}. Clamping bridge amount to ${bridgeAmount}.`,
-    );
+    throw new Error(`L1 FeeJuice balance is zero for ${accountAddress}; cannot fund FPC fee payer`);
   }
 
+  const bridgeAmount =
+    requestedTopupWei > l1FeeJuiceBalance ? l1FeeJuiceBalance : requestedTopupWei;
+  if (bridgeAmount < requestedTopupWei) {
+    pinoLogger.warn(
+      `[smoke] WARN: requested FeeJuice topup ${requestedTopupWei} exceeds L1 balance ${l1FeeJuiceBalance}. Clamping bridge amount to ${bridgeAmount}.`,
+    );
+  }
+  return bridgeAmount;
+}
+
+async function approveAndBridgeFeeJuice(
+  walletClient: WalletClient,
+  publicClient: PublicClient,
+  contracts: FeeJuiceBridgeContracts,
+  bridgeAmount: bigint,
+): Promise<{ receipt: L1Receipt; claimSecret: Fr }> {
   const claimSecret = Fr.random();
   const claimSecretHash = await computeSecretHash(claimSecret);
 
   const approveHash = await walletClient.writeContract({
-    address: feeJuiceTokenAddress,
+    address: contracts.feeJuiceTokenAddress,
     abi: ERC20_ABI,
     functionName: "approve",
-    args: [portalAddress, bridgeAmount],
+    args: [contracts.portalAddress, bridgeAmount],
   });
   await publicClient.waitForTransactionReceipt({ hash: approveHash });
-  console.log(`[smoke] l1_fee_juice_approve_tx=${approveHash}`);
+  pinoLogger.info(`[smoke] l1_fee_juice_approve_tx=${approveHash}`);
 
-  const hash = await walletClient.writeContract({
-    address: portalAddress,
+  const depositHash = await walletClient.writeContract({
+    address: contracts.portalAddress,
     abi: FEE_JUICE_PORTAL_ABI,
     functionName: "depositToAztecPublic",
-    args: [recipientBytes32, bridgeAmount, claimSecretHash.toString() as Hex],
+    args: [contracts.recipientBytes32, bridgeAmount, claimSecretHash.toString() as Hex],
   });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  console.log(`[smoke] l1_fee_juice_bridge_tx=${hash}`);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: depositHash });
+  pinoLogger.info(`[smoke] l1_fee_juice_bridge_tx=${depositHash}`);
 
-  let messageLeafIndex: bigint | undefined;
-  let l1ToL2MessageHash: Fr | undefined;
+  return { receipt, claimSecret };
+}
+
+function decodeFeeJuiceBridgeMessage(receipt: L1Receipt, portalAddress: Hex) {
   for (const log of receipt.logs) {
     if (log.address.toLowerCase() !== portalAddress.toLowerCase()) {
       continue;
@@ -334,24 +324,27 @@ async function topUpFpcFeeJuice(
       if (decoded.eventName !== "DepositToAztecPublic") {
         continue;
       }
-      messageLeafIndex = decoded.args.index as bigint;
-      l1ToL2MessageHash = Fr.fromHexString(decoded.args.key as string);
-      break;
+      return {
+        messageLeafIndex: decoded.args.index as bigint,
+        l1ToL2MessageHash: Fr.fromHexString(decoded.args.key as string),
+      };
     } catch {
       // Ignore non-matching logs from the same contract.
     }
   }
-  if (messageLeafIndex === undefined || !l1ToL2MessageHash) {
-    throw new Error(
-      "Could not decode DepositToAztecPublic event for Fee Juice bridge",
-    );
-  }
 
-  // Local network requires additional L2 blocks before an L1->L2 message can
-  // be consumed. Force block production with lightweight mock txs.
-  await advanceL2Blocks(token, operator, user, config.relayAdvanceBlocks);
+  throw new Error("Could not decode DepositToAztecPublic event for Fee Juice bridge");
+}
 
-  await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
+async function claimFeeJuiceOnL2(
+  config: SmokeConfig,
+  node: ReturnType<typeof createAztecNodeClient>,
+  wallet: EmbeddedWallet,
+  operator: AztecAddress,
+  fpcAddress: string,
+  bridgeMessage: FeeJuiceBridgeMessage,
+): Promise<void> {
+  await waitForL1ToL2MessageReady(node, bridgeMessage.l1ToL2MessageHash, {
     timeoutSeconds: Math.floor(config.feeJuiceWaitTimeoutMs / 1000),
     forPublicConsumption: false,
   });
@@ -360,18 +353,21 @@ async function topUpFpcFeeJuice(
   await feeJuice.methods
     .claim(
       AztecAddress.fromString(fpcAddress),
-      bridgeAmount,
-      claimSecret,
-      new Fr(messageLeafIndex),
+      bridgeMessage.bridgeAmount,
+      bridgeMessage.claimSecret,
+      new Fr(bridgeMessage.messageLeafIndex),
     )
     .send({ from: operator });
+}
 
-  const deadline = Date.now() + config.feeJuiceWaitTimeoutMs;
+async function waitForFeeJuiceCredit(
+  node: ReturnType<typeof createAztecNodeClient>,
+  fpcAddress: string,
+  timeoutMs: number,
+): Promise<bigint> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const balance = await getFeeJuiceBalance(
-      AztecAddress.fromString(fpcAddress),
-      node,
-    );
+    const balance = await getFeeJuiceBalance(AztecAddress.fromString(fpcAddress), node);
     if (balance > 0n) {
       return balance;
     }
@@ -380,130 +376,191 @@ async function topUpFpcFeeJuice(
   throw new Error(`Timed out waiting for Fee Juice credit on ${fpcAddress}`);
 }
 
-async function main() {
-  const config = getConfig();
-  const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
-  const tokenArtifactPath = path.join(
-    repoRoot,
-    "target",
-    "token_contract-Token.json",
+async function topUpFpcFeeJuice(
+  config: SmokeConfig,
+  node: ReturnType<typeof createAztecNodeClient>,
+  wallet: EmbeddedWallet,
+  operator: AztecAddress,
+  fpcAddress: string,
+  topupWei: bigint,
+): Promise<bigint> {
+  const contracts = await resolveFeeJuiceBridgeContracts(node, fpcAddress);
+  const { accountAddress, walletClient, publicClient } = createL1Clients(config);
+  const bridgeAmount = await resolveBridgeAmount(
+    publicClient,
+    contracts.feeJuiceTokenAddress,
+    accountAddress,
+    topupWei,
   );
-  const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
+  const { receipt, claimSecret } = await approveAndBridgeFeeJuice(
+    walletClient,
+    publicClient,
+    contracts,
+    bridgeAmount,
+  );
+  const decodedMessage = decodeFeeJuiceBridgeMessage(receipt, contracts.portalAddress);
+  await claimFeeJuiceOnL2(config, node, wallet, operator, fpcAddress, {
+    bridgeAmount,
+    claimSecret,
+    messageLeafIndex: decodedMessage.messageLeafIndex,
+    l1ToL2MessageHash: decodedMessage.l1ToL2MessageHash,
+  });
+  return waitForFeeJuiceCredit(node, fpcAddress, config.feeJuiceWaitTimeoutMs);
+}
 
-  const tokenArtifact = loadArtifact(tokenArtifactPath);
-  const fpcArtifact = loadArtifact(fpcArtifactPath);
-
-  const node = createAztecNodeClient(config.nodeUrl);
+async function waitForNodeReady(
+  node: ReturnType<typeof createAztecNodeClient>,
+  nodeUrl: string,
+  timeoutMs: number,
+): Promise<void> {
   await Promise.race([
     waitForNode(node),
     new Promise((_, reject) =>
       setTimeout(
-        () =>
-          reject(
-            new Error(`Timed out waiting for Aztec node at ${config.nodeUrl}`),
-          ),
-        config.nodeTimeoutMs,
+        () => reject(new Error(`Timed out waiting for Aztec node at ${nodeUrl}`)),
+        timeoutMs,
       ),
     ),
   ]);
-  const wallet = await EmbeddedWallet.create(node);
-  const minFees = await node.getCurrentMinFees();
-  const feePerDaGas = config.feePerDaGasOverride ?? minFees.feePerDaGas;
-  const feePerL2Gas = config.feePerL2GasOverride ?? minFees.feePerL2Gas;
-  const maxGasCostNoTeardown =
-    BigInt(config.daGasLimit) * feePerDaGas +
-    BigInt(config.l2GasLimit) * feePerL2Gas;
-  const minimumTopupWei =
-    maxGasCostNoTeardown * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER + 1_000_000n;
+}
+
+function resolveFeeJuiceTopupWei(config: SmokeConfig, maxGasCostNoTeardown: bigint): bigint {
+  const minimumTopupWei = maxGasCostNoTeardown * FEE_JUICE_TOPUP_SAFETY_MULTIPLIER + 1_000_000n;
   const feeJuiceTopupWei = config.feeJuiceTopupWei ?? minimumTopupWei;
-  if (
-    config.feeJuiceTopupWei !== null &&
-    config.feeJuiceTopupWei < minimumTopupWei
-  ) {
+  if (config.feeJuiceTopupWei !== null && config.feeJuiceTopupWei < minimumTopupWei) {
     throw new Error(
       `FPC_SMOKE_FEE_JUICE_TOPUP_WEI=${config.feeJuiceTopupWei} is below required minimum ${minimumTopupWei} for current gas settings`,
     );
   }
+  return feeJuiceTopupWei;
+}
 
-  const testAccounts = await getInitialTestAccountsData();
-  const [operator, user] = await Promise.all(
-    testAccounts.slice(0, 2).map(async (account) => {
-      return (
-        await wallet.createSchnorrAccount(
-          account.secret,
-          account.salt,
-          account.signingKey,
-        )
-      ).address;
-    }),
-  );
-
-  console.log(`[smoke] operator=${operator.toString()}`);
-  console.log(`[smoke] user=${user.toString()}`);
-
-  // Derive operator signing key and public key for inline Schnorr verification.
-  const schnorr = new Schnorr();
-  const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
-  const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
-
-  const token = await Contract.deploy(
-    wallet,
-    tokenArtifact,
-    ["SmokeToken", "SMK", 18, operator, operator],
-    "constructor_with_minter",
-  ).send({ from: operator });
-  console.log(`[smoke] token=${token.address.toString()}`);
-
-  const fpc = await Contract.deploy(wallet, fpcArtifact, [
-    operator,
-    operatorPubKey.x,
-    operatorPubKey.y,
-  ]).send({ from: operator });
-  console.log(`[smoke] fpc=${fpc.address.toString()}`);
-
-  console.log(`[smoke] fee_per_da_gas=${feePerDaGas}`);
-  console.log(`[smoke] fee_per_l2_gas=${feePerL2Gas}`);
-  console.log(`[smoke] fee_juice_topup_wei=${feeJuiceTopupWei}`);
-
+async function maybeTopUpFpcFeeJuiceBalance(
+  config: SmokeConfig,
+  node: ReturnType<typeof createAztecNodeClient>,
+  wallet: EmbeddedWallet,
+  operator: AztecAddress,
+  fpcAddress: string,
+  feeJuiceTopupWei: bigint,
+): Promise<void> {
   if (feeJuiceTopupWei > 0n) {
     const feeJuiceBalance = await topUpFpcFeeJuice(
       config,
       node,
       wallet,
       operator,
-      token,
-      user,
-      fpc.address.toString(),
+      fpcAddress,
       feeJuiceTopupWei,
     );
-    console.log(`[smoke] fpc_fee_juice_balance=${feeJuiceBalance}`);
-  } else {
-    console.log(
-      "[smoke] skipping fee-juice top-up (FPC_SMOKE_FEE_JUICE_TOPUP_WEI=0)",
-    );
+    pinoLogger.info(`[smoke] fpc_fee_juice_balance=${feeJuiceBalance}`);
+    return;
   }
 
-  const expectedCharge = ceilDiv(
-    maxGasCostNoTeardown * config.rateNum,
-    config.rateDen,
+  pinoLogger.info("[smoke] skipping fee-juice top-up (FPC_SMOKE_FEE_JUICE_TOPUP_WEI=0)");
+}
+
+async function getLatestBlockTimestampOrThrow(
+  node: ReturnType<typeof createAztecNodeClient>,
+  errorMessage: string,
+): Promise<bigint> {
+  const latestBlock = await node.getBlock("latest");
+  if (!latestBlock) {
+    throw new Error(errorMessage);
+  }
+  return latestBlock.timestamp;
+}
+
+function assertExpectedAmount(label: string, expected: bigint, actual: bigint): void {
+  if (actual !== expected) {
+    throw new Error(`${label} mismatch. expected=${expected} got=${actual}`);
+  }
+}
+
+async function main() {
+  const config = getConfig();
+  const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
+  const tokenArtifactPath = path.join(repoRoot, "target", "token_contract-Token.json");
+  const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
+
+  const tokenArtifact = loadArtifact(tokenArtifactPath);
+  const fpcArtifact = loadArtifact(fpcArtifactPath);
+
+  const node = createAztecNodeClient(config.nodeUrl);
+  await waitForNodeReady(node, config.nodeUrl, config.nodeTimeoutMs);
+  const wallet = await EmbeddedWallet.create(node);
+  const minFees = await node.getCurrentMinFees();
+  const feePerDaGas = config.feePerDaGasOverride ?? minFees.feePerDaGas;
+  const feePerL2Gas = config.feePerL2GasOverride ?? minFees.feePerL2Gas;
+  const maxGasCostNoTeardown =
+    BigInt(config.daGasLimit) * feePerDaGas + BigInt(config.l2GasLimit) * feePerL2Gas;
+  const feeJuiceTopupWei = resolveFeeJuiceTopupWei(config, maxGasCostNoTeardown);
+
+  const { accounts: testAccounts, l1PrivateKey } = await resolveScriptAccounts(
+    config.nodeUrl,
+    config.l1RpcUrl,
+    wallet,
   );
+  config.l1PrivateKey = l1PrivateKey as Hex;
+
+  const [operator, user] = await Promise.all(
+    testAccounts.slice(0, 2).map(async (account) => {
+      return (await wallet.createSchnorrAccount(account.secret, account.salt, account.signingKey))
+        .address;
+    }),
+  );
+
+  pinoLogger.info(`[smoke] operator=${operator.toString()}`);
+  pinoLogger.info(`[smoke] user=${user.toString()}`);
+
+  // Derive operator signing key and public key for inline Schnorr verification.
+  const schnorr = new Schnorr();
+  const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
+  const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
+
+  const token = await deployContract(
+    wallet,
+    tokenArtifact,
+    ["SmokeToken", "SMK", 18, operator, operator],
+    { from: operator },
+    "constructor_with_minter",
+  );
+  pinoLogger.info(`[smoke] token=${token.address.toString()}`);
+
+  const fpc = await deployContract(
+    wallet,
+    fpcArtifact,
+    [operator, operatorPubKey.x, operatorPubKey.y],
+    { from: operator },
+  );
+  pinoLogger.info(`[smoke] fpc=${fpc.address.toString()}`);
+
+  pinoLogger.info(`[smoke] fee_per_da_gas=${feePerDaGas}`);
+  pinoLogger.info(`[smoke] fee_per_l2_gas=${feePerL2Gas}`);
+  pinoLogger.info(`[smoke] fee_juice_topup_wei=${feeJuiceTopupWei}`);
+
+  await maybeTopUpFpcFeeJuiceBalance(
+    config,
+    node,
+    wallet,
+    operator,
+    fpc.address.toString(),
+    feeJuiceTopupWei,
+  );
+
+  const expectedCharge = ceilDiv(maxGasCostNoTeardown * config.rateNum, config.rateDen);
   const fjFeeAmount = maxGasCostNoTeardown;
   const aaPaymentAmount = expectedCharge;
   const mintAmount = expectedCharge + 1_000_000n;
-  console.log(`[smoke] expected_charge=${expectedCharge}`);
+  pinoLogger.info(`[smoke] expected_charge=${expectedCharge}`);
 
-  await token.methods
-    .mint_to_private(user, mintAmount)
-    .send({ from: operator });
+  await token.methods.mint_to_private(user, mintAmount).send({ from: operator });
   await token.methods.mint_to_public(user, 2n).send({ from: operator });
 
-  const latestBlock = await node.getBlock("latest");
-  if (!latestBlock) {
-    throw new Error(
+  const validUntil =
+    (await getLatestBlockTimestampOrThrow(
+      node,
       "Could not read latest L2 block while building quote validity window",
-    );
-  }
-  const validUntil = latestBlock.timestamp + config.quoteTtlSeconds;
+    )) + config.quoteTtlSeconds;
   const quoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
@@ -513,10 +570,7 @@ async function main() {
     new Fr(validUntil),
     user.toField(),
   ]);
-  const quoteSig = await schnorr.constructSignature(
-    quoteHash.toBuffer(),
-    operatorSigningKey,
-  );
+  const quoteSig = await schnorr.constructSignature(quoteHash.toBuffer(), operatorSigningKey);
   const quoteSigBytes = Array.from(quoteSig.toBuffer());
 
   const transferAuthwitNonce = Fr.random();
@@ -532,16 +586,10 @@ async function main() {
   });
 
   const userBefore = BigInt(
-    (
-      await token.methods.balance_of_private(user).simulate({ from: user })
-    ).toString(),
+    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
   );
   const operatorBefore = BigInt(
-    (
-      await token.methods
-        .balance_of_private(operator)
-        .simulate({ from: operator })
-    ).toString(),
+    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
   );
 
   const feeEntrypointCall = await fpc.methods
@@ -557,79 +605,52 @@ async function main() {
   const fpcPaymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload(
-        [feeEntrypointCall],
-        [transferAuthwit],
-        [],
-        [],
-        fpc.address,
-      ),
+      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], fpc.address),
     getFeePayer: async () => fpc.address,
     getGasSettings: () => undefined,
   };
 
   // Execute a normal user action while paying fees through FPC.
-  const receipt = await token.methods
-    .transfer_public_to_public(user, user, 1n, Fr.random())
-    .send({
-      from: user,
-      fee: {
-        paymentMethod: fpcPaymentMethod,
-        gasSettings: {
-          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
-          maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-        },
+  const receipt = await token.methods.transfer_public_to_public(user, user, 1n, Fr.random()).send({
+    from: user,
+    fee: {
+      paymentMethod: fpcPaymentMethod,
+      gasSettings: {
+        gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
+        teardownGasLimits: { daGas: 0, l2Gas: 0 },
+        maxFeesPerGas: { feePerDaGas, feePerL2Gas },
       },
-      wait: { timeout: 180 },
-    });
+    },
+    wait: { timeout: 180 },
+  });
 
   const userAfter = BigInt(
-    (
-      await token.methods.balance_of_private(user).simulate({ from: user })
-    ).toString(),
+    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
   );
   const operatorAfter = BigInt(
-    (
-      await token.methods
-        .balance_of_private(operator)
-        .simulate({ from: operator })
-    ).toString(),
+    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
   );
 
   const userDebited = userBefore - userAfter;
   const operatorCredited = operatorAfter - operatorBefore;
 
-  console.log(`[smoke] expected_charge=${expectedCharge}`);
-  console.log(`[smoke] user_debited=${userDebited}`);
-  console.log(`[smoke] operator_credited=${operatorCredited}`);
-  console.log(`[smoke] operator_balance_after=${operatorAfter}`);
-  console.log(`[smoke] tx_fee_juice=${receipt.transactionFee}`);
+  pinoLogger.info(`[smoke] expected_charge=${expectedCharge}`);
+  pinoLogger.info(`[smoke] user_debited=${userDebited}`);
+  pinoLogger.info(`[smoke] operator_credited=${operatorCredited}`);
+  pinoLogger.info(`[smoke] operator_balance_after=${operatorAfter}`);
+  pinoLogger.info(`[smoke] tx_fee_juice=${receipt.transactionFee}`);
 
-  if (userDebited !== expectedCharge) {
-    throw new Error(
-      `User debit mismatch. expected=${expectedCharge} got=${userDebited}`,
-    );
-  }
-  if (operatorCredited !== expectedCharge) {
-    throw new Error(
-      `Operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
-    );
-  }
+  assertExpectedAmount("User debit", expectedCharge, userDebited);
+  assertExpectedAmount("Operator credit", expectedCharge, operatorCredited);
 
-  const latestBlockForNegative = await node.getBlock("latest");
-  if (!latestBlockForNegative) {
-    throw new Error(
-      "Could not read latest L2 block while building direct-call negative quote",
-    );
-  }
   // Ensure negative-path tx can reach fee validation checks instead of failing
   // early due to insufficient private token balance.
-  await token.methods
-    .mint_to_private(user, expectedCharge + 1_000_000n)
-    .send({ from: operator });
+  await token.methods.mint_to_private(user, expectedCharge + 1_000_000n).send({ from: operator });
   const negativeValidUntil =
-    latestBlockForNegative.timestamp + config.quoteTtlSeconds;
+    (await getLatestBlockTimestampOrThrow(
+      node,
+      "Could not read latest L2 block while building direct-call negative quote",
+    )) + config.quoteTtlSeconds;
   const negativeQuoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
@@ -699,12 +720,12 @@ async function main() {
         }),
   );
 
-  console.log("[smoke] PASS: fee_entrypoint end-to-end flow succeeded");
+  pinoLogger.info("[smoke] PASS: fee_entrypoint end-to-end flow succeeded");
 }
 
 try {
   await main();
 } catch (error) {
-  console.error(`[smoke] FAIL: ${(error as Error).message}`);
+  pinoLogger.error(`[smoke] FAIL: ${(error as Error).message}`);
   process.exit(1);
 }

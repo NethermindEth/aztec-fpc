@@ -1,6 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
+
+const pinoLogger = pino();
 
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ETH_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -12,11 +15,7 @@ const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-export type FpcArtifactName =
-  | "FPC"
-  | "FPCMultiAsset"
-  | "CreditFPC"
-  | "BackedCreditFPC";
+export type FpcArtifactName = "FPC" | "FPCMultiAsset";
 
 export type DevnetDeployManifest = {
   status: "deploy_ok";
@@ -61,6 +60,8 @@ export type DevnetDeployManifest = {
   contracts: {
     accepted_asset: string;
     fpc: string;
+    faucet?: string;
+    counter?: string;
   };
   fpc_artifact?: {
     name: FpcArtifactName;
@@ -78,6 +79,13 @@ export type DevnetDeployManifest = {
   tx_hashes: {
     accepted_asset_deploy: string | null;
     fpc_deploy: string | null;
+    faucet_deploy?: string | null;
+    counter_deploy?: string | null;
+  };
+  faucet_config?: {
+    drip_amount: string;
+    cooldown_seconds: number;
+    initial_supply: string;
   };
   payment_mode?: string;
 };
@@ -105,11 +113,7 @@ function requireObject(
   return value;
 }
 
-function requireString(
-  root: Record<string, unknown>,
-  key: string,
-  context: string,
-): string {
+function requireString(root: Record<string, unknown>, key: string, context: string): string {
   const value = root[key];
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new ManifestValidationError(`Missing or invalid ${context}.${key}`);
@@ -149,64 +153,40 @@ function requirePositiveSafeInteger(
   return value;
 }
 
-function requireIsoTimestamp(
-  root: Record<string, unknown>,
-  key: string,
-  context: string,
-): string {
+function requireIsoTimestamp(root: Record<string, unknown>, key: string, context: string): string {
   const value = requireString(root, key, context);
   if (Number.isNaN(Date.parse(value))) {
-    throw new ManifestValidationError(
-      `Invalid ${context}.${key}: not an ISO timestamp`,
-    );
+    throw new ManifestValidationError(`Invalid ${context}.${key}: not an ISO timestamp`);
   }
   return value;
 }
 
-function requireHttpUrl(
-  root: Record<string, unknown>,
-  key: string,
-  context: string,
-): string {
+function requireHttpUrl(root: Record<string, unknown>, key: string, context: string): string {
   const value = requireString(root, key, context);
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new ManifestValidationError(
-        `Invalid ${context}.${key}: expected http(s) URL`,
-      );
+      throw new ManifestValidationError(`Invalid ${context}.${key}: expected http(s) URL`);
     }
     return parsed.toString();
   } catch (error) {
     if (error instanceof ManifestValidationError) {
       throw error;
     }
-    throw new ManifestValidationError(
-      `Invalid ${context}.${key}: expected URL`,
-    );
+    throw new ManifestValidationError(`Invalid ${context}.${key}: expected URL`);
   }
 }
 
 function parseAztecAddress(value: string, fieldPath: string): string {
-  if (
-    !AZTEC_ADDRESS_PATTERN.test(value) ||
-    ZERO_AZTEC_ADDRESS_PATTERN.test(value)
-  ) {
-    throw new ManifestValidationError(
-      `Invalid ${fieldPath}: expected non-zero Aztec address`,
-    );
+  if (!AZTEC_ADDRESS_PATTERN.test(value) || ZERO_AZTEC_ADDRESS_PATTERN.test(value)) {
+    throw new ManifestValidationError(`Invalid ${fieldPath}: expected non-zero Aztec address`);
   }
   return value;
 }
 
 function parseEthAddress(value: string, fieldPath: string): string {
-  if (
-    !ETH_ADDRESS_PATTERN.test(value) ||
-    ZERO_ETH_ADDRESS_PATTERN.test(value)
-  ) {
-    throw new ManifestValidationError(
-      `Invalid ${fieldPath}: expected non-zero EVM address`,
-    );
+  if (!ETH_ADDRESS_PATTERN.test(value) || ZERO_ETH_ADDRESS_PATTERN.test(value)) {
+    throw new ManifestValidationError(`Invalid ${fieldPath}: expected non-zero EVM address`);
   }
   return value;
 }
@@ -229,9 +209,7 @@ function parseTxHashOrNull(value: unknown, fieldPath: string): string | null {
     !TX_HASH_PATTERN.test(value) ||
     ZERO_TX_HASH_PATTERN.test(value)
   ) {
-    throw new ManifestValidationError(
-      `Invalid ${fieldPath}: expected tx hash or null`,
-    );
+    throw new ManifestValidationError(`Invalid ${fieldPath}: expected tx hash or null`);
   }
   return value;
 }
@@ -269,32 +247,18 @@ function parseManifest(input: unknown): DevnetDeployManifest {
 
   const status = requireString(input, "status", "manifest");
   if (status !== "deploy_ok") {
-    throw new ManifestValidationError(
-      'Invalid manifest.status: expected "deploy_ok"',
-    );
+    throw new ManifestValidationError('Invalid manifest.status: expected "deploy_ok"');
   }
 
   const networkRaw = requireObject(input, "network", "manifest");
   const network = {
     node_url: requireHttpUrl(networkRaw, "node_url", "manifest.network"),
     node_version: requireString(networkRaw, "node_version", "manifest.network"),
-    l1_chain_id: requirePositiveSafeInteger(
-      networkRaw,
-      "l1_chain_id",
-      "manifest.network",
-    ),
-    rollup_version: requirePositiveSafeInteger(
-      networkRaw,
-      "rollup_version",
-      "manifest.network",
-    ),
+    l1_chain_id: requirePositiveSafeInteger(networkRaw, "l1_chain_id", "manifest.network"),
+    rollup_version: requirePositiveSafeInteger(networkRaw, "rollup_version", "manifest.network"),
   };
 
-  const aztecAddressesRaw = requireObject(
-    input,
-    "aztec_required_addresses",
-    "manifest",
-  );
+  const aztecAddressesRaw = requireObject(input, "aztec_required_addresses", "manifest");
   const l1ContractsRaw = requireObject(
     aztecAddressesRaw,
     "l1_contract_addresses",
@@ -406,11 +370,7 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     ),
   };
 
-  const deploymentAccountsRaw = requireObject(
-    input,
-    "deployment_accounts",
-    "manifest",
-  );
+  const deploymentAccountsRaw = requireObject(input, "deployment_accounts", "manifest");
   const l2DeployerRaw = requireObject(
     deploymentAccountsRaw,
     "l2_deployer",
@@ -420,28 +380,17 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     l2DeployerRaw,
     "manifest.deployment_accounts.l2_deployer",
   );
-  const l2Deployer: DevnetDeployManifest["deployment_accounts"]["l2_deployer"] =
-    {
-      alias: requireString(
-        l2DeployerRaw,
-        "alias",
-        "manifest.deployment_accounts.l2_deployer",
-      ),
-      address: parseAztecAddress(
-        requireString(
-          l2DeployerRaw,
-          "address",
-          "manifest.deployment_accounts.l2_deployer",
-        ),
-        "manifest.deployment_accounts.l2_deployer.address",
-      ),
-      ...(l2DeployerKeyMaterial.privateKey
-        ? { private_key: l2DeployerKeyMaterial.privateKey }
-        : {}),
-      ...(l2DeployerKeyMaterial.privateKeyRef
-        ? { private_key_ref: l2DeployerKeyMaterial.privateKeyRef }
-        : {}),
-    };
+  const l2Deployer: DevnetDeployManifest["deployment_accounts"]["l2_deployer"] = {
+    alias: requireString(l2DeployerRaw, "alias", "manifest.deployment_accounts.l2_deployer"),
+    address: parseAztecAddress(
+      requireString(l2DeployerRaw, "address", "manifest.deployment_accounts.l2_deployer"),
+      "manifest.deployment_accounts.l2_deployer.address",
+    ),
+    ...(l2DeployerKeyMaterial.privateKey ? { private_key: l2DeployerKeyMaterial.privateKey } : {}),
+    ...(l2DeployerKeyMaterial.privateKeyRef
+      ? { private_key_ref: l2DeployerKeyMaterial.privateKeyRef }
+      : {}),
+  };
 
   let l1TopupOperator: DevnetDeployManifest["deployment_accounts"]["l1_topup_operator"];
   if (hasOwn(deploymentAccountsRaw, "l1_topup_operator")) {
@@ -456,23 +405,21 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     );
     l1TopupOperator = {
       address: parseEthAddress(
-        requireString(
-          l1TopupRaw,
-          "address",
-          "manifest.deployment_accounts.l1_topup_operator",
-        ),
+        requireString(l1TopupRaw, "address", "manifest.deployment_accounts.l1_topup_operator"),
         "manifest.deployment_accounts.l1_topup_operator.address",
       ),
-      ...(l1KeyMaterial.privateKey
-        ? { private_key: l1KeyMaterial.privateKey }
-        : {}),
-      ...(l1KeyMaterial.privateKeyRef
-        ? { private_key_ref: l1KeyMaterial.privateKeyRef }
-        : {}),
+      ...(l1KeyMaterial.privateKey ? { private_key: l1KeyMaterial.privateKey } : {}),
+      ...(l1KeyMaterial.privateKeyRef ? { private_key_ref: l1KeyMaterial.privateKeyRef } : {}),
     };
   }
 
   const contractsRaw = requireObject(input, "contracts", "manifest");
+  const faucetAddressRaw = hasOwn(contractsRaw, "faucet")
+    ? requireString(contractsRaw, "faucet", "manifest.contracts")
+    : undefined;
+  const counterAddressRaw = hasOwn(contractsRaw, "counter")
+    ? requireString(contractsRaw, "counter", "manifest.contracts")
+    : undefined;
   const contracts = {
     accepted_asset: parseAztecAddress(
       requireString(contractsRaw, "accepted_asset", "manifest.contracts"),
@@ -482,31 +429,28 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       requireString(contractsRaw, "fpc", "manifest.contracts"),
       "manifest.contracts.fpc",
     ),
+    ...(faucetAddressRaw !== undefined
+      ? {
+          faucet: parseAztecAddress(faucetAddressRaw, "manifest.contracts.faucet"),
+        }
+      : {}),
+    ...(counterAddressRaw !== undefined
+      ? {
+          counter: parseAztecAddress(counterAddressRaw, "manifest.contracts.counter"),
+        }
+      : {}),
   };
 
   let fpcArtifact: DevnetDeployManifest["fpc_artifact"];
   if (hasOwn(input, "fpc_artifact")) {
     const fpcArtifactRaw = requireObject(input, "fpc_artifact", "manifest");
-    const artifactName = requireString(
-      fpcArtifactRaw,
-      "name",
-      "manifest.fpc_artifact",
-    );
-    if (
-      artifactName !== "FPC" &&
-      artifactName !== "FPCMultiAsset" &&
-      artifactName !== "CreditFPC" &&
-      artifactName !== "BackedCreditFPC"
-    ) {
+    const artifactName = requireString(fpcArtifactRaw, "name", "manifest.fpc_artifact");
+    if (artifactName !== "FPC" && artifactName !== "FPCMultiAsset") {
       throw new ManifestValidationError(
-        'Invalid manifest.fpc_artifact.name: expected "FPC", "FPCMultiAsset", "CreditFPC", or "BackedCreditFPC"',
+        'Invalid manifest.fpc_artifact.name: expected "FPC" or "FPCMultiAsset"',
       );
     }
-    const artifactPath = requireString(
-      fpcArtifactRaw,
-      "path",
-      "manifest.fpc_artifact",
-    );
+    const artifactPath = requireString(fpcArtifactRaw, "path", "manifest.fpc_artifact");
     fpcArtifact = {
       name: artifactName,
       path: artifactPath,
@@ -550,11 +494,57 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       txHashesRaw.accepted_asset_deploy,
       "manifest.tx_hashes.accepted_asset_deploy",
     ),
-    fpc_deploy: parseTxHashOrNull(
-      txHashesRaw.fpc_deploy,
-      "manifest.tx_hashes.fpc_deploy",
-    ),
+    fpc_deploy: parseTxHashOrNull(txHashesRaw.fpc_deploy, "manifest.tx_hashes.fpc_deploy"),
+    ...(hasOwn(txHashesRaw, "faucet_deploy")
+      ? {
+          faucet_deploy: parseTxHashOrNull(
+            txHashesRaw.faucet_deploy,
+            "manifest.tx_hashes.faucet_deploy",
+          ),
+        }
+      : {}),
+    ...(hasOwn(txHashesRaw, "counter_deploy")
+      ? {
+          counter_deploy: parseTxHashOrNull(
+            txHashesRaw.counter_deploy,
+            "manifest.tx_hashes.counter_deploy",
+          ),
+        }
+      : {}),
   };
+
+  let faucetConfig: DevnetDeployManifest["faucet_config"];
+  if (hasOwn(input, "faucet_config")) {
+    const rawFc = requireObject(input, "faucet_config", "manifest");
+    const dripAmount = requireString(rawFc, "drip_amount", "manifest.faucet_config");
+    const cooldownSecondsRaw = rawFc.cooldown_seconds;
+    const initialSupply = requireString(rawFc, "initial_supply", "manifest.faucet_config");
+    if (!DECIMAL_UINT_PATTERN.test(dripAmount)) {
+      throw new ManifestValidationError(
+        "Invalid manifest.faucet_config.drip_amount: expected non-negative decimal integer",
+      );
+    }
+    if (
+      typeof cooldownSecondsRaw !== "number" ||
+      !Number.isInteger(cooldownSecondsRaw) ||
+      cooldownSecondsRaw < 0 ||
+      !Number.isSafeInteger(cooldownSecondsRaw)
+    ) {
+      throw new ManifestValidationError(
+        "Invalid manifest.faucet_config.cooldown_seconds: expected non-negative safe integer",
+      );
+    }
+    if (!DECIMAL_UINT_PATTERN.test(initialSupply)) {
+      throw new ManifestValidationError(
+        "Invalid manifest.faucet_config.initial_supply: expected non-negative decimal integer",
+      );
+    }
+    faucetConfig = {
+      drip_amount: dripAmount,
+      cooldown_seconds: cooldownSecondsRaw,
+      initial_supply: initialSupply,
+    };
+  }
 
   const paymentMode = optionalString(input, "payment_mode", "manifest");
 
@@ -583,13 +573,12 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     operator,
     ...(sponsor ? { sponsor } : {}),
     tx_hashes: txHashes,
+    ...(faucetConfig ? { faucet_config: faucetConfig } : {}),
     ...(paymentMode ? { payment_mode: paymentMode } : {}),
   };
 }
 
-export function validateDevnetDeployManifest(
-  input: unknown,
-): DevnetDeployManifest {
+export function validateDevnetDeployManifest(input: unknown): DevnetDeployManifest {
   return parseManifest(input);
 }
 
@@ -599,10 +588,7 @@ export function assertValidDevnetDeployManifest(
   parseManifest(input);
 }
 
-export function writeDevnetDeployManifest(
-  outPath: string,
-  input: unknown,
-): DevnetDeployManifest {
+export function writeDevnetDeployManifest(outPath: string, input: unknown): DevnetDeployManifest {
   const manifest = parseManifest(input);
 
   const absolute = path.resolve(outPath);
@@ -618,7 +604,7 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
     generated_at: "2026-03-02T00:00:00.000Z",
     network: {
       node_url: "https://v4-devnet-2.aztec-labs.com/",
-      node_version: "4.0.0-devnet.2-patch.2",
+      node_version: "4.0.0-devnet.2-patch.3",
       l1_chain_id: 11155111,
       rollup_version: 615022430,
     },
@@ -633,46 +619,38 @@ function buildSelfCheckFixture(): DevnetDeployManifest {
         feeAssetHandlerAddress: "0x1111111111111111111111111111111111111111",
       },
       protocol_contract_addresses: {
-        instanceRegistry:
-          "0x0000000000000000000000000000000000000000000000000000000000000002",
-        classRegistry:
-          "0x0000000000000000000000000000000000000000000000000000000000000003",
-        multiCallEntrypoint:
-          "0x0000000000000000000000000000000000000000000000000000000000000004",
-        feeJuice:
-          "0x0000000000000000000000000000000000000000000000000000000000000005",
+        instanceRegistry: "0x0000000000000000000000000000000000000000000000000000000000000002",
+        classRegistry: "0x0000000000000000000000000000000000000000000000000000000000000003",
+        multiCallEntrypoint: "0x0000000000000000000000000000000000000000000000000000000000000004",
+        feeJuice: "0x0000000000000000000000000000000000000000000000000000000000000005",
       },
-      sponsored_fpc_address:
-        "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2",
+      sponsored_fpc_address: "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2",
     },
     deployment_accounts: {
       l2_deployer: {
         alias: "my-wallet",
-        address:
-          "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        address: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         private_key_ref: "secret-manager://devnet/l2-deployer",
       },
     },
     contracts: {
-      accepted_asset:
-        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      accepted_asset: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       fpc: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      counter: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     },
     fpc_artifact: {
       name: "FPCMultiAsset",
       path: "./target/fpc-FPCMultiAsset.json",
     },
     operator: {
-      address:
-        "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      address: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       pubkey_x: "123456789",
       pubkey_y: "987654321",
     },
     tx_hashes: {
-      accepted_asset_deploy:
-        "0x1111111111111111111111111111111111111111111111111111111111111111",
-      fpc_deploy:
-        "0x2222222222222222222222222222222222222222222222222222222222222222",
+      accepted_asset_deploy: "0x1111111111111111111111111111111111111111111111111111111111111111",
+      fpc_deploy: "0x2222222222222222222222222222222222222222222222222222222222222222",
+      counter_deploy: "0x3333333333333333333333333333333333333333333333333333333333333333",
     },
     payment_mode: "fpc-sponsored",
   };
@@ -686,9 +664,7 @@ function expectThrow(description: string, fn: () => void): void {
     didThrow = true;
   }
   if (!didThrow) {
-    throw new Error(
-      `Self-check expected failure did not occur: ${description}`,
-    );
+    throw new Error(`Self-check expected failure did not occur: ${description}`);
   }
 }
 
@@ -701,34 +677,22 @@ function runSelfCheck(): void {
   }
 
   expectThrow("missing contracts.fpc", () => {
-    const broken = buildSelfCheckFixture() as unknown as Record<
-      string,
-      unknown
-    >;
+    const broken = buildSelfCheckFixture() as unknown as Record<string, unknown>;
     const contracts = broken.contracts as Record<string, unknown>;
     delete contracts.fpc;
     validateDevnetDeployManifest(broken);
   });
 
   expectThrow("l2_deployer missing private_key/private_key_ref", () => {
-    const broken = buildSelfCheckFixture() as unknown as Record<
-      string,
-      unknown
-    >;
-    const deploymentAccounts = broken.deployment_accounts as Record<
-      string,
-      unknown
-    >;
-    const l2Deployer = deploymentAccounts.l2_deployer as Record<
-      string,
-      unknown
-    >;
+    const broken = buildSelfCheckFixture() as unknown as Record<string, unknown>;
+    const deploymentAccounts = broken.deployment_accounts as Record<string, unknown>;
+    const l2Deployer = deploymentAccounts.l2_deployer as Record<string, unknown>;
     delete l2Deployer.private_key;
     delete l2Deployer.private_key_ref;
     validateDevnetDeployManifest(broken);
   });
 
-  console.log("[devnet-manifest] self-check passed");
+  pinoLogger.info("[devnet-manifest] self-check passed");
 }
 
 function usage(): string {
@@ -750,7 +714,7 @@ function main(argv: string[]): void {
   }
 
   if (argv.includes("--help") || argv.includes("-h")) {
-    console.log(usage());
+    pinoLogger.info(usage());
     return;
   }
 
@@ -760,18 +724,17 @@ function main(argv: string[]): void {
 }
 
 const EXECUTED_AS_ENTRYPOINT =
-  process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (EXECUTED_AS_ENTRYPOINT) {
   try {
     main(process.argv.slice(2));
   } catch (error) {
     if (error instanceof ManifestValidationError) {
-      console.error(`[devnet-manifest] ERROR: ${error.message}`);
-      console.error(usage());
+      pinoLogger.error(`[devnet-manifest] ERROR: ${error.message}`);
+      pinoLogger.error(usage());
     } else {
-      console.error("[devnet-manifest] Unexpected error:", error);
+      pinoLogger.error("[devnet-manifest] Unexpected error:", error);
     }
     process.exit(1);
   }
