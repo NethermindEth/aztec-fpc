@@ -78,13 +78,15 @@ jobs:
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
-      - name: Start services
-        if: github.event_name == 'pull_request'
-        run: bash scripts/services/compose-mode.sh infra --wait
+      - name: Run services and tests
+        run: docker compose --profile full up wait --wait
 
-      - name: Smoke tests
-        if: github.event_name != 'pull_request'
-        run: bash scripts/services/compose-mode.sh full
+      - name: Test logs
+        run: docker compose --profile full logs --timestamps smoke-services smoke-fee-entrypoint e2e-fpc
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile full down -v --remove-orphans
 
       - name: Deploy to devnet
         env:
@@ -99,7 +101,3 @@ jobs:
             -e FPC_SKIP_CONFIG_GEN=1 \
             -v ${{ github.workspace }}/deployments:/app/data \
             nethermind/aztec-fpc-contract-deployment:local
-
-      - name: Tear down
-        if: always()
-        run: docker compose down -v --remove-orphans

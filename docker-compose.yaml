@@ -148,16 +148,28 @@ services:
       deploy:
         condition: service_completed_successfully
 
-  smoke:
+  smoke-fee-entrypoint:
+    image: nethermind/aztec-fpc-smoke:local
+    profiles: ["smoke", "full"]
+    command:
+      - "services/attestation/test/fee-entrypoint-local-smoke.ts"
+    environment:
+      AZTEC_NODE_URL: "http://aztec-node:8080"
+      FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"
+    depends_on:
+      block-producer:
+        condition: service_started
+      deploy:
+        condition: service_completed_successfully
+
+  smoke-services:
     image: nethermind/aztec-fpc-smoke:local
     profiles: ["smoke", "full"]
     command:
       - "scripts/services/fpc-services-smoke.ts"
-      - "services/attestation/test/fee-entrypoint-local-smoke.ts"
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_LOCAL_OPERATOR_SECRET_KEY: "${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
-      FPC_SMOKE_L1_RPC_URL: "http://anvil:8545"
       FPC_SERVICES_SMOKE_L1_RPC_URL: "http://anvil:8545"
     depends_on:
       block-producer:
@@ -167,7 +179,7 @@ services:
 
   e2e-fpc:
     image: nethermind/aztec-fpc-smoke:local
-    profiles: ["e2e-fpc"]
+    profiles: ["e2e", "full"]
     command:
       - "scripts/services/fpc-full-lifecycle-e2e.ts"
     volumes:
@@ -176,12 +188,32 @@ services:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_FULL_E2E_L1_RPC_URL: "http://anvil:8545"
       FPC_FULL_E2E_ARTIFACTS_DIR: "/artifacts/fpc"
-      FPC_FULL_E2E_L1_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
     depends_on:
       block-producer:
         condition: service_started
       deploy:
         condition: service_completed_successfully
 
+  wait:
+    image: busybox
+    profiles: ["full"]
+    command: ["sh", "-c", "sleep 5"]
+    depends_on:
+      smoke-fee-entrypoint:
+        condition: service_completed_successfully
+      smoke-services:
+        condition: service_completed_successfully
+      e2e-fpc:
+        condition: service_completed_successfully
+      attestation:
+        condition: service_healthy
+      # TODO: uncomment this when topup is ready
+      # topup:
+      #   condition: service_healthy
+
 volumes:
   deploy-crs-cache:
+
+configs:
+  fpc-config:
+    file: ./fpc-config.yaml

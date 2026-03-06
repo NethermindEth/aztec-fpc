@@ -103,7 +103,10 @@ full)
   fi
   (
     cd "$REPO_ROOT"
-    docker compose --profile full up --attach smoke --exit-code-from smoke smoke
+    docker compose --profile full up \
+      --attach smoke-fee-entrypoint \
+      --attach smoke-credit-fpc \
+      --attach smoke-services
   )
   ;;
 --help|-h)

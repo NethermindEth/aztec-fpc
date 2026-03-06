@@ -5,10 +5,9 @@ import pino from "pino";
 
 const pinoLogger = pino();
 
-import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract } from "@aztec/aztec.js/contracts";
+import type { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
@@ -20,7 +19,7 @@ import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-
+import { deployContract } from "../common/deploy-utils.ts";
 import {
   installManagedProcessSignalHandlers,
   type ManagedProcess,
@@ -31,6 +30,7 @@ import {
   waitForLog,
   waitForNodeReady,
 } from "../common/managed-process.ts";
+import { resolveScriptAccounts } from "../common/script-credentials.ts";
 
 type FullE2EMode = "fpc";
 
@@ -136,8 +136,6 @@ type PersistedDiagnostics = {
   logTailPaths: Record<string, string>;
 };
 
-const DEFAULT_LOCAL_L1_PRIVATE_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 const UINT_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -889,9 +887,6 @@ function getConfig(): FullE2EConfig {
     throw new Error(`FPC_FULL_E2E_FEE_BIPS must be <= 10000, got ${feeBips}`);
   }
 
-  const l1PrivateKey = process.env.FPC_FULL_E2E_L1_PRIVATE_KEY ?? DEFAULT_LOCAL_L1_PRIVATE_KEY;
-  assertPrivateKeyHex(l1PrivateKey, "FPC_FULL_E2E_L1_PRIVATE_KEY");
-
   if (requiredTopupCyclesRaw !== 1 && requiredTopupCyclesRaw !== 2) {
     throw new Error(
       `FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES must be 1 or 2, got ${requiredTopupCyclesRaw}`,
@@ -920,7 +915,7 @@ function getConfig(): FullE2EConfig {
     mode,
     nodeUrl: nodeUrlFromAztecEnv ?? nodeUrlFromFpcEnv ?? `http://${nodeHost}:${nodePort}`,
     l1RpcUrl: l1RpcUrlOverride ?? `http://${l1Host}:${l1Port}`,
-    l1PrivateKey,
+    l1PrivateKey: "", // Set by resolveScriptAccounts
     requiredTopupCycles: requiredTopupCyclesRaw,
     topupCheckIntervalMs: readEnvPositiveInteger("FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS", 2_000),
     topupWei: readOptionalEnvBigInt("FPC_FULL_E2E_TOPUP_WEI"),
@@ -968,7 +963,13 @@ async function deployContractsAndWriteRuntimeConfig(
   await waitForNodeReady(node, config.nodeTimeoutMs);
   const wallet = await EmbeddedWallet.create(node);
 
-  const testAccounts = await getInitialTestAccountsData();
+  const { accounts: testAccounts, l1PrivateKey } = await resolveScriptAccounts(
+    config.nodeUrl,
+    config.l1RpcUrl,
+    wallet,
+  );
+  config.l1PrivateKey = l1PrivateKey;
+
   const operatorData = testAccounts.at(0);
   const userData = testAccounts.at(1);
   const otherUserData = testAccounts.at(2);
@@ -991,23 +992,24 @@ async function deployContractsAndWriteRuntimeConfig(
   const operatorSecretHex = operatorData.secret.toString();
   assertPrivateKeyHex(operatorSecretHex, "operator secret");
 
-  const token = await Contract.deploy(
+  const token = await deployContract(
     wallet,
     tokenArtifact,
     ["SmokeToken", "SMK", 18, operator, operator],
+    { from: operator },
     "constructor_with_minter",
-  ).send({ from: operator });
+  );
 
   const schnorr = new Schnorr();
   const operatorSigningKey = operatorData.signingKey ?? deriveSigningKey(operatorData.secret);
   const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-  const fpc = await Contract.deploy(wallet, fpcArtifact, [
-    operator,
-    operatorPubKey.x,
-    operatorPubKey.y,
-    token.address,
-  ]).send({ from: operator });
+  const fpc = await deployContract(
+    wallet,
+    fpcArtifact,
+    [operator, operatorPubKey.x, operatorPubKey.y, token.address],
+    { from: operator },
+  );
 
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas;
@@ -1050,6 +1052,7 @@ async function deployContractsAndWriteRuntimeConfig(
       `port: ${config.attestationPort}`,
       `accepted_asset_name: "SmokeToken"`,
       `accepted_asset_address: "${token.address.toString()}"`,
+      `operator_address: "${operator.toString()}"`,
       `market_rate_num: ${config.marketRateNum}`,
       `market_rate_den: ${config.marketRateDen}`,
       `fee_bips: ${config.feeBips}`,
@@ -1528,23 +1531,24 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
 
-  const isolatedToken = await Contract.deploy(
+  const isolatedToken = await deployContract(
     result.wallet,
     tokenArtifact,
     ["InsufficientToken", "INS", 18, result.operator, result.operator],
+    { from: result.operator },
     "constructor_with_minter",
-  ).send({ from: result.operator });
+  );
 
   const secret = Fr.fromHexString(result.operatorSecretHex);
   const signingKey = deriveSigningKey(secret);
   const schnorr = new Schnorr();
   const operatorPubKey = await schnorr.computePublicKey(signingKey);
-  const isolatedFpc = await Contract.deploy(result.wallet, fpcArtifact, [
-    result.operator,
-    operatorPubKey.x,
-    operatorPubKey.y,
-    isolatedToken.address,
-  ]).send({ from: result.operator });
+  const isolatedFpc = await deployContract(
+    result.wallet,
+    fpcArtifact,
+    [result.operator, operatorPubKey.x, operatorPubKey.y, isolatedToken.address],
+    { from: result.operator },
+  );
 
   const isolatedCasesRoot = path.join(result.runDir, "insufficient");
   mkdirSync(isolatedCasesRoot, { recursive: true });
