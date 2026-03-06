@@ -273,7 +273,8 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let validateTopupPath = process.env.FPC_VALIDATE_TOPUP_PATH === "1";
   let sponsoredFpcAddress: string | null = process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
   let deployerAlias: string = process.env.FPC_DEPLOYER_ALIAS ?? DEVNET_DEFAULT_DEPLOYER_ALIAS;
-  let deployerSecretKey: string | null = process.env.FPC_DEPLOYER_SECRET_KEY ?? null;
+  let deployerSecretKey: string | null =
+    process.env.FPC_DEPLOYER_SECRET_KEY ?? process.env.FPC_DEPLOYER_PRIVATE_KEY ?? null;
   let deployerSecretKeyRef: string | null = process.env.FPC_DEPLOYER_SECRET_KEY_REF ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null = process.env.FPC_OPERATOR_SECRET_KEY_REF ?? null;
