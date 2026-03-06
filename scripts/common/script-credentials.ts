@@ -30,6 +30,12 @@ const pinoLogger = pino();
 /** Timeout for L1→L2 message readiness. */
 const L1_TO_L2_MESSAGE_TIMEOUT_SECONDS = 120;
 
+/** Maximum number of retry attempts for bridgeTokensPublic. */
+const BRIDGE_RETRY_ATTEMPTS = 3;
+
+/** Delay between retry attempts in milliseconds. */
+const BRIDGE_RETRY_DELAY_MS = 2_000;
+
 // ---------------------------------------------------------------------------
 // L2 account derivation
 // ---------------------------------------------------------------------------
@@ -134,6 +140,29 @@ async function fundL1Account(l1RpcUrl: string, address: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Bridge with retry
+// ---------------------------------------------------------------------------
+
+async function bridgeWithRetry(portal: L1FeeJuicePortalManager, l2Address: AztecAddress) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await portal.bridgeTokensPublic(l2Address, undefined, true);
+    } catch (error) {
+      const isRetryable =
+        error instanceof Error &&
+        error.message.toLowerCase().includes("failed to find matching event");
+      if (!isRetryable || attempt === BRIDGE_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      pinoLogger.warn(
+        `bridgeTokensPublic attempt ${attempt}/${BRIDGE_RETRY_ATTEMPTS} failed. Retrying in ${BRIDGE_RETRY_DELAY_MS}ms…`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, BRIDGE_RETRY_DELAY_MS));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Pre-claim: create account and bridge FeeJuice (per account)
 // ---------------------------------------------------------------------------
 
@@ -165,8 +194,8 @@ async function preClaim(
   const l2Address = accountManager.address;
   pinoLogger.info(`registered L2 account ${role}=${l2Address.toString()}`);
 
-  // 2. Bridge FeeJuice L1→L2 for this account.
-  const l2Claim = await portal.bridgeTokensPublic(l2Address, undefined, true);
+  // 2. Bridge FeeJuice L1→L2 for this account (with retries).
+  const l2Claim = await bridgeWithRetry(portal, l2Address);
   const messageHash = Fr.fromHexString(l2Claim.messageHash as string);
   pinoLogger.info(`bridged FeeJuice L1→L2 for account[${index}]=${l2Address.toString()}`);
 
