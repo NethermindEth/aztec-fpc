@@ -5,7 +5,7 @@
   "description": "Background service that keeps the MultiAssetFPC funded with Fee Juice",
   "main": "dist/index.js",
   "scripts": {
-    "build": "bun build src/index.ts --outdir=dist --target=bun --external @aztec/bb.js --external pino && bash -lc 'set -euo pipefail; BUNDLE=\"dist/index.js\"; NOIRC_WASM=\"\"; ACVM_WASM=\"\"; NOIRC_JS_REL=\"$(grep -m1 -o \"../../node_modules/.bun/@aztec+noir-noirc_abi@[^\\\"]*/node_modules/@aztec/noir-noirc_abi/web/noirc_abi_wasm.js\" \"$BUNDLE\" || true)\"; ACVM_JS_REL=\"$(grep -m1 -o \"../../node_modules/.bun/@aztec+noir-acvm_js@[^\\\"]*/node_modules/@aztec/noir-acvm_js/web/acvm_js.js\" \"$BUNDLE\" || true)\"; if [ -n \"$NOIRC_JS_REL\" ]; then NOIRC_WASM=\"${NOIRC_JS_REL%/noirc_abi_wasm.js}/noirc_abi_wasm_bg.wasm\"; fi; if [ -n \"$ACVM_JS_REL\" ]; then ACVM_WASM=\"${ACVM_JS_REL%/acvm_js.js}/acvm_js_bg.wasm\"; fi; if [ -z \"$NOIRC_WASM\" ] || [ ! -f \"$NOIRC_WASM\" ]; then NOIRC_WASM=\"$(find ../../node_modules -type f -path \"*/@aztec+noir-noirc_abi@*/node_modules/@aztec/noir-noirc_abi/web/noirc_abi_wasm_bg.wasm\" | grep -v \"/.old_modules-\" | sort -V | tail -n1)\"; fi; if [ -z \"$ACVM_WASM\" ] || [ ! -f \"$ACVM_WASM\" ]; then ACVM_WASM=\"$(find ../../node_modules -type f -path \"*/@aztec+noir-acvm_js@*/node_modules/@aztec/noir-acvm_js/web/acvm_js_bg.wasm\" | grep -v \"/.old_modules-\" | sort -V | tail -n1)\"; fi; test -n \"$NOIRC_WASM\"; test -n \"$ACVM_WASM\"; test -f \"$NOIRC_WASM\"; test -f \"$ACVM_WASM\"; cp -f \"$NOIRC_WASM\" dist/noirc_abi_wasm_bg.wasm; cp -f \"$ACVM_WASM\" dist/acvm_js_bg.wasm'",
+    "build": "bun build src/index.ts --outdir=dist --target=bun --external @aztec/bb.js --external @aztec/noir-noirc_abi --external @aztec/noir-acvm_js --external pino",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "fund:claimer:l2": "tsx src/fund-claimer-l2.ts",
@@ -18,7 +18,9 @@
     "@aztec/bb.js": "4.0.0-devnet.2-patch.3",
     "@aztec/ethereum": "4.0.0-devnet.2-patch.3",
     "@aztec/foundation": "4.0.0-devnet.2-patch.3",
+    "@aztec/noir-acvm_js": "4.0.0-devnet.2-patch.3",
     "@aztec/noir-contracts.js": "4.0.0-devnet.2-patch.3",
+    "@aztec/noir-noirc_abi": "4.0.0-devnet.2-patch.3",
     "@aztec/stdlib": "4.0.0-devnet.2-patch.3",
     "@aztec/wallets": "4.0.0-devnet.2-patch.3",
     "pino": "^10.3.1",

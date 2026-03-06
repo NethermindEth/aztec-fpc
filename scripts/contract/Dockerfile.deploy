@@ -39,6 +39,8 @@ RUN aztec compile --workspace --force
 # ══════════════════════════════════════════════════════════════
 FROM aztec AS runtime
 
+ENV CRS_PATH=/app/.bb-crs
+
 # ── Install Bun ──
 COPY --from=oven/bun:1.3.9-slim /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=oven/bun:1.3.9-slim /usr/local/bin/bunx /usr/local/bin/bunx
