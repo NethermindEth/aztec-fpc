@@ -529,7 +529,7 @@ async function main() {
   const fpc = await deployContract(
     wallet,
     fpcArtifact,
-    [operator, operatorPubKey.x, operatorPubKey.y],
+    [operator, operatorPubKey.x, operatorPubKey.y, 0, 0],
     { from: operator },
   );
   pinoLogger.info(`[smoke] fpc=${fpc.address.toString()}`);

@@ -11,42 +11,42 @@ const AZTEC_ADDRESS_TYPE: ABIParameter["type"] = {
   fields: [{ name: "inner", type: { kind: "field" } }],
 };
 
-const FPC_CONSTRUCTOR_ABI_V2: FunctionAbi = {
+const FPC_CONSTRUCTOR_ABI_BASE: Omit<FunctionAbi, "parameters"> = {
   name: "constructor",
   functionType: FunctionType.PUBLIC,
   isOnlySelf: false,
   isStatic: false,
   isInitializer: true,
-  parameters: [
-    {
-      name: "operator",
-      type: AZTEC_ADDRESS_TYPE,
-      visibility: "private",
-    },
-    {
-      name: "operator_pubkey_x",
-      type: { kind: "field" },
-      visibility: "private",
-    },
-    {
-      name: "operator_pubkey_y",
-      type: { kind: "field" },
-      visibility: "private",
-    },
-  ],
   returnTypes: [],
   errorTypes: {},
 };
 
+const OPERATOR_PARAMS: ABIParameter[] = [
+  { name: "operator", type: AZTEC_ADDRESS_TYPE, visibility: "private" },
+  { name: "operator_pubkey_x", type: { kind: "field" }, visibility: "private" },
+  { name: "operator_pubkey_y", type: { kind: "field" }, visibility: "private" },
+];
+
+const SPONSOR_PARAMS: ABIParameter[] = [
+  { name: "sponsor_pubkey_x", type: { kind: "field" }, visibility: "private" },
+  { name: "sponsor_pubkey_y", type: { kind: "field" }, visibility: "private" },
+];
+
+const FPC_CONSTRUCTOR_ABI_V3: FunctionAbi = {
+  ...FPC_CONSTRUCTOR_ABI_BASE,
+  parameters: [...OPERATOR_PARAMS, ...SPONSOR_PARAMS],
+};
+
+const FPC_CONSTRUCTOR_ABI_V2: FunctionAbi = {
+  ...FPC_CONSTRUCTOR_ABI_BASE,
+  parameters: [...OPERATOR_PARAMS],
+};
+
 const FPC_CONSTRUCTOR_ABI_LEGACY: FunctionAbi = {
-  ...FPC_CONSTRUCTOR_ABI_V2,
+  ...FPC_CONSTRUCTOR_ABI_BASE,
   parameters: [
-    ...FPC_CONSTRUCTOR_ABI_V2.parameters,
-    {
-      name: "accepted_asset",
-      type: AZTEC_ADDRESS_TYPE,
-      visibility: "private",
-    },
+    ...OPERATOR_PARAMS,
+    { name: "accepted_asset", type: AZTEC_ADDRESS_TYPE, visibility: "private" },
   ],
 };
 
@@ -71,11 +71,25 @@ export interface FpcImmutableInputs {
   operatorAddress: AztecAddress;
   operatorPubkeyX: Fr;
   operatorPubkeyY: Fr;
+  sponsorPubkeyX?: Fr;
+  sponsorPubkeyY?: Fr;
 }
 
 export async function computeExpectedFpcInitializationHash(
-  inputs: Pick<FpcImmutableInputs, "operatorAddress" | "operatorPubkeyX" | "operatorPubkeyY">,
+  inputs: Pick<
+    FpcImmutableInputs,
+    "operatorAddress" | "operatorPubkeyX" | "operatorPubkeyY" | "sponsorPubkeyX" | "sponsorPubkeyY"
+  >,
 ): Promise<Fr> {
+  if (inputs.sponsorPubkeyX && inputs.sponsorPubkeyY) {
+    return await computeInitializationHash(FPC_CONSTRUCTOR_ABI_V3, [
+      inputs.operatorAddress,
+      inputs.operatorPubkeyX,
+      inputs.operatorPubkeyY,
+      inputs.sponsorPubkeyX,
+      inputs.sponsorPubkeyY,
+    ]);
+  }
   return await computeInitializationHash(FPC_CONSTRUCTOR_ABI_V2, [
     inputs.operatorAddress,
     inputs.operatorPubkeyX,
@@ -123,9 +137,19 @@ export async function verifyFpcImmutablesOnStartup(
   const expectedLegacyInitializationHash = await computeExpectedLegacyFpcInitializationHash(inputs);
   const onChainInitializationHash = deployed.initializationHash;
 
+  const expectedV2NoSponsorHash =
+    inputs.sponsorPubkeyX && inputs.sponsorPubkeyY
+      ? await computeInitializationHash(FPC_CONSTRUCTOR_ABI_V2, [
+          inputs.operatorAddress,
+          inputs.operatorPubkeyX,
+          inputs.operatorPubkeyY,
+        ])
+      : undefined;
+
   if (
     !onChainInitializationHash.equals(expectedInitializationHash) &&
-    !onChainInitializationHash.equals(expectedLegacyInitializationHash)
+    !onChainInitializationHash.equals(expectedLegacyInitializationHash) &&
+    !(expectedV2NoSponsorHash && onChainInitializationHash.equals(expectedV2NoSponsorHash))
   ) {
     const currentClassId = deployed.currentContractClassId?.toString() ?? "unknown";
     const originalClassId = deployed.originalContractClassId?.toString() ?? "unknown";

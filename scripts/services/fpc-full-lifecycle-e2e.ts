@@ -1007,7 +1007,7 @@ async function deployContractsAndWriteRuntimeConfig(
   const fpc = await deployContract(
     wallet,
     fpcArtifact,
-    [operator, operatorPubKey.x, operatorPubKey.y, token.address],
+    [operator, operatorPubKey.x, operatorPubKey.y, 0, 0],
     { from: operator },
   );
 
@@ -1546,7 +1546,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   const isolatedFpc = await deployContract(
     result.wallet,
     fpcArtifact,
-    [result.operator, operatorPubKey.x, operatorPubKey.y, isolatedToken.address],
+    [result.operator, operatorPubKey.x, operatorPubKey.y, 0, 0],
     { from: result.operator },
   );
 

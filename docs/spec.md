@@ -55,7 +55,9 @@ Aztec L2
 
 | Field | Type | Description |
 |---|---|---|
-| `config` | `PublicImmutable<Config>` | Packed immutable config: `operator`, `operator_pubkey_x`, `operator_pubkey_y`. |
+| `config` | `PublicImmutable<Config>` | Packed immutable config (5 fields): `operator`, `operator_pubkey_x`, `operator_pubkey_y`, `sponsor_pubkey_x`, `sponsor_pubkey_y`. |
+
+The operator pubkey signs paid quotes (`fee_entrypoint`). The sponsor pubkey signs sponsored quotes (`fee_entrypoint_sponsored`). Both keys are set at deploy time and are immutable. Passing `(0, 0)` as the sponsor pubkey disables sponsorship entirely — `fee_entrypoint_sponsored` will reject immediately with `"sponsorship not enabled"`.
 
 The contract keeps one packed immutable config slot and no mutable admin state after deployment.
 
@@ -126,8 +128,9 @@ No teardown is scheduled. No tokens accumulate in this contract's balance.
 
 | Function | Aztec context | Callable by |
 |---|---|---|
-| `constructor(operator, operator_pubkey_x, operator_pubkey_y)` | public | anyone (one-time initializer) |
+| `constructor(operator, operator_pubkey_x, operator_pubkey_y, sponsor_pubkey_x, sponsor_pubkey_y)` | public | anyone (one-time initializer) |
 | `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` | private | any user (quote binds to caller) |
+| `fee_entrypoint_sponsored(accepted_asset, fj_fee_amount, valid_until, quote_sig)` | private | any user (sponsored quote binds to caller) |
 
 > There are no admin functions. The contract has no mutable state after construction.
 
@@ -136,6 +139,44 @@ No teardown is scheduled. No tokens accumulate in this contract's balance.
 All fee payments arrive in the **operator's private balance** directly. The operator is responsible for off-chain accounting and must use their PXE to discover incoming private notes.
 
 The FPC itself holds no token balance. Its only balance is Fee Juice (protocol-level), which the Aztec protocol deducts automatically per transaction and is replenished by the Top-up Service.
+
+### 3.7 Sponsored Payment Flow
+
+Sponsorship lets the FPC cover a user's Fee Juice cost without any token transfer. This is structurally separate from the paid quote path — different domain separator, different signing key, different function.
+
+#### Sponsored Quote Format
+
+```
+inner_hash = poseidon2([
+    SPONSORED_DOMAIN_SEPARATOR,  // "FPCS" = 0x46504353
+    fpc_address,
+    accepted_asset,              // bound for intent tracking (no transfer)
+    fj_fee_amount,               // bounds the Fee Juice the sponsor commits to
+    valid_until,                 // unix timestamp (u64)
+    user_address,                // always msg_sender — never zero
+])
+```
+
+The sponsor signs this hash with their Schnorr key (separate from the operator key). The contract verifies against `sponsor_pubkey` from Config.
+
+#### `fee_entrypoint_sponsored(accepted_asset, fj_fee_amount, valid_until, quote_sig)`
+
+1. Reads packed `config` from storage; rejects with `"sponsorship not enabled"` if `sponsor_pubkey == (0, 0)`
+2. Verifies Schnorr sponsored quote signature against `sponsor_pubkey` and binds `user_address = msg_sender`
+3. Pushes quote nullifier (replay protection)
+4. Asserts `anchor_block_timestamp ≤ valid_until`
+5. Asserts `(valid_until - anchor_block_timestamp) ≤ 3600` seconds
+6. Asserts `fj_fee_amount == get_max_gas_cost_no_teardown(...)`
+7. Calls `set_as_fee_payer()` + `end_setup()` — no token transfer
+
+#### Domain Separation
+
+The paid and sponsored paths use different domain separators (`0x465043` vs `0x46504353`) and different signing keys (`operator_pubkey` vs `sponsor_pubkey`). This provides two layers of protection:
+
+- **Key separation**: a paid-quote signature cannot pass sponsored-quote verification (wrong key) and vice versa.
+- **Hash separation**: even if both keys were identical, the different domain separator produces a different hash, so signatures are not interchangeable.
+
+A sponsored quote cannot be replayed in `fee_entrypoint`, and a paid quote cannot be replayed in `fee_entrypoint_sponsored`.
 
 ---
 
@@ -279,10 +320,12 @@ For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provision
 aztec compile --workspace --force
 
 # Deploy FPC (manual)
-# operator_pubkey_x/y are the operator Schnorr signing pubkey coordinates.
+# operator_pubkey_x/y sign paid quotes; sponsor_pubkey_x/y sign sponsored quotes.
+# Pass 0 0 as sponsor pubkey to disable sponsorship entirely.
 aztec deploy \
   --artifact target/fpc-FPCMultiAsset.json \
-  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
+  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y> \
+       <sponsor_pubkey_x> <sponsor_pubkey_y>
 ```
 
 Record the deployed contract address — you'll need it in both service configs.
@@ -402,9 +445,15 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 ## 8. Security Considerations
 
 ### Operator key
-- The `operator` key receives all fee revenue and signs all quotes. It is a single key with no separation of duties. Compromise allows fake quotes (user overcharge) and, critically, receipt of funds.
+- The `operator` key receives all fee revenue and signs paid quotes. Compromise allows fake paid quotes (user overcharge) and receipt of funds, but does **not** grant sponsorship authority.
 - Use a hardware wallet or KMS in production. Services support secret-provider modes (`env`, `kms`, `hsm`); `runtime_profile=production` rejects plaintext config-file secrets.
 - There is no on-chain key rotation. If the operator key is compromised, the contract must be redeployed.
+
+### Sponsor key
+- The `sponsor` key signs sponsored quotes only. Compromise allows unauthorized free transactions but does **not** grant access to paid-quote signing or fee revenue.
+- The sponsor key is separate from the operator key, providing separation of duties between the paid and sponsored paths.
+- Deploying with `(0, 0)` sponsor key disables sponsorship entirely. `fee_entrypoint_sponsored` rejects before reaching signature verification, so no sponsor key management is needed in this mode.
+- Like the operator key, there is no on-chain rotation. Sponsor key compromise requires redeployment.
 
 ### Quote replay
 - Quotes are user-specific (`user_address = msg_sender`). A quote signed for user A cannot be used by user B.
@@ -426,7 +475,7 @@ const tx = await SomeContract.at(TARGET).someMethod(args).send({
 
 ## 9. Known Limitations (Alpha)
 
-- **No key rotation.** The packed config is `PublicImmutable`. Operator key compromise requires redeployment.
+- **No key rotation.** The packed config is `PublicImmutable`. Operator or sponsor key compromise requires redeployment.
 - **Operator tracks revenue off-chain.** All payments arrive as private notes in the operator's balance. The operator must use their PXE to discover incoming notes and maintain off-chain accounting.
 - **`fj_amount` must match tx gas settings (FPC).** Wallets must request a quote with `fj_amount = max_gas_cost_no_teardown` for the exact gas settings used at submission. If they diverge, `fee_entrypoint` rejects with quoted-fee mismatch.
 - **No oracle integration.** Rates are set manually in config. A service restart reloads from config.yaml.

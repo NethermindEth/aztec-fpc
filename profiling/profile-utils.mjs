@@ -126,6 +126,28 @@ export async function signRateQuote(
   return Array.from(sig.toBuffer()).map(b => new Fr(b));
 }
 
+export async function signSponsoredQuote(
+  schnorr,
+  sponsorSigningKey,
+  fpcAddress,
+  tokenAddress,
+  fjFeeAmount,
+  validUntil,
+  userAddress,
+  quoteDomainSep,
+) {
+  const quoteHash = await computeInnerAuthWitHash([
+    new Fr(quoteDomainSep),
+    fpcAddress.toField(),
+    tokenAddress.toField(),
+    new Fr(fjFeeAmount),
+    new Fr(validUntil),
+    userAddress.toField(),
+  ]);
+  const sig = await schnorr.constructSignature(quoteHash.toBuffer(), sponsorSigningKey);
+  return Array.from(sig.toBuffer()).map(b => new Fr(b));
+}
+
 // Profile trace has the shape: [A] [FPC] [B]
 //   A = tx overhead (account entrypoint, kernel init, etc.)
 //   FPC = fee payment entrypoint + all sub-calls it triggers

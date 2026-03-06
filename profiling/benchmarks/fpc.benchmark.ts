@@ -1,12 +1,17 @@
 import pino from "pino";
 
-const pinoLogger = pino();
+const pinoLogger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: { colorize: true, translateTime: 'HH:MM:ss.l', ignore: 'pid,hostname' },
+  },
+});
 /**
  * FPC benchmark using @defi-wonderland/aztec-benchmark.
  *
  * Deploys Token + FPC + Noop on a running local network, bridges Fee Juice,
- * mints tokens, builds authwits, and benchmarks FPC.fee_entrypoint via a
- * minimal Noop app transaction (same approach as the custom profiler).
+ * mints tokens, builds authwits, and benchmarks FPC.fee_entrypoint and
+ * FPC.fee_entrypoint_sponsored via minimal Noop app transactions.
  *
  * The aztec-benchmark profiler expects getMethods() to return items of shape
  * {interaction: {caller, action}, name} (NamedBenchmarkedInteraction).
@@ -64,6 +69,7 @@ import {
   SimpleWallet,
   signQuote,
   signRateQuote,
+  signSponsoredQuote,
   extractFpcSteps,
 } from '../profile-utils.mjs';
 
@@ -80,6 +86,7 @@ const RATE_NUM = 1n;
 const RATE_DEN = 1n;
 const QUOTE_TTL_SECONDS = 3500n;
 const QUOTE_DOMAIN_SEP = 0x465043n; // "FPC" as field
+const SPONSORED_QUOTE_DOMAIN_SEP = 0x46504353n; // "FPCS" as field
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -123,6 +130,38 @@ class CustomFPCPaymentMethod {
   }
 }
 
+class SponsoredFPCPaymentMethod {
+  fpcAddress: any;
+  feeEntrypointCall: any;
+  gasSettings: any;
+
+  constructor(fpcAddress: any, feeEntrypointCall: any, gasSettings: any) {
+    this.fpcAddress = fpcAddress;
+    this.feeEntrypointCall = feeEntrypointCall;
+    this.gasSettings = gasSettings;
+  }
+
+  getAsset(): Promise<any> {
+    throw new Error('Asset is not required for sponsored FPC.');
+  }
+  getFeePayer() {
+    return Promise.resolve(this.fpcAddress);
+  }
+  getGasSettings() {
+    return this.gasSettings;
+  }
+
+  async getExecutionPayload() {
+    return new ExecutionPayload(
+      [this.feeEntrypointCall],
+      [],
+      [],
+      [],
+      this.fpcAddress,
+    );
+  }
+}
+
 type FeeEntrypointMode = 'fixed_amount' | 'multi_asset_rate' | 'multi_asset_amount';
 
 function detectFeeEntrypointMode(fpcArtifact: any): FeeEntrypointMode {
@@ -140,14 +179,33 @@ function detectFeeEntrypointMode(fpcArtifact: any): FeeEntrypointMode {
   return 'fixed_amount';
 }
 
+function findConstructorInArtifact(fpcArtifact: any): any {
+  // The constructor is a public initializer, so loadContractArtifact may place
+  // it in nonDispatchPublicFunctions instead of functions.
+  const allFns = [
+    ...(fpcArtifact.functions ?? []),
+    ...(fpcArtifact.nonDispatchPublicFunctions ?? []),
+  ];
+  return allFns.find((f: any) => f.name === 'constructor');
+}
+
 function constructorHasAcceptedAsset(fpcArtifact: any): boolean {
-  const constructor = (fpcArtifact.functions ?? []).find(
-    (f: any) => f.name === 'constructor',
-  );
+  const constructor = findConstructorInArtifact(fpcArtifact);
   const params = constructor?.parameters ?? constructor?.abi?.parameters ?? [];
   return params.some((p: any) => p?.name === 'accepted_asset');
 }
 
+function constructorHasSponsorPubkey(fpcArtifact: any): boolean {
+  const constructor = findConstructorInArtifact(fpcArtifact);
+  const params = constructor?.parameters ?? constructor?.abi?.parameters ?? [];
+  return params.some((p: any) => p?.name === 'sponsor_pubkey_x');
+}
+
+function hasSponsoredEntrypoint(fpcArtifact: any): boolean {
+  return (fpcArtifact.functions ?? []).some(
+    (f: any) => f.name === 'fee_entrypoint_sponsored',
+  );
+}
 
 async function createL1Client(node: any) {
   const nodeInfo = await node.getNodeInfo();
@@ -283,14 +341,16 @@ class FPCActionWrapper {
   #inner: any;
   #additionalScopes: any[];
   #gasSettings: any;
+  #feePaymentOverride?: any;
 
   /** Per-function timing data captured from profile().stats.timings. */
   timings?: { perFunction: any[]; proving?: number; total?: number };
 
-  constructor(inner: any, additionalScopes: any[], gasSettings: any) {
+  constructor(inner: any, additionalScopes: any[], gasSettings: any, feePaymentOverride?: any) {
     this.#inner = inner;
     this.#additionalScopes = additionalScopes;
     this.#gasSettings = gasSettings;
+    this.#feePaymentOverride = feePaymentOverride;
   }
 
   request() {
@@ -305,10 +365,13 @@ class FPCActionWrapper {
     // SDK uses the fixed gasSettings from the payment method.
     const { fee, ...rest } = opts ?? {};
     const { estimateGas: _, estimatedGasPadding: __, ...feeRest } = fee ?? {};
+    const effectiveFee = this.#feePaymentOverride
+      ? { ...feeRest, paymentMethod: this.#feePaymentOverride }
+      : feeRest;
 
     const result = await this.#inner.simulate({
       ...rest,
-      fee: Object.keys(feeRest).length ? feeRest : undefined,
+      fee: Object.keys(effectiveFee).length ? effectiveFee : undefined,
       additionalScopes: this.#additionalScopes,
     });
 
@@ -329,8 +392,11 @@ class FPCActionWrapper {
   }
 
   async profile(opts?: any) {
+    const effectiveOpts = this.#feePaymentOverride
+      ? { ...opts, fee: { ...opts?.fee, paymentMethod: this.#feePaymentOverride } }
+      : opts;
     const result = await this.#inner.profile({
-      ...opts,
+      ...effectiveOpts,
       additionalScopes: this.#additionalScopes,
     });
     this.timings = result.stats?.timings ?? undefined;
@@ -338,8 +404,11 @@ class FPCActionWrapper {
   }
 
   send(opts?: any) {
+    const effectiveOpts = this.#feePaymentOverride
+      ? { ...opts, fee: { ...opts?.fee, paymentMethod: this.#feePaymentOverride } }
+      : opts;
     return this.#inner.send({
-      ...opts,
+      ...effectiveOpts,
       additionalScopes: this.#additionalScopes,
     });
   }
@@ -350,12 +419,14 @@ interface FPCBenchmarkContext {
   pxe: any;
   wallet?: any;
   feePaymentMethod?: FeePaymentMethod;
+  sponsoredFeePaymentMethod?: SponsoredFPCPaymentMethod;
   gasSettings: any;
   tokenAsUser: any;
   noopAsUser: any;
   userAddress: any;
   operatorAddress: any;
   fpcAddress: any;
+  hasSponsored?: boolean;
 }
 
 // The aztec-benchmark CLI duck-types this class (checks for getMethods/setup/
@@ -403,6 +474,12 @@ export default class FPCBenchmark {
     const operatorSigningKey = deriveSigningKey(operatorData.secret);
     const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
+    const sponsorData = testAccounts[2];
+    const sponsorSigningKey = sponsorData
+      ? deriveSigningKey(sponsorData.secret)
+      : operatorSigningKey;
+    const sponsorPubKey = await schnorr.computePublicKey(sponsorSigningKey);
+
     const tokenArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Token'), 'utf8')),
     );
@@ -411,7 +488,10 @@ export default class FPCBenchmark {
     );
     const feeEntrypointMode = detectFeeEntrypointMode(fpcArtifact);
     const hasAcceptedAssetInConstructor = constructorHasAcceptedAsset(fpcArtifact);
+    const hasSponsorPubkeyInConstructor = constructorHasSponsorPubkey(fpcArtifact);
+    const hasSponsored = hasSponsoredEntrypoint(fpcArtifact);
     pinoLogger.info(`Detected fee_entrypoint mode: ${feeEntrypointMode}`);
+    pinoLogger.info(`Sponsored entrypoint: ${hasSponsored ? 'yes' : 'no'}`);
     const noopArtifact = loadContractArtifact(
       JSON.parse(readFileSync(findArtifact('Noop'), 'utf8')),
     );
@@ -428,9 +508,18 @@ export default class FPCBenchmark {
     pinoLogger.info('Token:', tokenAddress.toString());
 
     pinoLogger.info('Deploying FPC...');
-    const constructorArgs = hasAcceptedAssetInConstructor
-      ? [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress]
-      : [operatorAddress, operatorPubKey.x, operatorPubKey.y];
+    let constructorArgs: any[];
+    if (hasAcceptedAssetInConstructor) {
+      constructorArgs = [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress];
+    } else if (hasSponsorPubkeyInConstructor) {
+      constructorArgs = [
+        operatorAddress,
+        operatorPubKey.x, operatorPubKey.y,
+        sponsorPubKey.x, sponsorPubKey.y,
+      ];
+    } else {
+      constructorArgs = [operatorAddress, operatorPubKey.x, operatorPubKey.y];
+    }
     const fpcDeploy = await Contract.deploy(wallet, fpcArtifact, [
       ...constructorArgs,
     ]).send({ from: userAddress });
@@ -564,6 +653,36 @@ export default class FPCBenchmark {
       gasSettings,
     );
 
+    let sponsoredFeePaymentMethod: SponsoredFPCPaymentMethod | undefined;
+    if (hasSponsored) {
+      const sponsoredSigFields = await signSponsoredQuote(
+        schnorr,
+        sponsorSigningKey,
+        fpcAddress,
+        tokenAddress,
+        maxGasCost,
+        VALID_UNTIL,
+        userAddress,
+        SPONSORED_QUOTE_DOMAIN_SEP,
+      );
+      pinoLogger.info('Sponsored quote signature created.');
+
+      const sponsoredEntrypointCall = await fpcDeploy.methods
+        .fee_entrypoint_sponsored(
+          tokenAddress,
+          maxGasCost,
+          VALID_UNTIL,
+          sponsoredSigFields,
+        )
+        .getFunctionCall();
+
+      sponsoredFeePaymentMethod = new SponsoredFPCPaymentMethod(
+        fpcAddress,
+        sponsoredEntrypointCall,
+        gasSettings,
+      );
+    }
+
     pinoLogger.info('\n=== FPC Benchmark Setup Complete ===\n');
 
     return {
@@ -575,21 +694,39 @@ export default class FPCBenchmark {
       operatorAddress,
       fpcAddress,
       feePaymentMethod,
+      sponsoredFeePaymentMethod,
       gasSettings,
+      hasSponsored,
     };
   }
 
   getMethods(context: FPCBenchmarkContext) {
-    const action = new FPCActionWrapper(
+    const paidAction = new FPCActionWrapper(
       context.noopAsUser.methods.noop(),
       [context.operatorAddress],
       context.gasSettings,
     );
-    this.#actions = [action];
-    return [{
-      interaction: { caller: context.userAddress, action },
+    const methods: any[] = [{
+      interaction: { caller: context.userAddress, action: paidAction },
       name: 'fee_entrypoint',
     }];
+    this.#actions = [paidAction];
+
+    if (context.hasSponsored && context.sponsoredFeePaymentMethod) {
+      const sponsoredAction = new FPCActionWrapper(
+        context.noopAsUser.methods.noop(),
+        [context.operatorAddress],
+        context.gasSettings,
+        context.sponsoredFeePaymentMethod,
+      );
+      methods.push({
+        interaction: { caller: context.userAddress, action: sponsoredAction },
+        name: 'fee_entrypoint_sponsored',
+      });
+      this.#actions.push(sponsoredAction);
+    }
+
+    return methods;
   }
 
   async teardown(context: FPCBenchmarkContext): Promise<void> {
@@ -689,18 +826,19 @@ export default class FPCBenchmark {
     const numFmt = (n: number) => n.toLocaleString();
     const msFmt = (n: number | null) => n != null ? n.toFixed(1) : '-';
     const LINE = '\u2500'.repeat(100);
+    const row = (...cols: string[]) => pinoLogger.info(cols.join(''));
 
     pinoLogger.info(`\n=== FPC Benchmark Results: ${r.name} ===`);
 
     // FPC-only gate counts.
     if (r.fpcGateCounts?.length) {
       pinoLogger.info('\nFPC-Only Gate Counts:');
-      pinoLogger.info(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      row(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
       pinoLogger.info(LINE);
       let sub = 0;
       for (const gc of r.fpcGateCounts) {
         sub += gc.gateCount ?? 0;
-        pinoLogger.info(
+        row(
           pad(gc.circuitName, 50),
           pad(numFmt(gc.gateCount ?? 0), 14),
           pad(msFmt(gc.witgenMs), 14),
@@ -708,7 +846,7 @@ export default class FPCBenchmark {
         );
       }
       pinoLogger.info(LINE);
-      pinoLogger.info(
+      row(
         pad('FPC TOTAL', 50),
         pad(numFmt(r.fpcTotalGateCount), 14),
         pad(msFmt(r.fpcTotalWitgenMs), 14),
@@ -719,12 +857,12 @@ export default class FPCBenchmark {
     // Full transaction trace.
     if (r.fullTrace?.length) {
       pinoLogger.info('\nFull Transaction Trace:');
-      pinoLogger.info(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      row(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
       pinoLogger.info(LINE);
       let sub = 0;
       for (const gc of r.fullTrace) {
         sub += gc.gateCount ?? 0;
-        pinoLogger.info(
+        row(
           pad(gc.circuitName, 50),
           pad(numFmt(gc.gateCount ?? 0), 14),
           pad(msFmt(gc.witgenMs), 14),
@@ -732,7 +870,7 @@ export default class FPCBenchmark {
         );
       }
       pinoLogger.info(LINE);
-      pinoLogger.info(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
+      row(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
     }
 
     // Proving time + gas summary.

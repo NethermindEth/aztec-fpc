@@ -7,7 +7,8 @@ use aztec::{
 use std::embedded_curve_ops::{EmbeddedCurvePoint, EmbeddedCurveScalar, multi_scalar_mul};
 use token::Token;
 
-global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
+pub global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
+pub global SPONSORED_QUOTE_DOMAIN_SEPARATOR: Field = 0x46504353;
 
 /// Grumpkin generator point.
 global G1: EmbeddedCurvePoint = EmbeddedCurvePoint {
@@ -16,9 +17,14 @@ global G1: EmbeddedCurvePoint = EmbeddedCurvePoint {
     is_infinite: false,
 };
 
-/// Fixed test private key. Using 1 so that e*sk = e, avoiding the need
-/// for big-integer multiplication (only subtraction mod Fq is required).
+/// Fixed test operator private key. Using 1 so that e*sk = e, avoiding
+/// the need for big-integer multiplication (only subtraction mod Fq is
+/// required).
 global TEST_SIGNING_KEY: Field = 1;
+
+/// Fixed test sponsor private key. Using 2 so that e*sk = 2*e, which
+/// only requires addition (doubling) instead of general multiplication.
+global TEST_SPONSOR_KEY: Field = 2;
 
 // Grumpkin group order (= BN254 base field Fq), split into u128 halves.
 // Fq = 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47
@@ -28,6 +34,11 @@ global FQ_LO: u128 = 0x97816a916871ca8d3c208c16d87cfd47;
 /// Derive the operator's Schnorr public key from TEST_SIGNING_KEY.
 pub unconstrained fn test_operator_pubkey() -> EmbeddedCurvePoint {
     multi_scalar_mul([G1], [EmbeddedCurveScalar::new(TEST_SIGNING_KEY, 0)])
+}
+
+/// Derive the sponsor's Schnorr public key from TEST_SPONSOR_KEY.
+pub unconstrained fn test_sponsor_pubkey() -> EmbeddedCurvePoint {
+    multi_scalar_mul([G1], [EmbeddedCurveScalar::new(TEST_SPONSOR_KEY, 0)])
 }
 
 /// Compute a valid Schnorr signature over `message` using TEST_SIGNING_KEY.
@@ -68,6 +79,74 @@ pub unconstrained fn test_schnorr_sign(message: [u8; 32]) -> [u8; 64] {
         sig[32 + i] = e_bytes[i];
     }
     sig
+}
+
+/// Compute a valid Schnorr signature over `message` using TEST_SPONSOR_KEY.
+///
+/// With TEST_SPONSOR_KEY = 2, e*sk = 2*e, which is computed via u256
+/// addition (doubling) rather than general multiplication.
+pub unconstrained fn test_sponsor_schnorr_sign(message: [u8; 32]) -> [u8; 64] {
+    let pk = test_sponsor_pubkey();
+
+    let k: u128 = 0xdead_beef_5678;
+    let r = multi_scalar_mul([G1], [EmbeddedCurveScalar::new(k as Field, 0)]);
+
+    let ped = std::hash::pedersen_hash([r.x, pk.x, pk.y]);
+    let ped_bytes: [u8; 32] = ped.to_be_bytes();
+    let mut hash_input: [u8; 64] = [0; 64];
+    for i in 0..32 {
+        hash_input[i] = ped_bytes[i];
+    }
+    for i in 0..32 {
+        hash_input[32 + i] = message[i];
+    }
+    let e_bytes: [u8; 32] = std::hash::blake2s(hash_input);
+
+    let s_bytes = sub_mod_fq_sk2(k, e_bytes);
+
+    let mut sig: [u8; 64] = [0; 64];
+    for i in 0..32 {
+        sig[i] = s_bytes[i];
+    }
+    for i in 0..32 {
+        sig[32 + i] = e_bytes[i];
+    }
+    sig
+}
+
+/// Compute (k - 2*e) mod Fq using u128-pair 256-bit arithmetic.
+/// Used for TEST_SPONSOR_KEY = 2 where e*sk = 2*e.
+unconstrained fn sub_mod_fq_sk2(k: u128, e_bytes: [u8; 32]) -> [u8; 32] {
+    let (mut e_hi, mut e_lo) = be_bytes_to_u128_pair(e_bytes);
+
+    // Reduce e mod Fq.
+    for _ in 0..6 {
+        if gte_u256(e_hi, e_lo, FQ_HI, FQ_LO) {
+            let (h, l) = sub_u256(e_hi, e_lo, FQ_HI, FQ_LO);
+            e_hi = h;
+            e_lo = l;
+        }
+    }
+
+    // 2*e mod Fq
+    let (mut double_hi, mut double_lo) = add_u256(e_hi, e_lo, e_hi, e_lo);
+    if gte_u256(double_hi, double_lo, FQ_HI, FQ_LO) {
+        let (h, l) = sub_u256(double_hi, double_lo, FQ_HI, FQ_LO);
+        double_hi = h;
+        double_lo = l;
+    }
+
+    // s = Fq + k - 2*e_rem (add Fq first to avoid underflow)
+    let (sum_hi, sum_lo) = add_u256(FQ_HI, FQ_LO, 0, k);
+    let (mut s_hi, mut s_lo) = sub_u256(sum_hi, sum_lo, double_hi, double_lo);
+
+    if gte_u256(s_hi, s_lo, FQ_HI, FQ_LO) {
+        let (h, l) = sub_u256(s_hi, s_lo, FQ_HI, FQ_LO);
+        s_hi = h;
+        s_lo = l;
+    }
+
+    u128_pair_to_be_bytes(s_hi, s_lo)
 }
 
 /// Compute (k - e) mod Fq using u128-pair 256-bit arithmetic.
@@ -174,7 +253,34 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
     let pk = test_operator_pubkey();
-    let fpc_initializer = FPCMultiAsset::interface().constructor(operator, pk.x, pk.y);
+    let spk = test_sponsor_pubkey();
+    let fpc_initializer =
+        FPCMultiAsset::interface().constructor(operator, pk.x, pk.y, spk.x, spk.y);
+    let fpc_address =
+        env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
+
+    (env, fpc_address, token_address, operator, user)
+}
+
+/// Deploy FPC with sponsor key = (0, 0) to disable sponsorship.
+pub unconstrained fn setup_no_sponsor() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress) {
+    let mut env = TestEnvironment::new();
+
+    let user = env.create_contract_account();
+    let operator = env.create_contract_account();
+
+    let token_initializer = Token::interface().constructor_with_minter(
+        "TestToken0000000000000000000000",
+        "TT00000000000000000000000000000",
+        18,
+        operator,
+        AztecAddress::zero(),
+    );
+    let token_address =
+        env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
+
+    let pk = test_operator_pubkey();
+    let fpc_initializer = FPCMultiAsset::interface().constructor(operator, pk.x, pk.y, 0, 0);
     let fpc_address =
         env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
 
@@ -210,6 +316,27 @@ pub unconstrained fn sign_quote(
     ]);
     let message: [u8; 32] = quote_hash.to_be_bytes();
     test_schnorr_sign(message)
+}
+
+/// Compute the sponsored quote hash and return a valid Schnorr signature
+/// for it using the test sponsor signing key.
+pub unconstrained fn sign_sponsored_quote(
+    fpc_address: AztecAddress,
+    accepted_asset: AztecAddress,
+    fj_fee_amount: u128,
+    valid_until: u64,
+    user_address: AztecAddress,
+) -> [u8; 64] {
+    let quote_hash = compute_inner_authwit_hash([
+        SPONSORED_QUOTE_DOMAIN_SEPARATOR,
+        fpc_address.to_field(),
+        accepted_asset.to_field(),
+        fj_fee_amount as Field,
+        valid_until as Field,
+        user_address.to_field(),
+    ]);
+    let message: [u8; 32] = quote_hash.to_be_bytes();
+    test_sponsor_schnorr_sign(message)
 }
 
 pub unconstrained fn private_balance(

@@ -11,7 +11,9 @@ unconstrained fn constructor_rejects_zero_operator() {
     let (mut env, _, _, operator, _) = utils::setup();
 
     let pk = utils::test_operator_pubkey();
-    let fpc_initializer = FPCMultiAsset::interface().constructor(AztecAddress::zero(), pk.x, pk.y);
+    let spk = utils::test_sponsor_pubkey();
+    let fpc_initializer =
+        FPCMultiAsset::interface().constructor(AztecAddress::zero(), pk.x, pk.y, spk.x, spk.y);
     let _ = env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
 }
 

@@ -22,6 +22,9 @@ import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 // Must match QUOTE_DOMAIN_SEPARATOR in main.nr ("FPC" = 0x465043)
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 
+// Must match SPONSORED_QUOTE_DOMAIN_SEPARATOR in main.nr ("FPCS" = 0x46504353)
+const SPONSORED_QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x46504353");
+
 export interface QuoteParams {
   fpcAddress: AztecAddress;
   /** Selected per-request payment asset. */
@@ -92,5 +95,43 @@ export async function signRateQuote(
   params: RateQuoteParams,
 ): Promise<string> {
   const quoteHash = await computeRateQuoteHash(params);
+  return signer.signQuoteHash(quoteHash);
+}
+
+export interface SponsoredQuoteParams {
+  fpcAddress: AztecAddress;
+  /** Bound for intent tracking — no token transfer occurs in the sponsored path. */
+  acceptedAsset: AztecAddress;
+  /** Bounds the Fee Juice the sponsor commits to for this tx. */
+  fjFeeAmount: bigint;
+  validUntil: bigint;
+  /** The user's Aztec address. Always non-zero — all quotes are user-specific. */
+  userAddress: AztecAddress;
+}
+
+/**
+ * Compute the sponsored quote hash, matching assert_valid_sponsored_quote
+ * in main.nr. Uses SPONSORED_QUOTE_DOMAIN_SEPARATOR.
+ */
+export function computeSponsoredQuoteHash(params: SponsoredQuoteParams): Promise<Fr> {
+  return computeInnerAuthWitHash([
+    SPONSORED_QUOTE_DOMAIN_SEPARATOR,
+    params.fpcAddress.toField(),
+    params.acceptedAsset.toField(),
+    new Fr(params.fjFeeAmount),
+    new Fr(params.validUntil),
+    params.userAddress.toField(),
+  ]);
+}
+
+/**
+ * Compute the sponsored quote hash and sign it with the sponsor's Schnorr key.
+ * Returns the 64-byte signature as a hex string.
+ */
+export async function signSponsoredQuote(
+  signer: QuoteSchnorrSigner,
+  params: SponsoredQuoteParams,
+): Promise<string> {
+  const quoteHash = await computeSponsoredQuoteHash(params);
   return signer.signQuoteHash(quoteHash);
 }

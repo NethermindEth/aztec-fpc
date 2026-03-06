@@ -8,7 +8,8 @@
 `FPC` stores only immutable config:
 
 - `operator`
-- operator Schnorr pubkey (`operator_pubkey_x`, `operator_pubkey_y`)
+- operator Schnorr pubkey (`operator_pubkey_x`, `operator_pubkey_y`) — signs paid quotes
+- sponsor Schnorr pubkey (`sponsor_pubkey_x`, `sponsor_pubkey_y`) — signs sponsored quotes, or `(0, 0)` to disable sponsorship
 
 ### `fee_entrypoint` flow
 
@@ -18,26 +19,60 @@
 2. Rejects replay by nullifying quote hash (duplicate nullifier insertion fails canonically).
 3. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
 4. For fee-paying txs (any non-zero `maxFeesPerGas` lane), rejects revertible-phase execution (`fee_entrypoint must run in setup phase`).
-5. Enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)` (`quoted fee amount mismatch` on mismatch).
+5. Enforces `fj_fee_amount == get_max_gas_cost(...)` (`quoted fee amount mismatch` on mismatch).
 6. Transfers exactly signed `aa_payment_amount` of `accepted_asset` from user to operator using authwit.
 7. Marks contract as fee payer (`set_as_fee_payer`) and ends setup.
 
+### `fee_entrypoint_sponsored` flow
+
+Sponsorship lets the FPC cover a user's Fee Juice cost without any token transfer. This exists as a separate entrypoint (rather than allowing `rate_num = 0` in the standard path) to avoid accidental free-tx issuance through misconfigured quotes. See Issue #80 for background.
+
+`fee_entrypoint_sponsored(accepted_asset, fj_fee_amount, valid_until, quote_sig)`:
+
+1. Rejects immediately with `"sponsorship not enabled"` if the sponsor key is `(0, 0)`.
+2. Verifies **sponsor** quote signature (using `sponsor_pubkey`, not `operator_pubkey`) over `accepted_asset`, `fj_fee_amount`, and caller address with `SPONSORED_QUOTE_DOMAIN_SEPARATOR`.
+3. Rejects replay by nullifying quote hash.
+4. Enforces quote expiry and max TTL (`<= 3600s` from anchor timestamp).
+5. For fee-paying txs, rejects revertible-phase execution.
+6. Enforces `fj_fee_amount == get_max_gas_cost(...)` to bound sponsor exposure.
+7. Marks contract as fee payer and ends setup. **No token transfer occurs.**
+
+#### Why a separate entrypoint and key?
+
+- **Structural separation**: paid quotes and sponsored quotes use different domain separators (`0x465043` vs `0x46504353`) and different signing keys, so they cannot be confused or replayed across paths.
+- **Separation of duties**: compromising the operator key (paid quotes) does not grant sponsorship authority, and vice versa.
+- **No mutable state**: both keys live in the same `PublicImmutable<Config>`, preserving the fully-immutable-after-construction design.
+
+#### Disabling sponsorship
+
+Passing `(0, 0)` as the sponsor pubkey at deploy time disables sponsorship entirely. The constructor accepts this sentinel without an on-curve check. At runtime, `fee_entrypoint_sponsored` rejects immediately with `"sponsorship not enabled"` before attempting signature verification. The standard paid path (`fee_entrypoint`) is unaffected. This is the default deploy behavior — provide `--sponsor-secret-key` to enable sponsorship.
+
 ## Quote Model (Amount-Based)
 
-Quote domain separator: `0x465043`.
+### Paid quote
 
-Quote hash preimage:
+Domain separator: `0x465043` ("FPC").
+
+Hash preimage:
 
 `poseidon2([DOMAIN_SEP, contract_address, accepted_asset, fj_fee_amount, aa_payment_amount, valid_until, user_address])`
 
-Signature:
+Signature: Schnorr verified against immutable `operator_pubkey`.
 
-- Schnorr signature verified against immutable operator pubkey.
-- Signature is over `quote_hash.to_be_bytes::<32>()`.
+### Sponsored quote
 
-Replay protection:
+Domain separator: `0x46504353` ("FPCS").
 
-- `quote_hash` is pushed as a nullifier.
+Hash preimage (no `aa_payment_amount` — no token transfer):
+
+`poseidon2([DOMAIN_SEP, contract_address, accepted_asset, fj_fee_amount, valid_until, user_address])`
+
+Signature: Schnorr verified against immutable `sponsor_pubkey`.
+
+### Replay protection
+
+- `quote_hash` is pushed as a nullifier for both paid and sponsored quotes.
+- The different domain separators ensure a paid quote cannot be replayed as a sponsored quote, and vice versa.
 - FPC does not expose a utility `quote_used(...)` method.
 
 ## Wiring to Attestation Service
@@ -48,17 +83,18 @@ For `FPC`, attestation must be configured with:
 
 - `fpc_address = <fpc_address>`
 - `accepted_asset_address = <token_address>`
-- operator key matching constructor `operator_pubkey_x/y`
+- operator key matching constructor `operator_pubkey_x/y` (for paid quotes)
+- sponsor key matching constructor `sponsor_pubkey_x/y` (for sponsored quotes; not needed if deployed with `(0, 0)` sponsor key)
 
 Client flow:
 
-1. Request `/quote?user=<aztec_address>&fj_amount=<expected_max_gas_cost_no_teardown>`.
+1. Request `/quote?user=<aztec_address>&fj_amount=<expected_max_gas_cost>`.
 2. Receive `accepted_asset`, `fj_amount`, `aa_payment_amount`, `valid_until`, `signature`.
 3. Call `fee_entrypoint(accepted_asset, ...)` with those fields and transfer authwit nonce.
 
 Important:
 
-- `FPC` requires signed `fj_amount` to equal current `get_max_gas_cost_no_teardown(...)`.
+- `FPC` requires signed `fj_amount` to equal current `get_max_gas_cost(...)`.
 
 ## Wiring to Top-up Service
 
@@ -84,24 +120,43 @@ If authwit is missing, stale, or mismatched to amount/nonce, the call fails.
 
 ## Public/Private Interface
 
-- `constructor(operator, operator_pubkey_x, operator_pubkey_y)` (`public`, initializer)
+- `constructor(operator, operator_pubkey_x, operator_pubkey_y, sponsor_pubkey_x, sponsor_pubkey_y)` (`public`, initializer; pass `(0, 0)` for sponsor to disable sponsorship)
 - `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` (`private`)
+- `fee_entrypoint_sponsored(accepted_asset, fj_fee_amount, valid_until, quote_sig)` (`private`)
 
 Internal helpers:
 
 - `assert_valid_quote(...)`
-- `get_max_gas_cost_no_teardown(...)`
+- `assert_valid_sponsored_quote(...)`
+- `get_max_gas_cost(...)`
 
 ## Test Coverage Highlights
 
 Contract tests in `contracts/fpc/src/test` cover:
 
+### Paid path (`fee_entrypoint`)
+
 - constructor validation (zero `operator` rejected),
 - happy-path transfer accounting,
-- support for different `fj_fee_amount` and `aa_payment_amount` in quote payload,
-- `fj_fee_amount` mismatch rejection (`quoted fee amount mismatch`),
-- invalid quote signature path (for example, quote bound to another user),
+- `fj_fee_amount` mismatch rejection,
+- invalid quote signature path (quote bound to another user),
 - expired quote rejection,
-- overlong TTL rejection (`quote ttl too large`),
+- overlong TTL rejection,
 - user-bound quote enforcement,
 - fresh authwit requirement across repeated calls.
+
+### Sponsored path (`fee_entrypoint_sponsored`)
+
+- sponsored happy path (no token transfer, balances unchanged),
+- `fj_fee_amount` mismatch rejection,
+- overlong TTL rejection,
+- user-bound quote enforcement (quote signed for user A, called by user B),
+- consecutive sponsored calls with fresh quotes succeed,
+- cross-path domain separation (sponsored quote rejected in `fee_entrypoint`),
+- cross-path domain separation (standard quote rejected in `fee_entrypoint_sponsored`),
+- expired sponsored quote rejection,
+- wrong signer rejection (operator key cannot authorize sponsorship),
+- sponsored quote replay rejection (nullifier conflict),
+- constructor accepts `(0, 0)` sponsor key (sponsorship disabled),
+- `fee_entrypoint_sponsored` rejects when sponsorship is disabled,
+- `fee_entrypoint` still works when sponsorship is disabled.

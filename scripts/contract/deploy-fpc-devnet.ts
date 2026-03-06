@@ -28,6 +28,8 @@ type CliArgs = {
   deployerSecretKeyRef: string | null;
   operatorSecretKey: string | null;
   operatorSecretKeyRef: string | null;
+  sponsorSecretKey: string | null;
+  sponsorSecretKeyRef: string | null;
   operator: string | null;
   acceptedAsset: string | null;
   fpcArtifact: string;
@@ -90,9 +92,14 @@ type OperatorIdentity = {
   pubkeyY: string;
 };
 
+type SponsorIdentity = {
+  pubkeyX: string;
+  pubkeyY: string;
+};
 type FpcArtifactSelection = {
   artifactPath: string;
   name: FpcArtifactName;
+  hasSponsorPubkey: boolean;
 };
 
 type OperatorDerivationDeps = {
@@ -171,6 +178,8 @@ function usage(): string {
     "  --deployer-secret-key-ref <ref> Deployer key reference [env: FPC_DEPLOYER_SECRET_KEY_REF]",
     "  --operator-secret-key <hex32>    Operator secret key (default: deployer key) [env: FPC_OPERATOR_SECRET_KEY]",
     "  --operator-secret-key-ref <ref>  Operator key reference [env: FPC_OPERATOR_SECRET_KEY_REF]",
+    "  --sponsor-secret-key <hex32>     Sponsor secret key (default: operator key) [env: FPC_SPONSOR_SECRET_KEY]",
+    "  --sponsor-secret-key-ref <ref>   Sponsor key reference [env: FPC_SPONSOR_SECRET_KEY_REF]",
     "",
     "Network:",
     `  --node-url <url>                 Aztec node URL (default: ${DEVNET_DEFAULT_NODE_URL}) [env: FPC_NODE_URL]`,
@@ -196,6 +205,8 @@ function usage(): string {
     "    contracts are deployed with fee juice payment.",
     "  - --operator is optional; if omitted, the operator address is derived from --operator-secret-key.",
     "    If both are provided, they must match.",
+    "  - Sponsorship is disabled by default (constructor gets 0,0 sponsor key).",
+    "    Provide --sponsor-secret-key to enable it.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
   ].join("\n");
 }
@@ -280,6 +291,8 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let deployerSecretKeyRef: string | null = process.env.FPC_DEPLOYER_SECRET_KEY_REF ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null = process.env.FPC_OPERATOR_SECRET_KEY_REF ?? null;
+  let sponsorSecretKey: string | null = process.env.FPC_SPONSOR_SECRET_KEY ?? null;
+  let sponsorSecretKeyRef: string | null = process.env.FPC_SPONSOR_SECRET_KEY_REF ?? null;
   let operator: string | null = process.env.FPC_OPERATOR ?? null;
   let acceptedAsset: string | null = process.env.FPC_ACCEPTED_ASSET ?? null;
   let fpcArtifact: string = process.env.FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
@@ -320,6 +333,14 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--operator-secret-key-ref":
         operatorSecretKeyRef = nextArg(argv, i, arg);
+        i += 1;
+        break;
+      case "--sponsor-secret-key":
+        sponsorSecretKey = nextArg(argv, i, arg);
+        i += 1;
+        break;
+      case "--sponsor-secret-key-ref":
+        sponsorSecretKeyRef = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--operator":
@@ -376,6 +397,13 @@ function parseCliArgs(argv: string[]): CliParseResult {
     "--operator-secret-key-ref",
   );
 
+  const parsedSponsorSecret = parseSecretPair(
+    sponsorSecretKey,
+    sponsorSecretKeyRef,
+    "--sponsor-secret-key",
+    "--sponsor-secret-key-ref",
+  );
+
   if (!parsedDeployer.value && !parsedDeployer.ref) {
     pinoLogger.warn("WARN: No deployer key provided. Using default devnet test key.");
     parsedDeployer.value = DEVNET_DEFAULT_TEST_KEY;
@@ -411,6 +439,12 @@ function parseCliArgs(argv: string[]): CliParseResult {
         : null,
       operatorSecretKeyRef: parsedOperatorSecret.ref
         ? parseNonEmptyString(parsedOperatorSecret.ref, "--operator-secret-key-ref")
+        : null,
+      sponsorSecretKey: parsedSponsorSecret.value
+        ? parseHex32(parsedSponsorSecret.value, "--sponsor-secret-key")
+        : null,
+      sponsorSecretKeyRef: parsedSponsorSecret.ref
+        ? parseNonEmptyString(parsedSponsorSecret.ref, "--sponsor-secret-key-ref")
         : null,
       operator: parsedOperator,
       acceptedAsset: acceptedAsset ? parseAztecAddress(acceptedAsset, "--accepted-asset") : null,
@@ -774,6 +808,34 @@ async function deriveOperatorIdentity(operatorSecretKey: string): Promise<Operat
   }
 }
 
+async function deriveSponsorIdentity(sponsorSecretKey: string): Promise<SponsorIdentity> {
+  const deps = await loadOperatorDerivationDeps();
+
+  let secretKeyFr: unknown;
+  try {
+    secretKeyFr = deps.Fr.fromHexString(sponsorSecretKey);
+  } catch (error) {
+    throw new CliError(
+      `Sponsor key derivation failed: invalid sponsor secret key. Underlying error: ${String(error)}`,
+    );
+  }
+
+  try {
+    const signingKey = deps.deriveSigningKey(secretKeyFr);
+    const schnorr = new deps.Schnorr();
+    const pubkey = await schnorr.computePublicKey(signingKey);
+
+    const pubkeyX = parseFieldValueString(pubkey.x, "sponsor pubkey x");
+    const pubkeyY = parseFieldValueString(pubkey.y, "sponsor pubkey y");
+
+    return { pubkeyX, pubkeyY };
+  } catch (error) {
+    throw new CliError(
+      `Sponsor key derivation failed: could not derive sponsor pubkey. Underlying error: ${String(error)}`,
+    );
+  }
+}
+
 async function assertAztecNodePreflight(nodeUrl: string): Promise<NodePreflightState> {
   const ready = await rpcCall<boolean>(nodeUrl, "node_isReady", []);
   if (!ready) {
@@ -947,7 +1009,18 @@ function loadFpcArtifactSelection(artifactPathInput: string): FpcArtifactSelecti
       `Invalid --fpc-artifact at ${artifactPath}: contract artifact is not transpiled (transpiled=${renderedValue}). Run 'aztec compile --workspace --force' and retry.`,
     );
   }
-  return { artifactPath, name };
+  const functions = (parsed as { functions?: unknown[] }).functions ?? [];
+  const ctorFn = functions.find(
+    (f: unknown) => f && typeof f === "object" && (f as { name?: string }).name === "constructor",
+  ) as
+    | {
+        parameters?: Array<{ name?: string }>;
+        abi?: { parameters?: Array<{ name?: string }> };
+      }
+    | undefined;
+  const params = ctorFn?.parameters ?? ctorFn?.abi?.parameters ?? [];
+  const hasSponsorPubkey = params.some((p) => p?.name === "sponsor_pubkey_x");
+  return { artifactPath, name, hasSponsorPubkey };
 }
 
 function assertRequiredArtifactsExistForDevnet(
@@ -973,6 +1046,63 @@ function assertRequiredArtifactsExistForDevnet(
       `Artifact preflight failed: required compiled artifacts are missing.\n${formatted}\nRun 'aztec compile --workspace --force' and retry.`,
     );
   }
+}
+
+async function assertL1RpcPreflight(args: CliArgs, nodeState: NodePreflightState): Promise<void> {
+  if (args.validateTopupPath || args.l1RpcUrl) {
+    if (!args.l1RpcUrl) {
+      throw new CliError("L1 RPC preflight requested, but --l1-rpc-url was not provided");
+    }
+    const l1RpcChainId = await assertL1RpcReachable(args.l1RpcUrl);
+    if (l1RpcChainId !== nodeState.l1ChainId) {
+      throw new CliError(
+        `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeState.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
+      );
+    }
+    pinoLogger.info(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
+  } else {
+    pinoLogger.info("[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)");
+  }
+}
+
+async function resolveOperatorAndSponsor(
+  args: CliArgs,
+  fpcSelection: FpcArtifactSelection,
+): Promise<{
+  operatorIdentity: OperatorIdentity;
+  sponsorIdentity: SponsorIdentity | null;
+}> {
+  if (!args.operatorSecretKey) {
+    throw new CliError(
+      "Operator pubkey derivation requires --operator-secret-key. The provided --operator-secret-key-ref cannot be resolved by this script yet.",
+    );
+  }
+
+  const operatorIdentity = await deriveOperatorIdentity(args.operatorSecretKey);
+  if (args.operator && args.operator.toLowerCase() !== operatorIdentity.address.toLowerCase()) {
+    throw new CliError(
+      `--operator ${args.operator} does not match address derived from --operator-secret-key: ${operatorIdentity.address}. Remove --operator to use the derived address, or provide the matching secret key.`,
+    );
+  }
+  pinoLogger.info(
+    `[deploy-fpc-devnet] operator identity derived. address=${operatorIdentity.address} pubkey_x=${operatorIdentity.pubkeyX} pubkey_y=${operatorIdentity.pubkeyY}`,
+  );
+
+  let sponsorIdentity: SponsorIdentity | null = null;
+  if (fpcSelection.hasSponsorPubkey) {
+    if (args.sponsorSecretKey) {
+      sponsorIdentity = await deriveSponsorIdentity(args.sponsorSecretKey);
+      pinoLogger.info(
+        `[deploy-fpc-devnet] sponsor identity derived (dedicated). pubkey_x=${sponsorIdentity.pubkeyX} pubkey_y=${sponsorIdentity.pubkeyY}`,
+      );
+    } else {
+      pinoLogger.info(
+        "[deploy-fpc-devnet] no --sponsor-secret-key provided; sponsorship disabled (constructor gets 0, 0)",
+      );
+    }
+  }
+
+  return { operatorIdentity, sponsorIdentity };
 }
 
 async function main(): Promise<void> {
@@ -1003,20 +1133,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] node preflight passed. node_version=${nodeState.nodeVersion} l1_chain_id=${nodeState.l1ChainId} l2_chain_id=${nodeState.l2ChainId} rollup_version=${nodeState.rollupVersion}`,
   );
 
-  if (args.validateTopupPath || args.l1RpcUrl) {
-    if (!args.l1RpcUrl) {
-      throw new CliError("L1 RPC preflight requested, but --l1-rpc-url was not provided");
-    }
-    const l1RpcChainId = await assertL1RpcReachable(args.l1RpcUrl);
-    if (l1RpcChainId !== nodeState.l1ChainId) {
-      throw new CliError(
-        `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeState.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
-      );
-    }
-    pinoLogger.info(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
-  } else {
-    pinoLogger.info("[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)");
-  }
+  await assertL1RpcPreflight(args, nodeState);
 
   if (args.sponsoredFpcAddress) {
     pinoLogger.info(
@@ -1043,20 +1160,10 @@ async function main(): Promise<void> {
       pinoLogger.info("[deploy-fpc-devnet] preflight-only requested; exiting");
       return;
     }
-    throw new CliError(
-      "Operator pubkey derivation requires --operator-secret-key. The provided --operator-secret-key-ref cannot be resolved by this script yet.",
-    );
   }
 
-  const operatorIdentity = await deriveOperatorIdentity(args.operatorSecretKey);
-  if (args.operator && args.operator.toLowerCase() !== operatorIdentity.address.toLowerCase()) {
-    throw new CliError(
-      `--operator ${args.operator} does not match address derived from --operator-secret-key: ${operatorIdentity.address}. Remove --operator to use the derived address, or provide the matching secret key.`,
-    );
-  }
-  pinoLogger.info(
-    `[deploy-fpc-devnet] operator identity derived. address=${operatorIdentity.address} pubkey_x=${operatorIdentity.pubkeyX} pubkey_y=${operatorIdentity.pubkeyY}`,
-  );
+  const { operatorIdentity, sponsorIdentity } = await resolveOperatorAndSponsor(args, fpcSelection);
+
   pinoLogger.info("[deploy-fpc-devnet] step 3 account resolution checks passed");
 
   if (args.preflightOnly) {
@@ -1127,15 +1234,21 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deploying ${fpcSelection.name} contract from ${fpcSelection.artifactPath}`,
   );
   const fpcArtifact = loadArtifact(fpcSelection.artifactPath);
-  const fpcConstructorArgs =
-    fpcSelection.name === "FPCMultiAsset"
-      ? [operatorAddress, operatorIdentity.pubkeyX, operatorIdentity.pubkeyY]
-      : [
-          operatorAddress,
-          operatorIdentity.pubkeyX,
-          operatorIdentity.pubkeyY,
-          AztecAddress.fromString(acceptedAssetAddress),
-        ];
+  const fpcConstructorArgs: unknown[] = [
+    operatorAddress,
+    operatorIdentity.pubkeyX,
+    operatorIdentity.pubkeyY,
+  ];
+  if (fpcSelection.hasSponsorPubkey) {
+    if (sponsorIdentity) {
+      fpcConstructorArgs.push(sponsorIdentity.pubkeyX, sponsorIdentity.pubkeyY);
+    } else {
+      fpcConstructorArgs.push("0", "0");
+    }
+  }
+  if (fpcSelection.name !== "FPCMultiAsset") {
+    fpcConstructorArgs.push(AztecAddress.fromString(acceptedAssetAddress));
+  }
   const fpcContract = await deployContract(wallet, fpcArtifact, fpcConstructorArgs, deployOpts);
   const fpcAddress = fpcContract.address.toString();
   pinoLogger.info(`[deploy-fpc-devnet] fpc deployed. address=${fpcAddress}`);
@@ -1249,6 +1362,14 @@ async function main(): Promise<void> {
       pubkey_x: operatorIdentity.pubkeyX,
       pubkey_y: operatorIdentity.pubkeyY,
     },
+    ...(sponsorIdentity
+      ? {
+          sponsor: {
+            pubkey_x: sponsorIdentity.pubkeyX,
+            pubkey_y: sponsorIdentity.pubkeyY,
+          },
+        }
+      : {}),
     tx_hashes: {
       accepted_asset_deploy: null,
       fpc_deploy: null,

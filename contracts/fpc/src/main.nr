@@ -17,8 +17,9 @@ use ::aztec::macros::aztec;
 /// ## Storage
 ///
 /// - config            (PublicImmutable<Config>) -- packed immutable config
-///                                                  containing operator address
-///                                                  and operator signing key.
+///                                                  containing operator address,
+///                                                  operator signing key, and
+///                                                  sponsor signing key.
 #[aztec]
 pub contract FPCMultiAsset {
     use aztec::{
@@ -31,20 +32,27 @@ pub contract FPCMultiAsset {
     use std::embedded_curve_ops::EmbeddedCurvePoint;
     use token::Token;
 
+    // "FPC" -- domain separator for paid quote hashes.
     global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
+    // "FPCS" -- domain separator for sponsored quote hashes.
+    global SPONSORED_QUOTE_DOMAIN_SEPARATOR: Field = 0x46504353;
     // Quotes must expire within this many seconds from the tx anchor timestamp.
     global MAX_QUOTE_TTL_SECONDS: u64 = 3600;
     global GRUMPKIN_CURVE_B: Field = 17;
 
     /// Packed configuration stored as a single PublicImmutable slot.
-    /// 3 fields (no accepted_asset -- that is now a per-quote parameter).
+    /// 5 fields (no accepted_asset -- that is now a per-quote parameter).
     #[derive(Deserialize, Eq, Packable, Serialize)]
     pub struct Config {
         operator: AztecAddress,
-        /// Operator signing public key x coordinate.
+        /// Operator signing public key x coordinate (paid quotes).
         operator_pubkey_x: Field,
-        /// Operator signing public key y coordinate.
+        /// Operator signing public key y coordinate (paid quotes).
         operator_pubkey_y: Field,
+        /// Sponsor signing public key x coordinate (sponsored quotes).
+        sponsor_pubkey_x: Field,
+        /// Sponsor signing public key y coordinate (sponsored quotes).
+        sponsor_pubkey_y: Field,
     }
 
     #[storage]
@@ -54,15 +62,38 @@ pub contract FPCMultiAsset {
 
     #[external("public")]
     #[initializer]
-    fn constructor(operator: AztecAddress, operator_pubkey_x: Field, operator_pubkey_y: Field) {
+    fn constructor(
+        operator: AztecAddress,
+        operator_pubkey_x: Field,
+        operator_pubkey_y: Field,
+        sponsor_pubkey_x: Field,
+        sponsor_pubkey_y: Field,
+    ) {
         assert(!operator.is_zero(), "invalid operator");
-        // Basic on-curve check: y^2 = x^3 - 17 (Grumpkin)
         assert(
             operator_pubkey_y * operator_pubkey_y
                 == operator_pubkey_x * operator_pubkey_x * operator_pubkey_x - GRUMPKIN_CURVE_B,
             "operator pubkey not on curve",
         );
-        self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y });
+        // (0, 0) disables sponsorship; otherwise enforce on-curve.
+        let sponsor_disabled = (sponsor_pubkey_x == 0) & (sponsor_pubkey_y == 0);
+        assert(
+            sponsor_disabled
+                | (
+                    sponsor_pubkey_y * sponsor_pubkey_y
+                        == sponsor_pubkey_x * sponsor_pubkey_x * sponsor_pubkey_x - GRUMPKIN_CURVE_B
+                ),
+            "sponsor pubkey not on curve",
+        );
+        self.storage.config.initialize(
+            Config {
+                operator,
+                operator_pubkey_x,
+                operator_pubkey_y,
+                sponsor_pubkey_x,
+                sponsor_pubkey_y,
+            },
+        );
     }
 
     // Transfers the fee charge from the user's private balance directly to the
@@ -116,6 +147,56 @@ pub contract FPCMultiAsset {
         }
     }
 
+    // Covers the user's Fee Juice cost without any token transfer. The sponsor
+    // key (separate from the operator key) must sign the sponsored quote.
+
+    #[external("private")]
+    #[allow_phase_change]
+    fn fee_entrypoint_sponsored(
+        accepted_asset: AztecAddress,
+        fj_fee_amount: u128,
+        valid_until: u64,
+        quote_sig: [u8; 64],
+    ) {
+        let max_fees = self.context.gas_settings().max_fees_per_gas;
+        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
+        if enforce_setup_phase {
+            assert(
+                !self.context.in_revertible_phase(),
+                "fee_entrypoint_sponsored must run in setup phase",
+            );
+        }
+
+        let config = self.storage.config.read();
+        assert(
+            (config.sponsor_pubkey_x != 0) | (config.sponsor_pubkey_y != 0),
+            "sponsorship not enabled",
+        );
+        let sender = self.msg_sender();
+
+        assert_valid_sponsored_quote(
+            self.context,
+            EmbeddedCurvePoint {
+                x: config.sponsor_pubkey_x,
+                y: config.sponsor_pubkey_y,
+                is_infinite: false,
+            },
+            accepted_asset,
+            fj_fee_amount,
+            valid_until,
+            sender,
+            quote_sig,
+        );
+
+        let max_fee = get_max_gas_cost(self.context);
+        assert(fj_fee_amount == max_fee, "quoted fee amount mismatch");
+
+        self.context.set_as_fee_payer();
+        if enforce_setup_phase | !self.context.in_revertible_phase() {
+            self.context.end_setup();
+        }
+    }
+
     /// Compute the quote hash and verify the operator's Schnorr signature
     /// inline. Pushes a nullifier to prevent replay.
     ///
@@ -151,6 +232,45 @@ pub contract FPCMultiAsset {
         assert(anchor_ts <= valid_until, "quote expired");
         let quote_ttl = valid_until - anchor_ts;
         assert(quote_ttl <= MAX_QUOTE_TTL_SECONDS, "quote ttl too large");
+        context.set_expiration_timestamp(valid_until);
+    }
+
+    /// Compute the sponsored quote hash and verify the sponsor's Schnorr
+    /// signature inline. Pushes a nullifier to prevent replay.
+    ///
+    /// Sponsored quote preimage (uses SPONSORED_QUOTE_DOMAIN_SEPARATOR):
+    ///   poseidon2([SPONSORED_DOMAIN_SEP, fpc_address, accepted_asset,
+    ///              fj_fee_amount, valid_until, user_address])
+    #[contract_library_method]
+    fn assert_valid_sponsored_quote(
+        context: &mut PrivateContext,
+        sponsor_pubkey: EmbeddedCurvePoint,
+        accepted_asset: AztecAddress,
+        fj_fee_amount: u128,
+        valid_until: u64,
+        user_address: AztecAddress,
+        quote_sig: [u8; 64],
+    ) {
+        let quote_hash = compute_inner_authwit_hash([
+            SPONSORED_QUOTE_DOMAIN_SEPARATOR,
+            context.this_address().to_field(),
+            accepted_asset.to_field(),
+            fj_fee_amount as Field,
+            valid_until as Field,
+            user_address.to_field(),
+        ]);
+
+        assert(
+            schnorr::verify_signature(sponsor_pubkey, quote_sig, quote_hash.to_be_bytes::<32>()),
+            "invalid sponsored quote signature",
+        );
+
+        context.push_nullifier(quote_hash);
+
+        let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
+        assert(anchor_ts <= valid_until, "sponsored quote expired");
+        let quote_ttl = valid_until - anchor_ts;
+        assert(quote_ttl <= MAX_QUOTE_TTL_SECONDS, "sponsored quote ttl too large");
         context.set_expiration_timestamp(valid_until);
     }
 
