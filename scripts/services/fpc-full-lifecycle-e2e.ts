@@ -19,7 +19,7 @@ import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { deployContract } from "../common/deploy-utils.ts";
+import { deployContract } from "@aztec-fpc/contract-deployment/src/deploy-utils.ts";
 import {
   installManagedProcessSignalHandlers,
   type ManagedProcess,

@@ -8,6 +8,7 @@ COPY services/topup/tsconfig.json services/topup/
 # ── Service source & build ──
 COPY services/attestation/src/ services/attestation/src/
 COPY services/topup/src/ services/topup/src/
+COPY contract-deployment/src/ contract-deployment/src/
 
 # ── Test files ──
 COPY services/attestation/test/ services/attestation/test/

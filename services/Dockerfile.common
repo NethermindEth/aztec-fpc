@@ -1,4 +1,4 @@
-ARG SERVICE
+ARG PACKAGE_DIR
 
 # ---------- deps: install all dependencies (dev + prod) ----------
 FROM oven/bun:1.3.9-slim AS base
@@ -19,19 +19,20 @@ COPY sdk/package.json sdk/
 COPY scripts/package.json scripts/
 COPY services/attestation/package.json services/attestation/
 COPY services/topup/package.json services/topup/
+COPY contract-deployment/package.json contract-deployment/
 
 RUN bun install --frozen-lockfile
 
 # ---------- build: compile TypeScript ----------
 FROM deps AS build
 
-ARG SERVICE
+ARG PACKAGE_DIR
 
 COPY tsconfig.base.json ./
-COPY services/${SERVICE}/tsconfig.json services/${SERVICE}/
-COPY services/${SERVICE}/src/ services/${SERVICE}/src/
+COPY ${PACKAGE_DIR}/tsconfig.json ${PACKAGE_DIR}/
+COPY ${PACKAGE_DIR}/src/ ${PACKAGE_DIR}/src/
 
-RUN cd services/${SERVICE} && bun run build
+RUN cd ${PACKAGE_DIR} && bun run build
 
 # ---------- external-deps: only packages excluded from the bundle ----------
 FROM base AS external-deps
@@ -44,25 +45,25 @@ RUN bun install
 # ---------- runtime: final slim image ----------
 FROM oven/bun:1.3.9-slim AS runtime
 
-ARG SERVICE
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends jq && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG PACKAGE_DIR
 
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home app \
-    && mkdir -p /app/.bb-crs && chown app:app /app/.bb-crs
+    && mkdir -p /app/.bb-crs && chown app:app /app /app/.bb-crs
 
 ENV CRS_PATH=/app/.bb-crs
 
 WORKDIR /app
 
-COPY --from=external-deps --chown=app:app /deps/node_modules node_modules
-COPY --from=build         --chown=app:app /app/services/${SERVICE}/dist services/${SERVICE}/dist
+COPY --from=external-deps /deps/node_modules node_modules
+COPY --from=build         /app/${PACKAGE_DIR}/dist ${PACKAGE_DIR}/dist
 
 # Workspace package manifests (needed for Bun module resolution at runtime)
-COPY --chown=app:app package.json ./
-COPY --chown=app:app sdk/package.json sdk/
-COPY --chown=app:app services/${SERVICE}/package.json services/${SERVICE}/
-
-# Reference config — real config must be bind-mounted at runtime
-COPY --chown=app:app services/${SERVICE}/config.example.yaml services/${SERVICE}/
+COPY package.json ./
+COPY ${PACKAGE_DIR}/package.json ${PACKAGE_DIR}/
 
 USER app

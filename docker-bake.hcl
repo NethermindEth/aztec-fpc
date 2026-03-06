@@ -38,7 +38,7 @@ target "attestation-base" {
   context    = "."
   dockerfile = "services/Dockerfile.common"
   target     = "runtime"
-  args       = { SERVICE = "attestation" }
+  args       = { PACKAGE_DIR = "services/attestation" }
   platforms  = PLATFORMS
 }
 
@@ -46,7 +46,7 @@ target "topup-base" {
   context    = "."
   dockerfile = "services/Dockerfile.common"
   target     = "runtime"
-  args       = { SERVICE = "topup" }
+  args       = { PACKAGE_DIR = "services/topup" }
   platforms  = PLATFORMS
 }
 
@@ -74,6 +74,14 @@ target "topup" {
   ])
 }
 
+target "deploy-base" {
+  context    = "."
+  dockerfile = "services/Dockerfile.common"
+  target     = "runtime"
+  args       = { PACKAGE_DIR = "contract-deployment" }
+  platforms  = PLATFORMS
+}
+
 target "deps" {
   context    = "."
   dockerfile = "services/Dockerfile.common"
@@ -96,7 +104,7 @@ target "deploy" {
   context    = "."
   dockerfile = "scripts/contract/Dockerfile.deploy"
   contexts   = {
-    deps     = "target:deps"
+    common   = "target:deploy-base"
     contract = "target:contract"
   }
   platforms  = PLATFORMS

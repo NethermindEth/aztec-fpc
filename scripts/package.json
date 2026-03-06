@@ -12,6 +12,7 @@
     "@aztec/stdlib": "4.0.0-devnet.2-patch.3",
     "@aztec/wallets": "4.0.0-devnet.2-patch.3",
     "viem": "^2.18.0",
-    "pino": "^10.3.1"
+    "pino": "^10.3.1",
+    "@aztec-fpc/contract-deployment": "workspace:*"
   }
 }

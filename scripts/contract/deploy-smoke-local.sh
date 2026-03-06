@@ -44,7 +44,7 @@ DEPLOYER_SECRET_KEY="${FPC_LOCAL_DEPLOYER_SECRET_KEY:-0x2153536ff6628eee01cf4024
 
 echo "[deploy-smoke] Running local deploy command (variant-specific FPC)"
 cmd=(
-  bunx tsx "$REPO_ROOT/scripts/contract/deploy-fpc-devnet.ts"
+  bunx tsx "$REPO_ROOT/contract-deployment/src/index.ts"
   --node-url "$AZTEC_NODE_URL"
   --l1-rpc-url "$L1_RPC_URL"
   --deployer-secret-key "$DEPLOYER_SECRET_KEY"

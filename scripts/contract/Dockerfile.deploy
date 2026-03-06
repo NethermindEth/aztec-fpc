@@ -1,17 +1,16 @@
-FROM deps
+FROM common
 
-ENV CRS_PATH=/app/.bb-crs
+# Start as root so the entrypoint can fix bind-mount ownership, then drop to app
+USER root
 
-# ── Pull compiled contract artifacts from compile stage ──
-COPY --from=contract /app/target/ target/
-
-# Install yq for YAML processing during config generation
+# yq for config generation
 COPY --from=mikefarah/yq:4.45.4 /usr/bin/yq /usr/local/bin/yq
 
-COPY scripts/contract/deploy-fpc-devnet.ts scripts/contract/
+# Contract artifacts from compile stage
+COPY --from=contract /app/target/ target/
+
+# Shell entrypoint + config generation script
 COPY scripts/contract/deploy-fpc.sh scripts/contract/
-COPY scripts/contract/devnet-manifest.ts scripts/contract/
-COPY scripts/common/ scripts/common/
 COPY scripts/config/ scripts/config/
 
 ENTRYPOINT ["scripts/contract/deploy-fpc.sh"]
