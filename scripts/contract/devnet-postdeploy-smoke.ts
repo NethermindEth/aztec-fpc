@@ -924,7 +924,9 @@ async function buildSponsoredPaymentMethod(params: {
     }
 
     try {
-      const sponsoredModule = await importWithWorkspaceFallback("@aztec/noir-contracts.js/SponsoredFPC");
+      const sponsoredModule = await importWithWorkspaceFallback(
+        "@aztec/noir-contracts.js/SponsoredFPC",
+      );
       const sponsoredArtifact = sponsoredModule.SponsoredFPCContractArtifact;
       if (sponsoredArtifact) {
         await wallet.registerContract(sponsorInstance, sponsoredArtifact);
@@ -1253,13 +1255,11 @@ async function runSmoke(args: CliArgs): Promise<void> {
         `[devnet-postdeploy-smoke] FPC allowlist already contains accepted_asset=${token.address.toString()}`,
       );
     } else {
-      await fpc.methods
-        .add_accepted_asset(token.address)
-        .send({
-          from: operatorAddress,
-          ...(operatorFee ? { fee: operatorFee } : {}),
-          wait: { timeout: 180 },
-        });
+      await fpc.methods.add_accepted_asset(token.address).send({
+        from: operatorAddress,
+        ...(operatorFee ? { fee: operatorFee } : {}),
+        wait: { timeout: 180 },
+      });
       pinoLogger.info(
         `[devnet-postdeploy-smoke] initialized FPC allowlist with accepted_asset=${token.address.toString()}`,
       );
@@ -1330,20 +1330,16 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const fpcExpectedCharge = ceilDiv(maxGasCostNoTeardown * args.fpcRateNum, args.fpcRateDen);
   const fpcFjAmount = maxGasCostNoTeardown;
   const fpcAaAmount = fpcExpectedCharge;
-  await token.methods
-    .mint_to_private(userAddress, fpcExpectedCharge + 1_000_000n)
-    .send({
-      from: operatorAddress,
-      ...(operatorFee ? { fee: operatorFee } : {}),
-      wait: { timeout: 180 },
-    });
-  await token.methods
-    .mint_to_public(userAddress, 2n)
-    .send({
-      from: operatorAddress,
-      ...(operatorFee ? { fee: operatorFee } : {}),
-      wait: { timeout: 180 },
-    });
+  await token.methods.mint_to_private(userAddress, fpcExpectedCharge + 1_000_000n).send({
+    from: operatorAddress,
+    ...(operatorFee ? { fee: operatorFee } : {}),
+    wait: { timeout: 180 },
+  });
+  await token.methods.mint_to_public(userAddress, 2n).send({
+    from: operatorAddress,
+    ...(operatorFee ? { fee: operatorFee } : {}),
+    wait: { timeout: 180 },
+  });
   await waitForPrivateBalanceAtLeast({
     token,
     owner: userAddress,

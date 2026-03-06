@@ -591,9 +591,9 @@ async function main() {
     (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
   );
 
-  let receipt:
-    | Awaited<ReturnType<ReturnType<typeof token.methods.transfer_public_to_public>["send"]>>
-    | null = null;
+  let receipt: Awaited<
+    ReturnType<ReturnType<typeof token.methods.transfer_public_to_public>["send"]>
+  > | null = null;
   for (let attempt = 1; attempt <= FEE_PATH_MAX_ATTEMPTS; attempt += 1) {
     const validUntil =
       (await getLatestBlockTimestampOrThrow(
