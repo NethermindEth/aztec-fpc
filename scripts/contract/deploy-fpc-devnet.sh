@@ -117,7 +117,6 @@ if [[ "$MODE" == "local" ]]; then
   NODE_URL="$AZTEC_NODE_URL"
   OUT_PATH="${FPC_LOCAL_OUT:-./tmp/deploy-fpc-local-manifest.json}"
   # Defaults match aztec local-network TEST_ACCOUNTS account #0.
-  DEPLOYER_ALIAS="${FPC_LOCAL_DEPLOYER_ALIAS:-test0}"
   DEPLOYER_SECRET_KEY="${FPC_LOCAL_DEPLOYER_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
   OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
 
@@ -132,7 +131,6 @@ if [[ "$MODE" == "local" ]]; then
       bunx tsx scripts/contract/deploy-fpc-devnet.ts
       --node-url "${NODE_URL}"
       --l1-rpc-url "${L1_RPC_URL}"
-      --deployer-alias "${DEPLOYER_ALIAS}"
       --deployer-secret-key "${DEPLOYER_SECRET_KEY}"
       --operator-secret-key "${OPERATOR_SECRET_KEY}"
       --fpc-artifact "${artifact_path}"
@@ -176,7 +174,6 @@ fi
 
 NODE_URL="${FPC_DEVNET_NODE_URL:-https://v4-devnet-2.aztec-labs.com/}"
 SPONSORED_FPC_ADDRESS="${FPC_DEVNET_SPONSORED_FPC_ADDRESS:-0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2}"
-DEPLOYER_ALIAS="${FPC_DEVNET_DEPLOYER_ALIAS:-my-wallet}"
 OUT_PATH="${FPC_DEVNET_OUT:-./deployments/devnet-manifest-v2.json}"
 DEFAULT_TEST_KEY="0x1111111111111111111111111111111111111111111111111111111111111111"
 
@@ -210,7 +207,6 @@ cmd=(
   bunx tsx scripts/contract/deploy-fpc-devnet.ts
   --node-url "${NODE_URL}"
   --sponsored-fpc-address "${SPONSORED_FPC_ADDRESS}"
-  --deployer-alias "${DEPLOYER_ALIAS}"
   --fpc-artifact "${FPC_ARTIFACT}"
   --out "${OUT_PATH}"
 )
