@@ -58,6 +58,11 @@ export type DevnetDeployManifest = {
     fpc: string;
     faucet?: string;
     counter?: string;
+    bridge?: string;
+  };
+  l1_contracts?: {
+    token_portal: string;
+    erc20: string;
   };
   fpc_artifact?: {
     name: FpcArtifactName;
@@ -73,6 +78,7 @@ export type DevnetDeployManifest = {
     fpc_deploy: string | null;
     faucet_deploy?: string | null;
     counter_deploy?: string | null;
+    bridge_deploy?: string | null;
   };
   faucet_config?: {
     drip_amount: string;
@@ -412,6 +418,9 @@ function parseManifest(input: unknown): DevnetDeployManifest {
   const counterAddressRaw = hasOwn(contractsRaw, "counter")
     ? requireString(contractsRaw, "counter", "manifest.contracts")
     : undefined;
+  const bridgeAddressRaw = hasOwn(contractsRaw, "bridge")
+    ? requireString(contractsRaw, "bridge", "manifest.contracts")
+    : undefined;
   const contracts = {
     accepted_asset: parseAztecAddress(
       requireString(contractsRaw, "accepted_asset", "manifest.contracts"),
@@ -431,7 +440,27 @@ function parseManifest(input: unknown): DevnetDeployManifest {
           counter: parseAztecAddress(counterAddressRaw, "manifest.contracts.counter"),
         }
       : {}),
+    ...(bridgeAddressRaw !== undefined
+      ? {
+          bridge: parseAztecAddress(bridgeAddressRaw, "manifest.contracts.bridge"),
+        }
+      : {}),
   };
+
+  let l1Contracts: DevnetDeployManifest["l1_contracts"];
+  if (hasOwn(input, "l1_contracts")) {
+    const l1ContractsRaw2 = requireObject(input, "l1_contracts", "manifest");
+    l1Contracts = {
+      token_portal: parseEthAddress(
+        requireString(l1ContractsRaw2, "token_portal", "manifest.l1_contracts"),
+        "manifest.l1_contracts.token_portal",
+      ),
+      erc20: parseEthAddress(
+        requireString(l1ContractsRaw2, "erc20", "manifest.l1_contracts"),
+        "manifest.l1_contracts.erc20",
+      ),
+    };
+  }
 
   let fpcArtifact: DevnetDeployManifest["fpc_artifact"];
   if (hasOwn(input, "fpc_artifact")) {
@@ -485,6 +514,14 @@ function parseManifest(input: unknown): DevnetDeployManifest {
           counter_deploy: parseTxHashOrNull(
             txHashesRaw.counter_deploy,
             "manifest.tx_hashes.counter_deploy",
+          ),
+        }
+      : {}),
+    ...(hasOwn(txHashesRaw, "bridge_deploy")
+      ? {
+          bridge_deploy: parseTxHashOrNull(
+            txHashesRaw.bridge_deploy,
+            "manifest.tx_hashes.bridge_deploy",
           ),
         }
       : {}),
@@ -546,6 +583,7 @@ function parseManifest(input: unknown): DevnetDeployManifest {
       ...(l1TopupOperator ? { l1_topup_operator: l1TopupOperator } : {}),
     },
     contracts,
+    ...(l1Contracts ? { l1_contracts: l1Contracts } : {}),
     ...(fpcArtifact ? { fpc_artifact: fpcArtifact } : {}),
     operator,
     tx_hashes: txHashes,

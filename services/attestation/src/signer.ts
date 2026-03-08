@@ -22,6 +22,9 @@ import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 // Must match QUOTE_DOMAIN_SEPARATOR in main.nr ("FPC" = 0x465043)
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 
+// Must match COLD_START_QUOTE_DOMAIN_SEPARATOR in main.nr ("FPCs" = 0x46504373)
+const COLD_START_QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x46504373");
+
 export interface QuoteParams {
   fpcAddress: AztecAddress;
   /** Selected per-request payment asset. */
@@ -92,5 +95,44 @@ export async function signRateQuote(
   params: RateQuoteParams,
 ): Promise<string> {
   const quoteHash = await computeRateQuoteHash(params);
+  return signer.signQuoteHash(quoteHash);
+}
+
+export interface ColdStartQuoteParams {
+  fpcAddress: AztecAddress;
+  acceptedAsset: AztecAddress;
+  fjFeeAmount: bigint;
+  aaPaymentAmount: bigint;
+  validUntil: bigint;
+  userAddress: AztecAddress;
+  claimAmount: bigint;
+  claimSecretHash: Fr;
+}
+
+/**
+ * Compute the cold-start quote hash with extended preimage that binds
+ * the signature to a specific bridge deposit (claim_amount + claim_secret_hash).
+ *
+ * Uses COLD_START_QUOTE_DOMAIN_SEPARATOR to prevent cross-entrypoint replay.
+ */
+export function computeColdStartQuoteHash(params: ColdStartQuoteParams): Promise<Fr> {
+  return computeInnerAuthWitHash([
+    COLD_START_QUOTE_DOMAIN_SEPARATOR,
+    params.fpcAddress.toField(),
+    params.acceptedAsset.toField(),
+    new Fr(params.fjFeeAmount),
+    new Fr(params.aaPaymentAmount),
+    new Fr(params.validUntil),
+    params.userAddress.toField(),
+    new Fr(params.claimAmount),
+    params.claimSecretHash,
+  ]);
+}
+
+export async function signColdStartQuote(
+  signer: QuoteSchnorrSigner,
+  params: ColdStartQuoteParams,
+): Promise<string> {
+  const quoteHash = await computeColdStartQuoteHash(params);
   return signer.signQuoteHash(quoteHash);
 }

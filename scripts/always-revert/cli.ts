@@ -23,9 +23,6 @@ export type CliArgs = {
   attestationUrl: string;
   manifestPath: string;
   operatorSecretKey: string;
-  aaPaymentAmount: bigint;
-  feePerDaGas: bigint | null;
-  feePerL2Gas: bigint | null;
   messageTimeoutSeconds: number;
   iterations: number;
 };
@@ -57,13 +54,6 @@ export function usage(): string {
     "",
     "Network:",
     "  --node-url <url>                 Aztec node URL (default: http://localhost:8080) [env: AZTEC_NODE_URL]",
-    "",
-    "Amounts:",
-    "  --aa-payment-amount <uint>       AA payment amount (default: 1000000000) [env: FPC_COLD_START_AA_PAYMENT_AMOUNT]",
-    "",
-    "Gas:",
-    "  --fee-per-da-gas <uint>          Override fee per DA gas [env: FPC_SMOKE_FEE_PER_DA_GAS]",
-    "  --fee-per-l2-gas <uint>          Override fee per L2 gas [env: FPC_SMOKE_FEE_PER_L2_GAS]",
     "",
     "Timing:",
     "  --message-timeout <uint>         FeeJuice balance wait timeout seconds (default: 120) [env: FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS]",
@@ -151,9 +141,6 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   let attestationUrl: string | null = process.env.FPC_ATTESTATION_URL ?? null;
   let manifestPath: string | null = process.env.FPC_COLD_START_MANIFEST ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
-  let aaPaymentAmount: string = process.env.FPC_COLD_START_AA_PAYMENT_AMOUNT ?? "1000000000";
-  let feePerDaGas: string | null = process.env.FPC_SMOKE_FEE_PER_DA_GAS ?? null;
-  let feePerL2Gas: string | null = process.env.FPC_SMOKE_FEE_PER_L2_GAS ?? null;
   let messageTimeoutSeconds: string = process.env.FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS ?? "120";
   let iterations: string = process.env.FPC_SMOKE_ITERATIONS ?? "3";
 
@@ -174,18 +161,6 @@ export function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--operator-secret-key":
         operatorSecretKey = nextArg(argv, i, arg);
-        i += 1;
-        break;
-      case "--aa-payment-amount":
-        aaPaymentAmount = nextArg(argv, i, arg);
-        i += 1;
-        break;
-      case "--fee-per-da-gas":
-        feePerDaGas = nextArg(argv, i, arg);
-        i += 1;
-        break;
-      case "--fee-per-l2-gas":
-        feePerL2Gas = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--message-timeout":
@@ -222,9 +197,6 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       attestationUrl: parseHttpUrl(attestationUrl, "--attestation-url"),
       manifestPath: path.resolve(manifestPath),
       operatorSecretKey: parseHex32(operatorSecretKey, "--operator-secret-key"),
-      aaPaymentAmount: parsePositiveBigInt(aaPaymentAmount, "--aa-payment-amount"),
-      feePerDaGas: feePerDaGas ? parsePositiveBigInt(feePerDaGas, "--fee-per-da-gas") : null,
-      feePerL2Gas: feePerL2Gas ? parsePositiveBigInt(feePerL2Gas, "--fee-per-l2-gas") : null,
       messageTimeoutSeconds: parseNonNegativeInt(messageTimeoutSeconds, "--message-timeout"),
       iterations: parsePositiveInt(iterations, "--iterations"),
     },

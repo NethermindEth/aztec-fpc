@@ -41,12 +41,14 @@ FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 # Defaults use sandbox test account 0 (well-known keys from aztec local devnet TEST_ACCOUNTS)
 OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
 DEPLOYER_SECRET_KEY="${FPC_LOCAL_DEPLOYER_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+L1_DEPLOYER_KEY="${FPC_DEPLOY_SMOKE_L1_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
 
 echo "[deploy-smoke] Running local deploy command (variant-specific FPC)"
 cmd=(
   bunx tsx "$REPO_ROOT/contract-deployment/src/index.ts"
   --node-url "$AZTEC_NODE_URL"
   --l1-rpc-url "$L1_RPC_URL"
+  --l1-deployer-key "$L1_DEPLOYER_KEY"
   --deployer-secret-key "$DEPLOYER_SECRET_KEY"
   --operator-secret-key "$OPERATOR_SECRET_KEY"
   --fpc-artifact "$FPC_ARTIFACT"
