@@ -974,6 +974,21 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const token = deps.Contract.at(tokenAddress, tokenArtifact, wallet);
   const fpc = deps.Contract.at(fpcAddress, selectedFpcArtifact, wallet);
 
+  // Register faucet contract for dripping tokens (bridge is the minter, not operator)
+  if (!manifest.contracts.faucet) {
+    throw new CliError(
+      "Manifest missing contracts.faucet (required for token funding in smoke test)",
+    );
+  }
+  const faucetAddress = deps.AztecAddress.fromString(manifest.contracts.faucet);
+  const faucetArtifact = loadArtifact(deps, path.join(REPO_ROOT, "target", "faucet-Faucet.json"));
+  const faucetInstance = await node.getContract(faucetAddress);
+  if (!faucetInstance) {
+    throw new CliError(`Faucet contract not found on node at ${manifest.contracts.faucet}`);
+  }
+  await wallet.registerContract(faucetInstance, faucetArtifact);
+  const faucet = deps.Contract.at(faucetAddress, faucetArtifact, wallet);
+
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas as bigint;
   const feePerL2Gas = minFees.feePerL2Gas as bigint;
@@ -1012,11 +1027,16 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const fpcExpectedCharge = ceilDiv(maxGasCostNoTeardown * args.fpcRateNum, args.fpcRateDen);
   const fpcFjAmount = maxGasCostNoTeardown;
   const fpcAaAmount = fpcExpectedCharge;
-  await token.methods
-    .mint_to_private(operatorAddress, fpcExpectedCharge + 1_000_000n)
+
+  // Fund operator via faucet drip (public) then shield to private.
+  // The bridge is the token minter, so we use the faucet instead of mint_to_*.
+  pinoLogger.info("[devnet-postdeploy-smoke] dripping tokens from faucet to operator");
+  await faucet.methods
+    .drip(operatorAddress)
     .send({ from: operatorAddress, wait: { timeout: 180 } });
+  pinoLogger.info("[devnet-postdeploy-smoke] shielding tokens to private balance");
   await token.methods
-    .mint_to_public(operatorAddress, 2n)
+    .transfer_public_to_private(operatorAddress, operatorAddress, fpcExpectedCharge + 1_000_000n, 0)
     .send({ from: operatorAddress, wait: { timeout: 180 } });
 
   const latestBlock = await node.getBlock("latest");
