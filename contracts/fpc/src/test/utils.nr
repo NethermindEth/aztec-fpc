@@ -1,13 +1,16 @@
 use crate::FPCMultiAsset;
 use aztec::{
     authwit::auth::compute_inner_authwit_hash,
-    protocol::{address::AztecAddress, traits::ToField},
+    protocol::address::{AztecAddress, EthAddress},
+    protocol::traits::ToField,
     test::helpers::test_environment::TestEnvironment,
 };
 use std::embedded_curve_ops::{EmbeddedCurvePoint, EmbeddedCurveScalar, multi_scalar_mul};
 use token::Token;
+use token_bridge_contract::TokenBridge;
 
 global QUOTE_DOMAIN_SEPARATOR: Field = 0x465043;
+global COLD_START_QUOTE_DOMAIN_SEPARATOR: Field = 0x46504373;
 
 /// Grumpkin generator point.
 global G1: EmbeddedCurvePoint = EmbeddedCurvePoint {
@@ -157,7 +160,14 @@ unconstrained fn add_u256(a_hi: u128, a_lo: u128, b_hi: u128, b_lo: u128) -> (u1
     }
 }
 
-pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress) {
+pub unconstrained fn setup() -> (
+    TestEnvironment,
+    AztecAddress,
+    AztecAddress,
+    AztecAddress,
+    AztecAddress,
+    AztecAddress,
+) {
     let mut env = TestEnvironment::new();
 
     let user = env.create_contract_account();
@@ -173,12 +183,18 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
     let token_address =
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);
 
+    let bridge_initializer =
+        TokenBridge::interface().constructor(token_address, EthAddress::from_field(0));
+    let bridge_address = env
+        .deploy("@token_bridge_contract/TokenBridge")
+        .with_public_initializer(operator, bridge_initializer);
+
     let pk = test_operator_pubkey();
     let fpc_initializer = FPCMultiAsset::interface().constructor(operator, pk.x, pk.y);
     let fpc_address =
         env.deploy("FPCMultiAsset").with_public_initializer(operator, fpc_initializer);
 
-    (env, fpc_address, token_address, operator, user)
+    (env, fpc_address, token_address, bridge_address, operator, user)
 }
 
 pub unconstrained fn max_gas_cost_no_teardown(env: TestEnvironment) -> u128 {
@@ -207,6 +223,33 @@ pub unconstrained fn sign_quote(
         aa_payment_amount as Field,
         valid_until as Field,
         user_address.to_field(),
+    ]);
+    let message: [u8; 32] = quote_hash.to_be_bytes();
+    test_schnorr_sign(message)
+}
+
+/// Compute the cold-start quote hash and return a valid Schnorr signature
+/// for it using the test signing key.
+pub unconstrained fn sign_cold_start_quote(
+    fpc_address: AztecAddress,
+    accepted_asset: AztecAddress,
+    fj_fee_amount: u128,
+    aa_payment_amount: u128,
+    valid_until: u64,
+    user_address: AztecAddress,
+    claim_amount: u128,
+    claim_secret_hash: Field,
+) -> [u8; 64] {
+    let quote_hash = compute_inner_authwit_hash([
+        COLD_START_QUOTE_DOMAIN_SEPARATOR,
+        fpc_address.to_field(),
+        accepted_asset.to_field(),
+        fj_fee_amount as Field,
+        aa_payment_amount as Field,
+        valid_until as Field,
+        user_address.to_field(),
+        claim_amount as Field,
+        claim_secret_hash,
     ]);
     let message: [u8; 32] = quote_hash.to_be_bytes();
     test_schnorr_sign(message)

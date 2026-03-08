@@ -137,6 +137,7 @@ describe("server", () => {
           accepted_assets: "/accepted-assets",
           asset: "/asset",
           quote: "/quote",
+          cold_start_quote: "/cold-start-quote",
         },
         supported_assets: [
           {
