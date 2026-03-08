@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import { Fr } from "@aztec/aztec.js/fields";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
@@ -10,8 +12,8 @@ import {
 } from "./config.js";
 import { AttestationMetrics, type QuoteOutcome } from "./metrics.js";
 import type { OperatorTreasuryPort } from "./operator-treasury.js";
-import type { QuoteSchnorrSigner } from "./signer.js";
-import { signQuote, signRateQuote } from "./signer.js";
+import type { ColdStartQuoteParams, QuoteSchnorrSigner } from "./signer.js";
+import { signColdStartQuote, signQuote, signRateQuote } from "./signer.js";
 
 function badRequest(message: string) {
   return { error: { code: "BAD_REQUEST", message } };
@@ -288,6 +290,11 @@ interface AdminSweepRequestBody {
   amount?: string;
 }
 
+interface ColdStartQuoteRequestQuery extends QuoteRequestQuery {
+  claim_amount?: string;
+  claim_secret_hash?: string;
+}
+
 interface ParsedQuoteRequest {
   userAddress: AztecAddress;
   acceptedAsset: AztecAddress;
@@ -400,6 +407,58 @@ function parseQuoteRequest(
       acceptedAsset: parsedAcceptedAsset.value,
       selectedAssetPolicy,
       fjFeeAmount,
+    },
+  };
+}
+
+interface ParsedColdStartQuoteRequest extends ParsedQuoteRequest {
+  claimAmount: bigint;
+  claimSecretHash: string;
+}
+
+type ColdStartQuoteRequestParseResult =
+  | { ok: true; value: ParsedColdStartQuoteRequest }
+  | { ok: false; message: string };
+
+function parseRequiredHexField(
+  value: string | undefined,
+  label: string,
+): { ok: true; value: string } | { ok: false; message: string } {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return { ok: false, message: `Missing required query param: ${label}` };
+  }
+  if (!/^0x[0-9a-fA-F]+$/i.test(trimmed)) {
+    return { ok: false, message: `Invalid ${label}: expected 0x-prefixed hex` };
+  }
+  return { ok: true, value: trimmed };
+}
+
+function parseColdStartQuoteRequest(
+  supportedAssets: SupportedAssetPolicy[],
+  query: ColdStartQuoteRequestQuery,
+): ColdStartQuoteRequestParseResult {
+  const baseResult = parseQuoteRequest(supportedAssets, query);
+  if (!baseResult.ok) {
+    return baseResult;
+  }
+
+  const claimAmount = parsePositiveU128Decimal(query.claim_amount);
+  if (!claimAmount) {
+    return { ok: false, message: "Missing or invalid query param: claim_amount" };
+  }
+
+  const parsedClaimSecretHash = parseRequiredHexField(query.claim_secret_hash, "claim_secret_hash");
+  if (!parsedClaimSecretHash.ok) {
+    return parsedClaimSecretHash;
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...baseResult.value,
+      claimAmount,
+      claimSecretHash: parsedClaimSecretHash.value,
     },
   };
 }
@@ -819,6 +878,7 @@ function registerPublicRoutes(context: ServerContext): void {
       accepted_assets: "/accepted-assets",
       asset: "/asset",
       quote: "/quote",
+      cold_start_quote: "/cold-start-quote",
     },
     supported_assets: buildSupportedAssetsForDiscovery(assetPolicyStore),
   }));
@@ -1099,7 +1159,146 @@ export function buildServer(
 
   registerPublicRoutes(context);
   registerQuoteRoute(context);
+  registerColdStartQuoteRoute(context);
   registerAdminRoutes(context);
 
   return app;
+}
+
+function registerColdStartQuoteRoute(context: ServerContext): void {
+  const {
+    app,
+    assetPolicyStore,
+    config,
+    fpcAddress,
+    metrics,
+    nowUnixSeconds,
+    quoteSigner,
+    rateLimiter,
+  } = context;
+  const validUntil = validUntilFactory(config);
+
+  app.get<{
+    Querystring: ColdStartQuoteRequestQuery;
+  }>("/cold-start-quote", async (req, reply) => {
+    const observe = createQuoteObserver(metrics);
+    const nowSeconds = BigInt(await nowUnixSeconds());
+
+    const rateLimitRejection = consumeQuoteRateLimit(
+      rateLimiter,
+      config,
+      req.headers,
+      req.ip,
+      nowSeconds,
+    );
+    if (rateLimitRejection) {
+      req.log.warn(
+        {
+          event: "cold_start_quote_rate_limited",
+          identity_kind: rateLimitRejection.identityKind,
+          retry_after_seconds: rateLimitRejection.retryAfterSeconds,
+        },
+        "Rate limited cold-start quote request",
+      );
+      observe("rate_limited");
+      return reply
+        .header("retry-after", rateLimitRejection.retryAfterSeconds.toString())
+        .code(429)
+        .send(rateLimited());
+    }
+
+    if (!isQuoteAuthorized(config, req.headers)) {
+      req.log.warn(
+        {
+          event: "cold_start_quote_auth_rejected",
+          mode: config.quote_auth.mode,
+        },
+        "Rejected unauthorized cold-start quote request",
+      );
+      observe("unauthorized");
+      return reply.code(401).send(unauthorized());
+    }
+
+    const parsedRequest = parseColdStartQuoteRequest(assetPolicyStore.getAll(), req.query);
+    if (!parsedRequest.ok) {
+      observe("bad_request");
+      return reply.code(400).send(badRequest(parsedRequest.message));
+    }
+
+    const {
+      userAddress,
+      acceptedAsset,
+      selectedAssetPolicy,
+      fjFeeAmount,
+      claimAmount,
+      claimSecretHash,
+    } = parsedRequest.value;
+
+    try {
+      const quotePricing = computeQuotePricing(
+        selectedAssetPolicy,
+        fjFeeAmount,
+        nowSeconds,
+        validUntil,
+      );
+      if (!quotePricing.ok) {
+        observe("bad_request");
+        return reply.code(400).send(badRequest(quotePricing.message));
+      }
+
+      const { validUntil: quoteValidUntil, aaPaymentAmount } = quotePricing.value;
+
+      if (claimAmount < aaPaymentAmount) {
+        observe("bad_request");
+        return reply.code(400).send(badRequest("claim_amount must be >= aa_payment_amount"));
+      }
+
+      const coldStartParams: ColdStartQuoteParams = {
+        fpcAddress,
+        acceptedAsset,
+        fjFeeAmount,
+        aaPaymentAmount,
+        validUntil: quoteValidUntil,
+        userAddress,
+        claimAmount,
+        claimSecretHash: Fr.fromHexString(claimSecretHash),
+      };
+      const signature = await signColdStartQuote(quoteSigner, coldStartParams);
+
+      req.log.info(
+        {
+          event: "cold_start_quote_issued",
+          user: userAddress.toString(),
+          accepted_asset: selectedAssetPolicy.address,
+          valid_until: quoteValidUntil.toString(),
+          fj_amount: fjFeeAmount.toString(),
+          aa_payment_amount: aaPaymentAmount.toString(),
+          claim_amount: claimAmount.toString(),
+          claim_secret_hash: claimSecretHash,
+        },
+        "Cold-start quote issued",
+      );
+      observe("success");
+
+      return {
+        accepted_asset: selectedAssetPolicy.address,
+        fj_amount: fjFeeAmount.toString(),
+        aa_payment_amount: aaPaymentAmount.toString(),
+        valid_until: quoteValidUntil.toString(),
+        claim_amount: claimAmount.toString(),
+        claim_secret_hash: claimSecretHash,
+        signature,
+      };
+    } catch (error) {
+      observe("internal_error");
+      req.log.error(
+        {
+          err: error,
+          user: userAddress.toString(),
+        },
+        "Failed to issue cold-start quote",
+      );
+      return reply.code(500).send(internalErrorBody());
+    }
+  });
 }

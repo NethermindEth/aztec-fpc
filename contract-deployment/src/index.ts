@@ -8,11 +8,20 @@ import { Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
+import {
+  TestERC20Abi,
+  TestERC20Bytecode,
+  TokenPortalAbi,
+  TokenPortalBytecode,
+} from "@aztec/l1-artifacts";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
-import { deriveSigningKey } from "@aztec/stdlib/keys";
+import { deriveKeys, deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
+import { createWalletClient, type Hex, http, publicActions } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { foundry } from "viem/chains";
 import { deployContract } from "./deploy-utils.js";
 import { writeDevnetDeployManifest } from "./devnet-manifest.js";
 
@@ -31,6 +40,7 @@ type CliArgs = {
   operatorSecretKeyRef: string | null;
   operator: string | null;
   acceptedAsset: string | null;
+  l1DeployerKey: string | null;
   fpcArtifact: string;
   out: string;
   preflightOnly: boolean;
@@ -118,6 +128,7 @@ const FPC_ARTIFACT_PATH_CANDIDATES = [
 ] as const;
 const REQUIRED_ARTIFACTS = {
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
+  tokenBridge: path.join(REPO_ROOT, "target", "token_bridge_contract-TokenBridge.json"),
   faucet: path.join(REPO_ROOT, "target", "faucet-Faucet.json"),
   counter: path.join(REPO_ROOT, "target", "mock_counter-Counter.json"),
 } as const;
@@ -161,6 +172,7 @@ function usage(): string {
     "Network:",
     `  --node-url <url>                 Aztec node URL (default: ${DEVNET_DEFAULT_NODE_URL}) [env: FPC_NODE_URL]`,
     "  --l1-rpc-url <url>               L1 RPC URL [env: FPC_L1_RPC_URL]",
+    "  --l1-deployer-key <hex32>        L1 deployer private key for bridge contracts [env: FPC_L1_DEPLOYER_KEY]",
     "",
     "Options:",
     "  --operator <aztec_address>       Operator address (default: derived from key) [env: FPC_OPERATOR]",
@@ -267,6 +279,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null = process.env.FPC_OPERATOR_SECRET_KEY_REF ?? null;
   let operator: string | null = process.env.FPC_OPERATOR ?? null;
+  let l1DeployerKey: string | null = process.env.FPC_L1_DEPLOYER_KEY ?? null;
   let acceptedAsset: string | null = process.env.FPC_ACCEPTED_ASSET ?? null;
   let fpcArtifact: string = process.env.FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
   let dataDir: string = process.env.FPC_DATA_DIR ?? DEVNET_DEFAULT_DATA_DIR;
@@ -283,6 +296,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--l1-rpc-url":
         l1RpcUrl = nextArg(argv, i, arg);
+        i += 1;
+        break;
+      case "--l1-deployer-key":
+        l1DeployerKey = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--validate-topup-path":
@@ -400,6 +417,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
         : null,
       operator: parsedOperator,
       acceptedAsset: acceptedAsset ? parseAztecAddress(acceptedAsset, "--accepted-asset") : null,
+      l1DeployerKey: l1DeployerKey ? parseHex32(l1DeployerKey, "--l1-deployer-key") : null,
       fpcArtifact: parseNonEmptyString(fpcArtifact, "--fpc-artifact"),
       out,
       preflightOnly,
@@ -849,6 +867,9 @@ function assertRequiredArtifactsExistForDevnet(
   if (!existsSync(REQUIRED_ARTIFACTS.token)) {
     missing.push(REQUIRED_ARTIFACTS.token);
   }
+  if (!existsSync(REQUIRED_ARTIFACTS.tokenBridge)) {
+    missing.push(REQUIRED_ARTIFACTS.tokenBridge);
+  }
   if (!existsSync(selection.artifactPath)) {
     missing.push(selection.artifactPath);
   }
@@ -1000,13 +1021,103 @@ async function main(): Promise<void> {
 
   const tokenArtifact = loadArtifact(REQUIRED_ARTIFACTS.token);
 
+  // --- Deploy L1 + L2 bridge when l1-deployer-key is provided ---
+  // Order: L1 contracts → L2 bridge (empty) → Token (bridge as minter) → bridge.set_config
+  let bridgeAddress: string | undefined;
+  let l1TokenPortalAddress: string | undefined;
+  let l1Erc20Address: string | undefined;
+
   let acceptedAssetAddress: string;
   if (args.acceptedAsset) {
     acceptedAssetAddress = args.acceptedAsset;
     pinoLogger.info(
       `[deploy-fpc-devnet] accepted_asset provided; skipping token deployment. accepted_asset=${acceptedAssetAddress}`,
     );
+  } else if (args.l1DeployerKey && args.l1RpcUrl) {
+    // Bridge path: deploy bridge first so it can be the token minter.
+    pinoLogger.info("[deploy-fpc-devnet] deploying L1 + L2 bridge contracts");
+
+    const l1Account = privateKeyToAccount(args.l1DeployerKey as Hex);
+    const l1WalletClient = createWalletClient({
+      account: l1Account,
+      chain: foundry,
+      transport: http(args.l1RpcUrl),
+    }).extend(publicActions);
+
+    // 1. Deploy L1 TestERC20
+    const l1Erc20Hash = await l1WalletClient.deployContract({
+      abi: TestERC20Abi,
+      bytecode: TestERC20Bytecode as Hex,
+      args: ["TestToken", "TST", l1Account.address],
+    });
+    const l1Erc20Receipt = await l1WalletClient.waitForTransactionReceipt({ hash: l1Erc20Hash });
+    if (!l1Erc20Receipt.contractAddress) {
+      throw new CliError("L1 TestERC20 deployment failed: no contract address in receipt");
+    }
+    l1Erc20Address = l1Erc20Receipt.contractAddress;
+    pinoLogger.info(`[deploy-fpc-devnet] l1_erc20 deployed. address=${l1Erc20Address}`);
+
+    // 2. Deploy L1 TokenPortal
+    const l1PortalHash = await l1WalletClient.deployContract({
+      abi: TokenPortalAbi,
+      bytecode: TokenPortalBytecode as Hex,
+      args: [],
+    });
+    const l1PortalReceipt = await l1WalletClient.waitForTransactionReceipt({
+      hash: l1PortalHash,
+    });
+    if (!l1PortalReceipt.contractAddress) {
+      throw new CliError("L1 TokenPortal deployment failed: no contract address in receipt");
+    }
+    l1TokenPortalAddress = l1PortalReceipt.contractAddress;
+    pinoLogger.info(
+      `[deploy-fpc-devnet] l1_token_portal deployed. address=${l1TokenPortalAddress}`,
+    );
+
+    // 3. Deploy L2 TokenBridge (empty constructor — config set after token deploy)
+    const bridgeArtifact = loadArtifact(REQUIRED_ARTIFACTS.tokenBridge);
+    const bridgeContract = await deployContract(wallet, bridgeArtifact, [], deployOpts);
+    bridgeAddress = bridgeContract.address.toString();
+    pinoLogger.info(`[deploy-fpc-devnet] bridge deployed. address=${bridgeAddress}`);
+
+    // 4. Deploy Token with bridge as minter
+    pinoLogger.info("[deploy-fpc-devnet] deploying Token contract (minter=bridge)");
+    const tokenContract = await deployContract(
+      wallet,
+      tokenArtifact,
+      ["FpcAcceptedAsset", "FPCA", 18, bridgeContract.address, operatorAddress],
+      deployOpts,
+      "constructor_with_minter",
+    );
+    acceptedAssetAddress = tokenContract.address.toString();
+    pinoLogger.info(`[deploy-fpc-devnet] token deployed. address=${acceptedAssetAddress}`);
+
+    // 5. Set config on bridge (link to token + L1 portal)
+    const { EthAddress } = await import("@aztec/foundation/eth-address");
+    const bridgeInstance = Contract.at(bridgeContract.address, bridgeArtifact, wallet);
+    await bridgeInstance.methods
+      .set_config(
+        AztecAddress.fromString(acceptedAssetAddress),
+        EthAddress.fromString(l1TokenPortalAddress),
+      )
+      .send(deployOpts);
+    pinoLogger.info("[deploy-fpc-devnet] bridge config set (token + portal)");
+
+    // 6. Initialize L1 TokenPortal
+    const initHash = await l1WalletClient.writeContract({
+      address: l1TokenPortalAddress as Hex,
+      abi: TokenPortalAbi,
+      functionName: "initialize",
+      args: [
+        nodeState.l1ContractAddresses.registryAddress as Hex,
+        l1Erc20Address as Hex,
+        bridgeContract.address.toString() as Hex,
+      ],
+    });
+    await l1WalletClient.waitForTransactionReceipt({ hash: initHash });
+    pinoLogger.info("[deploy-fpc-devnet] l1 token portal initialized");
   } else {
+    // No bridge path: deploy token with operator as minter.
     pinoLogger.info("[deploy-fpc-devnet] deploying Token contract");
     const tokenContract = await deployContract(
       wallet,
@@ -1032,13 +1143,26 @@ async function main(): Promise<void> {
           operatorIdentity.pubkeyY,
           AztecAddress.fromString(acceptedAssetAddress),
         ];
-  const fpcContract = await deployContract(wallet, fpcArtifact, fpcConstructorArgs, deployOpts);
+  // Generate a dedicated FPC secret key and deploy with derived public keys.
+  // This enables PXE key registration for cold_start_entrypoint, which claims
+  // tokens into the FPC's private balance before distributing them.
+  const fpcSecretFr = Fr.random();
+  const { publicKeys: fpcPublicKeys } = await deriveKeys(fpcSecretFr);
+  const fpcContract = await deployContract(
+    wallet,
+    fpcArtifact,
+    fpcConstructorArgs,
+    deployOpts,
+    undefined,
+    fpcPublicKeys,
+  );
   const fpcAddress = fpcContract.contract.address.toString();
+  const fpcSecretKey = fpcSecretFr.toString();
   pinoLogger.info(`[deploy-fpc-devnet] fpc deployed. address=${fpcAddress}`);
 
   let faucetAddress: string | undefined;
   let faucetConfig: ReturnType<typeof readFaucetEnvConfig> | undefined;
-  if (!args.acceptedAsset) {
+  if (!args.acceptedAsset && !bridgeAddress) {
     faucetConfig = readFaucetEnvConfig();
     pinoLogger.info(
       `[deploy-fpc-devnet] deploying Faucet token=${acceptedAssetAddress} admin=${operatorIdentity.address} drip_amount=${faucetConfig.dripAmount} cooldown_seconds=${faucetConfig.cooldownSeconds}`,
@@ -1078,7 +1202,9 @@ async function main(): Promise<void> {
     }
     pinoLogger.info(`[deploy-fpc-devnet] faucet funded with ${faucetConfig.initialSupply} tokens`);
   } else {
-    pinoLogger.info("[deploy-fpc-devnet] faucet deployment skipped (reusing existing token)");
+    pinoLogger.info(
+      "[deploy-fpc-devnet] faucet deployment skipped (reusing existing token or bridge minter)",
+    );
   }
 
   pinoLogger.info(
@@ -1134,9 +1260,19 @@ async function main(): Promise<void> {
     contracts: {
       accepted_asset: acceptedAssetAddress,
       fpc: fpcAddress,
+      fpc_secret_key: fpcSecretKey,
       ...(faucetAddress ? { faucet: faucetAddress } : {}),
       counter: counterAddress,
+      ...(bridgeAddress ? { bridge: bridgeAddress } : {}),
     },
+    ...(l1TokenPortalAddress && l1Erc20Address
+      ? {
+          l1_contracts: {
+            token_portal: l1TokenPortalAddress,
+            erc20: l1Erc20Address,
+          },
+        }
+      : {}),
     fpc_artifact: {
       name: fpcSelection.name,
       path: fpcSelection.artifactPath,
@@ -1150,6 +1286,7 @@ async function main(): Promise<void> {
       accepted_asset_deploy: null,
       fpc_deploy: null,
       counter_deploy: null,
+      ...(bridgeAddress ? { bridge_deploy: null } : {}),
     },
     ...(faucetConfig
       ? {
@@ -1167,7 +1304,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
   pinoLogger.info(
-    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} counter=${manifest.contracts.counter ?? "n/a"} variant=${fpcSelection.name}`,
+    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} counter=${manifest.contracts.counter ?? "n/a"} bridge=${manifest.contracts.bridge ?? "n/a"} variant=${fpcSelection.name}`,
   );
 
   process.exit(0);

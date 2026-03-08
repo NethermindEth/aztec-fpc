@@ -13,6 +13,7 @@ import {
   type DeployOptions,
   getContractClassFromArtifact,
 } from "@aztec/aztec.js/contracts";
+import type { PublicKeys } from "@aztec/stdlib/keys";
 import pino from "pino";
 
 const pinoLogger = pino();
@@ -30,6 +31,8 @@ type DeployParams = Parameters<typeof Contract.deploy>;
  * @param args     - Constructor arguments
  * @param sendOptions - Options forwarded to `.send()` (`from`, `fee`, etc.)
  * @param constructorName - Optional non-default constructor name
+ * @param publicKeys - Optional public keys embedded in the contract instance
+ *                     (defaults to PublicKeys.default() when omitted)
  */
 export async function deployContract(
   wallet: DeployParams[0],
@@ -37,6 +40,7 @@ export async function deployContract(
   args: DeployParams[2],
   sendOptions: DeployOptions,
   constructorName?: DeployParams[3],
+  publicKeys?: PublicKeys,
 ) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -49,7 +53,10 @@ export async function deployContract(
         opts.skipClassPublication = true;
       }
 
-      return await Contract.deploy(wallet, artifact, args, constructorName).send(opts);
+      const deployMethod = publicKeys
+        ? Contract.deployWithPublicKeys(publicKeys, wallet, artifact, args, constructorName)
+        : Contract.deploy(wallet, artifact, args, constructorName);
+      return await deployMethod.send(opts);
     } catch (error) {
       if (isClassPublicationRace(error) && attempt < MAX_RETRIES) {
         pinoLogger.info(
