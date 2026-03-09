@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { MemoryAssetPolicyStore } from "../src/asset-policy-store.js";
 import type { Config } from "../src/config.js";
+import type { OperatorTreasuryPort } from "../src/operator-treasury.js";
 import { buildServer } from "../src/server.js";
 import type { QuoteSchnorrSigner } from "../src/signer.js";
 import { computeQuoteHash } from "../src/signer.js";
@@ -46,10 +48,18 @@ const TEST_CONFIG: Config = {
   market_rate_den: 1000,
   fee_bips: 200,
   operator_secret_provider: "auto",
+  operator_account_salt: undefined,
   operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001",
   operator_secret_key_source: "config",
   operator_secret_key_provider: "auto",
   operator_secret_key_dual_source: false,
+  admin_auth: {
+    enabled: false,
+    apiKey: undefined,
+    apiKeyHeader: "x-admin-api-key",
+  },
+  asset_policy_state_path: ".attestation-asset-policies.json",
+  treasury_destination_address: undefined,
   quote_auth: {
     mode: "disabled",
     apiKey: undefined,
@@ -86,6 +96,16 @@ function withQuoteAuth(quoteAuth: Partial<Config["quote_auth"]>): Config {
   };
 }
 
+function withAdminAuth(adminAuth: Partial<Config["admin_auth"]>): Config {
+  return {
+    ...TEST_CONFIG,
+    admin_auth: {
+      ...TEST_CONFIG.admin_auth,
+      ...adminAuth,
+    },
+  };
+}
+
 function withQuoteRateLimit(
   quoteRateLimit: Partial<Config["quote_rate_limit"]>,
   config: Config = TEST_CONFIG,
@@ -96,6 +116,24 @@ function withQuoteRateLimit(
       ...config.quote_rate_limit,
       ...quoteRateLimit,
     },
+  };
+}
+
+function mockTreasury(overrides: Partial<OperatorTreasuryPort> = {}): OperatorTreasuryPort {
+  return {
+    registerSender: async () => undefined,
+    getPrivateBalances: async (assetAddresses) =>
+      assetAddresses.map((address) => ({ address, balance: "0" })),
+    sweep: async ({ acceptedAsset, destination, amount }) => ({
+      acceptedAsset,
+      destination,
+      sweptAmount: (amount ?? 0n).toString(),
+      balanceBefore: "10",
+      balanceAfter: "0",
+      txHash: "0xtesthash",
+    }),
+    stop: async () => undefined,
+    ...overrides,
   };
 }
 
@@ -158,10 +196,16 @@ describe("server", () => {
           {
             address: "0x0000000000000000000000000000000000000000000000000000000000000002",
             name: "humanUSDC",
+            market_rate_num: 1,
+            market_rate_den: 1000,
+            fee_bips: 200,
           },
           {
             address: "0x0000000000000000000000000000000000000000000000000000000000000003",
             name: "ravenETH",
+            market_rate_num: 3,
+            market_rate_den: 1000,
+            fee_bips: 0,
           },
         ],
       },
@@ -202,10 +246,16 @@ describe("server", () => {
           {
             address: DEFAULT_ACCEPTED_ASSET,
             name: "humanUSDC",
+            market_rate_num: 1,
+            market_rate_den: 1000,
+            fee_bips: 200,
           },
           {
             address: SECONDARY_ACCEPTED_ASSET,
             name: "ravenETH",
+            market_rate_num: 3,
+            market_rate_den: 1000,
+            fee_bips: 0,
           },
         ],
       },
@@ -991,6 +1041,169 @@ describe("server", () => {
 
       assert.equal(r1.statusCode, 200);
       assert.equal(r2.statusCode, 429);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("allows admin to add a supported asset and immediately quote it", async () => {
+    const adminConfig = withAdminAuth({
+      enabled: true,
+      apiKey: "admin-secret",
+    });
+    const app = buildServer(adminConfig, mockSigner(), {
+      assetPolicyStore: new MemoryAssetPolicyStore(
+        adminConfig.supported_assets,
+        adminConfig.accepted_asset_address,
+      ),
+    });
+
+    try {
+      const upsert = await app.inject({
+        method: "PUT",
+        url: `/admin/asset-policies/${SECONDARY_ACCEPTED_ASSET}`,
+        headers: {
+          "x-admin-api-key": "admin-secret",
+        },
+        payload: {
+          name: "ravenETH",
+          market_rate_num: 3,
+          market_rate_den: 1000,
+          fee_bips: 25,
+        },
+      });
+      assert.equal(upsert.statusCode, 200);
+
+      const quote = await app.inject({
+        method: "GET",
+        url: quoteUrl(VALID_USER, VALID_FJ_AMOUNT, SECONDARY_ACCEPTED_ASSET),
+      });
+      assert.equal(quote.statusCode, 200);
+      assert.equal((quote.json() as { aa_payment_amount: string }).aa_payment_amount, "3008");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("allows admin to remove a supported asset", async () => {
+    const adminConfig = withAdminAuth({
+      enabled: true,
+      apiKey: "admin-secret",
+    });
+    const app = buildServer(adminConfig, mockSigner(), {
+      assetPolicyStore: new MemoryAssetPolicyStore(
+        [
+          ...adminConfig.supported_assets,
+          {
+            address: SECONDARY_ACCEPTED_ASSET,
+            name: "ravenETH",
+            market_rate_num: 3,
+            market_rate_den: 1000,
+            fee_bips: 25,
+          },
+        ],
+        adminConfig.accepted_asset_address,
+      ),
+    });
+
+    try {
+      const remove = await app.inject({
+        method: "DELETE",
+        url: `/admin/asset-policies/${SECONDARY_ACCEPTED_ASSET}`,
+        headers: {
+          "x-admin-api-key": "admin-secret",
+        },
+      });
+      assert.equal(remove.statusCode, 200);
+
+      const discovery = await app.inject({
+        method: "GET",
+        url: "/accepted-assets",
+      });
+      assert.deepEqual(discovery.json(), [{ address: DEFAULT_ACCEPTED_ASSET, name: "humanUSDC" }]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns operator balances from treasury admin endpoint", async () => {
+    const adminConfig = withAdminAuth({
+      enabled: true,
+      apiKey: "admin-secret",
+    });
+    const app = buildServer(adminConfig, mockSigner(), {
+      treasury: mockTreasury({
+        getPrivateBalances: async (assetAddresses) =>
+          assetAddresses.map((address, index) => ({
+            address,
+            balance: String(index + 1),
+          })),
+      }),
+    });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/admin/operator-balances",
+        headers: {
+          "x-admin-api-key": "admin-secret",
+        },
+      });
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json(), [
+        {
+          accepted_asset: DEFAULT_ACCEPTED_ASSET,
+          balance: "1",
+          name: "humanUSDC",
+        },
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("sweeps operator treasury balance to configured destination", async () => {
+    const destination = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    const adminConfig = {
+      ...withAdminAuth({
+        enabled: true,
+        apiKey: "admin-secret",
+      }),
+      treasury_destination_address: destination,
+    };
+    const app = buildServer(adminConfig, mockSigner(), {
+      treasury: mockTreasury({
+        sweep: async ({ acceptedAsset, destination: requestedDestination, amount }) => ({
+          acceptedAsset,
+          destination: requestedDestination,
+          sweptAmount: (amount ?? 10n).toString(),
+          balanceBefore: "10",
+          balanceAfter: "0",
+          txHash: "0xsweep",
+        }),
+      }),
+    });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/admin/sweeps",
+        headers: {
+          "x-admin-api-key": "admin-secret",
+        },
+        payload: {
+          accepted_asset: DEFAULT_ACCEPTED_ASSET,
+        },
+      });
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json(), {
+        acceptedAsset: DEFAULT_ACCEPTED_ASSET,
+        destination,
+        sweptAmount: "10",
+        balanceBefore: "10",
+        balanceAfter: "0",
+        txHash: "0xsweep",
+      });
     } finally {
       await app.close();
     }

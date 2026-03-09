@@ -40,6 +40,11 @@ function withAttestationEnv(overrides: Record<string, string | undefined>, fn: (
       OPERATOR_SECRET_PROVIDER: undefined,
       OPERATOR_SECRET_KEY: undefined,
       OPERATOR_SECRET_REF: undefined,
+      OPERATOR_ACCOUNT_SALT: undefined,
+      ADMIN_API_KEY: undefined,
+      ADMIN_API_KEY_HEADER: undefined,
+      ATTESTATION_ASSET_POLICY_STATE_PATH: undefined,
+      TREASURY_DESTINATION_ADDRESS: undefined,
       QUOTE_AUTH_MODE: undefined,
       QUOTE_AUTH_API_KEY: undefined,
       QUOTE_AUTH_API_KEY_HEADER: undefined,
@@ -359,6 +364,38 @@ describe("attestation config secret providers", () => {
     withAttestationEnv({}, () => {
       const config = loadConfig(configPath);
       assert.equal(config.operator_address, operatorAddress);
+    });
+
+    cleanupConfig(configPath);
+  });
+
+  it("loads optional admin and treasury config", () => {
+    const operatorSalt = "0x0000000000000000000000000000000000000000000000000000000000000007";
+    const treasuryDestination =
+      "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72";
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "operator_secret_provider: auto",
+          `operator_secret_key: "${VALID_SECRET}"`,
+          `operator_account_salt: "${operatorSalt}"`,
+          'admin_api_key: "admin-secret"',
+          'admin_api_key_header: "X-Attestation-Admin"',
+          'asset_policy_state_path: "./tmp/attestation-assets.json"',
+          `treasury_destination_address: "${treasuryDestination}"`,
+        ].join("\n"),
+      ),
+    );
+
+    withAttestationEnv({}, () => {
+      const config = loadConfig(configPath);
+      assert.equal(config.operator_account_salt, operatorSalt);
+      assert.equal(config.admin_auth.enabled, true);
+      assert.equal(config.admin_auth.apiKey, "admin-secret");
+      assert.equal(config.admin_auth.apiKeyHeader, "x-attestation-admin");
+      assert.equal(config.asset_policy_state_path, "./tmp/attestation-assets.json");
+      assert.equal(config.treasury_destination_address, treasuryDestination);
     });
 
     cleanupConfig(configPath);

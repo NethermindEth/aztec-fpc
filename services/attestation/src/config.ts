@@ -16,9 +16,11 @@ const HTTP_HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const QUOTE_RATE_LIMIT_MAX_WINDOW_SECONDS = 3600;
 const QUOTE_RATE_LIMIT_MAX_REQUESTS = 1_000_000;
 const QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS = 1_000_000;
+const FIELD_HEX_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const OperatorSecretKeySchema = z
   .string()
   .regex(PRIVATE_KEY_PATTERN, "must be a 32-byte 0x-prefixed hex private key");
+const FrHexSchema = z.string().regex(FIELD_HEX_PATTERN, "must be a 32-byte 0x-prefixed hex field");
 const RuntimeProfileSchema = z.enum(["development", "test", "production"]);
 const SecretProviderSchema = z.enum(["auto", "env", "config", "kms", "hsm"]);
 const QuoteAuthModeSchema = z.enum([
@@ -73,6 +75,7 @@ const SupportedAssetSchema = z
       });
     }
   });
+const AdminApiKeySchema = z.string().trim().min(1);
 
 const ConfigSchema = z.object({
   runtime_profile: RuntimeProfileSchema.default("development"),
@@ -104,8 +107,18 @@ const ConfigSchema = z.object({
   operator_secret_ref: z.string().optional(),
   /** Optional explicit operator account address (needed if account salt is non-zero). */
   operator_address: AztecAddressSchema.optional(),
+  /** Operator account salt required when reconstructing the deployed operator wallet. */
+  operator_account_salt: FrHexSchema.optional(),
   /** Optional when OPERATOR_SECRET_KEY is provided via env. */
   operator_secret_key: z.string().optional(),
+  /** Shared API key for authenticated admin asset/sweep endpoints. */
+  admin_api_key: z.string().optional(),
+  /** Header name carrying the admin API key. */
+  admin_api_key_header: z.string().default("x-admin-api-key"),
+  /** Durable JSON file storing the effective supported asset policy set. */
+  asset_policy_state_path: z.string().min(1).default(".attestation-asset-policies.json"),
+  /** Default recipient for manual treasury sweeps. */
+  treasury_destination_address: AztecAddressSchema.optional(),
   /** Quote endpoint access control mode. */
   quote_auth_mode: QuoteAuthModeSchema.default("disabled"),
   /** Shared API key value for /quote when mode includes api_key. */
@@ -171,6 +184,12 @@ export interface QuoteRateLimitConfig {
   maxTrackedKeys: number;
 }
 
+export interface AdminAuthConfig {
+  enabled: boolean;
+  apiKey?: string;
+  apiKeyHeader: string;
+}
+
 export interface RatePolicy {
   market_rate_num: number;
   market_rate_den: number;
@@ -182,6 +201,8 @@ export type Config = Omit<
   | "operator_secret_key"
   | "aztec_node_url"
   | "supported_assets"
+  | "admin_api_key"
+  | "admin_api_key_header"
   | "quote_auth_mode"
   | "quote_auth_api_key"
   | "quote_auth_api_key_header"
@@ -198,6 +219,7 @@ export type Config = Omit<
   operator_secret_key_source: SecretSource;
   operator_secret_key_provider: SecretProvider;
   operator_secret_key_dual_source: boolean;
+  admin_auth: AdminAuthConfig;
   supported_assets: SupportedAssetPolicy[];
   quote_auth: QuoteAuthConfig;
   quote_rate_limit: QuoteRateLimitConfig;
@@ -453,6 +475,33 @@ function normalizeAddress(value: string): string {
   return AztecAddress.fromString(value).toString().toLowerCase();
 }
 
+export function normalizeAztecAddress(value: string): string {
+  return normalizeAddress(value);
+}
+
+function resolveAdminAuthConfig(config: ParsedConfig): AdminAuthConfig {
+  const apiKey = normalizeOptional(process.env.ADMIN_API_KEY ?? config.admin_api_key);
+  const apiKeyHeader = normalizeHeaderName(
+    process.env.ADMIN_API_KEY_HEADER ?? config.admin_api_key_header,
+    "admin api key",
+  );
+
+  if (!apiKey) {
+    return {
+      enabled: false,
+      apiKey: undefined,
+      apiKeyHeader,
+    };
+  }
+
+  AdminApiKeySchema.parse(apiKey);
+  return {
+    enabled: true,
+    apiKey,
+    apiKeyHeader,
+  };
+}
+
 function resolveSupportedAssets(config: ParsedConfig): SupportedAssetPolicy[] {
   const defaultAssetAddress = normalizeAddress(config.accepted_asset_address);
   const fallbackAsset: SupportedAssetPolicy = {
@@ -534,10 +583,13 @@ export function loadConfig(path: string, options: LoadConfigOptions = {}): Confi
     process.env.AZTEC_NODE_URL ?? config.aztec_node_url,
   );
   const supportedAssets = resolveSupportedAssets(config);
+  const adminAuth = resolveAdminAuthConfig(config);
   const quoteAuth = resolveQuoteAuthConfig(config, runtimeProfile);
   const quoteRateLimit = resolveQuoteRateLimitConfig(config);
   const {
     operator_secret_key: _configuredOperatorSecretKey,
+    admin_api_key: _adminApiKey,
+    admin_api_key_header: _adminApiKeyHeader,
     quote_auth_mode: _quoteAuthMode,
     quote_auth_api_key: _quoteAuthApiKey,
     quote_auth_api_key_header: _quoteAuthApiKeyHeader,
@@ -559,6 +611,13 @@ export function loadConfig(path: string, options: LoadConfigOptions = {}): Confi
     operator_secret_key_source: resolvedSecret.source,
     operator_secret_key_provider: resolvedSecret.provider,
     operator_secret_key_dual_source: resolvedSecret.dualSource,
+    operator_account_salt:
+      process.env.OPERATOR_ACCOUNT_SALT?.trim() || config.operator_account_salt || undefined,
+    asset_policy_state_path:
+      process.env.ATTESTATION_ASSET_POLICY_STATE_PATH ?? config.asset_policy_state_path,
+    treasury_destination_address:
+      process.env.TREASURY_DESTINATION_ADDRESS ?? config.treasury_destination_address,
+    admin_auth: adminAuth,
     quote_auth: quoteAuth,
     quote_rate_limit: quoteRateLimit,
   };

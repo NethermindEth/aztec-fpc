@@ -1,9 +1,15 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import Fastify from "fastify";
-import type { Config } from "./config.js";
-import { computeFinalRate, resolveSelectedAssetPolicy } from "./config.js";
+import Fastify, { type FastifyInstance } from "fastify";
+import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
+import {
+  type Config,
+  computeFinalRate,
+  normalizeAztecAddress,
+  type SupportedAssetPolicy,
+} from "./config.js";
 import { AttestationMetrics, type QuoteOutcome } from "./metrics.js";
+import type { OperatorTreasuryPort } from "./operator-treasury.js";
 import type { QuoteSchnorrSigner } from "./signer.js";
 import { signQuote, signRateQuote } from "./signer.js";
 
@@ -13,6 +19,16 @@ function badRequest(message: string) {
 
 function unauthorized() {
   return { error: { code: "UNAUTHORIZED", message: "Unauthorized" } };
+}
+
+function conflict(message: string) {
+  return { error: { code: "CONFLICT", message } };
+}
+
+function serviceUnavailable(message: string) {
+  return {
+    error: { code: "SERVICE_UNAVAILABLE", message },
+  };
 }
 
 function rateLimited() {
@@ -95,6 +111,16 @@ function isQuoteAuthorized(
     default:
       return false;
   }
+}
+
+function isAdminAuthorized(
+  config: Config,
+  headers: Record<string, string | string[] | undefined>,
+): boolean {
+  if (!config.admin_auth.enabled) {
+    return false;
+  }
+  return headerMatchesSecret(headers[config.admin_auth.apiKeyHeader], config.admin_auth.apiKey);
 }
 
 function modeUsesApiKey(mode: Config["quote_auth"]["mode"]): boolean {
@@ -245,12 +271,27 @@ interface QuoteRequestQuery {
   fj_amount?: string;
 }
 
-type SelectedAssetPolicy = NonNullable<ReturnType<typeof resolveSelectedAssetPolicy>>;
+interface AdminAssetPolicyParams {
+  assetAddress: string;
+}
+
+interface AdminAssetPolicyBody {
+  name?: string;
+  market_rate_num?: number;
+  market_rate_den?: number;
+  fee_bips?: number;
+}
+
+interface AdminSweepRequestBody {
+  accepted_asset?: string;
+  destination?: string;
+  amount?: string;
+}
 
 interface ParsedQuoteRequest {
   userAddress: AztecAddress;
   acceptedAsset: AztecAddress;
-  selectedAssetPolicy: SelectedAssetPolicy;
+  selectedAssetPolicy: SupportedAssetPolicy;
   fjFeeAmount: bigint;
 }
 
@@ -309,7 +350,18 @@ function parseRequiredNonZeroAztecAddress(
   return { ok: true, value: parsedAddress };
 }
 
-function parseQuoteRequest(config: Config, query: QuoteRequestQuery): QuoteRequestParseResult {
+function resolveSelectedAssetPolicy(
+  supportedAssets: SupportedAssetPolicy[],
+  selectedAcceptedAssetAddress: string,
+): SupportedAssetPolicy | undefined {
+  const selectedAddress = normalizeAztecAddress(selectedAcceptedAssetAddress);
+  return supportedAssets.find((asset) => asset.address === selectedAddress);
+}
+
+function parseQuoteRequest(
+  supportedAssets: SupportedAssetPolicy[],
+  query: QuoteRequestQuery,
+): QuoteRequestParseResult {
   const parsedUserAddress = parseRequiredNonZeroAztecAddress(
     query.user,
     "Missing required query param: user",
@@ -329,7 +381,7 @@ function parseQuoteRequest(config: Config, query: QuoteRequestQuery): QuoteReque
   }
 
   const selectedAssetPolicy = resolveSelectedAssetPolicy(
-    config,
+    supportedAssets,
     parsedAcceptedAsset.value.toString(),
   );
   if (!selectedAssetPolicy) {
@@ -353,7 +405,7 @@ function parseQuoteRequest(config: Config, query: QuoteRequestQuery): QuoteReque
 }
 
 function computeQuotePricing(
-  selectedAssetPolicy: SelectedAssetPolicy,
+  selectedAssetPolicy: SupportedAssetPolicy,
   fjFeeAmount: bigint,
   nowSeconds: bigint,
   validUntil: (nowSeconds: bigint) => bigint,
@@ -436,7 +488,7 @@ function signQuoteForRequest(
 
 function buildQuoteResponse(
   config: Config,
-  selectedAssetPolicy: SelectedAssetPolicy,
+  selectedAssetPolicy: SupportedAssetPolicy,
   fjFeeAmount: bigint,
   aaPaymentAmount: bigint,
   validUntil: bigint,
@@ -465,33 +517,186 @@ export interface QuoteClock {
   nowUnixSeconds?: () => Promise<bigint> | bigint;
 }
 
-export function buildServer(
-  config: Config,
-  quoteSigner: QuoteSchnorrSigner,
-  clock: QuoteClock = {},
-) {
-  const app = Fastify({ logger: true });
-  const metrics = new AttestationMetrics();
-  const fpcAddress = AztecAddress.fromString(config.fpc_address);
-  const supportedAssets = config.supported_assets.map(({ address, name }) => ({
+export interface BuildServerDependencies extends QuoteClock {
+  assetPolicyStore?: AssetPolicyStore;
+  treasury?: OperatorTreasuryPort;
+}
+
+type ServerApp = FastifyInstance;
+type HeaderMap = Record<string, string | string[] | undefined>;
+type AdminAccessResult =
+  | { ok: true }
+  | { ok: false; statusCode: number; body: ReturnType<typeof unauthorized> }
+  | { ok: false; statusCode: number; body: ReturnType<typeof serviceUnavailable> };
+
+interface ServerContext {
+  app: ServerApp;
+  assetPolicyStore: AssetPolicyStore;
+  config: Config;
+  fpcAddress: AztecAddress;
+  metrics: AttestationMetrics;
+  nowUnixSeconds: () => Promise<bigint> | bigint;
+  quoteSigner: QuoteSchnorrSigner;
+  rateLimiter?: FixedWindowRateLimiter;
+  treasury?: OperatorTreasuryPort;
+}
+
+interface ParsedAdminSweepRequest {
+  acceptedAsset: string;
+  amount?: bigint;
+  destination: string;
+}
+
+function buildSupportedAssetsForDiscovery(assetPolicyStore: AssetPolicyStore) {
+  return assetPolicyStore.getAll().map(({ address, name }) => ({
     address,
     name,
   }));
+}
 
-  const nowUnixSeconds = clock.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000)));
-  const rateLimiter = config.quote_rate_limit.enabled
-    ? new FixedWindowRateLimiter(
-        config.quote_rate_limit.maxRequests,
-        config.quote_rate_limit.windowSeconds,
-        config.quote_rate_limit.maxTrackedKeys,
-      )
-    : undefined;
-
-  function validUntil(nowSeconds: bigint): bigint {
-    return nowSeconds + BigInt(config.quote_validity_seconds);
+function parseAdminAssetPolicy(
+  assetAddress: string,
+  body: AdminAssetPolicyBody | undefined,
+): SupportedAssetPolicy {
+  const parsedAddress = parseRequiredNonZeroAztecAddress(
+    assetAddress,
+    "Missing asset address",
+    "Invalid asset address",
+  );
+  if (!parsedAddress.ok) {
+    throw new Error(parsedAddress.message);
+  }
+  if (!body || typeof body !== "object") {
+    throw new Error("Missing request body");
   }
 
-  app.get("/.well-known/fpc.json", async (req) => ({
+  const { fee_bips, market_rate_den, market_rate_num } = body;
+  const name = body.name?.trim();
+  if (!name) {
+    throw new Error("Missing required field: name");
+  }
+  if (!Number.isInteger(market_rate_num) || (market_rate_num ?? 0) <= 0) {
+    throw new Error("market_rate_num must be a positive integer");
+  }
+  if (!Number.isInteger(market_rate_den) || (market_rate_den ?? 0) <= 0) {
+    throw new Error("market_rate_den must be a positive integer");
+  }
+  if (!Number.isInteger(fee_bips) || (fee_bips ?? -1) < 0 || (fee_bips ?? 10001) > 10000) {
+    throw new Error("fee_bips must be an integer in range [0, 10000]");
+  }
+
+  const marketRateNum = market_rate_num as number;
+  const marketRateDen = market_rate_den as number;
+  const feeBips = fee_bips as number;
+
+  return {
+    address: parsedAddress.value.toString(),
+    name,
+    market_rate_num: marketRateNum,
+    market_rate_den: marketRateDen,
+    fee_bips: feeBips,
+  };
+}
+
+async function ensureSenderRegistered(
+  treasury: OperatorTreasuryPort | undefined,
+  userAddress: AztecAddress,
+  requestLog: ServerApp["log"],
+): Promise<void> {
+  if (!treasury) {
+    return;
+  }
+
+  try {
+    await treasury.registerSender(userAddress);
+  } catch (error) {
+    requestLog.warn(
+      {
+        err: error,
+        user: userAddress.toString(),
+      },
+      "Failed to register quote sender for operator PXE discovery",
+    );
+  }
+}
+
+function internalErrorBody() {
+  return {
+    error: {
+      code: "INTERNAL_ERROR",
+      message: "Internal server error",
+    },
+  };
+}
+
+function requireAdminAccess(config: Config, headers: HeaderMap): AdminAccessResult {
+  if (!config.admin_auth.enabled) {
+    return {
+      ok: false,
+      statusCode: 503,
+      body: serviceUnavailable("Admin API is disabled"),
+    };
+  }
+  if (!isAdminAuthorized(config, headers)) {
+    return {
+      ok: false,
+      statusCode: 401,
+      body: unauthorized(),
+    };
+  }
+  return { ok: true };
+}
+
+function validUntilFactory(config: Config) {
+  return (nowSeconds: bigint): bigint => nowSeconds + BigInt(config.quote_validity_seconds);
+}
+
+function parseAdminSweepRequest(
+  config: Config,
+  assetPolicyStore: AssetPolicyStore,
+  body: AdminSweepRequestBody | undefined,
+): ParsedAdminSweepRequest {
+  const acceptedAsset = body?.accepted_asset?.trim();
+  if (!acceptedAsset) {
+    throw new Error("Missing required field: accepted_asset");
+  }
+  if (!resolveSelectedAssetPolicy(assetPolicyStore.getAll(), acceptedAsset)) {
+    throw new Error("Unsupported accepted_asset");
+  }
+
+  const destination = body?.destination?.trim() || config.treasury_destination_address || undefined;
+  if (!destination) {
+    throw new Error("Missing required field: destination");
+  }
+
+  const amount = parsePositiveU128Decimal(body?.amount);
+  if (body?.amount !== undefined && !amount) {
+    throw new Error("Missing or invalid field: amount");
+  }
+
+  return {
+    acceptedAsset,
+    amount,
+    destination,
+  };
+}
+
+function isBadSweepRequestError(message: string): boolean {
+  return (
+    message === "Missing required field: accepted_asset" ||
+    message === "Unsupported accepted_asset" ||
+    message === "Missing required field: destination" ||
+    message === "Missing or invalid field: amount" ||
+    message.includes("exceeds operator private balance") ||
+    message.includes("must be greater than zero") ||
+    message.includes("destination must be")
+  );
+}
+
+function registerPublicRoutes(context: ServerContext): void {
+  const { app, assetPolicyStore, config, metrics } = context;
+
+  app.get("/.well-known/fpc.json", (req) => ({
     discovery_version: DISCOVERY_VERSION,
     attestation_api_version: ATTESTATION_API_VERSION,
     network_id: config.network_id,
@@ -505,23 +710,41 @@ export function buildServer(
       asset: "/asset",
       quote: "/quote",
     },
-    supported_assets: supportedAssets,
+    supported_assets: buildSupportedAssetsForDiscovery(assetPolicyStore),
   }));
 
-  app.get("/health", async () => ({ status: "ok" }));
+  app.get("/health", () => ({ status: "ok" }));
 
-  app.get("/metrics", (_req, reply) => {
-    return reply
+  app.get("/metrics", (_req, reply) =>
+    reply
       .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
-      .send(metrics.renderPrometheus());
+      .send(metrics.renderPrometheus()),
+  );
+
+  app.get("/asset", () => {
+    const primaryAsset = assetPolicyStore.getPrimaryAsset();
+    return {
+      name: primaryAsset.name,
+      address: primaryAsset.address,
+    };
   });
 
-  app.get("/asset", async () => ({
-    name: config.accepted_asset_name,
-    address: config.accepted_asset_address,
-  }));
+  app.get("/accepted-assets", () => buildSupportedAssetsForDiscovery(assetPolicyStore));
+}
 
-  app.get("/accepted-assets", async () => supportedAssets);
+function registerQuoteRoute(context: ServerContext): void {
+  const {
+    app,
+    assetPolicyStore,
+    config,
+    fpcAddress,
+    metrics,
+    nowUnixSeconds,
+    quoteSigner,
+    rateLimiter,
+    treasury,
+  } = context;
+  const validUntil = validUntilFactory(config);
 
   app.get<{
     Querystring: QuoteRequestQuery;
@@ -564,13 +787,14 @@ export function buildServer(
       return reply.code(401).send(unauthorized());
     }
 
-    const parsedRequest = parseQuoteRequest(config, req.query);
+    const parsedRequest = parseQuoteRequest(assetPolicyStore.getAll(), req.query);
     if (!parsedRequest.ok) {
       observe("bad_request");
       return reply.code(400).send(badRequest(parsedRequest.message));
     }
 
-    const { userAddress, acceptedAsset, selectedAssetPolicy, fjFeeAmount } = parsedRequest.value;
+    const { acceptedAsset, fjFeeAmount, selectedAssetPolicy, userAddress } = parsedRequest.value;
+
     try {
       const quotePricing = computeQuotePricing(
         selectedAssetPolicy,
@@ -583,7 +807,8 @@ export function buildServer(
         return reply.code(400).send(badRequest(quotePricing.message));
       }
 
-      const { rateNum, rateDen, validUntil: quoteValidUntil, aaPaymentAmount } = quotePricing.value;
+      const { aaPaymentAmount, rateDen, rateNum, validUntil: quoteValidUntil } = quotePricing.value;
+      await ensureSenderRegistered(treasury, userAddress, req.log);
       const signature = await signQuoteForRequest(config, quoteSigner, {
         fpcAddress,
         acceptedAsset,
@@ -630,14 +855,175 @@ export function buildServer(
         },
         "Failed to issue quote",
       );
-      return reply.code(500).send({
-        error: {
-          code: "INTERNAL_ERROR",
-          message: "Internal server error",
-        },
-      });
+      return reply.code(500).send(internalErrorBody());
     }
   });
+}
+
+function registerAdminRoutes(context: ServerContext): void {
+  const { app, assetPolicyStore, config, treasury } = context;
+
+  app.get("/admin/asset-policies", (req, reply) => {
+    const access = requireAdminAccess(config, req.headers);
+    if (!access.ok) {
+      return reply.code(access.statusCode).send(access.body);
+    }
+    return assetPolicyStore.getAll();
+  });
+
+  app.put<{
+    Params: AdminAssetPolicyParams;
+    Body: AdminAssetPolicyBody;
+  }>("/admin/asset-policies/:assetAddress", async (req, reply) => {
+    const access = requireAdminAccess(config, req.headers);
+    if (!access.ok) {
+      return reply.code(access.statusCode).send(access.body);
+    }
+
+    try {
+      const policy = parseAdminAssetPolicy(req.params.assetAddress, req.body);
+      const updated = await assetPolicyStore.upsert(policy);
+      req.log.info(
+        {
+          event: "asset_policy_upserted",
+          accepted_asset: updated.address,
+          fee_bips: updated.fee_bips,
+          market_rate_num: updated.market_rate_num,
+          market_rate_den: updated.market_rate_den,
+        },
+        "Updated supported asset policy",
+      );
+      return updated;
+    } catch (error) {
+      return reply
+        .code(400)
+        .send(badRequest(error instanceof Error ? error.message : String(error)));
+    }
+  });
+
+  app.delete<{
+    Params: AdminAssetPolicyParams;
+  }>("/admin/asset-policies/:assetAddress", async (req, reply) => {
+    const access = requireAdminAccess(config, req.headers);
+    if (!access.ok) {
+      return reply.code(access.statusCode).send(access.body);
+    }
+
+    try {
+      const removed = await assetPolicyStore.remove(req.params.assetAddress);
+      req.log.info(
+        {
+          event: "asset_policy_removed",
+          accepted_asset: removed.address,
+        },
+        "Removed supported asset policy",
+      );
+      return removed;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const statusCode =
+        message === "Cannot remove the last supported asset"
+          ? 409
+          : message.startsWith("Supported asset not found")
+            ? 404
+            : 400;
+      return reply
+        .code(statusCode)
+        .send(statusCode === 409 ? conflict(message) : badRequest(message));
+    }
+  });
+
+  app.get("/admin/operator-balances", async (req, reply) => {
+    const access = requireAdminAccess(config, req.headers);
+    if (!access.ok) {
+      return reply.code(access.statusCode).send(access.body);
+    }
+    if (!treasury) {
+      return reply.code(503).send(serviceUnavailable("Operator treasury wallet is not configured"));
+    }
+
+    try {
+      const policies = assetPolicyStore.getAll();
+      const balances = await treasury.getPrivateBalances(policies.map((asset) => asset.address));
+      return balances.map((balance) => ({
+        accepted_asset: balance.address,
+        balance: balance.balance,
+        name: policies.find((asset) => asset.address === balance.address)?.name ?? balance.address,
+      }));
+    } catch (error) {
+      req.log.error({ err: error }, "Failed to read operator balances");
+      return reply.code(500).send(internalErrorBody());
+    }
+  });
+
+  app.post<{
+    Body: AdminSweepRequestBody;
+  }>("/admin/sweeps", async (req, reply) => {
+    const access = requireAdminAccess(config, req.headers);
+    if (!access.ok) {
+      return reply.code(access.statusCode).send(access.body);
+    }
+    if (!treasury) {
+      return reply.code(503).send(serviceUnavailable("Operator treasury wallet is not configured"));
+    }
+
+    try {
+      const sweepRequest = parseAdminSweepRequest(config, assetPolicyStore, req.body);
+      const result = await treasury.sweep(sweepRequest);
+      req.log.info(
+        {
+          event: "operator_treasury_sweep",
+          accepted_asset: result.acceptedAsset,
+          destination: result.destination,
+          swept_amount: result.sweptAmount,
+          tx_hash: result.txHash,
+        },
+        "Swept operator treasury balance",
+      );
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (isBadSweepRequestError(message)) {
+        return reply.code(400).send(badRequest(message));
+      }
+      req.log.error({ err: error }, "Failed to sweep operator treasury balance");
+      return reply.code(500).send(internalErrorBody());
+    }
+  });
+}
+
+export function buildServer(
+  config: Config,
+  quoteSigner: QuoteSchnorrSigner,
+  deps: BuildServerDependencies = {},
+) {
+  const app = Fastify({ logger: true });
+  const context: ServerContext = {
+    app,
+    assetPolicyStore:
+      deps.assetPolicyStore ??
+      new MemoryAssetPolicyStore(
+        config.supported_assets,
+        normalizeAztecAddress(config.accepted_asset_address),
+      ),
+    config,
+    fpcAddress: AztecAddress.fromString(config.fpc_address),
+    metrics: new AttestationMetrics(),
+    nowUnixSeconds: deps.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000))),
+    quoteSigner,
+    rateLimiter: config.quote_rate_limit.enabled
+      ? new FixedWindowRateLimiter(
+          config.quote_rate_limit.maxRequests,
+          config.quote_rate_limit.windowSeconds,
+          config.quote_rate_limit.maxTrackedKeys,
+        )
+      : undefined,
+    treasury: deps.treasury,
+  };
+
+  registerPublicRoutes(context);
+  registerQuoteRoute(context);
+  registerAdminRoutes(context);
 
   return app;
 }

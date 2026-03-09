@@ -17,11 +17,13 @@ const pinoLogger = pino();
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
+import { FileBackedAssetPolicyStore } from "./asset-policy-store.js";
 import { loadConfig } from "./config.js";
 import { FpcImmutableVerificationError, verifyFpcImmutablesOnStartup } from "./fpc-immutables.js";
+import { OperatorTreasury } from "./operator-treasury.js";
 import { buildServer } from "./server.js";
 import type { QuoteSchnorrSigner } from "./signer.js";
 
@@ -47,6 +49,9 @@ async function main() {
   }
 
   const node = createAztecNodeClient(config.aztec_node_url);
+  await waitForNode(node);
+  const assetPolicyStore = await FileBackedAssetPolicyStore.create(config);
+  const treasury = new OperatorTreasury(config);
 
   // Secret resolution happens in config loading. Production mode rejects
   // plaintext config secrets and supports env/external providers.
@@ -100,10 +105,19 @@ async function main() {
   pinoLogger.info(`Operator pubkey y: ${operatorPubKey.y.toString()}`);
   pinoLogger.info(`FPC address:       ${fpcAddress.toString()}`);
   pinoLogger.info(
-    `Accepted asset:    ${config.accepted_asset_name} (${acceptedAssetAddress.toString()})`,
+    `Default asset:     ${config.accepted_asset_name} (${acceptedAssetAddress.toString()})`,
   );
+  pinoLogger.info(`Supported assets:  ${assetPolicyStore.getAll().length}`);
+  if (config.admin_auth.enabled) {
+    pinoLogger.info(`Admin API header:  ${config.admin_auth.apiKeyHeader}`);
+  } else {
+    pinoLogger.warn(
+      "Admin API disabled: configure admin_api_key to enable asset management and sweeps",
+    );
+  }
 
   const app = buildServer(config, quoteSigner, {
+    assetPolicyStore,
     nowUnixSeconds: async () => {
       const latest = await node.getBlock("latest");
       if (latest) {
@@ -111,6 +125,7 @@ async function main() {
       }
       return BigInt(Math.floor(Date.now() / 1000));
     },
+    treasury,
   });
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
