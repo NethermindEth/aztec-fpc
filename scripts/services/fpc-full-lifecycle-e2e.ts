@@ -967,6 +967,7 @@ async function deployContractsAndWriteRuntimeConfig(
     config.nodeUrl,
     config.l1RpcUrl,
     wallet,
+    3,
   );
   config.l1PrivateKey = l1PrivateKey;
 
@@ -977,17 +978,9 @@ async function deployContractsAndWriteRuntimeConfig(
     throw new Error("Expected at least 3 initial test accounts");
   }
 
-  const [operator, user, otherUser] = await Promise.all([
-    wallet
-      .createSchnorrAccount(operatorData.secret, operatorData.salt, operatorData.signingKey)
-      .then((account) => account.address),
-    wallet
-      .createSchnorrAccount(userData.secret, userData.salt, userData.signingKey)
-      .then((account) => account.address),
-    wallet
-      .createSchnorrAccount(otherUserData.secret, otherUserData.salt, otherUserData.signingKey)
-      .then((account) => account.address),
-  ]);
+  const operator = operatorData.address;
+  const user = userData.address;
+  const otherUser = otherUserData.address;
 
   const operatorSecretHex = operatorData.secret.toString();
   assertPrivateKeyHex(operatorSecretHex, "operator secret");

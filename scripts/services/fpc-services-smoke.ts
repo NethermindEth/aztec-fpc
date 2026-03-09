@@ -1018,6 +1018,7 @@ async function main() {
       config.nodeUrl,
       config.l1RpcUrl,
       wallet,
+      2,
     );
 
     const minFees = await node.getCurrentMinFees();
@@ -1094,12 +1095,8 @@ async function main() {
       throw new Error("Expected at least 2 initial test accounts");
     }
 
-    const [operatorAccount, userAccount] = await Promise.all([
-      wallet.createSchnorrAccount(operatorData.secret, operatorData.salt, operatorData.signingKey),
-      wallet.createSchnorrAccount(userData.secret, userData.salt, userData.signingKey),
-    ]);
-    const operator = operatorAccount.address;
-    const user = userAccount.address;
+    const operator = operatorData.address;
+    const user = userData.address;
 
     pinoLogger.info(`[services-smoke] operator=${operator.toString()}`);
     pinoLogger.info(`[services-smoke] user=${user.toString()}`);

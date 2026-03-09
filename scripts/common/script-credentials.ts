@@ -2,14 +2,13 @@
  * Shared credential utility for parallel script execution.
  *
  * Each invocation generates a fresh random L1 account (funded via
- * `anvil_setBalance`) and deterministically derived L2 accounts
- * (operator, user, otherUser). FeeJuice is bridged L1→L2 and the
- * accounts are deployed on-chain.
+ * `anvil_setBalance`) and the requested number of L2 accounts.
+ * FeeJuice is bridged L1→L2 and the accounts are deployed on-chain.
  *
  * Usage — replace `getInitialTestAccountsData()` with `resolveScriptAccounts()`:
  *
  *   const { accounts, l1PrivateKey } =
- *     await resolveScriptAccounts(nodeUrl, l1RpcUrl, wallet);
+ *     await resolveScriptAccounts(nodeUrl, l1RpcUrl, wallet, 3);
  */
 
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -18,6 +17,7 @@ import { FeeJuicePaymentMethodWithClaim } from "@aztec/aztec.js/fee";
 import { type Fq, Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import type { AccountManager } from "@aztec/aztec.js/wallet";
 import { createLogger } from "@aztec/foundation/log";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
@@ -44,6 +44,8 @@ export type AccountData = {
   secret: Fr;
   salt: Fr;
   signingKey: Fq;
+  address: AztecAddress;
+  accountManager: AccountManager;
 };
 
 export type ScriptEnvironment = {
@@ -53,12 +55,11 @@ export type ScriptEnvironment = {
   accounts: AccountData[];
 };
 
-type AccountManager = Awaited<ReturnType<EmbeddedWallet["createSchnorrAccount"]>>;
-
-function deriveAccount(): AccountData {
-  const secret = Fr.random();
+export async function deriveAccount(secret: Fr, wallet: EmbeddedWallet): Promise<AccountData> {
   const signingKey = deriveSigningKey(secret);
-  return { secret, salt: Fr.ZERO, signingKey };
+  const salt = Fr.ZERO;
+  const accountManager = await wallet.createSchnorrAccount(secret, salt, signingKey);
+  return { secret, salt, signingKey, address: accountManager.address, accountManager };
 }
 
 /**
@@ -69,6 +70,7 @@ export async function resolveScriptAccounts(
   nodeUrl: string,
   l1RpcUrl: string,
   wallet: EmbeddedWallet,
+  accountCount: number,
 ): Promise<ScriptEnvironment> {
   // Generate a random L1 account and fund it via Anvil.
   const l1Key = generatePrivateKey();
@@ -90,12 +92,10 @@ export async function resolveScriptAccounts(
     createLogger("script-credentials:bridge"),
   );
 
-  const roles = ["operator", "user", "otherUser"];
-
   // Register accounts and bridge FeeJuice L1→L2 — sequentially.
   const preResults: PreClaimResult[] = [];
-  for (let i = 0; i < roles.length; i++) {
-    preResults.push(await preClaim(i, roles[i], wallet, portal));
+  for (let i = 0; i < accountCount; i++) {
+    preResults.push(await preClaim(i, `account[${i}]`, wallet, portal));
   }
 
   // Mint additional L1 FeeJuice so the L1 account retains a balance.
@@ -105,7 +105,7 @@ export async function resolveScriptAccounts(
   // Wait for L1→L2 messages, then deploy accounts with claimed FeeJuice.
   for (let i = 0; i < preResults.length; i++) {
     const r = preResults[i];
-    await deployWithClaim(i, r.l2Address, r.accountManager, node, r.pendingClaim);
+    await deployWithClaim(i, r.account, node, r.pendingClaim);
   }
 
   return {
@@ -173,8 +173,6 @@ type PendingClaim = {
 
 type PreClaimResult = {
   account: AccountData;
-  accountManager: AccountManager;
-  l2Address: AztecAddress;
   pendingClaim: PendingClaim;
 };
 
@@ -185,24 +183,16 @@ async function preClaim(
   portal: L1FeeJuicePortalManager,
 ): Promise<PreClaimResult> {
   // 1. Derive and register account locally.
-  const account = deriveAccount();
-  const accountManager = await wallet.createSchnorrAccount(
-    account.secret,
-    account.salt,
-    account.signingKey,
-  );
-  const l2Address = accountManager.address;
-  pinoLogger.info(`registered L2 account ${role}=${l2Address.toString()}`);
+  const account = await deriveAccount(Fr.random(), wallet);
+  pinoLogger.info(`registered L2 account ${role}=${account.address.toString()}`);
 
   // 2. Bridge FeeJuice L1→L2 for this account (with retries).
-  const l2Claim = await bridgeWithRetry(portal, l2Address);
+  const l2Claim = await bridgeWithRetry(portal, account.address);
   const messageHash = Fr.fromHexString(l2Claim.messageHash as string);
-  pinoLogger.info(`bridged FeeJuice L1→L2 for account[${index}]=${l2Address.toString()}`);
+  pinoLogger.info(`bridged FeeJuice L1→L2 for account[${index}]=${account.address.toString()}`);
 
   return {
     account,
-    accountManager,
-    l2Address,
     pendingClaim: { claim: l2Claim, messageHash },
   };
 }
@@ -214,8 +204,7 @@ async function preClaim(
 
 async function deployWithClaim(
   index: number,
-  l2Address: AztecAddress,
-  accountManager: AccountManager,
+  account: AccountData,
   node: ReturnType<typeof createAztecNodeClient>,
   pending: PendingClaim,
 ): Promise<void> {
@@ -225,13 +214,13 @@ async function deployWithClaim(
   });
   pinoLogger.info(`L1→L2 message ready for account[${index}]`);
 
-  const feePayment = new FeeJuicePaymentMethodWithClaim(l2Address, pending.claim);
-  const deployMethod = await accountManager.getDeployMethod();
+  const feePayment = new FeeJuicePaymentMethodWithClaim(account.address, pending.claim);
+  const deployMethod = await account.accountManager.getDeployMethod();
   await deployMethod.send({
     from: AztecAddress.ZERO,
     fee: { paymentMethod: feePayment },
     skipClassPublication: true,
     skipInstancePublication: false,
   });
-  pinoLogger.info(`deployed L2 account[${index}]=${l2Address.toString()}`);
+  pinoLogger.info(`deployed L2 account[${index}]=${account.address.toString()}`);
 }
