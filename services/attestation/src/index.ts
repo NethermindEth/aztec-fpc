@@ -109,7 +109,7 @@ async function main() {
   );
   pinoLogger.info(`Supported assets:  ${assetPolicyStore.getAll().length}`);
   if (config.admin_auth.enabled) {
-    pinoLogger.info(`Admin API header:  ${config.admin_auth.apiKeyHeader}`);
+    pinoLogger.info("Admin API enabled (authentication header configured)");
   } else {
     pinoLogger.warn(
       "Admin API disabled: configure admin_api_key to enable asset management and sweeps",
