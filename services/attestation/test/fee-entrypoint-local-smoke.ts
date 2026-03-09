@@ -499,15 +499,12 @@ async function main() {
     config.nodeUrl,
     config.l1RpcUrl,
     wallet,
+    2,
   );
   config.l1PrivateKey = l1PrivateKey as Hex;
 
-  const [operator, user] = await Promise.all(
-    testAccounts.slice(0, 2).map(async (account) => {
-      return (await wallet.createSchnorrAccount(account.secret, account.salt, account.signingKey))
-        .address;
-    }),
-  );
+  const operator = testAccounts[0].address;
+  const user = testAccounts[1].address;
 
   pinoLogger.info(`[smoke] operator=${operator.toString()}`);
   pinoLogger.info(`[smoke] user=${user.toString()}`);
