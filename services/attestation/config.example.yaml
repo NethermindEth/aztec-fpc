@@ -45,8 +45,28 @@ operator_secret_provider: "auto"
 # Optional explicit operator address override.
 # Set this when the operator account was deployed with non-zero salt.
 # operator_address: "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72"
+# Required for treasury sweeps when operator_address was deployed with non-zero salt.
+# operator_account_salt: "0x0000000000000000000000000000000000000000000000000000000000000007"
 # Optional when OPERATOR_SECRET_KEY is set.
 operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001"
+
+# Optional embedded-wallet PXE store. When set, the service registers quoted
+# senders so operator-held private payment notes can be rediscovered later for
+# balance checks and sweeps.
+# pxe_data_directory: "./.attestation-pxe"
+
+# ─── Admin endpoint auth / treasury ops ──────────────────────────────────────
+# Admin endpoints are disabled unless admin_api_key is configured.
+# admin_api_key: "replace-with-random-admin-secret"
+# admin_api_key_header: "x-admin-api-key"
+
+# Persistent JSON file storing the effective supported asset policy set.
+# After the first admin asset update/remove, this file becomes the source of
+# truth used across restarts.
+asset_policy_state_path: ".attestation-asset-policies.json"
+
+# Optional default destination for manual operator treasury sweeps.
+# treasury_destination_address: "0x1111111111111111111111111111111111111111111111111111111111111111"
 
 # ─── Quote endpoint auth (optional, recommended in production) ───────────────
 # quote_auth_mode options:
@@ -83,12 +103,19 @@ accepted_asset_address: "0x00000000000000000000000000000000000000000000000000000
 # Optional multi-asset metadata and quote policy configuration.
 # This powers both discovery `supported_assets` and `GET /accepted-assets`.
 # If omitted, the service falls back to [{ accepted_asset_address, accepted_asset_name }]
-# and legacy `GET /asset` still exposes the single configured accepted asset.
+# until admin endpoints write `asset_policy_state_path`.
+# Legacy `GET /asset` exposes the current primary asset from the effective set.
 # supported_assets:
 #   - address: "0x0000000000000000000000000000000000000000000000000000000000000002"
 #     name: "humanUSDC"
+#     market_rate_num: 1
+#     market_rate_den: 1000
+#     fee_bips: 200
 #   - address: "0x0000000000000000000000000000000000000000000000000000000000000003"
 #     name: "ravenETH"
+#     market_rate_num: 3
+#     market_rate_den: 1000
+#     fee_bips: 25
 
 # ─── Exchange rate ────────────────────────────────────────────────────────────
 # market_rate_num / market_rate_den = base rate (accepted_asset per 1 FeeJuice)
