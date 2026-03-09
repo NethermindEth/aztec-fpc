@@ -20,9 +20,6 @@ COPY services/topup/config.example.yaml services/topup/
 # ── Compiled contract artifacts ──
 COPY --from=deploy /app/target/ target/
 
-# ── Smoke & deploy scripts ──
-COPY scripts/ scripts/
-
 # ── Build services ──
 RUN bun run --filter @aztec-fpc/attestation --if-present build && \
     bun run --filter @aztec-fpc/topup --if-present build
