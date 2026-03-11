@@ -1015,7 +1015,7 @@ async function main(): Promise<void> {
       deployOpts,
       "constructor_with_minter",
     );
-    acceptedAssetAddress = tokenContract.address.toString();
+    acceptedAssetAddress = tokenContract.contract.address.toString();
     pinoLogger.info(`[deploy-fpc-devnet] token deployed. address=${acceptedAssetAddress}`);
   }
 
@@ -1033,7 +1033,7 @@ async function main(): Promise<void> {
           AztecAddress.fromString(acceptedAssetAddress),
         ];
   const fpcContract = await deployContract(wallet, fpcArtifact, fpcConstructorArgs, deployOpts);
-  const fpcAddress = fpcContract.address.toString();
+  const fpcAddress = fpcContract.contract.address.toString();
   pinoLogger.info(`[deploy-fpc-devnet] fpc deployed. address=${fpcAddress}`);
 
   let faucetAddress: string | undefined;
@@ -1055,7 +1055,8 @@ async function main(): Promise<void> {
       ],
       deployOpts,
     );
-    faucetAddress = faucetContract.address.toString();
+    const deployedFaucetAddress = faucetContract.contract.address.toString();
+    faucetAddress = deployedFaucetAddress;
     pinoLogger.info(`[deploy-fpc-devnet] faucet deployed. address=${faucetAddress}`);
 
     pinoLogger.info(
@@ -1068,7 +1069,7 @@ async function main(): Promise<void> {
         wallet,
       );
       await tokenInstance.methods
-        .mint_to_public(AztecAddress.fromString(faucetAddress), faucetConfig.initialSupply)
+        .mint_to_public(AztecAddress.fromString(deployedFaucetAddress), faucetConfig.initialSupply)
         .send({ ...deployOpts, from: operatorAddress });
     } catch (error) {
       throw new CliError(
@@ -1091,7 +1092,7 @@ async function main(): Promise<void> {
     deployOpts,
     "initialize",
   );
-  const counterAddress = counterContract.address.toString();
+  const counterAddress = counterContract.contract.address.toString();
   pinoLogger.info(`[deploy-fpc-devnet] counter deployed. address=${counterAddress}`);
 
   const manifest = writeDevnetDeployManifest(args.out, {

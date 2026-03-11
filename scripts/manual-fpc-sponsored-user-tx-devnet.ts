@@ -694,8 +694,8 @@ async function main() {
   const userDebited = userPrivateBefore - userPrivateAfter;
   const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
 
-  pinoLogger.info(`tx_hash=${receipt.txHash.toString()}`);
-  pinoLogger.info(`tx_fee_juice=${receipt.transactionFee}`);
+  pinoLogger.info(`tx_hash=${receipt.receipt.txHash.toString()}`);
+  pinoLogger.info(`tx_fee_juice=${receipt.receipt.transactionFee}`);
   pinoLogger.info(`expected_charge=${aaPaymentAmount}`);
   pinoLogger.info(`user_debited=${userDebited}`);
   pinoLogger.info(`operator_credited=${operatorCredited}`);

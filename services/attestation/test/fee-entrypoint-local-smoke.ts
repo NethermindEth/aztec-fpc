@@ -346,7 +346,6 @@ async function claimFeeJuiceOnL2(
 ): Promise<void> {
   await waitForL1ToL2MessageReady(node, bridgeMessage.l1ToL2MessageHash, {
     timeoutSeconds: Math.floor(config.feeJuiceWaitTimeoutMs / 1000),
-    forPublicConsumption: false,
   });
 
   const feeJuice = FeeJuiceContract.at(wallet);
@@ -635,7 +634,7 @@ async function main() {
   pinoLogger.info(`[smoke] user_debited=${userDebited}`);
   pinoLogger.info(`[smoke] operator_credited=${operatorCredited}`);
   pinoLogger.info(`[smoke] operator_balance_after=${operatorAfter}`);
-  pinoLogger.info(`[smoke] tx_fee_juice=${receipt.transactionFee}`);
+  pinoLogger.info(`[smoke] tx_fee_juice=${receipt.receipt.transactionFee}`);
 
   assertExpectedAmount("User debit", expectedCharge, userDebited);
   assertExpectedAmount("Operator credit", expectedCharge, operatorCredited);

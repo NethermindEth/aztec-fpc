@@ -187,7 +187,7 @@ export class OperatorTreasury implements OperatorTreasuryPort {
       sweptAmount: amount.toString(),
       balanceBefore: balanceBefore.toString(),
       balanceAfter: balanceAfter.toString(),
-      txHash: receipt.txHash.toString(),
+      txHash: receipt.receipt.txHash.toString(),
     };
   }
 

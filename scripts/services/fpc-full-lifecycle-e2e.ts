@@ -725,7 +725,7 @@ async function executeFeePaidTx(
       wait: { timeout: 180 },
     });
 
-  return { expectedCharge, receipt };
+  return { expectedCharge, receipt: receipt.receipt };
 }
 
 function errorMessage(error: unknown): string {

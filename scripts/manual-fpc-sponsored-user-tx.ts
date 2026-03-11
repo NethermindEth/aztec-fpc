@@ -231,9 +231,11 @@ async function main() {
     );
   } else {
     // Deploy Counter.initialize(headstart=0, owner=user) for this manual run.
-    counter = await Contract.deploy(wallet, counterArtifact, [0n, user], "initialize").send({
-      from: user,
-    });
+    counter = (
+      await Contract.deploy(wallet, counterArtifact, [0n, user], "initialize").send({
+        from: user,
+      })
+    ).contract;
   }
   pinoLogger.info(`counter=${counter.address.toString()}`);
   if (deployCounterOnly) {
@@ -392,8 +394,8 @@ async function main() {
   pinoLogger.info(`user=${user}`);
   pinoLogger.info(`token=${tokenAddress}`);
   pinoLogger.info(`fpc=${fpcAddress}`);
-  pinoLogger.info(`tx_hash=${receipt.txHash.toString()}`);
-  pinoLogger.info(`tx_fee_juice=${receipt.transactionFee}`);
+  pinoLogger.info(`tx_hash=${receipt.receipt.txHash.toString()}`);
+  pinoLogger.info(`tx_fee_juice=${receipt.receipt.transactionFee}`);
   pinoLogger.info(`expected_charge=${aaPaymentAmount}`);
   pinoLogger.info(`user_debited=${userDebited}`);
   pinoLogger.info(`operator_credited=${operatorCredited}`);

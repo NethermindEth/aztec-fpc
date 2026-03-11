@@ -540,7 +540,6 @@ async function waitForBridgeMessageReady(
   pinoLogger.info(`${LOG_PREFIX} waiting for L1->L2 message readiness...`);
   const ready = await waitForL1ToL2MessageReady(node, messageHashFr, {
     timeoutSeconds,
-    forPublicConsumption: false,
   });
   if (!ready) {
     throw new Error(`Bridge message did not become ready within ${timeoutSeconds}s.`);
@@ -657,7 +656,7 @@ async function submitClaimAttempt(args: ClaimWithRetriesArgs): Promise<string> {
       fee: sendContext.fee,
       wait: { timeout: args.claimTimeoutSeconds },
     });
-  return receipt.txHash.toString();
+  return receipt.receipt.txHash.toString();
 }
 
 async function handleClaimAttemptFailure(

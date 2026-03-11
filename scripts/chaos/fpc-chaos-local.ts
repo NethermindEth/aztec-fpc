@@ -305,7 +305,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
     ["ChaosToken", "CTK", 18, operator, operator],
     "constructor_with_minter",
   ).send({ from: operator });
-  pinoLogger.info(`[chaos-local] Token deployed at ${token.address.toString()}`);
+  pinoLogger.info(`[chaos-local] Token deployed at ${token.contract.address.toString()}`);
 
   pinoLogger.info("[chaos-local] Deploying FPC contract...");
   const fpc = await Contract.deploy(wallet, fpcArtifact, [
@@ -313,7 +313,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
     operatorPubKey.x,
     operatorPubKey.y,
   ]).send({ from: operator });
-  pinoLogger.info(`[chaos-local] FPC deployed at ${fpc.address.toString()}`);
+  pinoLogger.info(`[chaos-local] FPC deployed at ${fpc.contract.address.toString()}`);
 
   const [minFees, nodeInfo] = await Promise.all([node.getCurrentMinFees(), node.getNodeInfo()]);
   const maxGasCostPerTx =

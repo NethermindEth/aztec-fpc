@@ -177,7 +177,7 @@ async function sendClaim(
       fee,
       wait: { timeout: request.waitTimeoutSeconds },
     });
-  return receipt.txHash.toString();
+  return receipt.receipt.txHash.toString();
 }
 
 function maybeDisableSponsoredMode(

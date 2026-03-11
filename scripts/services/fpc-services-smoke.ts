@@ -991,7 +991,7 @@ async function runFpcFeeEntrypointScenario(
   }
 
   pinoLogger.info(
-    `[services-smoke:fpc] tx_fee_juice=${receipt.transactionFee} user_debited=${userDebited} operator_credited=${operatorCredited}`,
+    `[services-smoke:fpc] tx_fee_juice=${receipt.receipt.transactionFee} user_debited=${userDebited} operator_credited=${operatorCredited}`,
   );
   pinoLogger.info("[services-smoke:fpc] PASS: tx accepted with attestation quote + fee_entrypoint");
 }

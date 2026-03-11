@@ -858,7 +858,6 @@ async function topUpFeePayer(params: {
 
     await deps.waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
       timeoutSeconds: Math.max(1, Math.floor(args.bridgeWaitTimeoutMs / 1000)),
-      forPublicConsumption: false,
     });
 
     const feeJuice = deps.FeeJuiceContract.at(wallet);
@@ -1079,7 +1078,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
       wait: { timeout: 180 },
     });
   pinoLogger.info(
-    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
+    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.receipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
   );
   pinoLogger.info(
     `[devnet-postdeploy-smoke] PASS variant=${fpcSelection.variant} successful_txs=1`,
