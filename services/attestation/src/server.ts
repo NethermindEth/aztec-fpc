@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
@@ -558,6 +558,20 @@ function parseAdminAssetPolicy(
   assetAddress: string,
   body: AdminAssetPolicyBody | undefined,
 ): SupportedAssetPolicy {
+  if (!body || typeof body !== "object") {
+    throw new Error("Missing request body");
+  }
+
+  return {
+    address: parseAdminAssetAddress(assetAddress),
+    name: parseRequiredTrimmedField(body.name, "name"),
+    market_rate_num: parsePositiveIntegerField(body.market_rate_num, "market_rate_num"),
+    market_rate_den: parsePositiveIntegerField(body.market_rate_den, "market_rate_den"),
+    fee_bips: parseFeeBips(body.fee_bips),
+  };
+}
+
+function parseAdminAssetAddress(assetAddress: string): string {
   const parsedAddress = parseRequiredNonZeroAztecAddress(
     assetAddress,
     "Missing asset address",
@@ -566,36 +580,31 @@ function parseAdminAssetPolicy(
   if (!parsedAddress.ok) {
     throw new Error(parsedAddress.message);
   }
-  if (!body || typeof body !== "object") {
-    throw new Error("Missing request body");
-  }
+  return parsedAddress.value.toString();
+}
 
-  const { fee_bips, market_rate_den, market_rate_num } = body;
-  const name = body.name?.trim();
-  if (!name) {
-    throw new Error("Missing required field: name");
+function parseRequiredTrimmedField(value: string | undefined, fieldName: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    throw new Error(`Missing required field: ${fieldName}`);
   }
-  if (!Number.isInteger(market_rate_num) || (market_rate_num ?? 0) <= 0) {
-    throw new Error("market_rate_num must be a positive integer");
+  return trimmed;
+}
+
+function parsePositiveIntegerField(value: number | undefined, fieldName: string): number {
+  const parsed = value;
+  if (parsed === undefined || !Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${fieldName} must be a positive integer`);
   }
-  if (!Number.isInteger(market_rate_den) || (market_rate_den ?? 0) <= 0) {
-    throw new Error("market_rate_den must be a positive integer");
-  }
-  if (!Number.isInteger(fee_bips) || (fee_bips ?? -1) < 0 || (fee_bips ?? 10001) > 10000) {
+  return parsed;
+}
+
+function parseFeeBips(value: number | undefined): number {
+  const parsed = value;
+  if (parsed === undefined || !Number.isInteger(parsed) || parsed < 0 || parsed > 10000) {
     throw new Error("fee_bips must be an integer in range [0, 10000]");
   }
-
-  const marketRateNum = market_rate_num as number;
-  const marketRateDen = market_rate_den as number;
-  const feeBips = fee_bips as number;
-
-  return {
-    address: parsedAddress.value.toString(),
-    name,
-    market_rate_num: marketRateNum,
-    market_rate_den: marketRateDen,
-    fee_bips: feeBips,
-  };
+  return parsed;
 }
 
 async function ensureSenderRegistered(
@@ -691,6 +700,107 @@ function isBadSweepRequestError(message: string): boolean {
     message.includes("must be greater than zero") ||
     message.includes("destination must be")
   );
+}
+
+function replyIfAdminAccessDenied(
+  config: Config,
+  headers: HeaderMap,
+  reply: FastifyReply,
+): FastifyReply | undefined {
+  const access = requireAdminAccess(config, headers);
+  if (!access.ok) {
+    return reply.code(access.statusCode).send(access.body);
+  }
+  return undefined;
+}
+
+function replyIfTreasuryUnavailable(
+  treasury: OperatorTreasuryPort | undefined,
+  reply: FastifyReply,
+): FastifyReply | undefined {
+  if (treasury) {
+    return undefined;
+  }
+  return reply.code(503).send(serviceUnavailable("Operator treasury wallet is not configured"));
+}
+
+function badRequestFromError(error: unknown) {
+  return badRequest(error instanceof Error ? error.message : String(error));
+}
+
+function mapAssetPolicyRemovalError(message: string) {
+  if (message === "Cannot remove the last supported asset") {
+    return {
+      statusCode: 409,
+      body: conflict(message),
+    };
+  }
+
+  if (message.startsWith("Supported asset not found")) {
+    return {
+      statusCode: 404,
+      body: badRequest(message),
+    };
+  }
+
+  return {
+    statusCode: 400,
+    body: badRequest(message),
+  };
+}
+
+async function handleAdminAssetPolicyDelete(
+  req: FastifyRequest<{ Params: AdminAssetPolicyParams }>,
+  reply: FastifyReply,
+  assetPolicyStore: AssetPolicyStore,
+): Promise<unknown> {
+  try {
+    const removed = await assetPolicyStore.remove(req.params.assetAddress);
+    req.log.info(
+      {
+        event: "asset_policy_removed",
+        accepted_asset: removed.address,
+      },
+      "Removed supported asset policy",
+    );
+    return removed;
+  } catch (error) {
+    const mapped = mapAssetPolicyRemovalError(
+      error instanceof Error ? error.message : String(error),
+    );
+    return reply.code(mapped.statusCode).send(mapped.body);
+  }
+}
+
+async function handleAdminSweep(
+  req: FastifyRequest<{ Body: AdminSweepRequestBody }>,
+  reply: FastifyReply,
+  config: Config,
+  assetPolicyStore: AssetPolicyStore,
+  treasury: OperatorTreasuryPort,
+): Promise<unknown> {
+  try {
+    const sweepRequest = parseAdminSweepRequest(config, assetPolicyStore, req.body);
+    const result = await treasury.sweep(sweepRequest);
+    req.log.info(
+      {
+        event: "operator_treasury_sweep",
+        accepted_asset: result.acceptedAsset,
+        destination: result.destination,
+        swept_amount: result.sweptAmount,
+        tx_hash: result.txHash,
+      },
+      "Swept operator treasury balance",
+    );
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isBadSweepRequestError(message)) {
+      return reply.code(400).send(badRequest(message));
+    }
+    req.log.error({ err: error }, "Failed to sweep operator treasury balance");
+    return reply.code(500).send(internalErrorBody());
+  }
 }
 
 function registerPublicRoutes(context: ServerContext): void {
@@ -864,9 +974,9 @@ function registerAdminRoutes(context: ServerContext): void {
   const { app, assetPolicyStore, config, treasury } = context;
 
   app.get("/admin/asset-policies", (req, reply) => {
-    const access = requireAdminAccess(config, req.headers);
-    if (!access.ok) {
-      return reply.code(access.statusCode).send(access.body);
+    const deniedReply = replyIfAdminAccessDenied(config, req.headers, reply);
+    if (deniedReply) {
+      return deniedReply;
     }
     return assetPolicyStore.getAll();
   });
@@ -875,9 +985,9 @@ function registerAdminRoutes(context: ServerContext): void {
     Params: AdminAssetPolicyParams;
     Body: AdminAssetPolicyBody;
   }>("/admin/asset-policies/:assetAddress", async (req, reply) => {
-    const access = requireAdminAccess(config, req.headers);
-    if (!access.ok) {
-      return reply.code(access.statusCode).send(access.body);
+    const deniedReply = replyIfAdminAccessDenied(config, req.headers, reply);
+    if (deniedReply) {
+      return deniedReply;
     }
 
     try {
@@ -895,56 +1005,39 @@ function registerAdminRoutes(context: ServerContext): void {
       );
       return updated;
     } catch (error) {
-      return reply
-        .code(400)
-        .send(badRequest(error instanceof Error ? error.message : String(error)));
+      return reply.code(400).send(badRequestFromError(error));
     }
   });
 
   app.delete<{
     Params: AdminAssetPolicyParams;
-  }>("/admin/asset-policies/:assetAddress", async (req, reply) => {
-    const access = requireAdminAccess(config, req.headers);
-    if (!access.ok) {
-      return reply.code(access.statusCode).send(access.body);
+  }>("/admin/asset-policies/:assetAddress", (req, reply) => {
+    const deniedReply = replyIfAdminAccessDenied(config, req.headers, reply);
+    if (deniedReply) {
+      return deniedReply;
     }
-
-    try {
-      const removed = await assetPolicyStore.remove(req.params.assetAddress);
-      req.log.info(
-        {
-          event: "asset_policy_removed",
-          accepted_asset: removed.address,
-        },
-        "Removed supported asset policy",
-      );
-      return removed;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const statusCode =
-        message === "Cannot remove the last supported asset"
-          ? 409
-          : message.startsWith("Supported asset not found")
-            ? 404
-            : 400;
-      return reply
-        .code(statusCode)
-        .send(statusCode === 409 ? conflict(message) : badRequest(message));
-    }
+    return handleAdminAssetPolicyDelete(req, reply, assetPolicyStore);
   });
 
   app.get("/admin/operator-balances", async (req, reply) => {
-    const access = requireAdminAccess(config, req.headers);
-    if (!access.ok) {
-      return reply.code(access.statusCode).send(access.body);
+    const deniedReply = replyIfAdminAccessDenied(config, req.headers, reply);
+    if (deniedReply) {
+      return deniedReply;
     }
-    if (!treasury) {
+    const treasuryUnavailableReply = replyIfTreasuryUnavailable(treasury, reply);
+    if (treasuryUnavailableReply) {
+      return treasuryUnavailableReply;
+    }
+    const activeTreasury = treasury;
+    if (!activeTreasury) {
       return reply.code(503).send(serviceUnavailable("Operator treasury wallet is not configured"));
     }
 
     try {
       const policies = assetPolicyStore.getAll();
-      const balances = await treasury.getPrivateBalances(policies.map((asset) => asset.address));
+      const balances = await activeTreasury.getPrivateBalances(
+        policies.map((asset) => asset.address),
+      );
       return balances.map((balance) => ({
         accepted_asset: balance.address,
         balance: balance.balance,
@@ -958,37 +1051,20 @@ function registerAdminRoutes(context: ServerContext): void {
 
   app.post<{
     Body: AdminSweepRequestBody;
-  }>("/admin/sweeps", async (req, reply) => {
-    const access = requireAdminAccess(config, req.headers);
-    if (!access.ok) {
-      return reply.code(access.statusCode).send(access.body);
+  }>("/admin/sweeps", (req, reply) => {
+    const deniedReply = replyIfAdminAccessDenied(config, req.headers, reply);
+    if (deniedReply) {
+      return deniedReply;
     }
-    if (!treasury) {
+    const treasuryUnavailableReply = replyIfTreasuryUnavailable(treasury, reply);
+    if (treasuryUnavailableReply) {
+      return treasuryUnavailableReply;
+    }
+    const activeTreasury = treasury;
+    if (!activeTreasury) {
       return reply.code(503).send(serviceUnavailable("Operator treasury wallet is not configured"));
     }
-
-    try {
-      const sweepRequest = parseAdminSweepRequest(config, assetPolicyStore, req.body);
-      const result = await treasury.sweep(sweepRequest);
-      req.log.info(
-        {
-          event: "operator_treasury_sweep",
-          accepted_asset: result.acceptedAsset,
-          destination: result.destination,
-          swept_amount: result.sweptAmount,
-          tx_hash: result.txHash,
-        },
-        "Swept operator treasury balance",
-      );
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (isBadSweepRequestError(message)) {
-        return reply.code(400).send(badRequest(message));
-      }
-      req.log.error({ err: error }, "Failed to sweep operator treasury balance");
-      return reply.code(500).send(internalErrorBody());
-    }
+    return handleAdminSweep(req, reply, config, assetPolicyStore, activeTreasury);
   });
 }
 

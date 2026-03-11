@@ -21,7 +21,7 @@ import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { FileBackedAssetPolicyStore } from "./asset-policy-store.js";
-import { loadConfig } from "./config.js";
+import { type Config, loadConfig } from "./config.js";
 import { FpcImmutableVerificationError, verifyFpcImmutablesOnStartup } from "./fpc-immutables.js";
 import { OperatorTreasury } from "./operator-treasury.js";
 import { buildServer } from "./server.js";
@@ -29,8 +29,16 @@ import type { QuoteSchnorrSigner } from "./signer.js";
 
 const configPath = process.argv.find((_, i, a) => a[i - 1] === "--config") ?? "config.yaml";
 
-async function main() {
-  const config = loadConfig(configPath);
+interface StartupIdentity {
+  acceptedAssetAddress: AztecAddress;
+  derivedOperatorAddress: AztecAddress;
+  fpcAddress: AztecAddress;
+  operatorAddress: AztecAddress;
+  operatorPubKey: Awaited<ReturnType<Schnorr["computePublicKey"]>>;
+  quoteSigner: QuoteSchnorrSigner;
+}
+
+function logSecretKeyConfiguration(config: Config): void {
   pinoLogger.info(`Runtime profile: ${config.runtime_profile}`);
 
   if (config.operator_secret_key_dual_source) {
@@ -42,19 +50,15 @@ async function main() {
   pinoLogger.info(
     `Operator secret key provider: ${config.operator_secret_key_provider} (resolved source: ${config.operator_secret_key_source})`,
   );
+
   if (config.operator_secret_key_source === "config") {
     pinoLogger.warn(
       "Operator secret key source: config file (operator_secret_key); this should only be used in non-production profiles",
     );
   }
+}
 
-  const node = createAztecNodeClient(config.aztec_node_url);
-  await waitForNode(node);
-  const assetPolicyStore = await FileBackedAssetPolicyStore.create(config);
-  const treasury = new OperatorTreasury(config);
-
-  // Secret resolution happens in config loading. Production mode rejects
-  // plaintext config secrets and supports env/external providers.
+async function createStartupIdentity(config: Config): Promise<StartupIdentity> {
   const secretKey = Fr.fromHexString(config.operator_secret_key);
   const signingKey = deriveSigningKey(secretKey);
   const derivedOperatorAddress = await getSchnorrAccountContractAddress(secretKey, Fr.ZERO);
@@ -63,31 +67,8 @@ async function main() {
     : derivedOperatorAddress;
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
   const acceptedAssetAddress = AztecAddress.fromString(config.accepted_asset_address);
-  if (config.operator_address && !operatorAddress.equals(derivedOperatorAddress)) {
-    pinoLogger.warn(
-      `[startup] operator_address override is set to ${operatorAddress.toString()} (signer-derived with salt=0 is ${derivedOperatorAddress.toString()})`,
-    );
-  }
-
   const schnorrSigner = new Schnorr();
   const operatorPubKey = await schnorrSigner.computePublicKey(signingKey);
-
-  try {
-    await verifyFpcImmutablesOnStartup(node, {
-      fpcAddress,
-      acceptedAsset: acceptedAssetAddress,
-      operatorAddress,
-      operatorPubkeyX: Fr.fromString(operatorPubKey.x.toString()),
-      operatorPubkeyY: Fr.fromString(operatorPubKey.y.toString()),
-    });
-    pinoLogger.info(`[startup] On-chain FPC immutables verified for ${fpcAddress.toString()}`);
-  } catch (error) {
-    if (error instanceof FpcImmutableVerificationError) {
-      pinoLogger.error(error.message);
-    }
-    throw error;
-  }
-
   const quoteSigner: QuoteSchnorrSigner = {
     async signQuoteHash(quoteHash: Fr): Promise<string> {
       const sig = await schnorrSigner.constructSignature(quoteHash.toBuffer(), signingKey);
@@ -95,28 +76,91 @@ async function main() {
     },
   };
 
-  pinoLogger.info(`Operator address:  ${operatorAddress.toString()}`);
-  if (!operatorAddress.equals(derivedOperatorAddress)) {
-    pinoLogger.info(
-      `Signer-derived operator address (salt=0): ${derivedOperatorAddress.toString()}`,
+  return {
+    acceptedAssetAddress,
+    derivedOperatorAddress,
+    fpcAddress,
+    operatorAddress,
+    operatorPubKey,
+    quoteSigner,
+  };
+}
+
+function logOperatorAddressOverride(identity: StartupIdentity, config: Config): void {
+  if (
+    config.operator_address &&
+    !identity.operatorAddress.equals(identity.derivedOperatorAddress)
+  ) {
+    pinoLogger.warn(
+      `[startup] operator_address override is set to ${identity.operatorAddress.toString()} (signer-derived with salt=0 is ${identity.derivedOperatorAddress.toString()})`,
     );
   }
-  pinoLogger.info(`Operator pubkey x: ${operatorPubKey.x.toString()}`);
-  pinoLogger.info(`Operator pubkey y: ${operatorPubKey.y.toString()}`);
-  pinoLogger.info(`FPC address:       ${fpcAddress.toString()}`);
+}
+
+async function verifyStartupImmutables(
+  node: ReturnType<typeof createAztecNodeClient>,
+  identity: StartupIdentity,
+): Promise<void> {
+  try {
+    await verifyFpcImmutablesOnStartup(node, {
+      fpcAddress: identity.fpcAddress,
+      acceptedAsset: identity.acceptedAssetAddress,
+      operatorAddress: identity.operatorAddress,
+      operatorPubkeyX: Fr.fromString(identity.operatorPubKey.x.toString()),
+      operatorPubkeyY: Fr.fromString(identity.operatorPubKey.y.toString()),
+    });
+    pinoLogger.info(
+      `[startup] On-chain FPC immutables verified for ${identity.fpcAddress.toString()}`,
+    );
+  } catch (error) {
+    if (error instanceof FpcImmutableVerificationError) {
+      pinoLogger.error(error.message);
+    }
+    throw error;
+  }
+}
+
+function logStartupSummary(
+  config: Config,
+  identity: StartupIdentity,
+  supportedAssetCount: number,
+): void {
+  pinoLogger.info(`Operator address:  ${identity.operatorAddress.toString()}`);
+  if (!identity.operatorAddress.equals(identity.derivedOperatorAddress)) {
+    pinoLogger.info(
+      `Signer-derived operator address (salt=0): ${identity.derivedOperatorAddress.toString()}`,
+    );
+  }
+  pinoLogger.info(`Operator pubkey x: ${identity.operatorPubKey.x.toString()}`);
+  pinoLogger.info(`Operator pubkey y: ${identity.operatorPubKey.y.toString()}`);
+  pinoLogger.info(`FPC address:       ${identity.fpcAddress.toString()}`);
   pinoLogger.info(
-    `Default asset:     ${config.accepted_asset_name} (${acceptedAssetAddress.toString()})`,
+    `Default asset:     ${config.accepted_asset_name} (${identity.acceptedAssetAddress.toString()})`,
   );
-  pinoLogger.info(`Supported assets:  ${assetPolicyStore.getAll().length}`);
+  pinoLogger.info(`Supported assets:  ${supportedAssetCount}`);
   if (config.admin_auth.enabled) {
     pinoLogger.info("Admin API enabled (authentication header configured)");
-  } else {
-    pinoLogger.warn(
-      "Admin API disabled: configure admin_api_key to enable asset management and sweeps",
-    );
+    return;
   }
+  pinoLogger.warn(
+    "Admin API disabled: configure admin_api_key to enable asset management and sweeps",
+  );
+}
 
-  const app = buildServer(config, quoteSigner, {
+async function main() {
+  const config = loadConfig(configPath);
+  logSecretKeyConfiguration(config);
+
+  const node = createAztecNodeClient(config.aztec_node_url);
+  await waitForNode(node);
+  const assetPolicyStore = await FileBackedAssetPolicyStore.create(config);
+  const treasury = new OperatorTreasury(config);
+  const identity = await createStartupIdentity(config);
+  logOperatorAddressOverride(identity, config);
+  await verifyStartupImmutables(node, identity);
+  logStartupSummary(config, identity, assetPolicyStore.getAll().length);
+
+  const app = buildServer(config, identity.quoteSigner, {
     assetPolicyStore,
     nowUnixSeconds: async () => {
       const latest = await node.getBlock("latest");
