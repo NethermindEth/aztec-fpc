@@ -1,5 +1,5 @@
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import type { Fr } from "@aztec/aztec.js/fields";
+import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import type { ABIParameter, FunctionAbi } from "@aztec/stdlib/abi";
 import { FunctionType } from "@aztec/stdlib/abi";
@@ -146,10 +146,24 @@ export async function verifyFpcImmutablesOnStartup(
         ])
       : undefined;
 
+  // Reverse case: sponsor keys not provided but contract deployed with V3 ABI
+  // using zero sponsor keys (sponsorship disabled at deploy time).
+  const expectedV3ZeroSponsorHash =
+    !inputs.sponsorPubkeyX && !inputs.sponsorPubkeyY
+      ? await computeInitializationHash(FPC_CONSTRUCTOR_ABI_V3, [
+          inputs.operatorAddress,
+          inputs.operatorPubkeyX,
+          inputs.operatorPubkeyY,
+          Fr.ZERO,
+          Fr.ZERO,
+        ])
+      : undefined;
+
   if (
     !onChainInitializationHash.equals(expectedInitializationHash) &&
     !onChainInitializationHash.equals(expectedLegacyInitializationHash) &&
-    !(expectedV2NoSponsorHash && onChainInitializationHash.equals(expectedV2NoSponsorHash))
+    !(expectedV2NoSponsorHash && onChainInitializationHash.equals(expectedV2NoSponsorHash)) &&
+    !(expectedV3ZeroSponsorHash && onChainInitializationHash.equals(expectedV3ZeroSponsorHash))
   ) {
     const currentClassId = deployed.currentContractClassId?.toString() ?? "unknown";
     const originalClassId = deployed.originalContractClassId?.toString() ?? "unknown";

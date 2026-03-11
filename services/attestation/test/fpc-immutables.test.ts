@@ -115,6 +115,27 @@ describe("fpc immutable startup verification", () => {
     );
   });
 
+  it("passes when contract deployed with V3 ABI (zero sponsor keys) but service has no sponsor config", async () => {
+    // Simulate a contract deployed with [operator, opx, opy, 0, 0] (V3 ABI, sponsorship disabled)
+    const v3ZeroSponsorHash = await computeExpectedFpcInitializationHash({
+      operatorAddress: TEST_OPERATOR,
+      operatorPubkeyX: TEST_OPERATOR_PUBKEY_X,
+      operatorPubkeyY: TEST_OPERATOR_PUBKEY_Y,
+      sponsorPubkeyX: Fr.ZERO,
+      sponsorPubkeyY: Fr.ZERO,
+    });
+    const node = mockNodeWithInitializationHash(v3ZeroSponsorHash);
+
+    // Verification should pass even though sponsorPubkeyX/Y are not provided
+    await verifyFpcImmutablesOnStartup(node, {
+      fpcAddress: TEST_FPC_ADDRESS,
+      acceptedAsset: TEST_ACCEPTED_ASSET,
+      operatorAddress: TEST_OPERATOR,
+      operatorPubkeyX: TEST_OPERATOR_PUBKEY_X,
+      operatorPubkeyY: TEST_OPERATOR_PUBKEY_Y,
+    });
+  });
+
   it("fails when on-chain initialization hash mismatches expected immutables", async () => {
     const node = mockNodeWithInitializationHash(Fr.fromString("0x01"));
 
