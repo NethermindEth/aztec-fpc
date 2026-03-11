@@ -25,10 +25,10 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@aztec/accounts": "4.0.0-devnet.2-patch.3",
-    "@aztec/aztec.js": "4.0.0-devnet.2-patch.3",
-    "@aztec/stdlib": "4.0.0-devnet.2-patch.3",
-    "@aztec/wallets": "4.0.0-devnet.2-patch.3"
+    "@aztec/accounts": "4.1.0-rc.2",
+    "@aztec/aztec.js": "4.1.0-rc.2",
+    "@aztec/stdlib": "4.1.0-rc.2",
+    "@aztec/wallets": "4.1.0-rc.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
