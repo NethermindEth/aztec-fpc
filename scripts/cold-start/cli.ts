@@ -13,6 +13,8 @@ import path from "node:path";
 import pino from "pino";
 
 const pinoLogger = pino();
+const DEFAULT_DA_GAS_LIMIT = "750000";
+const DEFAULT_CLAIM_AMOUNT = "20000000000000";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -66,11 +68,11 @@ export function usage(): string {
     "  --node-url <url>                 Aztec node URL (default: http://localhost:8080) [env: AZTEC_NODE_URL]",
     "",
     "Amounts:",
-    "  --claim-amount <uint>            Claim amount (default: 10000000000000) [env: FPC_COLD_START_CLAIM_AMOUNT]",
+    `  --claim-amount <uint>            Claim amount (default: ${DEFAULT_CLAIM_AMOUNT}) [env: FPC_COLD_START_CLAIM_AMOUNT]`,
     "  --aa-payment-amount <uint>       AA payment amount (default: 1000000000) [env: FPC_COLD_START_AA_PAYMENT_AMOUNT]",
     "",
     "Gas:",
-    "  --da-gas-limit <uint>            DA gas limit (default: 1000000) [env: FPC_SMOKE_DA_GAS_LIMIT]",
+    `  --da-gas-limit <uint>            DA gas limit (default: ${DEFAULT_DA_GAS_LIMIT}) [env: FPC_SMOKE_DA_GAS_LIMIT]`,
     "  --l2-gas-limit <uint>            L2 gas limit (default: 1000000) [env: FPC_SMOKE_L2_GAS_LIMIT]",
     "  --fee-per-da-gas <uint>          Override fee per DA gas [env: FPC_SMOKE_FEE_PER_DA_GAS]",
     "  --fee-per-l2-gas <uint>          Override fee per L2 gas [env: FPC_SMOKE_FEE_PER_L2_GAS]",
@@ -161,10 +163,10 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   let manifestPath: string | null = process.env.FPC_COLD_START_MANIFEST ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let l1DeployerKey: string | null = process.env.FPC_L1_DEPLOYER_KEY ?? null;
-  let claimAmount: string = process.env.FPC_COLD_START_CLAIM_AMOUNT ?? "10000000000000";
+  let claimAmount: string = process.env.FPC_COLD_START_CLAIM_AMOUNT ?? DEFAULT_CLAIM_AMOUNT;
   let aaPaymentAmount: string = process.env.FPC_COLD_START_AA_PAYMENT_AMOUNT ?? "1000000000";
   let quoteTtlSeconds: string = process.env.FPC_SMOKE_QUOTE_TTL_SECONDS ?? "3600";
-  let daGasLimit: string = process.env.FPC_SMOKE_DA_GAS_LIMIT ?? "1000000";
+  let daGasLimit: string = process.env.FPC_SMOKE_DA_GAS_LIMIT ?? DEFAULT_DA_GAS_LIMIT;
   let l2GasLimit: string = process.env.FPC_SMOKE_L2_GAS_LIMIT ?? "1000000";
   let feePerDaGas: string | null = process.env.FPC_SMOKE_FEE_PER_DA_GAS ?? null;
   let feePerL2Gas: string | null = process.env.FPC_SMOKE_FEE_PER_L2_GAS ?? null;

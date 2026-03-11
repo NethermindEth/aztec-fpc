@@ -12,6 +12,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Contract } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
+import { inspect } from "node:util";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
@@ -151,6 +152,107 @@ async function buildFpcPaymentMethod(opts: {
 const TX_MINE_TIMEOUT_MS = 180_000;
 const TX_MINE_POLL_MS = 2_000;
 
+function describeValue(value: unknown): string {
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return inspect(value, { depth: 4, getters: true, showHidden: true });
+}
+
+function coerceBigInt(
+  value: unknown,
+  label: string,
+  seen: WeakSet<object> = new WeakSet(),
+): bigint {
+  if (typeof value === "bigint") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (!Number.isInteger(value)) {
+      throw new Error(`${label} is not an integer: ${value}`);
+    }
+    return BigInt(value);
+  }
+  if (typeof value === "string") {
+    return BigInt(value);
+  }
+  if (value && typeof value === "object") {
+    if (value instanceof Fr) {
+      return value.toBigInt();
+    }
+    if (seen.has(value)) {
+      throw new Error(`Could not coerce ${label} to bigint: circular value ${describeValue(value)}`);
+    }
+    seen.add(value);
+    if (Array.isArray(value) && value.length === 1) {
+      return coerceBigInt(value[0], label, seen);
+    }
+    if ("value" in value) {
+      return coerceBigInt((value as Record<string, unknown>).value, label, seen);
+    }
+    if ("inner" in value) {
+      return coerceBigInt((value as Record<string, unknown>).inner, label, seen);
+    }
+    if ("raw" in value) {
+      return coerceBigInt((value as Record<string, unknown>).raw, label, seen);
+    }
+    if ("toBigInt" in value && typeof (value as { toBigInt?: unknown }).toBigInt === "function") {
+      return coerceBigInt((value as { toBigInt: () => unknown }).toBigInt(), label, seen);
+    }
+
+    const primitiveFromSymbol = (value as Record<PropertyKey, unknown>)[Symbol.toPrimitive];
+    if (typeof primitiveFromSymbol === "function") {
+      const primitive = primitiveFromSymbol.call(value, "number");
+      if (primitive !== value) {
+        return coerceBigInt(primitive, label, seen);
+      }
+    }
+
+    const primitiveFromValueOf = (value as { valueOf?: () => unknown }).valueOf?.();
+    if (primitiveFromValueOf !== undefined && primitiveFromValueOf !== value) {
+      return coerceBigInt(primitiveFromValueOf, label, seen);
+    }
+
+    if (typeof (value as { toString?: () => string }).toString === "function") {
+      const stringValue = value.toString();
+      if (stringValue !== "[object Object]") {
+        try {
+          return BigInt(stringValue);
+        } catch {
+          // Fall through to structural unwrapping below.
+        }
+      }
+    }
+
+    const ownKeys = [
+      ...Object.getOwnPropertyNames(value),
+      ...Object.getOwnPropertySymbols(value),
+    ].filter((key) => key !== "length");
+    if (ownKeys.length === 1) {
+      const innerValue = (value as Record<PropertyKey, unknown>)[ownKeys[0]];
+      if (innerValue !== value) {
+        return coerceBigInt(innerValue, label, seen);
+      }
+    }
+
+    for (const key of ownKeys) {
+      const candidate = (value as Record<PropertyKey, unknown>)[key];
+      if (candidate === value) {
+        continue;
+      }
+      try {
+        return coerceBigInt(candidate, label, seen);
+      } catch {
+        continue;
+      }
+    }
+  }
+  throw new Error(`Could not coerce ${label} to bigint: ${describeValue(value)}`);
+}
+
 async function waitForTx(txHash: TxHash, node: AztecNode): Promise<void> {
   // 1. Poll until mined
   const mineDeadline = Date.now() + TX_MINE_TIMEOUT_MS;
@@ -188,9 +290,7 @@ async function expectPrivateBalance(
   expected: bigint,
   mode: "exact" | "atLeast" = "exact",
 ): Promise<bigint> {
-  const balance = BigInt(
-    (await token.methods.balance_of_private(address).simulate({ from: address })).toString(),
-  );
+  const balance = await readPrivateBalance(token, address, label);
   const expectStr = mode === "atLeast" ? `>=${expected}` : `${expected}`;
   pinoLogger.info(`[cold-start-smoke] ${label}: balance=${balance} expected=${expectStr}`);
   if (mode === "exact" && balance !== expected) {
@@ -200,6 +300,13 @@ async function expectPrivateBalance(
     throw new Error(`${label} balance too low: expected>=${expected} got=${balance}`);
   }
   return balance;
+}
+
+async function readPrivateBalance(token: Contract, address: AztecAddress, label: string): Promise<bigint> {
+  return coerceBigInt(
+    await token.methods.balance_of_private(address).simulate({ from: address }),
+    `${label} private balance`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +341,30 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   // 0. Create a fresh user for this test
   const userData: AccountData = await deriveAccount(Fr.random(), ctx.wallet);
   const user = userData.address;
+  const fpcPaymentOpts = {
+    attestationUrl,
+    wallet: ctx.wallet,
+    user,
+    operator,
+    fpc,
+    fpcAddress,
+    token,
+    tokenAddress,
+    fjFeeAmount,
+    feePerDaGas,
+    feePerL2Gas,
+    daGasLimit: args.daGasLimit,
+    l2GasLimit: args.l2GasLimit,
+  };
+
+  const recurringPhaseQuote = await fetchQuote(attestationUrl, user, tokenAddress, fjFeeAmount);
+  const recurringPhasePayment = BigInt(recurringPhaseQuote.aa_payment_amount);
+  const minimumRequiredClaim = recurringPhasePayment * 3n + aaPaymentAmount * 3n;
+  if (claimAmount < minimumRequiredClaim) {
+    throw new Error(
+      `[cold-start-smoke] claim amount too low for happy path: claim_amount=${claimAmount} minimum_required=${minimumRequiredClaim} recurring_phase_payment=${recurringPhasePayment}`,
+    );
+  }
 
   // =========================================================================
   // Phase 1: Cold-start — claim bridged tokens + pay FPC fee in one tx
@@ -330,22 +461,6 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
 
   pinoLogger.info("[cold-start-smoke] deploying user account via FPC");
 
-  const fpcPaymentOpts = {
-    attestationUrl,
-    wallet: ctx.wallet,
-    user,
-    operator,
-    fpc,
-    fpcAddress,
-    token,
-    tokenAddress,
-    fjFeeAmount,
-    feePerDaGas,
-    feePerL2Gas,
-    daGasLimit: args.daGasLimit,
-    l2GasLimit: args.l2GasLimit,
-  };
-
   // Track cumulative debits from FPC fee payments (operator receives these)
   let operatorReceived = aaPaymentAmount; // Phase 1 cold-start
   let userDebited = aaPaymentAmount; // Phase 1 cold-start
@@ -374,8 +489,9 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
 
   pinoLogger.info("[cold-start-smoke] incrementing counter via FPC");
 
-  const counterBefore = BigInt(
-    (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
+  const counterBefore = coerceBigInt(
+    await counter.methods.get_counter(user).simulate({ from: user }),
+    "Counter value before increment",
   );
 
   const { aaPaymentAmount: incrementPayment, ...incrementFee } =
@@ -389,8 +505,9 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   });
 
   // Verify counter incremented
-  const counterAfter = BigInt(
-    (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
+  const counterAfter = coerceBigInt(
+    await counter.methods.get_counter(user).simulate({ from: user }),
+    "Counter value after increment",
   );
   if (counterAfter !== counterBefore + 1n) {
     throw new Error(`Counter mismatch: expected=${counterBefore + 1n} got=${counterAfter}`);
@@ -456,18 +573,62 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   const transferAmount = aaPaymentAmount;
   const { aaPaymentAmount: transferFeePayment, ...transferFee } =
     await buildFpcPaymentMethod(fpcPaymentOpts);
+  const finalOperatorBefore = await expectPrivateBalance(
+    token,
+    operator,
+    "Final operator before transfer",
+    operatorReceived,
+    "atLeast",
+  );
+  const finalUserBefore = await expectPrivateBalance(
+    token,
+    user,
+    "Final user before transfer",
+    claimAmount - userDebited,
+  );
+  const finalRecipientBefore = await expectPrivateBalance(
+    token,
+    recipient,
+    "Recipient before transfer",
+    0n,
+  );
   operatorReceived += transferFeePayment;
   userDebited += transferFeePayment + transferAmount;
 
-  await token.methods.transfer_private_to_private(user, recipient, transferAmount, 0).send({
-    from: user,
-    fee: transferFee,
-  });
+  const finalTransfer = await token.methods
+    .transfer_private_to_private(user, recipient, transferAmount, 0)
+    .send({
+      from: user,
+      fee: transferFee,
+      wait: { timeout: 180 },
+    });
+  pinoLogger.info(
+    `[cold-start-smoke] final private transfer tx_fee_juice=${finalTransfer.receipt.transactionFee?.toString()}`,
+  );
+
+  const finalOperatorAfter = await readPrivateBalance(token, operator, "Final operator");
+  const finalUserAfter = await readPrivateBalance(token, user, "Final user");
+  const finalRecipientAfter = await readPrivateBalance(token, recipient, "Recipient");
+
+  pinoLogger.info(
+    `[cold-start-smoke] final private transfer balances user=${finalUserAfter} operator=${finalOperatorAfter} recipient=${finalRecipientAfter}`,
+  );
+  pinoLogger.info(
+    `[cold-start-smoke] final private transfer deltas user=${finalUserBefore - finalUserAfter} operator=${finalOperatorAfter - finalOperatorBefore} recipient=${finalRecipientAfter - finalRecipientBefore}`,
+  );
 
   // Verify final balances
-  await expectPrivateBalance(token, operator, "Final operator", operatorReceived, "atLeast");
-  await expectPrivateBalance(token, user, "Final user", claimAmount - userDebited);
-  await expectPrivateBalance(token, recipient, "Recipient", transferAmount);
+  if (finalOperatorAfter < operatorReceived) {
+    throw new Error(
+      `Final operator balance too low: expected>=${operatorReceived} got=${finalOperatorAfter}`,
+    );
+  }
+  if (finalUserAfter !== claimAmount - userDebited) {
+    throw new Error(`Final user balance mismatch: expected=${claimAmount - userDebited} got=${finalUserAfter}`);
+  }
+  if (finalRecipientAfter !== transferAmount) {
+    throw new Error(`Recipient balance mismatch: expected=${transferAmount} got=${finalRecipientAfter}`);
+  }
 
   pinoLogger.info("[cold-start-smoke] PASS: token transfer via FPC succeeded");
 }
