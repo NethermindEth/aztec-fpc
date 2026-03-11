@@ -1077,7 +1077,7 @@ async function main(): Promise<void> {
     // 3. Deploy L2 TokenBridge (empty constructor — config set after token deploy)
     const bridgeArtifact = loadArtifact(REQUIRED_ARTIFACTS.tokenBridge);
     const bridgeContract = await deployContract(wallet, bridgeArtifact, [], deployOpts);
-    bridgeAddress = bridgeContract.address.toString();
+    bridgeAddress = bridgeContract.contract.address.toString();
     pinoLogger.info(`[deploy-fpc-devnet] bridge deployed. address=${bridgeAddress}`);
 
     // 4. Deploy Token with bridge as minter
@@ -1085,16 +1085,16 @@ async function main(): Promise<void> {
     const tokenContract = await deployContract(
       wallet,
       tokenArtifact,
-      ["FpcAcceptedAsset", "FPCA", 18, bridgeContract.address, operatorAddress],
+      ["FpcAcceptedAsset", "FPCA", 18, bridgeContract.contract.address, operatorAddress],
       deployOpts,
       "constructor_with_minter",
     );
-    acceptedAssetAddress = tokenContract.address.toString();
+    acceptedAssetAddress = tokenContract.contract.address.toString();
     pinoLogger.info(`[deploy-fpc-devnet] token deployed. address=${acceptedAssetAddress}`);
 
     // 5. Set config on bridge (link to token + L1 portal)
     const { EthAddress } = await import("@aztec/foundation/eth-address");
-    const bridgeInstance = Contract.at(bridgeContract.address, bridgeArtifact, wallet);
+    const bridgeInstance = Contract.at(bridgeContract.contract.address, bridgeArtifact, wallet);
     await bridgeInstance.methods
       .set_config(
         AztecAddress.fromString(acceptedAssetAddress),
@@ -1111,7 +1111,7 @@ async function main(): Promise<void> {
       args: [
         nodeState.l1ContractAddresses.registryAddress as Hex,
         l1Erc20Address as Hex,
-        bridgeContract.address.toString() as Hex,
+        bridgeContract.contract.address.toString() as Hex,
       ],
     });
     await l1WalletClient.waitForTransactionReceipt({ hash: initHash });

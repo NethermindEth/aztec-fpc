@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { Fr } from "@aztec/aztec.js/fields";
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
