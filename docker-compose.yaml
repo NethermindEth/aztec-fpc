@@ -186,6 +186,28 @@ services:
       block-producer:
         condition: service_started
 
+  smoke-same-token-transfer:
+    image: nethermind/aztec-fpc-smoke:local
+    profiles: ["smoke", "full"]
+    command:
+      - "scripts/same-token-transfer/same-token-transfer-smoke.ts"
+    volumes:
+      - ./deployments:/app/data:ro
+    environment:
+      AZTEC_NODE_URL: "http://aztec-node:8080"
+      FPC_ATTESTATION_URL: "http://attestation:3000"
+      FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+    depends_on:
+      block-producer:
+        condition: service_started
+      deploy:
+        condition: service_completed_successfully
+      attestation:
+        condition: service_healthy
+      topup:
+        condition: service_healthy
+
   wait:
     image: busybox
     profiles: ["full"]
@@ -196,6 +218,8 @@ services:
       smoke-services:
         condition: service_completed_successfully
       e2e-fpc:
+        condition: service_completed_successfully
+      smoke-same-token-transfer:
         condition: service_completed_successfully
       attestation:
         condition: service_healthy
