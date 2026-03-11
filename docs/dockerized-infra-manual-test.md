@@ -160,3 +160,14 @@ bun run compose:infra -- -d
 ```bash
 docker compose down -v --remove-orphans
 ```
+
+## 10. Cold-Start Compose Smoke
+
+Use the repo wrapper instead of raw `docker compose up smoke-cold-start`.
+The wrapper clears stale profile containers first, which avoids Docker daemon
+errors where `aztec-fpc-smoke-cold-start-1` is still attached to a deleted
+network ID.
+
+```bash
+bun run smoke:cold-start:compose
+```

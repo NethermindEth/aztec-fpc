@@ -71,8 +71,8 @@ services:
     environment:
       L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
       FPC_DATA_DIR: "/app/data"
-      L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
-      L1_FEE_JUICE_FUNDER_PRIVATE_KEY: "${L1_FEE_JUICE_FUNDER_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+      L1_OPERATOR_PRIVATE_KEY: "${FPC_L1_DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+      L1_FEE_JUICE_FUNDER_PRIVATE_KEY: "${FPC_L1_DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
       L1_FEE_JUICE_FUND_AMOUNT_WEI: "${L1_FEE_JUICE_FUND_AMOUNT_WEI:-1000000000000000000000}"
     depends_on:
       anvil:
@@ -89,7 +89,25 @@ services:
     command: ["--config", "/app/data/attestation/config.yaml"]
     environment:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
-      OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+    depends_on:
+      deploy:
+        condition: service_completed_successfully
+
+  bootstrap-topup-autoclaim:
+    image: nethermind/aztec-fpc-smoke:local
+    entrypoint: ["bun", "scripts/services/bootstrap-topup-autoclaim-account.ts"]
+    command:
+      - "--manifest"
+      - "/app/data/manifest.json"
+    volumes:
+      - ./deployments:/app/data:ro
+    environment:
+      AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
+      OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      TOPUP_AUTOCLAIM_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY: "1"
+      TOPUP_AUTOCLAIM_BOOTSTRAP_PAYMENT_MODE: "fee_juice"
     depends_on:
       deploy:
         condition: service_completed_successfully
@@ -104,18 +122,22 @@ services:
     environment:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
       L1_RPC_URL: "${L1_RPC_URL:-http://anvil:8545}"
-      L1_OPERATOR_PRIVATE_KEY: "${L1_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
-      OPERATOR_SECRET_KEY: "${OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
-      TOPUP_AUTOCLAIM_SECRET_KEY: "${TOPUP_AUTOCLAIM_SECRET_KEY:-${OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}}"
-      TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY: "${TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY:-1}"
+      L1_OPERATOR_PRIVATE_KEY: "${FPC_L1_DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+      OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      # Keep local compose deterministic: use the deployed operator account for
+      # auto-claim instead of inheriting an unrelated claimer from a host .env.
+      TOPUP_AUTOCLAIM_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+      TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY: "1"
       TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: "${TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS:-${FPC_DEVNET_SPONSORED_FPC_ADDRESS:-${SPONSORED_FPC_ADDRESS:-}}}"
-      TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "${TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT:-0}"
+      TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "1"
       TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
       TOPUP_BRIDGE_STATE_PATH: "${TOPUP_BRIDGE_STATE_PATH:-/tmp/.topup-bridge-state.json}"
       TOPUP_AUTOCLAIM_ENABLED: "${TOPUP_AUTOCLAIM_ENABLED:-1}"
       TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX: "${TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX:-0}"
     depends_on:
       fund-l1-fee-juice:
+        condition: service_completed_successfully
+      bootstrap-topup-autoclaim:
         condition: service_completed_successfully
 
   block-producer:

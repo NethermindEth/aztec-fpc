@@ -6,7 +6,12 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
-bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
+if [[ -f "$REPO_ROOT/scripts/common/check-submodule-pin.sh" ]] &&
+  git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
+else
+  echo "Skipping submodule pin check outside a git checkout."
+fi
 
 if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPCMultiAsset.json ]]; then
   echo "Compiling Aztec workspace artifacts..."

@@ -693,9 +693,9 @@ async function main(): Promise<void> {
         sponsoredFpcAddress,
         claimerAddress,
       });
-      // Fallback returned without throwing — account is deployed (or was already
-      // deployed per "Existing nullifier"); trust the result rather than re-checking
-      // via getContract(), which may not index genesis-deployed accounts.
+      // "Existing nullifier" from the deploy path means the account deployment
+      // nullifier is already in state even if node.getContract() still does not
+      // surface the instance on local-network immediately.
       publishedAfterBootstrap = true;
     } catch (error) {
       aztecJsFallbackError = String(error);

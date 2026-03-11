@@ -36,6 +36,7 @@ export interface TopupAutoClaimer {
 
 type ClaimFeeOptions = { paymentMethod: SponsoredFeePaymentMethod } | undefined;
 type FeeJuiceInstance = ReturnType<typeof FeeJuiceContract.at>;
+type SchnorrAccountInstance = Awaited<ReturnType<EmbeddedWallet["createSchnorrAccount"]>>;
 
 function isSponsoredProofFailure(error: unknown): boolean {
   const message = String(error);
@@ -146,17 +147,42 @@ async function registerSponsoredFpcContract(
 
 async function assertPublishedClaimerAccount(
   node: AztecNode,
+  claimerAccount: SchnorrAccountInstance,
   claimerAddress: AztecAddress,
   claimerSource: "secret_key" | "test_account",
 ): Promise<void> {
-  const publishedAccount = await node.getContract(claimerAddress);
-  if (publishedAccount) {
+  if (await node.getContract(claimerAddress)) {
     return;
   }
 
-  throw new Error(
-    `Auto-claim claimer ${claimerAddress.toString()} (source=${claimerSource}) is not publicly deployed on the connected Aztec node. Configure TOPUP_AUTOCLAIM_SECRET_KEY to a publicly deployed account (or deploy this account first).`,
+  pinoLogger.info(
+    `Auto-claim claimer ${claimerAddress.toString()} (source=${claimerSource}) is not yet visible via node.getContract(); attempting deploy-method verification`,
   );
+
+  try {
+    const deployMethod = await claimerAccount.getDeployMethod();
+    await deployMethod.send({
+      from: AztecAddress.ZERO,
+      wait: { timeout: 120 },
+    });
+    pinoLogger.info(
+      `Auto-claim claimer ${claimerAddress.toString()} public deployment submitted during startup verification`,
+    );
+    return;
+  } catch (error) {
+    const message = String(error);
+    if (message.toLowerCase().includes("existing nullifier")) {
+      pinoLogger.info(
+        `Auto-claim claimer ${claimerAddress.toString()} already deployed according to deploy nullifier check`,
+      );
+      return;
+    }
+
+    throw new Error(
+      `Auto-claim claimer ${claimerAddress.toString()} (source=${claimerSource}) is not publicly deployed on the connected Aztec node. Configure TOPUP_AUTOCLAIM_SECRET_KEY to a publicly deployed account (or deploy this account first).`,
+      { cause: error },
+    );
+  }
 }
 
 async function sendClaim(
@@ -265,14 +291,15 @@ export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAuto
     ? new SponsoredFeePaymentMethod(sponsoredFpcAddress)
     : null;
 
+  let claimerAccount: SchnorrAccountInstance;
   let claimerAddress: AztecAddress;
   let claimerSource: "secret_key" | "test_account";
 
   if (explicitSecretKey) {
     const secret = Fr.fromHexString(explicitSecretKey);
     const signingKey = deriveSigningKey(secret);
-    const account = await wallet.createSchnorrAccount(secret, Fr.ZERO, signingKey);
-    claimerAddress = account.address;
+    claimerAccount = await wallet.createSchnorrAccount(secret, Fr.ZERO, signingKey);
+    claimerAddress = claimerAccount.address;
     claimerSource = "secret_key";
   } else {
     const testAccounts = await getInitialTestAccountsData();
@@ -285,17 +312,17 @@ export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAuto
     }
 
     const account = testAccounts[accountIndex];
-    const created = await wallet.createSchnorrAccount(
+    claimerAccount = await wallet.createSchnorrAccount(
       account.secret,
       account.salt,
       account.signingKey,
     );
-    claimerAddress = created.address;
+    claimerAddress = claimerAccount.address;
     claimerSource = "test_account";
   }
 
   if (requirePublishedClaimer) {
-    await assertPublishedClaimerAccount(node, claimerAddress, claimerSource);
+    await assertPublishedClaimerAccount(node, claimerAccount, claimerAddress, claimerSource);
   }
 
   const feeJuice = FeeJuiceContract.at(wallet);
