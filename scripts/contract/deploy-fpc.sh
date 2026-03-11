@@ -6,6 +6,8 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
+bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
+
 if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPCMultiAsset.json ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force

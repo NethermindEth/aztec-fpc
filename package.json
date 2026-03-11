@@ -20,6 +20,7 @@
     "format": "biome format --write package.json tsconfig.base.json services scripts sdk contract-deployment",
     "lint": "biome lint package.json tsconfig.base.json services scripts sdk contract-deployment",
     "check:docs:quote-schema": "bash scripts/check-docs-quote-schema.sh",
+    "check:submodules": "bash scripts/common/check-submodule-pin.sh",
     "release:sdk:version:patch": "bash -lc 'cd sdk && npm version patch --no-git-tag-version'",
     "release:sdk:version:minor": "bash -lc 'cd sdk && npm version minor --no-git-tag-version'",
     "release:sdk:version:major": "bash -lc 'cd sdk && npm version major --no-git-tag-version'",
@@ -30,7 +31,7 @@
     "test": "bun run test:contracts && bun run test:ts",
     "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test && bun run --filter @aztec-fpc/sdk --if-present test",
     "test:services": "bun run test:ts",
-    "test:contracts": "aztec compile --workspace --force && aztec test --package fpc",
+    "test:contracts": "bun run check:submodules && aztec compile --workspace --force && aztec test --package fpc",
 
     "attestation:build": "bun run --filter @aztec-fpc/attestation build",
     "attestation:dev": "bun run --filter @aztec-fpc/attestation dev",

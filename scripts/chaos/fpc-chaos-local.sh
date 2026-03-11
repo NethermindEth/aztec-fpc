@@ -217,6 +217,8 @@ if ! bun --cwd "$REPO_ROOT/scripts" -e "import('@aztec/accounts/testing')" >/dev
   bun install
 fi
 
+bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
+
 echo "[chaos-local] Compiling contracts workspace..."
 aztec compile --workspace --force
 

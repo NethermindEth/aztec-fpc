@@ -22,6 +22,8 @@ resolve_default_fpc_artifact() {
 setup_require_cmds "[deploy-smoke]" aztec bun node
 cd "$REPO_ROOT"
 
+bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
+
 setup_node \
   --log-prefix "[deploy-smoke]" \
   --repo-root "$REPO_ROOT" \

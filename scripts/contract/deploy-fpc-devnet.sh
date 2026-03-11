@@ -67,6 +67,8 @@ fi
 
 cd "${REPO_ROOT}"
 
+bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
+
 artifacts_require_compile=0
 required_artifacts=(
   "target/token_contract-Token.json"

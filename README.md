@@ -49,7 +49,7 @@ aztec-fpc/
 - Aztec CLI
 
 ```bash
-VERSION=4.0.0-devnet.2-patch.3 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.3)
+VERSION=4.1.0-rc.2 bash -i <(curl -sL https://install.aztec.network/4.1.0-rc.2)
 ```
 
 ### 1. Clone the repository with submodules (required)
@@ -70,13 +70,20 @@ git submodule sync --recursive
 git submodule update --init --recursive
 ```
 
+This repo pins `vendor/aztec-standards` to the exact commit recorded in the parent repository. Do not use `git submodule update --remote` unless you are intentionally updating the vendor dependency.
+
 Verify submodule is present:
 
 ```bash
 git submodule status --recursive
 ```
 
-You should see `vendor/aztec-standards` in the output.
+You should see `vendor/aztec-standards` in the output. If the line starts with `+`, your submodule checkout drifted from the pinned commit; rerun:
+
+```bash
+git submodule sync --recursive
+git submodule update --init --recursive
+```
 
 ### 2. Install dependencies
 

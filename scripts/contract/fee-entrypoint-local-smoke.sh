@@ -8,6 +8,8 @@ source "$REPO_ROOT/scripts/common/node-setup.sh"
 setup_require_cmds "[smoke]" aztec bun node
 cd "$REPO_ROOT"
 
+bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
+
 setup_node \
   --log-prefix "[smoke]" \
   --repo-root "$REPO_ROOT" \

@@ -200,6 +200,7 @@ if [[ "$CHAOS_MODE" == "onchain" || "$CHAOS_MODE" == "full" ]]; then
   if command -v aztec >/dev/null 2>&1; then
     echo "[fpc-chaos] Compiling contracts"
     cd "$REPO_ROOT"
+    bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
     aztec compile --workspace --force
   fi
 fi

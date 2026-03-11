@@ -26,6 +26,8 @@ fi
 
 cd "$REPO_ROOT"
 
+bash "$REPO_ROOT/scripts/common/check-submodule-pin.sh"
+
 setup_node \
   --log-prefix "[full-lifecycle-e2e]" \
   --repo-root "$REPO_ROOT" \
