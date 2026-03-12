@@ -245,7 +245,10 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     let authwit_nonce = 7;
     let valid_until = env.last_block_timestamp() + 3600;
 
-    env.call_private(bridge_address, token.mint_to_private(other_user, aa_payment_amount + (100 as u128)));
+    env.call_private(
+        bridge_address,
+        token.mint_to_private(other_user, aa_payment_amount + (100 as u128)),
+    );
     let transfer_call =
         token.transfer_private_to_private(other_user, operator, aa_payment_amount, authwit_nonce);
     add_private_authwit_from_call(env, other_user, fpc_address, transfer_call);

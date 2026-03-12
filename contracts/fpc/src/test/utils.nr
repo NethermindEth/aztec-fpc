@@ -1,8 +1,7 @@
 use crate::FPCMultiAsset;
 use aztec::{
     authwit::auth::compute_inner_authwit_hash,
-    protocol::address::{AztecAddress, EthAddress},
-    protocol::traits::ToField,
+    protocol::{address::{AztecAddress, EthAddress}, traits::ToField},
     test::helpers::test_environment::TestEnvironment,
 };
 use std::embedded_curve_ops::{EmbeddedCurvePoint, EmbeddedCurveScalar, multi_scalar_mul};
@@ -160,14 +159,7 @@ unconstrained fn add_u256(a_hi: u128, a_lo: u128, b_hi: u128, b_lo: u128) -> (u1
     }
 }
 
-pub unconstrained fn setup() -> (
-    TestEnvironment,
-    AztecAddress,
-    AztecAddress,
-    AztecAddress,
-    AztecAddress,
-    AztecAddress,
-) {
+pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, AztecAddress, AztecAddress, AztecAddress) {
     let mut env = TestEnvironment::new();
 
     let user = env.create_contract_account();
@@ -176,9 +168,10 @@ pub unconstrained fn setup() -> (
     // Deploy bridge first (empty constructor), then token with bridge as minter,
     // then set_config on bridge to link it to the token.
     let bridge_initializer = TokenBridge::interface().constructor();
-    let bridge_address = env
-        .deploy("@token_bridge_contract/TokenBridge")
-        .with_public_initializer(operator, bridge_initializer);
+    let bridge_address = env.deploy("@token_bridge_contract/TokenBridge").with_public_initializer(
+        operator,
+        bridge_initializer,
+    );
 
     let token_initializer = Token::interface().constructor_with_minter(
         "TestToken0000000000000000000000",

@@ -7,12 +7,12 @@ global CLAIM_SECRET: Field = 0xdeadbeef;
 global CLAIM_SECRET_HASH: Field = 0xcafebabe;
 global MESSAGE_LEAF_INDEX: Field = 0;
 
-/// TXE limitation: the L1-to-L2 message tree is always zero-filled, so                                                                              
-/// `TokenBridge::claim_private` (which calls `consume_l1_to_l2_message`)                                                                          
-/// cannot find the message hash and the oracle rejects the call.                                                                                    
-/// This test validates the setup phase (root-call guard, claim-covers-fee                                                                           
-/// check, quote signature, fee payer declaration) and expects the bridge                                                                            
-/// claim to fail.                                        
+/// TXE limitation: the L1-to-L2 message tree is always zero-filled, so
+/// `TokenBridge::claim_private` (which calls `consume_l1_to_l2_message`)
+/// cannot find the message hash and the oracle rejects the call.
+/// This test validates the setup phase (root-call guard, claim-covers-fee
+/// check, quote signature, fee payer declaration) and expects the bridge
+/// claim to fail.
 #[test(should_fail_with = "No L1 to L2 message found")]
 unconstrained fn cold_start_happy_path() {
     let (mut env, fpc_address, token_address, bridge_address, _operator, user) = utils::setup();
@@ -124,12 +124,8 @@ unconstrained fn cold_start_quote_rejected_by_fee_entrypoint() {
     );
 
     let authwit_nonce: Field = 100;
-    let transfer_call = token.transfer_private_to_private(
-        user,
-        operator,
-        aa_payment_amount,
-        authwit_nonce,
-    );
+    let transfer_call =
+        token.transfer_private_to_private(user, operator, aa_payment_amount, authwit_nonce);
     add_private_authwit_from_call(env, user, fpc_address, transfer_call);
 
     // Submit through fee_entrypoint -- should fail because the signature

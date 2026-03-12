@@ -184,8 +184,7 @@ pub contract FPCMultiAsset {
         assert(self.context.maybe_msg_sender().is_none(), "must be tx entrypoint");
 
         let max_fees = self.context.gas_settings().max_fees_per_gas;
-        let enforce_setup_phase =
-            (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
+        let enforce_setup_phase = (max_fees.fee_per_da_gas > 0) | (max_fees.fee_per_l2_gas > 0);
         if enforce_setup_phase {
             assert(
                 !self.context.in_revertible_phase(),
@@ -247,12 +246,7 @@ pub contract FPCMultiAsset {
         //     We claim to FPC (not to user) so the FPC can distribute without
         //     needing an authwit from the user's undeployed account.
         TokenBridge::at(bridge)
-            .claim_private(
-                fpc_address,
-                claim_amount,
-                claim_secret,
-                message_leaf_index,
-            )
+            .claim_private(fpc_address, claim_amount, claim_secret, message_leaf_index)
             .call(self.context);
 
         // (g) Transfer the user's share from FPC to user.
@@ -338,16 +332,11 @@ pub contract FPCMultiAsset {
             claim_secret_hash,
         ]);
 
-        schnorr::assert_valid_signature(
-            operator_pubkey,
-            quote_sig,
-            quote_hash.to_be_bytes::<32>(),
-        );
+        schnorr::assert_valid_signature(operator_pubkey, quote_sig, quote_hash.to_be_bytes::<32>());
 
         context.push_nullifier(quote_hash);
 
-        let anchor_ts =
-            context.get_anchor_block_header().global_variables.timestamp;
+        let anchor_ts = context.get_anchor_block_header().global_variables.timestamp;
         assert(anchor_ts <= valid_until, "quote expired");
         let quote_ttl = valid_until - anchor_ts;
         assert(quote_ttl <= MAX_QUOTE_TTL_SECONDS, "quote ttl too large");
