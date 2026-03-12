@@ -89,6 +89,10 @@ jobs:
         if: always()
         run: docker compose --profile full logs --timestamps smoke-fee-entrypoint
 
+      - name: Print smoke-same-token-transfer logs
+        if: always()
+        run: docker compose --profile full logs --timestamps smoke-same-token-transfer
+
       - name: Print e2e-fpc logs
         if: always()
         run: docker compose --profile full logs --timestamps e2e-fpc
