@@ -1,3 +1,4 @@
+name: aztec-fpc
 services:
   anvil:
     image: ghcr.io/foundry-rs/foundry:v1.4.1
@@ -48,7 +49,7 @@ services:
   deploy:
     image: nethermind/aztec-fpc-contract-deployment:local
     volumes:
-      - ./deployments:/app/data
+      - ./deployments/local:/app/data
       - deploy-crs-cache:/app/.bb-crs
     environment:
       FPC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
@@ -64,7 +65,7 @@ services:
   fund-l1-fee-juice:
     image: ghcr.io/foundry-rs/foundry:v1.4.1
     volumes:
-      - ./deployments:/app/data:ro
+      - ./deployments/local:/app/data:ro
       - ./scripts:/app/scripts:ro
     entrypoint: ["bash", "/app/scripts/services/fund-l1-fee-juice.sh"]
     environment:
@@ -84,7 +85,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./deployments:/app/data:ro
+      - ./deployments/local:/app/data:ro
     command: ["--config", "/app/data/attestation/config.yaml"]
     environment:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
@@ -98,7 +99,7 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - ./deployments:/app/data:ro
+      - ./deployments/local:/app/data:ro
     command: ["--config", "/app/data/topup/config.yaml"]
     environment:
       AZTEC_NODE_URL: "${AZTEC_NODE_URL:-http://aztec-node:8080}"
@@ -134,7 +135,7 @@ services:
     command:
       - "scripts/contract/devnet-postdeploy-smoke.ts"
     volumes:
-      - ./deployments:/app/data:ro
+      - ./deployments/local:/app/data:ro
     environment:
       FPC_DEVNET_SMOKE_MANIFEST: "/app/data/manifest.json"
       L1_RPC_URL: "http://anvil:8545"
@@ -192,7 +193,29 @@ services:
     command:
       - "scripts/same-token-transfer/same-token-transfer-smoke.ts"
     volumes:
-      - ./deployments:/app/data:ro
+      - ./deployments/local:/app/data:ro
+    environment:
+      AZTEC_NODE_URL: "http://aztec-node:8080"
+      FPC_ATTESTATION_URL: "http://attestation:3000"
+      FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
+    depends_on:
+      block-producer:
+        condition: service_started
+      deploy:
+        condition: service_completed_successfully
+      attestation:
+        condition: service_healthy
+      topup:
+        condition: service_healthy
+
+  smoke-always-revert:
+    image: nethermind/aztec-fpc-smoke:local
+    profiles: ["smoke", "full"]
+    command:
+      - "scripts/always-revert/always-revert-smoke.ts"
+    volumes:
+      - ./deployments/local:/app/data:ro
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_ATTESTATION_URL: "http://attestation:3000"
@@ -220,6 +243,8 @@ services:
       e2e-fpc:
         condition: service_completed_successfully
       smoke-same-token-transfer:
+        condition: service_completed_successfully
+      smoke-always-revert:
         condition: service_completed_successfully
       attestation:
         condition: service_healthy
