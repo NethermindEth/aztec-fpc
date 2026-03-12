@@ -8,8 +8,8 @@ import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import {
   type CallIntent,
-  SetPublicAuthwitContractInteraction,
   computeInnerAuthWitHash,
+  SetPublicAuthwitContractInteraction,
 } from "@aztec/aztec.js/authorization";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";

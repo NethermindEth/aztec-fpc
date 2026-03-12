@@ -7,15 +7,15 @@ const pinoLogger = pino();
 
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
+import {
+  type CallIntent,
+  SetPublicAuthwitContractInteraction,
+} from "@aztec/aztec.js/authorization";
 import type { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
-import {
-  type CallIntent,
-  SetPublicAuthwitContractInteraction,
-} from "@aztec/aztec.js/authorization";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";

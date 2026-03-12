@@ -8,13 +8,13 @@ const pinoLogger = pino();
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract } from "@aztec/aztec.js/contracts";
-import { Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import {
   type CallIntent,
   SetPublicAuthwitContractInteraction,
 } from "@aztec/aztec.js/authorization";
+import { Contract } from "@aztec/aztec.js/contracts";
+import { Fr } from "@aztec/aztec.js/fields";
+import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
