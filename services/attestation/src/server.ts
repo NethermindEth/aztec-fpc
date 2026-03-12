@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { Fr } from "@aztec/aztec.js/fields";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
@@ -1164,6 +1164,163 @@ export function buildServer(
   return app;
 }
 
+type ColdStartQuoteRouteRequest = FastifyRequest<{
+  Querystring: ColdStartQuoteRequestQuery;
+}>;
+
+type QuoteRouteGuardResult<T> = { ok: true; value: T } | { ok: false; response: FastifyReply };
+
+type ColdStartQuoteResponseResult =
+  | {
+      ok: true;
+      body: {
+        accepted_asset: string;
+        fj_amount: string;
+        aa_payment_amount: string;
+        valid_until: string;
+        claim_amount: string;
+        claim_secret_hash: string;
+        signature: string;
+      };
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+function guardColdStartQuoteRequest(
+  context: Pick<ServerContext, "assetPolicyStore" | "config" | "rateLimiter">,
+  req: ColdStartQuoteRouteRequest,
+  reply: FastifyReply,
+  observe: (outcome: QuoteOutcome) => void,
+  nowSeconds: bigint,
+): QuoteRouteGuardResult<ParsedColdStartQuoteRequest> {
+  const rateLimitRejection = consumeQuoteRateLimit(
+    context.rateLimiter,
+    context.config,
+    req.headers,
+    req.ip,
+    nowSeconds,
+  );
+  if (rateLimitRejection) {
+    req.log.warn(
+      {
+        event: "cold_start_quote_rate_limited",
+        identity_kind: rateLimitRejection.identityKind,
+        retry_after_seconds: rateLimitRejection.retryAfterSeconds,
+      },
+      "Rate limited cold-start quote request",
+    );
+    observe("rate_limited");
+    return {
+      ok: false,
+      response: reply
+        .header("retry-after", rateLimitRejection.retryAfterSeconds.toString())
+        .code(429)
+        .send(rateLimited()),
+    };
+  }
+
+  if (!isQuoteAuthorized(context.config, req.headers)) {
+    req.log.warn(
+      {
+        event: "cold_start_quote_auth_rejected",
+        mode: context.config.quote_auth.mode,
+      },
+      "Rejected unauthorized cold-start quote request",
+    );
+    observe("unauthorized");
+    return {
+      ok: false,
+      response: reply.code(401).send(unauthorized()),
+    };
+  }
+
+  const parsedRequest = parseColdStartQuoteRequest(context.assetPolicyStore.getAll(), req.query);
+  if (!parsedRequest.ok) {
+    observe("bad_request");
+    return {
+      ok: false,
+      response: reply.code(400).send(badRequest(parsedRequest.message)),
+    };
+  }
+
+  return { ok: true, value: parsedRequest.value };
+}
+
+async function buildColdStartQuoteResponse(params: {
+  fpcAddress: AztecAddress;
+  nowSeconds: bigint;
+  parsedRequest: ParsedColdStartQuoteRequest;
+  quoteSigner: QuoteSchnorrSigner;
+  requestLog: ServerApp["log"];
+  validUntil: (nowSeconds: bigint) => bigint;
+}): Promise<ColdStartQuoteResponseResult> {
+  const { fpcAddress, nowSeconds, parsedRequest, quoteSigner, requestLog, validUntil } = params;
+  const {
+    userAddress,
+    acceptedAsset,
+    selectedAssetPolicy,
+    fjFeeAmount,
+    claimAmount,
+    claimSecretHash,
+  } = parsedRequest;
+
+  const quotePricing = computeQuotePricing(
+    selectedAssetPolicy,
+    fjFeeAmount,
+    nowSeconds,
+    validUntil,
+  );
+  if (!quotePricing.ok) {
+    return { ok: false, message: quotePricing.message };
+  }
+
+  const { validUntil: quoteValidUntil, aaPaymentAmount } = quotePricing.value;
+  if (claimAmount < aaPaymentAmount) {
+    return { ok: false, message: "claim_amount must be >= aa_payment_amount" };
+  }
+
+  const coldStartParams: ColdStartQuoteParams = {
+    fpcAddress,
+    acceptedAsset,
+    fjFeeAmount,
+    aaPaymentAmount,
+    validUntil: quoteValidUntil,
+    userAddress,
+    claimAmount,
+    claimSecretHash: Fr.fromHexString(claimSecretHash),
+  };
+  const signature = await signColdStartQuote(quoteSigner, coldStartParams);
+
+  requestLog.info(
+    {
+      event: "cold_start_quote_issued",
+      user: userAddress.toString(),
+      accepted_asset: selectedAssetPolicy.address,
+      valid_until: quoteValidUntil.toString(),
+      fj_amount: fjFeeAmount.toString(),
+      aa_payment_amount: aaPaymentAmount.toString(),
+      claim_amount: claimAmount.toString(),
+      claim_secret_hash: claimSecretHash,
+    },
+    "Cold-start quote issued",
+  );
+
+  return {
+    ok: true,
+    body: {
+      accepted_asset: selectedAssetPolicy.address,
+      fj_amount: fjFeeAmount.toString(),
+      aa_payment_amount: aaPaymentAmount.toString(),
+      valid_until: quoteValidUntil.toString(),
+      claim_amount: claimAmount.toString(),
+      claim_secret_hash: claimSecretHash,
+      signature,
+    },
+  };
+}
+
 function registerColdStartQuoteRoute(context: ServerContext): void {
   const {
     app,
@@ -1182,112 +1339,34 @@ function registerColdStartQuoteRoute(context: ServerContext): void {
   }>("/cold-start-quote", async (req, reply) => {
     const observe = createQuoteObserver(metrics);
     const nowSeconds = BigInt(await nowUnixSeconds());
-
-    const rateLimitRejection = consumeQuoteRateLimit(
-      rateLimiter,
-      config,
-      req.headers,
-      req.ip,
+    const guardedRequest = guardColdStartQuoteRequest(
+      { assetPolicyStore, config, rateLimiter },
+      req,
+      reply,
+      observe,
       nowSeconds,
     );
-    if (rateLimitRejection) {
-      req.log.warn(
-        {
-          event: "cold_start_quote_rate_limited",
-          identity_kind: rateLimitRejection.identityKind,
-          retry_after_seconds: rateLimitRejection.retryAfterSeconds,
-        },
-        "Rate limited cold-start quote request",
-      );
-      observe("rate_limited");
-      return reply
-        .header("retry-after", rateLimitRejection.retryAfterSeconds.toString())
-        .code(429)
-        .send(rateLimited());
+    if (!guardedRequest.ok) {
+      return guardedRequest.response;
     }
 
-    if (!isQuoteAuthorized(config, req.headers)) {
-      req.log.warn(
-        {
-          event: "cold_start_quote_auth_rejected",
-          mode: config.quote_auth.mode,
-        },
-        "Rejected unauthorized cold-start quote request",
-      );
-      observe("unauthorized");
-      return reply.code(401).send(unauthorized());
-    }
-
-    const parsedRequest = parseColdStartQuoteRequest(assetPolicyStore.getAll(), req.query);
-    if (!parsedRequest.ok) {
-      observe("bad_request");
-      return reply.code(400).send(badRequest(parsedRequest.message));
-    }
-
-    const {
-      userAddress,
-      acceptedAsset,
-      selectedAssetPolicy,
-      fjFeeAmount,
-      claimAmount,
-      claimSecretHash,
-    } = parsedRequest.value;
+    const { userAddress } = guardedRequest.value;
 
     try {
-      const quotePricing = computeQuotePricing(
-        selectedAssetPolicy,
-        fjFeeAmount,
-        nowSeconds,
-        validUntil,
-      );
-      if (!quotePricing.ok) {
-        observe("bad_request");
-        return reply.code(400).send(badRequest(quotePricing.message));
-      }
-
-      const { validUntil: quoteValidUntil, aaPaymentAmount } = quotePricing.value;
-
-      if (claimAmount < aaPaymentAmount) {
-        observe("bad_request");
-        return reply.code(400).send(badRequest("claim_amount must be >= aa_payment_amount"));
-      }
-
-      const coldStartParams: ColdStartQuoteParams = {
+      const quoteResult = await buildColdStartQuoteResponse({
         fpcAddress,
-        acceptedAsset,
-        fjFeeAmount,
-        aaPaymentAmount,
-        validUntil: quoteValidUntil,
-        userAddress,
-        claimAmount,
-        claimSecretHash: Fr.fromHexString(claimSecretHash),
-      };
-      const signature = await signColdStartQuote(quoteSigner, coldStartParams);
-
-      req.log.info(
-        {
-          event: "cold_start_quote_issued",
-          user: userAddress.toString(),
-          accepted_asset: selectedAssetPolicy.address,
-          valid_until: quoteValidUntil.toString(),
-          fj_amount: fjFeeAmount.toString(),
-          aa_payment_amount: aaPaymentAmount.toString(),
-          claim_amount: claimAmount.toString(),
-          claim_secret_hash: claimSecretHash,
-        },
-        "Cold-start quote issued",
-      );
+        nowSeconds,
+        parsedRequest: guardedRequest.value,
+        quoteSigner,
+        requestLog: req.log,
+        validUntil,
+      });
+      if (!quoteResult.ok) {
+        observe("bad_request");
+        return reply.code(400).send(badRequest(quoteResult.message));
+      }
       observe("success");
-
-      return {
-        accepted_asset: selectedAssetPolicy.address,
-        fj_amount: fjFeeAmount.toString(),
-        aa_payment_amount: aaPaymentAmount.toString(),
-        valid_until: quoteValidUntil.toString(),
-        claim_amount: claimAmount.toString(),
-        claim_secret_hash: claimSecretHash,
-        signature,
-      };
+      return quoteResult.body;
     } catch (error) {
       observe("internal_error");
       req.log.error(
