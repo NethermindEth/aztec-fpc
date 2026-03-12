@@ -24,7 +24,10 @@ pub contract FPCMultiAsset {
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
-        macros::{functions::{allow_phase_change, external, initializer, only_self}, storage::storage},
+        macros::{
+            functions::{allow_phase_change, external, initializer, only_self},
+            storage::storage,
+        },
         oracle::notes::set_sender_for_tags,
         protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
         state_vars::PublicImmutable,
@@ -139,9 +142,9 @@ pub contract FPCMultiAsset {
         amount: u128,
         authwit_nonce: Field,
     ) {
-        Token::at(accepted_asset)
-            .transfer_public_to_public(from, to, amount, authwit_nonce)
-            .call(self.context);
+        Token::at(accepted_asset).transfer_public_to_public(from, to, amount, authwit_nonce).call(
+            self.context,
+        );
     }
 
     /// Cold-start entrypoint: claim bridged tokens and pay gas in one tx.

@@ -36,12 +36,8 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
         user,
     );
 
-    let transfer_call = token.transfer_public_to_public(
-        user,
-        operator,
-        aa_payment_amount,
-        TRANSFER_AUTHWIT_NONCE,
-    );
+    let transfer_call =
+        token.transfer_public_to_public(user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
     add_public_authwit_from_call(env, user, fpc_address, transfer_call);
 
     let user_balance_before = utils::public_balance(env, token_address, user);
@@ -119,12 +115,8 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
         user,
     );
 
-    let transfer_call = token.transfer_public_to_public(
-        user,
-        operator,
-        aa_payment_amount,
-        TRANSFER_AUTHWIT_NONCE,
-    );
+    let transfer_call =
+        token.transfer_public_to_public(user, operator, aa_payment_amount, TRANSFER_AUTHWIT_NONCE);
     add_public_authwit_from_call(env, user, fpc_address, transfer_call);
 
     env.call_private(
