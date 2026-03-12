@@ -123,7 +123,7 @@ function resolveDefaultArtifactPath(label: DefaultArtifactLabel): string | undef
   return undefined;
 }
 
-function requireDefaultArtifact(label: DefaultArtifactLabel): ContractArtifact {
+export function requireDefaultArtifact(label: DefaultArtifactLabel): ContractArtifact {
   const cached = defaultArtifactCache[label];
   if (cached) {
     return cached;

@@ -11,6 +11,13 @@ export {
   SponsoredTxFailedError,
 } from "./errors";
 export type {
+  CreatePaymentMethodInput,
+  FpcClientConfig,
+  FpcPaymentMethodResult,
+  QuoteResponse,
+} from "./payment-method";
+export { FpcClient } from "./payment-method";
+export type {
   ContractArtifactJson,
   CreateSponsoredCounterClientInput,
   ExecuteSponsoredCallInput,
