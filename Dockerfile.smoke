@@ -5,10 +5,12 @@ COPY tsconfig.base.json ./
 COPY services/attestation/tsconfig.json services/attestation/
 COPY services/topup/tsconfig.json services/topup/
 
-# ── Service source & build ──
+# ── Service & SDK source ──
 COPY services/attestation/src/ services/attestation/src/
 COPY services/topup/src/ services/topup/src/
 COPY contract-deployment/src/ contract-deployment/src/
+COPY sdk/src/ sdk/src/
+COPY sdk/tsconfig.json sdk/
 
 # ── Test files ──
 COPY services/attestation/test/ services/attestation/test/
@@ -23,8 +25,9 @@ COPY --from=deploy /app/target/ target/
 # ── Smoke & deploy scripts ──
 COPY scripts/ scripts/
 
-# ── Build services ──
-RUN bun run --filter @aztec-fpc/attestation --if-present build && \
+# ── Build SDK & services ──
+RUN bun run --filter @aztec-fpc/sdk --if-present build && \
+    bun run --filter @aztec-fpc/attestation --if-present build && \
     bun run --filter @aztec-fpc/topup --if-present build
 
 ENTRYPOINT ["bun", "run", "--sequential"]

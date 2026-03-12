@@ -23,6 +23,7 @@ import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contra
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import { FpcClient } from "@aztec-fpc/sdk";
 import pino from "pino";
 import { deriveAccount } from "../common/script-credentials.ts";
 import { type CliArgs, CliError } from "./cli.ts";
@@ -38,17 +39,13 @@ export type TestContext = {
   node: ReturnType<typeof createAztecNodeClient>;
   wallet: EmbeddedWallet;
   operator: AztecAddress;
-  attestationUrl: string;
-  fpc: Contract;
+  fpcClient: FpcClient;
+  fpcAddress: AztecAddress;
+  tokenAddress: AztecAddress;
   token: Contract;
   faucet: Contract;
   counter: Contract;
-  fpcAddress: AztecAddress;
-  tokenAddress: AztecAddress;
   sponsoredFeePayment: SponsoredFeePaymentMethod;
-  feePerDaGas: bigint;
-  feePerL2Gas: bigint;
-  fjFeeAmount: bigint;
 };
 
 // ---------------------------------------------------------------------------
@@ -139,14 +136,14 @@ export async function setup(args: CliArgs): Promise<TestContext> {
 
   pinoLogger.info(`[always-revert] operator=${operator.toString()}`);
 
-  // 4. Register deployed contracts
+  // 4. Register deployed contracts (faucet + counter for non-FPC operations)
   const tokenArtifact = loadArtifact(path.join(repoRoot, "target", "token_contract-Token.json"));
   const fpcArtifact = loadArtifact(resolveFpcArtifactPath(repoRoot));
   const faucetArtifact = loadArtifact(path.join(repoRoot, "target", "faucet-Faucet.json"));
   const counterArtifact = loadArtifact(path.join(repoRoot, "target", "mock_counter-Counter.json"));
 
   const token = await registerAndGet(node, wallet, tokenAddress, tokenArtifact);
-  const fpc = await registerAndGet(node, wallet, fpcAddress, fpcArtifact);
+  await registerAndGet(node, wallet, fpcAddress, fpcArtifact);
   const faucet = await registerAndGet(node, wallet, faucetAddress, faucetArtifact);
   const counter = await registerAndGet(node, wallet, counterAddress, counterArtifact);
 
@@ -158,16 +155,15 @@ export async function setup(args: CliArgs): Promise<TestContext> {
   await wallet.registerContract(sponsoredFpcInstance, SponsoredFPCContractArtifact);
   const sponsoredFeePayment = new SponsoredFeePaymentMethod(sponsoredFpcInstance.address);
 
-  // 5. Compute gas parameters
-  const minFees = await node.getCurrentMinFees();
-  const feePerDaGas = args.feePerDaGas ?? minFees.feePerDaGas;
-  const feePerL2Gas = args.feePerL2Gas ?? minFees.feePerL2Gas;
-  const maxGasCost = BigInt(args.daGasLimit) * feePerDaGas + BigInt(args.l2GasLimit) * feePerL2Gas;
-  const fjFeeAmount = maxGasCost;
-
-  pinoLogger.info(
-    `[always-revert] gas parameters. fee_per_da_gas=${feePerDaGas} fee_per_l2_gas=${feePerL2Gas} max_gas_cost=${maxGasCost}`,
-  );
+  // 5. Create FpcClient
+  const fpcClient = new FpcClient({
+    fpcAddress,
+    operator,
+    node,
+    attestationBaseUrl: args.attestationUrl,
+    daGasLimit: args.daGasLimit,
+    l2GasLimit: args.l2GasLimit,
+  });
 
   // 6. Wait for topup service to fund FPC with FeeJuice
   pinoLogger.info("[always-revert] waiting for FPC FeeJuice balance > 0 (via topup service)");
@@ -192,16 +188,12 @@ export async function setup(args: CliArgs): Promise<TestContext> {
     node,
     wallet,
     operator,
-    attestationUrl: args.attestationUrl,
-    fpc,
-    token,
-    faucet,
+    fpcClient,
     fpcAddress,
     tokenAddress,
-    sponsoredFeePayment,
-    feePerDaGas,
-    feePerL2Gas,
-    fjFeeAmount,
+    token,
+    faucet,
     counter,
+    sponsoredFeePayment,
   };
 }

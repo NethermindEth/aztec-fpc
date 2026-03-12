@@ -32,6 +32,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@aztec-fpc/contract-deployment": "workspace:*",
+        "@aztec-fpc/sdk": "workspace:*",
         "@aztec/accounts": "4.0.0-devnet.2-patch.3",
         "@aztec/aztec.js": "4.0.0-devnet.2-patch.3",
         "@aztec/constants": "4.0.0-devnet.2-patch.3",
