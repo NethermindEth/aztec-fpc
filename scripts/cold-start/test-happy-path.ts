@@ -8,11 +8,11 @@
  * fee_entrypoint.
  */
 
+import { inspect } from "node:util";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Contract } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
-import { inspect } from "node:util";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
@@ -162,11 +162,7 @@ function describeValue(value: unknown): string {
   return inspect(value, { depth: 4, getters: true, showHidden: true });
 }
 
-function coerceBigInt(
-  value: unknown,
-  label: string,
-  seen: WeakSet<object> = new WeakSet(),
-): bigint {
+function coercePrimitiveBigInt(value: unknown, label: string): bigint | undefined {
   if (typeof value === "bigint") {
     return value;
   }
@@ -179,76 +175,132 @@ function coerceBigInt(
   if (typeof value === "string") {
     return BigInt(value);
   }
+  return undefined;
+}
+
+function unwrapStructuredBigIntCandidate(value: object): unknown {
+  if (Array.isArray(value) && value.length === 1) {
+    return value[0];
+  }
+  if ("value" in value) {
+    return (value as Record<string, unknown>).value;
+  }
+  if ("inner" in value) {
+    return (value as Record<string, unknown>).inner;
+  }
+  if ("raw" in value) {
+    return (value as Record<string, unknown>).raw;
+  }
+  if ("toBigInt" in value && typeof (value as { toBigInt?: unknown }).toBigInt === "function") {
+    return (value as { toBigInt: () => unknown }).toBigInt();
+  }
+
+  const primitiveFromSymbol = (value as Record<PropertyKey, unknown>)[Symbol.toPrimitive];
+  if (typeof primitiveFromSymbol === "function") {
+    const primitive = primitiveFromSymbol.call(value, "number");
+    if (primitive !== value) {
+      return primitive;
+    }
+  }
+
+  const primitiveFromValueOf = (value as { valueOf?: () => unknown }).valueOf?.();
+  if (primitiveFromValueOf !== undefined && primitiveFromValueOf !== value) {
+    return primitiveFromValueOf;
+  }
+
+  return undefined;
+}
+
+function tryCoerceFromStringRepresentation(value: object): bigint | undefined {
+  if (typeof (value as { toString?: () => string }).toString !== "function") {
+    return undefined;
+  }
+
+  const stringValue = value.toString();
+  if (stringValue === "[object Object]") {
+    return undefined;
+  }
+
+  try {
+    return BigInt(stringValue);
+  } catch {
+    return undefined;
+  }
+}
+
+function getCoercionKeys(value: object): PropertyKey[] {
+  return [...Object.getOwnPropertyNames(value), ...Object.getOwnPropertySymbols(value)].filter(
+    (key) => key !== "length",
+  );
+}
+
+function coerceFromCandidateList(
+  value: object,
+  ownKeys: PropertyKey[],
+  label: string,
+  seen: WeakSet<object>,
+): bigint | undefined {
+  if (ownKeys.length === 1) {
+    const innerValue = (value as Record<PropertyKey, unknown>)[ownKeys[0]];
+    if (innerValue !== value) {
+      return coerceBigInt(innerValue, label, seen);
+    }
+  }
+
+  for (const key of ownKeys) {
+    const candidate = (value as Record<PropertyKey, unknown>)[key];
+    if (candidate === value) {
+      continue;
+    }
+    try {
+      return coerceBigInt(candidate, label, seen);
+    } catch {
+      // Try the next structural candidate.
+    }
+  }
+
+  return undefined;
+}
+
+function coerceObjectBigInt(value: object, label: string, seen: WeakSet<object>): bigint {
+  if (value instanceof Fr) {
+    return value.toBigInt();
+  }
+  if (seen.has(value)) {
+    throw new Error(`Could not coerce ${label} to bigint: circular value ${describeValue(value)}`);
+  }
+  seen.add(value);
+
+  const structuredCandidate = unwrapStructuredBigIntCandidate(value);
+  if (structuredCandidate !== undefined) {
+    return coerceBigInt(structuredCandidate, label, seen);
+  }
+
+  const stringCoercion = tryCoerceFromStringRepresentation(value);
+  if (stringCoercion !== undefined) {
+    return stringCoercion;
+  }
+
+  const ownKeys = getCoercionKeys(value);
+  const keyCoercion = coerceFromCandidateList(value, ownKeys, label, seen);
+  if (keyCoercion !== undefined) {
+    return keyCoercion;
+  }
+
+  throw new Error(`Could not coerce ${label} to bigint: ${describeValue(value)}`);
+}
+
+function coerceBigInt(
+  value: unknown,
+  label: string,
+  seen: WeakSet<object> = new WeakSet(),
+): bigint {
+  const primitiveValue = coercePrimitiveBigInt(value, label);
+  if (primitiveValue !== undefined) {
+    return primitiveValue;
+  }
   if (value && typeof value === "object") {
-    if (value instanceof Fr) {
-      return value.toBigInt();
-    }
-    if (seen.has(value)) {
-      throw new Error(`Could not coerce ${label} to bigint: circular value ${describeValue(value)}`);
-    }
-    seen.add(value);
-    if (Array.isArray(value) && value.length === 1) {
-      return coerceBigInt(value[0], label, seen);
-    }
-    if ("value" in value) {
-      return coerceBigInt((value as Record<string, unknown>).value, label, seen);
-    }
-    if ("inner" in value) {
-      return coerceBigInt((value as Record<string, unknown>).inner, label, seen);
-    }
-    if ("raw" in value) {
-      return coerceBigInt((value as Record<string, unknown>).raw, label, seen);
-    }
-    if ("toBigInt" in value && typeof (value as { toBigInt?: unknown }).toBigInt === "function") {
-      return coerceBigInt((value as { toBigInt: () => unknown }).toBigInt(), label, seen);
-    }
-
-    const primitiveFromSymbol = (value as Record<PropertyKey, unknown>)[Symbol.toPrimitive];
-    if (typeof primitiveFromSymbol === "function") {
-      const primitive = primitiveFromSymbol.call(value, "number");
-      if (primitive !== value) {
-        return coerceBigInt(primitive, label, seen);
-      }
-    }
-
-    const primitiveFromValueOf = (value as { valueOf?: () => unknown }).valueOf?.();
-    if (primitiveFromValueOf !== undefined && primitiveFromValueOf !== value) {
-      return coerceBigInt(primitiveFromValueOf, label, seen);
-    }
-
-    if (typeof (value as { toString?: () => string }).toString === "function") {
-      const stringValue = value.toString();
-      if (stringValue !== "[object Object]") {
-        try {
-          return BigInt(stringValue);
-        } catch {
-          // Fall through to structural unwrapping below.
-        }
-      }
-    }
-
-    const ownKeys = [
-      ...Object.getOwnPropertyNames(value),
-      ...Object.getOwnPropertySymbols(value),
-    ].filter((key) => key !== "length");
-    if (ownKeys.length === 1) {
-      const innerValue = (value as Record<PropertyKey, unknown>)[ownKeys[0]];
-      if (innerValue !== value) {
-        return coerceBigInt(innerValue, label, seen);
-      }
-    }
-
-    for (const key of ownKeys) {
-      const candidate = (value as Record<PropertyKey, unknown>)[key];
-      if (candidate === value) {
-        continue;
-      }
-      try {
-        return coerceBigInt(candidate, label, seen);
-      } catch {
-        continue;
-      }
-    }
+    return coerceObjectBigInt(value, label, seen);
   }
   throw new Error(`Could not coerce ${label} to bigint: ${describeValue(value)}`);
 }
@@ -302,7 +354,11 @@ async function expectPrivateBalance(
   return balance;
 }
 
-async function readPrivateBalance(token: Contract, address: AztecAddress, label: string): Promise<bigint> {
+async function readPrivateBalance(
+  token: Contract,
+  address: AztecAddress,
+  label: string,
+): Promise<bigint> {
   return coerceBigInt(
     await token.methods.balance_of_private(address).simulate({ from: address }),
     `${label} private balance`,
@@ -624,10 +680,14 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
     );
   }
   if (finalUserAfter !== claimAmount - userDebited) {
-    throw new Error(`Final user balance mismatch: expected=${claimAmount - userDebited} got=${finalUserAfter}`);
+    throw new Error(
+      `Final user balance mismatch: expected=${claimAmount - userDebited} got=${finalUserAfter}`,
+    );
   }
   if (finalRecipientAfter !== transferAmount) {
-    throw new Error(`Recipient balance mismatch: expected=${transferAmount} got=${finalRecipientAfter}`);
+    throw new Error(
+      `Recipient balance mismatch: expected=${transferAmount} got=${finalRecipientAfter}`,
+    );
   }
 
   pinoLogger.info("[cold-start-smoke] PASS: token transfer via FPC succeeded");
