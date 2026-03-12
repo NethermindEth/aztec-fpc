@@ -261,3 +261,11 @@ pub unconstrained fn private_balance(
 ) -> u128 {
     env.execute_utility(Token::at(token_address).balance_of_private(account))
 }
+
+pub unconstrained fn public_balance(
+    env: TestEnvironment,
+    token_address: AztecAddress,
+    account: AztecAddress,
+) -> u128 {
+    env.view_public(Token::at(token_address).balance_of_public(account))
+}

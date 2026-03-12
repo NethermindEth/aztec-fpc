@@ -24,7 +24,7 @@ pub contract FPCMultiAsset {
     use aztec::{
         authwit::auth::compute_inner_authwit_hash,
         context::PrivateContext,
-        macros::{functions::{allow_phase_change, external, initializer}, storage::storage},
+        macros::{functions::{allow_phase_change, external, initializer, only_self}, storage::storage},
         oracle::notes::set_sender_for_tags,
         protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize, ToField}},
         state_vars::PublicImmutable,
@@ -70,8 +70,8 @@ pub contract FPCMultiAsset {
         self.storage.config.initialize(Config { operator, operator_pubkey_x, operator_pubkey_y });
     }
 
-    // Transfers the fee charge from the user's private balance directly to the
-    // operator's private balance. The quote signature is verified inline using
+    // Transfers the fee charge from the user's public balance directly to the
+    // operator's public balance. The quote signature is verified inline using
     // the operator's stored public key -- no cross-circuit authwit call needed.
 
     #[external("private")]
@@ -112,35 +112,35 @@ pub contract FPCMultiAsset {
         assert(fj_fee_amount == max_fee, "quoted fee amount mismatch");
 
         // Declare fee payer and close the setup phase BEFORE the token
-        // transfer.  Moving the transfer into the revertible (app) phase
-        // keeps all private notes in a single phase, which is required
-        // for the PXE's note-discovery mechanism to work correctly when
-        // the same tx also contains a private app call.
-        //
-        // Security note: this makes the fee transfer revertible.  If the
-        // user's app call reverts, the entire app phase (including this
-        // transfer) is rolled back, meaning the FPC pays gas but does
-        // not receive the fee.  However, the only other call in this tx
-        // is the user's account entrypoint dispatching the app payload,
-        // which the user themselves signed -- so a deliberate revert
-        // would only harm the user (their app call fails) while the FPC
-        // operator still receives gas compensation through the protocol
-        // fee mechanism.  For stronger guarantees, see
-        // `cold_start_entrypoint` which is the tx root and has no
-        // external app calls.
+        // transfer. The fee itself is charged through public state so it
+        // is not subject to the cross-phase private note discovery issue.
+        // This keeps fee collection outside the user's private note flow
+        // at the cost of making the fee amount publicly visible.
         self.context.set_as_fee_payer();
         if enforce_setup_phase | !self.context.in_revertible_phase() {
             self.context.end_setup();
         }
 
-        // Set sender for tags so the PXE can discover notes created
-        // in downstream calls.
-        let fpc_address = self.context.this_address();
-        // Safety: only used for unconstrained tagging, not constrained logic.
-        unsafe { set_sender_for_tags(fpc_address) };
+        self.enqueue_self.collect_public_fee_internal(
+            accepted_asset,
+            sender,
+            config.operator,
+            aa_payment_amount,
+            authwit_nonce,
+        );
+    }
 
+    #[external("public")]
+    #[only_self]
+    fn collect_public_fee_internal(
+        accepted_asset: AztecAddress,
+        from: AztecAddress,
+        to: AztecAddress,
+        amount: u128,
+        authwit_nonce: Field,
+    ) {
         Token::at(accepted_asset)
-            .transfer_private_to_private(sender, config.operator, aa_payment_amount, authwit_nonce)
+            .transfer_public_to_public(from, to, amount, authwit_nonce)
             .call(self.context);
     }
 

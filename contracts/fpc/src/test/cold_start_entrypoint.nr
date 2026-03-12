@@ -1,6 +1,6 @@
 use crate::{FPCMultiAsset, test::utils};
 use aztec::protocol::constants::NULL_MSG_SENDER_CONTRACT_ADDRESS;
-use aztec::test::helpers::authwit::add_private_authwit_from_call;
+use aztec::test::helpers::authwit::add_public_authwit_from_call;
 use token::Token;
 
 global CLAIM_SECRET: Field = 0xdeadbeef;
@@ -107,7 +107,7 @@ unconstrained fn cold_start_quote_rejected_by_fee_entrypoint() {
     let aa_payment_amount = fj_fee_amount;
     let claim_amount = aa_payment_amount + (500 as u128);
     let mint_amount = aa_payment_amount + (1000 as u128);
-    env.call_private(bridge_address, token.mint_to_private(user, mint_amount));
+    env.call_public(bridge_address, token.mint_to_public(user, mint_amount));
 
     let valid_until = env.last_block_timestamp() + 3600;
 
@@ -125,8 +125,8 @@ unconstrained fn cold_start_quote_rejected_by_fee_entrypoint() {
 
     let authwit_nonce: Field = 100;
     let transfer_call =
-        token.transfer_private_to_private(user, operator, aa_payment_amount, authwit_nonce);
-    add_private_authwit_from_call(env, user, fpc_address, transfer_call);
+        token.transfer_public_to_public(user, operator, aa_payment_amount, authwit_nonce);
+    add_public_authwit_from_call(env, user, fpc_address, transfer_call);
 
     // Submit through fee_entrypoint -- should fail because the signature
     // was computed with COLD_START_QUOTE_DOMAIN_SEPARATOR, not QUOTE_DOMAIN_SEPARATOR.
