@@ -15,6 +15,27 @@ Current contract surface is multi-asset: `FPCMultiAsset`.
 
 ---
 
+## Deploy FPC
+
+Deploy the FPC contract and generate service configs with a single Docker command. No local toolchain required — the image ships with pre-compiled contract artifacts.
+
+```bash
+export FPC_DEPLOYER_PRIVATE_KEY=0x<deployer_hex32>
+export FPC_OPERATOR_SECRET_KEY=0x<operator_hex32>
+
+docker run -v ./deployments:/app/deployments \
+  -e FPC_DEPLOYER_PRIVATE_KEY \
+  -e FPC_OPERATOR_SECRET_KEY \
+  nethermind/aztec-fpc-contract-deployment:local \
+  --accepted-asset 0x<token_address>
+```
+
+This deploys the `FPCMultiAsset` contract (and optionally a `Token` if `--accepted-asset` is omitted), writes a deployment manifest, and generates ready-to-use configs for the attestation and topup services under `./deployments/`.
+
+Full guide: [docs/docker-deployment.md](docs/docker-deployment.md) — covers master config setup, all CLI arguments, environment variables, config generation, and advanced examples.
+
+---
+
 ## Repository Layout
 
 ```text
