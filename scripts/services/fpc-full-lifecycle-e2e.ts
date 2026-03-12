@@ -12,6 +12,10 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import {
+  type CallIntent,
+  SetPublicAuthwitContractInteraction,
+} from "@aztec/aztec.js/authorization";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
@@ -665,25 +669,28 @@ async function executeFeePaidTx(
   }
   const expectedCharge = params.quote.aaPaymentAmount;
   const mintAmount = expectedCharge + 1_000_000n;
-
   await params.token.methods
-    .mint_to_private(params.payer, mintAmount)
-    .send({ from: result.operator });
-  await params.token.methods
-    .mint_to_public(params.payer, params.transferAmount)
+    .mint_to_public(params.payer, mintAmount + params.transferAmount)
     .send({ from: result.operator });
 
   const transferAuthwitNonce = Fr.random();
-  const transferCall = params.token.methods.transfer_private_to_private(
+  const transferCall = await params.token.methods
+    .transfer_public_to_public(
+      params.payer,
+      result.operator,
+      params.quote.aaPaymentAmount,
+      transferAuthwitNonce,
+    )
+    .getFunctionCall();
+
+  const intent: CallIntent = { caller: params.fpc.address, call: transferCall };
+  const setAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+    result.wallet,
     params.payer,
-    result.operator,
-    params.quote.aaPaymentAmount,
-    transferAuthwitNonce,
+    intent,
+    true,
   );
-  const transferAuthwit = await result.wallet.createAuthWit(params.payer, {
-    caller: params.fpc.address,
-    action: transferCall,
-  });
+  const setAuthPayload = await setAuthInteraction.request();
 
   const feeEntrypointCall = await params.fpc.methods
     .fee_entrypoint(
@@ -699,7 +706,13 @@ async function executeFeePaidTx(
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], params.fpc.address),
+      new ExecutionPayload(
+        [...setAuthPayload.calls, feeEntrypointCall],
+        [],
+        [],
+        [],
+        params.fpc.address,
+      ),
     getFeePayer: async () => params.fpc.address,
     getGasSettings: () => undefined,
   };
@@ -1166,7 +1179,7 @@ async function runFeePaidTargetTxAndAssert(
   const expectedCharge = aaPaymentAmount;
   const mintAmount = expectedCharge + 1_000_000n;
   await result.token.methods
-    .mint_to_private(result.user, mintAmount)
+    .mint_to_public(result.user, mintAmount + targetTransferAmount)
     .send({ from: result.operator });
 
   const userPrivateBefore = BigInt(
@@ -1195,16 +1208,18 @@ async function runFeePaidTargetTxAndAssert(
   );
 
   const transferAuthwitNonce = Fr.random();
-  const transferCall = result.token.methods.transfer_private_to_private(
+  const transferCall = await result.token.methods
+    .transfer_public_to_public(result.user, result.operator, aaPaymentAmount, transferAuthwitNonce)
+    .getFunctionCall();
+
+  const intent: CallIntent = { caller: result.fpc.address, call: transferCall };
+  const setAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+    result.wallet,
     result.user,
-    result.operator,
-    aaPaymentAmount,
-    transferAuthwitNonce,
+    intent,
+    true,
   );
-  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
-    caller: result.fpc.address,
-    action: transferCall,
-  });
+  const setAuthPayload = await setAuthInteraction.request();
 
   const feeEntrypointCall = await result.fpc.methods
     .fee_entrypoint(
@@ -1220,7 +1235,13 @@ async function runFeePaidTargetTxAndAssert(
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], result.fpc.address),
+      new ExecutionPayload(
+        [...setAuthPayload.calls, feeEntrypointCall],
+        [],
+        [],
+        [],
+        result.fpc.address,
+      ),
     getFeePayer: async () => result.fpc.address,
     getGasSettings: () => undefined,
   };
@@ -1268,34 +1289,31 @@ async function runFeePaidTargetTxAndAssert(
     ).toString(),
   );
 
-  const userDebited = userPrivateBefore - userPrivateAfter;
-  const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
-  if (userDebited !== expectedCharge) {
+  const userDebited = userPublicBefore - userPublicAfter;
+  const operatorCredited = operatorPublicAfter - operatorPublicBefore;
+  if (userPrivateBefore !== userPrivateAfter) {
     throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} user debit mismatch. expected=${expectedCharge} got=${userDebited}`,
+      `[full-lifecycle-e2e] ${txLabel} user private balance changed unexpectedly. before=${userPrivateBefore} after=${userPrivateAfter}`,
     );
   }
-  if (operatorCredited !== expectedCharge) {
+  if (operatorPrivateBefore !== operatorPrivateAfter) {
     throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
+      `[full-lifecycle-e2e] ${txLabel} operator private balance changed unexpectedly. before=${operatorPrivateBefore} after=${operatorPrivateAfter}`,
     );
   }
-
-  const userPublicDelta = userPublicAfter - userPublicBefore;
-  const operatorPublicDelta = operatorPublicAfter - operatorPublicBefore;
-  if (userPublicDelta !== -targetTransferAmount) {
+  if (userDebited !== expectedCharge + targetTransferAmount) {
     throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} target call user public delta mismatch. expected=${-targetTransferAmount} got=${userPublicDelta}`,
+      `[full-lifecycle-e2e] ${txLabel} user public debit mismatch. expected=${expectedCharge + targetTransferAmount} got=${userDebited}`,
     );
   }
-  if (operatorPublicDelta !== targetTransferAmount) {
+  if (operatorCredited !== expectedCharge + targetTransferAmount) {
     throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} target call operator public delta mismatch. expected=${targetTransferAmount} got=${operatorPublicDelta}`,
+      `[full-lifecycle-e2e] ${txLabel} operator public credit mismatch. expected=${expectedCharge + targetTransferAmount} got=${operatorCredited}`,
     );
   }
 
   pinoLogger.info(
-    `[full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_debited=${userDebited}, operator_credited=${operatorCredited}, user_public_delta=${userPublicDelta}, operator_public_delta=${operatorPublicDelta})`,
+    `[full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_public_debited=${userDebited}, operator_public_credited=${operatorCredited})`,
   );
   return expectedCharge;
 }
@@ -1459,16 +1477,18 @@ async function negativeDirectEntrypointCallRejected(
   );
 
   const transferAuthwitNonce = Fr.random();
-  const transferCall = result.token.methods.transfer_private_to_private(
+  const transferCall = await result.token.methods
+    .transfer_public_to_public(result.user, result.operator, aaPaymentAmount, transferAuthwitNonce)
+    .getFunctionCall();
+
+  const intent: CallIntent = { caller: result.fpc.address, call: transferCall };
+  const setAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+    result.wallet,
     result.user,
-    result.operator,
-    aaPaymentAmount,
-    transferAuthwitNonce,
+    intent,
+    true,
   );
-  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
-    caller: result.fpc.address,
-    action: transferCall,
-  });
+  await setAuthInteraction.send({ from: result.user }).wait({ timeout: 180 });
 
   await expectFailure(
     "negative direct fee_entrypoint call rejected outside setup phase",
@@ -1485,7 +1505,6 @@ async function negativeDirectEntrypointCallRejected(
         )
         .send({
           from: result.user,
-          authWitnesses: [transferAuthwit],
           wait: { timeout: 180 },
         }),
   );

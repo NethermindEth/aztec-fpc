@@ -8,6 +8,10 @@ const pinoLogger = pino();
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import {
+  type CallIntent,
+  SetPublicAuthwitContractInteraction,
+} from "@aztec/aztec.js/authorization";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -606,12 +610,16 @@ async function main() {
 
     const nonce = Fr.random();
     const transferCall = await token.methods
-      .transfer_private_to_private(user, operatorAddress, aaPaymentAmount, nonce)
+      .transfer_public_to_public(user, operatorAddress, aaPaymentAmount, nonce)
       .getFunctionCall();
-    const transferAuthwit = await wallet.createAuthWit(user, {
-      caller: fpcAddress,
-      call: transferCall,
-    });
+    const intent: CallIntent = { caller: fpcAddress, call: transferCall };
+    const setAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+      wallet,
+      user,
+      intent,
+      true,
+    );
+    const setAuthPayload = await setAuthInteraction.request();
 
     const counterBefore = BigInt(
       (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
@@ -634,7 +642,7 @@ async function main() {
     const paymentMethod = {
       getAsset: async () => ProtocolContractAddress.FeeJuice,
       getExecutionPayload: async () =>
-        new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], fpcAddress),
+        new ExecutionPayload([...setAuthPayload.calls, feeEntrypointCall], [], [], [], fpcAddress),
       getFeePayer: async () => fpcAddress,
       getGasSettings: () => undefined,
     };

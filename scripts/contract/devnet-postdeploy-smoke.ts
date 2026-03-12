@@ -119,6 +119,14 @@ type AztecDeps = {
   };
   Fr: FrFactory;
   computeInnerAuthWitHash: (values: unknown[]) => Promise<FrLike>;
+  SetPublicAuthwitContractInteraction: {
+    create: (
+      wallet: WalletLike,
+      authorizer: AztecAddressLike,
+      intent: { caller: AztecAddressLike; call: unknown },
+      authorize: boolean,
+    ) => Promise<{ request: () => Promise<{ calls: unknown[] }> }>;
+  };
   FeeJuiceContract: { at: (wallet: WalletLike) => ContractLike };
   ProtocolContractAddress: { FeeJuice: unknown };
   getFeeJuiceBalance: (address: AztecAddressLike, node: NodeLike) => Promise<bigint>;
@@ -528,6 +536,8 @@ async function loadDeps(): Promise<AztecDeps> {
     Fr: fieldsApi.Fr as AztecDeps["Fr"],
     computeInnerAuthWitHash:
       authorizationApi.computeInnerAuthWitHash as AztecDeps["computeInnerAuthWitHash"],
+    SetPublicAuthwitContractInteraction:
+      authorizationApi.SetPublicAuthwitContractInteraction as AztecDeps["SetPublicAuthwitContractInteraction"],
     FeeJuiceContract: protocolApi.FeeJuiceContract as AztecDeps["FeeJuiceContract"],
     ProtocolContractAddress:
       protocolApi.ProtocolContractAddress as AztecDeps["ProtocolContractAddress"],
@@ -1016,7 +1026,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
     .mint_to_private(operatorAddress, fpcExpectedCharge + 1_000_000n)
     .send({ from: operatorAddress, wait: { timeout: 180 } });
   await token.methods
-    .mint_to_public(operatorAddress, 2n)
+    .mint_to_public(operatorAddress, fpcAaAmount + 2n)
     .send({ from: operatorAddress, wait: { timeout: 180 } });
 
   const latestBlock = await node.getBlock("latest");
@@ -1036,16 +1046,17 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const fpcQuoteSig = await schnorr.constructSignature(fpcQuoteHash.toBuffer(), operatorSigningKey);
   const fpcQuoteSigBytes = Array.from(fpcQuoteSig.toBuffer());
   const fpcAuthwitNonce = deps.Fr.random();
-  const fpcTransferCall = token.methods.transfer_private_to_private(
+  const fpcTransferFunctionCall = await token.methods
+    .transfer_public_to_public(operatorAddress, operatorAddress, fpcAaAmount, fpcAuthwitNonce)
+    .getFunctionCall();
+  const fpcTransferIntent = { caller: fpc.address, call: fpcTransferFunctionCall };
+  const fpcSetAuthInteraction = await deps.SetPublicAuthwitContractInteraction.create(
+    wallet,
     operatorAddress,
-    operatorAddress,
-    fpcAaAmount,
-    fpcAuthwitNonce,
+    fpcTransferIntent,
+    true,
   );
-  const fpcTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
-    caller: fpc.address,
-    action: fpcTransferCall,
-  });
+  const fpcSetAuthPayload = await fpcSetAuthInteraction.request();
   const fpcFeeEntrypointCall = await fpc.methods
     .fee_entrypoint(
       token.address,
@@ -1059,7 +1070,13 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const fpcPaymentMethod = {
     getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new deps.ExecutionPayload([fpcFeeEntrypointCall], [fpcTransferAuthwit], [], [], fpc.address),
+      new deps.ExecutionPayload(
+        [...fpcSetAuthPayload.calls, fpcFeeEntrypointCall],
+        [],
+        [],
+        [],
+        fpc.address,
+      ),
     getFeePayer: async () => fpc.address,
     getGasSettings: () => undefined,
   };

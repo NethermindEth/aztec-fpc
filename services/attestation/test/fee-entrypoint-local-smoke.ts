@@ -6,7 +6,11 @@ const pinoLogger = pino();
 
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
+import {
+  type CallIntent,
+  SetPublicAuthwitContractInteraction,
+  computeInnerAuthWitHash,
+} from "@aztec/aztec.js/authorization";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -549,8 +553,7 @@ async function main() {
   const mintAmount = expectedCharge + 1_000_000n;
   pinoLogger.info(`[smoke] expected_charge=${expectedCharge}`);
 
-  await token.methods.mint_to_private(user, mintAmount).send({ from: operator });
-  await token.methods.mint_to_public(user, 2n).send({ from: operator });
+  await token.methods.mint_to_public(user, mintAmount + 2n).send({ from: operator });
 
   const validUntil =
     (await getLatestBlockTimestampOrThrow(
@@ -570,22 +573,23 @@ async function main() {
   const quoteSigBytes = Array.from(quoteSig.toBuffer());
 
   const transferAuthwitNonce = Fr.random();
-  const transferCall = token.methods.transfer_private_to_private(
+  const transferFunctionCall = await token.methods
+    .transfer_public_to_public(user, operator, aaPaymentAmount, transferAuthwitNonce)
+    .getFunctionCall();
+  const transferIntent: CallIntent = { caller: fpc.address, call: transferFunctionCall };
+  const setAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+    wallet,
     user,
-    operator,
-    aaPaymentAmount,
-    transferAuthwitNonce,
+    transferIntent,
+    true,
   );
-  const transferAuthwit = await wallet.createAuthWit(user, {
-    caller: fpc.address,
-    action: transferCall,
-  });
+  const setAuthPayload = await setAuthInteraction.request();
 
   const userBefore = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+    (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
   );
   const operatorBefore = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
+    (await token.methods.balance_of_public(operator).simulate({ from: operator })).toString(),
   );
 
   const feeEntrypointCall = await fpc.methods
@@ -601,7 +605,7 @@ async function main() {
   const fpcPaymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], fpc.address),
+      new ExecutionPayload([...setAuthPayload.calls, feeEntrypointCall], [], [], [], fpc.address),
     getFeePayer: async () => fpc.address,
     getGasSettings: () => undefined,
   };
@@ -621,10 +625,10 @@ async function main() {
   });
 
   const userAfter = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+    (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
   );
   const operatorAfter = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
+    (await token.methods.balance_of_public(operator).simulate({ from: operator })).toString(),
   );
 
   const userDebited = userBefore - userAfter;
@@ -641,7 +645,7 @@ async function main() {
 
   // Ensure negative-path tx can reach fee validation checks instead of failing
   // early due to insufficient private token balance.
-  await token.methods.mint_to_private(user, expectedCharge + 1_000_000n).send({ from: operator });
+  await token.methods.mint_to_public(user, expectedCharge + 1_000_000n).send({ from: operator });
   const negativeValidUntil =
     (await getLatestBlockTimestampOrThrow(
       node,
@@ -662,16 +666,20 @@ async function main() {
   );
   const negativeQuoteSigBytes = Array.from(negativeQuoteSig.toBuffer());
   const negativeTransferAuthwitNonce = Fr.random();
-  const negativeTransferCall = token.methods.transfer_private_to_private(
-    user,
-    operator,
-    aaPaymentAmount,
-    negativeTransferAuthwitNonce,
-  );
-  const negativeTransferAuthwit = await wallet.createAuthWit(user, {
+  const negativeTransferFunctionCall = await token.methods
+    .transfer_public_to_public(user, operator, aaPaymentAmount, negativeTransferAuthwitNonce)
+    .getFunctionCall();
+  const negativeTransferIntent: CallIntent = {
     caller: fpc.address,
-    action: negativeTransferCall,
-  });
+    call: negativeTransferFunctionCall,
+  };
+  const negativeSetAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+    wallet,
+    user,
+    negativeTransferIntent,
+    true,
+  );
+  const negativeSetAuthPayload = await negativeSetAuthInteraction.request();
   const negativeFeeEntrypointCall = await fpc.methods
     .fee_entrypoint(
       token.address,
@@ -686,8 +694,8 @@ async function main() {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
       new ExecutionPayload(
-        [negativeFeeEntrypointCall],
-        [negativeTransferAuthwit],
+        [...negativeSetAuthPayload.calls, negativeFeeEntrypointCall],
+        [],
         [],
         [],
         fpc.address,
@@ -711,7 +719,6 @@ async function main() {
         )
         .send({
           from: user,
-          authWitnesses: [negativeTransferAuthwit],
           wait: { timeout: 180 },
         }),
   );

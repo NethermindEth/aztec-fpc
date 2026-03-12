@@ -11,6 +11,10 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import {
+  type CallIntent,
+  SetPublicAuthwitContractInteraction,
+} from "@aztec/aztec.js/authorization";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
@@ -272,28 +276,33 @@ async function main() {
   const aaPaymentAmount = BigInt(quote.aa_payment_amount);
   const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace(/^0x/, ""), "hex"));
 
-  // Step 5: fund user with:
-  // - private token notes for FPC payment transfer.
-  // The app call is Counter.increment (private), so no public token balance is needed.
-  await token.methods.mint_to_private(user, aaPaymentAmount + 1_000_000n).send({ from: operator });
+  // Step 5: fund user with public token balance for the FPC payment transfer.
+  // The app call is Counter.increment (private), so only the fee leg must be public.
+  await token.methods.mint_to_public(user, aaPaymentAmount + 1_000_000n).send({ from: operator });
 
-  // Step 6: create authwit that authorizes FPC to call
-  // Token.transfer_private_to_private(user -> operator, aa_payment_amount, nonce).
+  // Step 6: set public authwit that authorizes FPC to call
+  // Token.transfer_public_to_public(user -> operator, aa_payment_amount, nonce).
+  // Public authwits require an AuthRegistry.set_authorized() call — transient
+  // AuthWitness objects only work for private authwit validation.
   const nonce = Fr.random();
   const transferCall = await token.methods
-    .transfer_private_to_private(user, operator, aaPaymentAmount, nonce)
+    .transfer_public_to_public(user, operator, aaPaymentAmount, nonce)
     .getFunctionCall();
-  const transferAuthwit = await wallet.createAuthWit(user, {
-    caller: fpcAddress,
-    call: transferCall,
-  });
+  const intent: CallIntent = { caller: fpcAddress, call: transferCall };
+  const setAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+    wallet,
+    user,
+    intent,
+    true,
+  );
+  const setAuthPayload = await setAuthInteraction.request();
 
   // Record balances before tx so we can prove token accounting after.
-  const userPrivateBefore = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+  const userPublicBefore = BigInt(
+    (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
   );
-  const operatorPrivateBefore = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
+  const operatorPublicBefore = BigInt(
+    (await token.methods.balance_of_public(operator).simulate({ from: operator })).toString(),
   );
 
   // Step 7: build the FPC fee payload manually.
@@ -312,7 +321,7 @@ async function main() {
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], fpcAddress),
+      new ExecutionPayload([...setAuthPayload.calls, feeEntrypointCall], [], [], [], fpcAddress),
     getFeePayer: async () => fpcAddress,
     getGasSettings: () => undefined,
   };
@@ -380,15 +389,15 @@ async function main() {
   );
 
   // Step 9: verify accounting and print a concise summary.
-  const userPrivateAfter = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+  const userPublicAfter = BigInt(
+    (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
   );
-  const operatorPrivateAfter = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
+  const operatorPublicAfter = BigInt(
+    (await token.methods.balance_of_public(operator).simulate({ from: operator })).toString(),
   );
 
-  const userDebited = userPrivateBefore - userPrivateAfter;
-  const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
+  const userDebited = userPublicBefore - userPublicAfter;
+  const operatorCredited = operatorPublicAfter - operatorPublicBefore;
 
   pinoLogger.info(`operator=${operator}`);
   pinoLogger.info(`user=${user}`);

@@ -65,6 +65,10 @@ import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
+import {
+  type CallIntent,
+  SetPublicAuthwitContractInteraction,
+} from "@aztec/aztec.js/authorization";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
@@ -651,27 +655,23 @@ async function submitFeePaidTx(
   aaPaymentAmount: bigint,
   validUntil: bigint,
 ): Promise<{ expectedCharge: bigint }> {
-  // Mint private tokens to payer (used for the FPC fee payment).
+  // Mint public tokens for both the FPC fee payment and the actual action.
   await ctx.token.methods
-    .mint_to_private(payer, aaPaymentAmount + 1_000_000n)
+    .mint_to_public(payer, aaPaymentAmount + 1_000_001n)
     .send({ from: ctx.operator });
 
-  // Mint 1 public token so payer can do transfer_public_to_public as the
-  // actual fee-paid action. Only the operator/admin can mint, so this must
-  // be sent from ctx.operator (not payer).
-  await ctx.token.methods.mint_to_public(payer, 1n).send({ from: ctx.operator });
-
   const nonce = Fr.random();
-  const transferCall = ctx.token.methods.transfer_private_to_private(
+  const transferCall = await ctx.token.methods
+    .transfer_public_to_public(payer, ctx.operator, aaPaymentAmount, nonce)
+    .getFunctionCall();
+  const intent: CallIntent = { caller: ctx.fpcAddress, call: transferCall };
+  const setAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+    ctx.wallet,
     payer,
-    ctx.operator,
-    aaPaymentAmount,
-    nonce,
+    intent,
+    true,
   );
-  const authwit = await ctx.wallet.createAuthWit(payer, {
-    caller: ctx.fpcAddress,
-    action: transferCall,
-  });
+  const setAuthPayload = await setAuthInteraction.request();
 
   const feeEntrypointCall = await ctx.fpc.methods
     .fee_entrypoint(ctx.acceptedAsset, nonce, fjAmount, aaPaymentAmount, validUntil, quoteSigBytes)
@@ -680,7 +680,13 @@ async function submitFeePaidTx(
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [authwit], [], [], ctx.fpcAddress),
+      new ExecutionPayload(
+        [...setAuthPayload.calls, feeEntrypointCall],
+        [],
+        [],
+        [],
+        ctx.fpcAddress,
+      ),
     getFeePayer: async () => ctx.fpcAddress,
     getGasSettings: () => undefined,
   };
@@ -736,23 +742,23 @@ async function submitFeePaidTxWithOptions(
   const teardownL2Gas = options?.teardownL2Gas ?? 0;
 
   await ctx.token.methods
-    .mint_to_private(
+    .mint_to_public(
       payer,
-      (authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount) + 1_000_000n,
+      (authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount) + 1_000_001n,
     )
     .send({ from: ctx.operator });
-  await ctx.token.methods.mint_to_public(payer, 1n).send({ from: ctx.operator });
 
-  const transferCall = ctx.token.methods.transfer_private_to_private(
+  const transferCall = await ctx.token.methods
+    .transfer_public_to_public(payer, ctx.operator, authwitAmount, authwitNonce)
+    .getFunctionCall();
+  const intent2: CallIntent = { caller: ctx.fpcAddress, call: transferCall };
+  const setAuthInteraction2 = await SetPublicAuthwitContractInteraction.create(
+    ctx.wallet,
     payer,
-    ctx.operator,
-    authwitAmount,
-    authwitNonce,
+    intent2,
+    true,
   );
-  const authwit = await ctx.wallet.createAuthWit(payer, {
-    caller: ctx.fpcAddress,
-    action: transferCall,
-  });
+  const setAuthPayload2 = await setAuthInteraction2.request();
 
   const feeEntrypointCall = await ctx.fpc.methods
     .fee_entrypoint(
@@ -768,7 +774,13 @@ async function submitFeePaidTxWithOptions(
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [authwit], [], [], ctx.fpcAddress),
+      new ExecutionPayload(
+        [...setAuthPayload2.calls, feeEntrypointCall],
+        [],
+        [],
+        [],
+        ctx.fpcAddress,
+      ),
     getFeePayer: async () => ctx.fpcAddress,
     getGasSettings: () => undefined,
   };
@@ -1584,16 +1596,17 @@ async function runOnchainTests(
 
       // otherUser has NO tokens – don't mint before submitting
       const nonce = Fr.random();
-      const transferCall = ctx.token.methods.transfer_private_to_private(
+      const transferCall = await ctx.token.methods
+        .transfer_public_to_public(ctx.otherUser, ctx.operator, aaPaymentAmount, nonce)
+        .getFunctionCall();
+      const intent3: CallIntent = { caller: ctx.fpcAddress, call: transferCall };
+      const setAuthInteraction3 = await SetPublicAuthwitContractInteraction.create(
+        ctx.wallet,
         ctx.otherUser,
-        ctx.operator,
-        aaPaymentAmount,
-        nonce,
+        intent3,
+        true,
       );
-      const authwit = await ctx.wallet.createAuthWit(ctx.otherUser, {
-        caller: ctx.fpcAddress,
-        action: transferCall,
-      });
+      const setAuthPayload3 = await setAuthInteraction3.request();
       const feeEntrypointCall = await ctx.fpc.methods
         .fee_entrypoint(ctx.acceptedAsset, nonce, fjAmount, aaPaymentAmount, validUntil, sigBytes)
         .getFunctionCall();
@@ -1601,13 +1614,19 @@ async function runOnchainTests(
       const paymentMethod = {
         getAsset: async () => ProtocolContractAddress.FeeJuice,
         getExecutionPayload: async () =>
-          new ExecutionPayload([feeEntrypointCall], [authwit], [], [], ctx.fpcAddress),
+          new ExecutionPayload(
+            [...setAuthPayload3.calls, feeEntrypointCall],
+            [],
+            [],
+            [],
+            ctx.fpcAddress,
+          ),
         getFeePayer: async () => ctx.fpcAddress,
         getGasSettings: () => undefined,
       };
 
       // Mint 1 public token so the tx action is authorized (only operator can mint).
-      // The fee payment fails regardless because otherUser has no PRIVATE tokens.
+      // The fee payment fails regardless because otherUser has no public balance for the fee.
       await ctx.token.methods.mint_to_public(ctx.otherUser, 1n).send({ from: ctx.operator });
 
       await expectOnchainFailure(
