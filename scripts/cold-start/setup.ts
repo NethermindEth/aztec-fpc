@@ -51,6 +51,7 @@ export type TestContext = {
   attestationUrl: string;
   fpc: Contract;
   token: Contract;
+  bridge: Contract;
   counter: Contract;
   fpcAddress: AztecAddress;
   tokenAddress: AztecAddress;
@@ -180,7 +181,7 @@ export async function setup(args: CliArgs): Promise<TestContext> {
 
   const token = await registerAndGet(node, wallet, tokenAddress, tokenArtifact);
   const fpc = await registerAndGet(node, wallet, fpcAddress, fpcArtifact);
-  await registerAndGet(node, wallet, bridgeAddress, bridgeArtifact);
+  const bridge = await registerAndGet(node, wallet, bridgeAddress, bridgeArtifact);
   const counter = await registerAndGet(node, wallet, counterAddress, counterArtifact);
 
   // Register the canonical SponsoredFPC contract (address derived from artifact + salt)
@@ -270,6 +271,7 @@ export async function setup(args: CliArgs): Promise<TestContext> {
     attestationUrl: args.attestationUrl,
     fpc,
     token,
+    bridge,
     counter,
     fpcAddress,
     tokenAddress,

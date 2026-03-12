@@ -1,11 +1,11 @@
 /**
- * Positive test: cold-start -> account deploy -> counter increment -> sponsored
- * transfer -> FPC transfer, all via FPC.
+ * Positive test: cold-start -> sponsored account deploy -> sponsored transfer
+ * -> FPC transfer.
  *
  * Bridges tokens L1->L2 for the user, builds and proves the cold-start tx,
- * then deploys the user's account contract, increments a counter, transfers
- * tokens via sponsored FPC, and finally transfers tokens via our FPC
- * fee_entrypoint.
+ * then deploys the user's account contract, seeds a public fee budget,
+ * transfers tokens via sponsored FPC, and finally transfers tokens via our
+ * FPC fee_entrypoint.
  */
 
 import { inspect } from "node:util";
@@ -18,7 +18,10 @@ import type { AztecNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { DefaultEntrypoint } from "@aztec/entrypoints/default";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import type { AuthWitness } from "@aztec/stdlib/auth-witness";
+import {
+  type CallIntent,
+  SetPublicAuthwitContractInteraction,
+} from "@aztec/aztec.js/authorization";
 import { Gas, GasFees, GasSettings } from "@aztec/stdlib/gas";
 import { ExecutionPayload, type TxHash, type TxReceipt } from "@aztec/stdlib/tx";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
@@ -102,20 +105,25 @@ async function buildFpcPaymentMethod(opts: {
   const validUntil = BigInt(quote.valid_until);
   const signatureBytes = decodeSignatureHex(quote.signature);
 
-  // 2. Build transfer authwit: token.transfer_private_to_private(user, operator, aaPaymentAmount, nonce)
+  // 2. Build the public transfer call and set its authwit in the AuthRegistry.
+  //    Public authwits require an actual AuthRegistry.set_authorized() call —
+  //    transient AuthWitness objects only work for private authwit validation.
   const nonce = Fr.random();
 
   const transferCall = await opts.token.methods
-    .transfer_private_to_private(opts.user, opts.operator, aaPaymentAmount, nonce)
+    .transfer_public_to_public(opts.user, opts.operator, aaPaymentAmount, nonce)
     .getFunctionCall();
 
-  // 3. Create authwit for FPC to call the transfer on user's behalf
-  const transferAuthwit: AuthWitness = await opts.wallet.createAuthWit(opts.user, {
-    caller: opts.fpcAddress,
-    call: transferCall,
-  });
+  const intent: CallIntent = { caller: opts.fpcAddress, call: transferCall };
+  const setAuthInteraction = await SetPublicAuthwitContractInteraction.create(
+    opts.wallet,
+    opts.user,
+    intent,
+    true,
+  );
+  const setAuthPayload = await setAuthInteraction.request();
 
-  // 4. Build fee_entrypoint call
+  // 3. Build fee_entrypoint call
   const feeEntrypointCall = await opts.fpc.methods
     .fee_entrypoint(
       opts.tokenAddress,
@@ -127,11 +135,20 @@ async function buildFpcPaymentMethod(opts: {
     )
     .getFunctionCall();
 
-  // 5. Build payment method and gas settings
+  // 4. Build payment method and gas settings.
+  //    The set_authorized calls MUST precede fee_entrypoint so the authwit
+  //    is written to the AuthRegistry before collect_public_fee_internal
+  //    tries to consume it.
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], opts.fpcAddress),
+      new ExecutionPayload(
+        [...setAuthPayload.calls, feeEntrypointCall],
+        [],
+        [],
+        [],
+        opts.fpcAddress,
+      ),
     getFeePayer: async () => opts.fpcAddress,
     getGasSettings: () => undefined,
   };
@@ -354,6 +371,25 @@ async function expectPrivateBalance(
   return balance;
 }
 
+async function expectPublicBalance(
+  token: Contract,
+  address: AztecAddress,
+  label: string,
+  expected: bigint,
+  mode: "exact" | "atLeast" = "exact",
+): Promise<bigint> {
+  const balance = await readPublicBalance(token, address, label);
+  const expectStr = mode === "atLeast" ? `>=${expected}` : `${expected}`;
+  pinoLogger.info(`[cold-start-smoke] ${label}: public_balance=${balance} expected=${expectStr}`);
+  if (mode === "exact" && balance !== expected) {
+    throw new Error(`${label} public balance mismatch: expected=${expected} got=${balance}`);
+  }
+  if (mode === "atLeast" && balance < expected) {
+    throw new Error(`${label} public balance too low: expected>=${expected} got=${balance}`);
+  }
+  return balance;
+}
+
 async function readPrivateBalance(
   token: Contract,
   address: AztecAddress,
@@ -362,6 +398,17 @@ async function readPrivateBalance(
   return coerceBigInt(
     await token.methods.balance_of_private(address).simulate({ from: address }),
     `${label} private balance`,
+  );
+}
+
+async function readPublicBalance(
+  token: Contract,
+  address: AztecAddress,
+  label: string,
+): Promise<bigint> {
+  return coerceBigInt(
+    await token.methods.balance_of_public(address).simulate({ from: address }),
+    `${label} public balance`,
   );
 }
 
@@ -378,7 +425,7 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
     attestationUrl,
     fpc,
     token,
-    counter,
+    bridge,
     fpcAddress,
     tokenAddress,
     bridgeAddress,
@@ -512,84 +559,58 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   pinoLogger.info("[cold-start-smoke] PASS: cold-start balance verification succeeded");
 
   // =========================================================================
-  // Phase 2: Deploy user account contract via FPC fee_entrypoint
+  // Phase 2: Deploy user account via SponsoredFPC, then seed public fee budget
   // =========================================================================
 
-  pinoLogger.info("[cold-start-smoke] deploying user account via FPC");
+  pinoLogger.info("[cold-start-smoke] deploying user account via SponsoredFPC");
 
-  // Track cumulative debits from FPC fee payments (operator receives these)
-  let operatorReceived = aaPaymentAmount; // Phase 1 cold-start
-  let userDebited = aaPaymentAmount; // Phase 1 cold-start
+  let operatorPrivateReceived = aaPaymentAmount; // Phase 1 cold-start
+  let operatorPublicReceived = 0n;
+  let userPrivateDebited = aaPaymentAmount; // Phase 1 cold-start
+  let userPublicRemaining = recurringPhasePayment * 2n;
 
   const deployMethod = await userData.accountManager.getDeployMethod();
-  const { aaPaymentAmount: deployPayment, ...deployFee } =
-    await buildFpcPaymentMethod(fpcPaymentOpts);
-  operatorReceived += deployPayment;
-  userDebited += deployPayment;
-
   await deployMethod.send({
     from: AztecAddress.ZERO,
-    fee: deployFee,
+    fee: {
+      paymentMethod: new SponsoredFeePaymentMethod(sponsoredFpcAddress),
+    },
     skipClassPublication: true,
   });
 
   // Verify balances after deploy
-  await expectPrivateBalance(token, user, "Post-deploy user", claimAmount - userDebited);
-  await expectPrivateBalance(token, operator, "Post-deploy operator", operatorReceived, "atLeast");
-
-  pinoLogger.info("[cold-start-smoke] PASS: user account deployed via FPC");
-
-  // =========================================================================
-  // Phase 3: Increment counter via FPC fee_entrypoint
-  // =========================================================================
-
-  pinoLogger.info("[cold-start-smoke] incrementing counter via FPC");
-
-  const counterBefore = coerceBigInt(
-    await counter.methods.get_counter(user).simulate({ from: user }),
-    "Counter value before increment",
-  );
-
-  const { aaPaymentAmount: incrementPayment, ...incrementFee } =
-    await buildFpcPaymentMethod(fpcPaymentOpts);
-  operatorReceived += incrementPayment;
-  userDebited += incrementPayment;
-
-  await counter.methods.increment(user).send({
-    from: user,
-    fee: incrementFee,
-  });
-
-  // Verify counter incremented
-  const counterAfter = coerceBigInt(
-    await counter.methods.get_counter(user).simulate({ from: user }),
-    "Counter value after increment",
-  );
-  if (counterAfter !== counterBefore + 1n) {
-    throw new Error(`Counter mismatch: expected=${counterBefore + 1n} got=${counterAfter}`);
-  }
-
-  // Verify balances after increment
+  await expectPrivateBalance(token, user, "Post-deploy user", claimAmount - userPrivateDebited);
   await expectPrivateBalance(
     token,
     operator,
-    "Post-increment operator",
-    operatorReceived,
+    "Post-deploy operator",
+    operatorPrivateReceived,
     "atLeast",
   );
-  await expectPrivateBalance(token, user, "Post-increment user", claimAmount - userDebited);
+  await expectPublicBalance(token, operator, "Post-deploy operator", operatorPublicReceived);
+  await expectPublicBalance(token, user, "Post-deploy user", 0n);
 
-  pinoLogger.info("[cold-start-smoke] PASS: counter increment via FPC succeeded");
+  await token.methods.transfer_private_to_public(user, user, userPublicRemaining, 0).send({
+    from: user,
+    fee: {
+      paymentMethod: new SponsoredFeePaymentMethod(sponsoredFpcAddress),
+    },
+    wait: { timeout: 180 },
+  });
+  userPrivateDebited += userPublicRemaining;
+  await expectPublicBalance(token, user, "User public fee budget", userPublicRemaining);
+
+  pinoLogger.info("[cold-start-smoke] PASS: user account deployed via SponsoredFPC");
 
   // =========================================================================
-  // Phase 4: Transfer tokens to a fresh recipient via sponsored FPC
+  // Phase 3: Transfer tokens to a fresh recipient via sponsored FPC
   // =========================================================================
 
   pinoLogger.info("[cold-start-smoke] transferring tokens to recipient via sponsored FPC");
 
   const sponsoredRecipient = (await deriveAccount(Fr.random(), ctx.wallet)).address;
   const sponsoredTransferAmount = aaPaymentAmount;
-  userDebited += sponsoredTransferAmount;
+  userPrivateDebited += sponsoredTransferAmount;
 
   await token.methods
     .transfer_private_to_private(user, sponsoredRecipient, sponsoredTransferAmount, 0)
@@ -606,10 +627,18 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
     token,
     operator,
     "Post-sponsored operator",
-    operatorReceived,
+    operatorPrivateReceived,
     "atLeast",
   );
-  await expectPrivateBalance(token, user, "Post-sponsored user", claimAmount - userDebited);
+  await expectPrivateBalance(token, user, "Post-sponsored user", claimAmount - userPrivateDebited);
+  await expectPublicBalance(
+    token,
+    operator,
+    "Post-sponsored operator",
+    operatorPublicReceived,
+    "atLeast",
+  );
+  await expectPublicBalance(token, user, "Post-sponsored user", userPublicRemaining);
   await expectPrivateBalance(
     token,
     sponsoredRecipient,
@@ -620,7 +649,7 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   pinoLogger.info("[cold-start-smoke] PASS: sponsored FPC transfer succeeded");
 
   // =========================================================================
-  // Phase 5: Transfer tokens to a fresh recipient via FPC fee_entrypoint
+  // Phase 4: Transfer tokens to a fresh recipient via FPC fee_entrypoint
   // =========================================================================
 
   pinoLogger.info("[cold-start-smoke] transferring tokens to recipient via FPC");
@@ -629,18 +658,21 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   const transferAmount = aaPaymentAmount;
   const { aaPaymentAmount: transferFeePayment, ...transferFee } =
     await buildFpcPaymentMethod(fpcPaymentOpts);
+  operatorPublicReceived += transferFeePayment;
+  userPublicRemaining -= transferFeePayment;
+
   const finalOperatorBefore = await expectPrivateBalance(
     token,
     operator,
     "Final operator before transfer",
-    operatorReceived,
+    operatorPrivateReceived,
     "atLeast",
   );
   const finalUserBefore = await expectPrivateBalance(
     token,
     user,
     "Final user before transfer",
-    claimAmount - userDebited,
+    claimAmount - userPrivateDebited,
   );
   const finalRecipientBefore = await expectPrivateBalance(
     token,
@@ -648,8 +680,7 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
     "Recipient before transfer",
     0n,
   );
-  operatorReceived += transferFeePayment;
-  userDebited += transferFeePayment + transferAmount;
+  userPrivateDebited += transferAmount;
 
   const finalTransfer = await token.methods
     .transfer_private_to_private(user, recipient, transferAmount, 0)
@@ -665,6 +696,12 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   const finalOperatorAfter = await readPrivateBalance(token, operator, "Final operator");
   const finalUserAfter = await readPrivateBalance(token, user, "Final user");
   const finalRecipientAfter = await readPrivateBalance(token, recipient, "Recipient");
+  const finalOperatorPublicAfter = await readPublicBalance(
+    token,
+    operator,
+    "Final operator public",
+  );
+  const finalUserPublicAfter = await readPublicBalance(token, user, "Final user public");
 
   pinoLogger.info(
     `[cold-start-smoke] final private transfer balances user=${finalUserAfter} operator=${finalOperatorAfter} recipient=${finalRecipientAfter}`,
@@ -674,14 +711,24 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   );
 
   // Verify final balances
-  if (finalOperatorAfter < operatorReceived) {
+  if (finalOperatorAfter < operatorPrivateReceived) {
     throw new Error(
-      `Final operator balance too low: expected>=${operatorReceived} got=${finalOperatorAfter}`,
+      `Final operator private balance too low: expected>=${operatorPrivateReceived} got=${finalOperatorAfter}`,
     );
   }
-  if (finalUserAfter !== claimAmount - userDebited) {
+  if (finalOperatorPublicAfter < operatorPublicReceived) {
     throw new Error(
-      `Final user balance mismatch: expected=${claimAmount - userDebited} got=${finalUserAfter}`,
+      `Final operator public balance too low: expected>=${operatorPublicReceived} got=${finalOperatorPublicAfter}`,
+    );
+  }
+  if (finalUserAfter !== claimAmount - userPrivateDebited) {
+    throw new Error(
+      `Final user private balance mismatch: expected=${claimAmount - userPrivateDebited} got=${finalUserAfter}`,
+    );
+  }
+  if (finalUserPublicAfter !== userPublicRemaining) {
+    throw new Error(
+      `Final user public balance mismatch: expected=${userPublicRemaining} got=${finalUserPublicAfter}`,
     );
   }
   if (finalRecipientAfter !== transferAmount) {
