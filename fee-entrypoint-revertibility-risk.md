@@ -37,26 +37,54 @@ the tx root (`assert(self.context.maybe_msg_sender().is_none())`). There, no
 external app calls exist, so nothing can cause an app-phase revert that the FPC
 did not author itself.
 
+## Aztec Transaction Phases
+
+Reference: https://docs.aztec.network/developers/docs/foundational-topics/advanced/circuits/public_execution
+
+| Phase | Revertible? | Runs when app reverts? |
+|---|---|---|
+| Setup | No | N/A |
+| App Logic | Yes | N/A |
+| Teardown | **Yes** | **Yes** |
+
+Key properties:
+
+- **Setup** is non-revertible. `set_as_fee_payer()` and quote validation happen
+  here and are permanent once the tx is mined.
+- **App Logic** is revertible. If it fails, all app-phase side effects (including
+  our fee token transfer after the fix) are rolled back.
+- **Teardown** is revertible but runs independently of app logic. If the app
+  phase reverts, teardown still executes. If teardown itself fails, only
+  teardown's side effects are rolled back (the tx is still mined with setup
+  effects).
+
+This means teardown is **not** non-revertible -- if the teardown function itself
+fails, its effects are rolled back. However, an attacker cannot cause teardown
+to revert by reverting the app phase. Teardown reverts only if its own execution
+fails.
+
 ## Mitigation Options
 
-| # | Approach | Feasibility | Work | Production Readiness | Notes |
-|---|---|---|---|---|---|
-| **1** | Move transfer back to setup + wait for PXE fix | Low | Low code, unknown wait | Blocked | Reintroduces the cross-phase note discovery bug. Depends on Aztec core team timeline -- could be weeks or months. |
-| **2** | Teardown phase for fee collection | Medium | Medium | Good if available | Needs investigation -- does the Aztec protocol support teardown gas limits and non-revertible teardown execution in the current version? `GasSettings` has `teardownGasLimits` (set to 0 in our code), suggesting the mechanism exists. Best long-term answer if it works. |
-| **3** | Rate limiting + accept risk | High | Minimal | Acceptable for devnet/testnet, risky for mainnet | Already partially in place (attestation server rate limits). Grief cost to attacker is zero per tx, so rate limiting only slows them down. FPC operator absorbs the loss. Fine for now, not a mainnet answer. |
-| **4** | Public transfer for the fee | High | Medium | Good | Fee payment goes through public state (no cross-phase note issue). The fee amount becomes publicly visible, which is a privacy regression -- observers can see what the FPC charges. But the user's app call stays private. |
+Production deadline: 8 days (2026-03-20).
 
-## Recommended Path
+| # | Approach | Delivery Risk | Security Risk | Technical Risk | Privacy Risk | Notes |
+|---|---|---|---|---|---|---|
+| **3** | Rate limit + accept | **None** -- already shipped | **High** -- zero-cost griefing drains FPC FeeJuice. Rate limiting slows but does not stop a determined attacker. Operator eats the loss. | **None** -- no code changes | **None** | Ship on time, eat the security risk. Add operator-side monitoring (alert on FeeJuice drain without corresponding fee token income). |
+| **4** | Public fee transfer | **Low** -- straightforward, ~2-3 days impl + test | **Low** -- public state not rolled back by app-phase revert | **Low** -- well-understood pattern, standard Aztec FPC examples use public transfers | **Medium** -- fee amount and operator address visible on-chain. User's app call stays private. | Solid production answer, trades some privacy for security. |
+| **2** | Teardown phase | **Medium-High** -- unknown if private execution works in teardown. If it doesn't, discovered late, scramble to pivot. Need teardown function, `teardownGasLimits` wiring, full E2E test. Tight for 8 days. | **Low** -- attacker cannot control teardown execution. Residual risk only if teardown itself fails (FPC bug or insufficient balance). | **High** -- uncharted territory for this codebase. No existing teardown usage. Private-in-teardown may not be supported. | **None** -- stays fully private | Best outcome if it works, but high chance of discovering blockers mid-sprint. |
+| **1** | Revert fix + wait for PXE | **Blocked** -- reintroduces Phase 5 note discovery bug | N/A | N/A | N/A | Not an option for 8 days. |
 
-1. **Option 3 now** -- current state, just correct the contract comment and docs
-   to be honest about the risk.
-2. **Option 2 next** -- investigate teardown phase feasibility on aztec
-   4.1.0-rc.2; if it works, it is the clean solution (non-revertible fee
-   collection without cross-phase notes).
-3. **Option 4 as fallback** -- if teardown does not work, public fee transfer is
-   the pragmatic production answer at the cost of fee amount privacy.
-4. **Option 1 last resort** -- only if Aztec ships a PXE fix for cross-phase
-   note discovery soon.
+## Recommended Path (8-day deadline)
+
+1. **Ship option 3 now** -- current state. Correct the contract comment and docs
+   to be honest about the griefing risk. Add operator-side FeeJuice drain
+   monitoring.
+2. **Spike option 2 immediately (days 1-2)** -- investigate whether private
+   execution works in teardown on aztec 4.1.0-rc.2. If yes, implement and ship
+   before deadline. If no, pivot to option 4 by day 3.
+3. **Option 4 is the safety net (days 3-8)** -- if option 2 hits a wall, switch
+   to public fee transfer. Deliverable in the remaining 5 days.
+4. **Option 1 is not viable** for this deadline.
 
 ## Files Referenced
 
