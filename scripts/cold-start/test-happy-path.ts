@@ -10,6 +10,10 @@
 
 import { inspect } from "node:util";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import {
+  type CallIntent,
+  SetPublicAuthwitContractInteraction,
+} from "@aztec/aztec.js/authorization";
 import type { Contract } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
@@ -18,10 +22,6 @@ import type { AztecNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { DefaultEntrypoint } from "@aztec/entrypoints/default";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import {
-  type CallIntent,
-  SetPublicAuthwitContractInteraction,
-} from "@aztec/aztec.js/authorization";
 import { Gas, GasFees, GasSettings } from "@aztec/stdlib/gas";
 import { ExecutionPayload, type TxHash, type TxReceipt } from "@aztec/stdlib/tx";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
@@ -425,7 +425,6 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
     attestationUrl,
     fpc,
     token,
-    bridge,
     fpcAddress,
     tokenAddress,
     bridgeAddress,
@@ -564,7 +563,7 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
 
   pinoLogger.info("[cold-start-smoke] deploying user account via SponsoredFPC");
 
-  let operatorPrivateReceived = aaPaymentAmount; // Phase 1 cold-start
+  const operatorPrivateReceived = aaPaymentAmount; // Phase 1 cold-start
   let operatorPublicReceived = 0n;
   let userPrivateDebited = aaPaymentAmount; // Phase 1 cold-start
   let userPublicRemaining = recurringPhasePayment * 2n;
