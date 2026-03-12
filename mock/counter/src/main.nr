@@ -1,3 +1,5 @@
+mod test;
+
 use aztec::macros::aztec;
 
 /// Mock counter contract based on the Aztec counter tutorial.
@@ -29,6 +31,16 @@ pub contract Counter {
     fn increment(owner: AztecAddress) {
         debug_log_format("Incrementing counter for owner {0}", [owner.to_field()]);
         self.storage.counters.at(owner).add(1).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
+    }
+
+    #[external("private")]
+    fn always_revert() {
+        self.enqueue_self._always_revert_public();
+    }
+
+    #[external("public")]
+    fn _always_revert_public() {
+        assert(self.context.this_address().is_zero(), "This function always reverts");
     }
 
     #[external("utility")]
