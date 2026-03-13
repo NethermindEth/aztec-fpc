@@ -1,22 +1,21 @@
 # FPC Benchmarking
 
-This directory benchmarks the FPC (Fee Payment Contract) implementation via
-[aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark):
+This directory benchmarks the FPC (Fee Payment Contract) implementation:
 
 | Contract | Entry point(s) | Benchmark file |
 |---|---|---|
 | `FPC` (standard authwit-based) | `fee_entrypoint` | `benchmarks/fpc.benchmark.ts` |
 
-`run.sh` invokes `aztec-benchmark` which discovers all `[benchmark]` entries in
+`run.sh` invokes `runner.mjs` which discovers all `[benchmark]` entries in
 `Nargo.toml`, runs each one sequentially, and produces structured JSON reports
 in `profiling/benchmarks/` plus human-readable console summaries.
 
 ## Prerequisites
 
-- **Aztec CLI (profiling pin)** — `4.0.0-devnet.2-patch.1`
+- **Aztec CLI** — version from `.aztecrc` (currently `4.1.0-nightly.20260312.2`)
 
 ```bash
-VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.1)
+VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$VERSION)
 ```
 
 - **Node.js >=20** (usually bundled with the Aztec toolchain)
@@ -39,8 +38,8 @@ VERSION=4.0.0-devnet.2-patch.1 bash -i <(curl -sL https://install.aztec.network/
 
 | Script | When | What |
 |---|---|---|
-| `setup.sh` | Once | Installs `@aztec/*` npm packages + `aztec-benchmark` + `viem` (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
-| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), runs `aztec-benchmark` to deploy + profile the FPC benchmark in `Nargo.toml` (JSON + console output) |
+| `setup.sh` | Once | Installs `@aztec/*` npm packages + `viem` (version from `.aztecrc`), starts `aztec start --local-network` in the background, waits for it to be ready |
+| `run.sh` | Every iteration | Compiles contracts (`aztec compile`), runs `runner.mjs` to deploy + profile the FPC benchmark in `Nargo.toml` (JSON + console output) |
 | `teardown.sh` | When done | Stops the network (if started by `setup.sh`), removes temp files |
 
 ### Environment variables
@@ -76,7 +75,7 @@ Internal calls traced: `FPC:fee_entrypoint`, `Token:transfer_private_to_private`
 
 ### Output
 
-`run.sh` invokes [aztec-benchmark](https://github.com/defi-wonderland/aztec-benchmark)
+`run.sh` invokes `runner.mjs`
 which deploys Token + FPC + Noop, bridges Fee Juice from L1, and profiles a
 minimal Noop app transaction with the FPC as fee payment. The Noop boundary
 lets the teardown step extract FPC-specific gate counts (from
@@ -133,7 +132,7 @@ Gas:           DA 786,432 | L2 2,000,000
 | `results[].gas` | Gas limits (DA + L2, including teardown) |
 | `gasSummary` | Total gas (DA + L2) keyed by entry point name |
 | `provingTimeSummary` | SDK proving time keyed by entry point name |
-| `systemInfo` | Hardware info (CPU, cores, RAM, arch) recorded by aztec-benchmark |
+| `systemInfo` | Hardware info (CPU, cores, RAM, arch) recorded by the runner |
 
 > **Note on metrics:** Gate counts and gas are deterministic and
 > hardware-independent — they are the primary metrics for comparing FPC
@@ -146,7 +145,7 @@ Gas:           DA 786,432 | L2 2,000,000
 ```bash
 # From the profiling/ directory (after setup.sh):
 AZTEC_NODE_URL=http://127.0.0.1:8080 L1_RPC_URL=http://127.0.0.1:8545 \
-  npx aztec-benchmark \
+  NODE_PATH=node_modules node runner.mjs \
     --config ../Nargo.toml \
     --output-dir ./benchmarks
 ```
@@ -164,7 +163,7 @@ The workflows reuse the same Aztec setup pattern as the smoke tests (read
 `.aztecrc`, cache toolchain, install via `aztec-up use`). The benchmark runs
 on a fresh `aztec start --local-network` instance within each job.
 
-The comparison uses `@defi-wonderland/aztec-benchmark`'s `runComparison()`
+The comparison uses the vendored `comparison.cjs` module's `runComparison()`
 with a 2.5% threshold — changes below this are not flagged. Gate counts and
 gas are hardware-independent, so comparisons are valid across runs. Timing
 metrics (witgen, proving) may vary between runs on the same hardware.
@@ -174,12 +173,6 @@ To switch to Wonderland's default runner for hardware parity, change
 (requires GitHub Teams/Enterprise or larger runners enabled).
 
 ---
-
-## Version Pinning
-
-`profiling/package.json` and `profiling/setup.sh` are intentionally pinned to
-`4.0.0-devnet.2-patch.1` (independent from repo `.aztecrc`) for compatibility
-with the published `@defi-wonderland/aztec-benchmark` package.
 
 ## Gotchas
 
