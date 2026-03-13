@@ -15,14 +15,13 @@ export type FpcClientConfig = {
   operator: AztecAddress;
   node: AztecNode;
   attestationBaseUrl: string;
-  daGasLimit: number;
-  l2GasLimit: number;
 };
 
 export type CreatePaymentMethodInput = {
   wallet: AccountWallet;
   user: AztecAddress;
   tokenAddress: AztecAddress;
+  estimatedGas?: Pick<GasSettings, "gasLimits" | "teardownGasLimits">;
 };
 
 export type QuoteResponse = {
@@ -77,6 +76,8 @@ async function attachContract(
   return Contract.at(address, artifact, wallet);
 }
 
+const GAS_BUFFER = new Gas(5_000, 10_000);
+
 export class FpcClient {
   private readonly config: FpcClientConfig;
 
@@ -85,8 +86,14 @@ export class FpcClient {
   }
 
   async createPaymentMethod(input: CreatePaymentMethodInput): Promise<FpcPaymentMethodResult> {
-    const { fpcAddress, operator, node, attestationBaseUrl, daGasLimit, l2GasLimit } = this.config;
-    const { wallet, user, tokenAddress } = input;
+    const { fpcAddress, operator, node, attestationBaseUrl } = this.config;
+    const { wallet, user, tokenAddress, estimatedGas } = input;
+
+    if (!estimatedGas) {
+      throw new Error("estimatedGas is required — simulate with fee: { estimateGas: true }");
+    }
+    const { gasLimits: rawGasLimits, teardownGasLimits } = estimatedGas;
+    const gasLimits = rawGasLimits.add(GAS_BUFFER);
 
     // 1. Attach contracts
     const [fpc, token] = await Promise.all([
@@ -96,8 +103,9 @@ export class FpcClient {
 
     // 2. Query gas fees from node and compute fjAmount
     const gasFees = await node.getCurrentMinFees();
-    const fjAmount =
-      BigInt(daGasLimit) * gasFees.feePerDaGas + BigInt(l2GasLimit) * gasFees.feePerL2Gas;
+    const totalDaGas = BigInt(gasLimits.daGas);
+    const totalL2Gas = BigInt(gasLimits.l2Gas);
+    const fjAmount = totalDaGas * gasFees.feePerDaGas + totalL2Gas * gasFees.feePerL2Gas;
 
     // 3. Fetch quote
     const quote = await fetchQuote(attestationBaseUrl, user, tokenAddress, fjAmount);
@@ -123,12 +131,7 @@ export class FpcClient {
       .getFunctionCall();
 
     // 7. Assemble payment method with embedded gas settings
-    const gasSettings = new GasSettings(
-      new Gas(daGasLimit, l2GasLimit),
-      new Gas(0, 0),
-      gasFees,
-      GasFees.empty(),
-    );
+    const gasSettings = new GasSettings(gasLimits, teardownGasLimits, gasFees, GasFees.empty());
 
     const paymentMethod: FeePaymentMethod = {
       getAsset: async () => ProtocolContractAddress.FeeJuice,

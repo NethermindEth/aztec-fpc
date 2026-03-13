@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile contracts and benchmark the FPC contract via aztec-benchmark.
+# Compile contracts and benchmark the FPC contract.
 #
 # Benchmarks:
 #   fpc — FPC.fee_entrypoint
@@ -29,6 +29,9 @@ if [[ ! -d "$SCRIPT_DIR/node_modules/@aztec" ]]; then
   exit 1
 fi
 
+NODE_PATH="$SCRIPT_DIR/node_modules"
+export NODE_PATH
+
 node_is_up() {
   local code
   code=$(curl -s --max-time 3 --connect-timeout 2 -o /dev/null -w "%{http_code}" "$NODE_URL" 2>/dev/null)
@@ -56,7 +59,7 @@ echo "[profile] Compiling contracts..."
 echo ""
 echo "[profile] Running benchmark: fpc ..."
 AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
-  npx --prefix "$SCRIPT_DIR" aztec-benchmark \
+  node "$SCRIPT_DIR/runner.mjs" \
     --config "$REPO_ROOT/Nargo.toml" \
     --output-dir "$SCRIPT_DIR/benchmarks" \
     --contracts fpc

@@ -1,6 +1,14 @@
-import pino from "pino";
+import pino from 'pino';
 
-const pinoLogger = pino();
+const pinoLogger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: false,
+      ignore: 'pid,hostname,time,level',
+    },
+  },
+});
 /**
  * FPC benchmark using @defi-wonderland/aztec-benchmark.
  *
@@ -370,7 +378,7 @@ export default class FPCBenchmark {
     pinoLogger.info('=== FPC Benchmark Setup ===\n');
 
     const node = createAztecNodeClient(NODE_URL);
-    pinoLogger.info('Connected to node at', NODE_URL);
+    pinoLogger.info(`Connected to node at ${NODE_URL}`);
 
     pinoLogger.info('Connected to node, will compute VALID_UNTIL after setup deploys.');
 
@@ -396,8 +404,8 @@ export default class FPCBenchmark {
       operatorData.secret,
       operatorData.salt,
     );
-    pinoLogger.info('user:    ', userAddress.toString());
-    pinoLogger.info('operator:', operatorAddress.toString());
+    pinoLogger.info(`user:     ${userAddress.toString()}`);
+    pinoLogger.info(`operator: ${operatorAddress.toString()}`);
 
     const schnorr = new Schnorr();
     const operatorSigningKey = deriveSigningKey(operatorData.secret);
@@ -417,7 +425,7 @@ export default class FPCBenchmark {
     );
 
     pinoLogger.info('\nDeploying Token...');
-    const tokenDeploy = await Contract.deploy(wallet, tokenArtifact, [
+    const { contract: tokenDeploy } = await Contract.deploy(wallet, tokenArtifact, [
       'TestToken',
       'TST',
       18,
@@ -425,23 +433,23 @@ export default class FPCBenchmark {
       AztecAddress.ZERO,
     ], 'constructor_with_minter').send({ from: userAddress });
     const tokenAddress = tokenDeploy.address;
-    pinoLogger.info('Token:', tokenAddress.toString());
+    pinoLogger.info(`Token: ${tokenAddress.toString()}`);
 
     pinoLogger.info('Deploying FPC...');
     const constructorArgs = hasAcceptedAssetInConstructor
       ? [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress]
       : [operatorAddress, operatorPubKey.x, operatorPubKey.y];
-    const fpcDeploy = await Contract.deploy(wallet, fpcArtifact, [
+    const { contract: fpcDeploy } = await Contract.deploy(wallet, fpcArtifact, [
       ...constructorArgs,
     ]).send({ from: userAddress });
     const fpcAddress = fpcDeploy.address;
-    pinoLogger.info('FPC:  ', fpcAddress.toString());
+    pinoLogger.info(`FPC:   ${fpcAddress.toString()}`);
 
     pinoLogger.info('Deploying Noop...');
-    const noopDeploy = await Contract.deploy(wallet, noopArtifact, []).send({
+    const { contract: noopDeploy } = await Contract.deploy(wallet, noopArtifact, []).send({
       from: userAddress,
     });
-    pinoLogger.info('Noop: ', noopDeploy.address.toString());
+    pinoLogger.info(`Noop:  ${noopDeploy.address.toString()}`);
 
     const tokenAsUser = Contract.at(tokenAddress, tokenArtifact, wallet);
     const noopAsUser = Contract.at(noopDeploy.address, noopArtifact, wallet);
@@ -601,7 +609,7 @@ export default class FPCBenchmark {
       .sort((a: string, b: string) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 
     if (!jsonPath) {
-      pinoLogger.warn('No fpc*.benchmark.json found in', __dirname);
+      pinoLogger.warn(`No fpc*.benchmark.json found in ${__dirname}`);
       return;
     }
     try {
@@ -678,7 +686,7 @@ export default class FPCBenchmark {
 
       writeFileSync(jsonPath, JSON.stringify(report, null, 2));
     } catch (e: any) {
-      pinoLogger.warn('Could not post-process benchmark JSON:', e.message);
+      pinoLogger.warn(`Could not post-process benchmark JSON: ${e.message}`);
     }
 
     rmSync(PXE_DATA_DIR, { recursive: true, force: true });
@@ -695,44 +703,35 @@ export default class FPCBenchmark {
     // FPC-only gate counts.
     if (r.fpcGateCounts?.length) {
       pinoLogger.info('\nFPC-Only Gate Counts:');
-      pinoLogger.info(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      pinoLogger.info(`${pad('Function', 50)} ${pad('Own gates', 14)} ${pad('Witgen (ms)', 14)} Subtotal`);
       pinoLogger.info(LINE);
       let sub = 0;
       for (const gc of r.fpcGateCounts) {
         sub += gc.gateCount ?? 0;
         pinoLogger.info(
-          pad(gc.circuitName, 50),
-          pad(numFmt(gc.gateCount ?? 0), 14),
-          pad(msFmt(gc.witgenMs), 14),
-          numFmt(sub),
+          `${pad(gc.circuitName, 50)} ${pad(numFmt(gc.gateCount ?? 0), 14)} ${pad(msFmt(gc.witgenMs), 14)} ${numFmt(sub)}`,
         );
       }
       pinoLogger.info(LINE);
       pinoLogger.info(
-        pad('FPC TOTAL', 50),
-        pad(numFmt(r.fpcTotalGateCount), 14),
-        pad(msFmt(r.fpcTotalWitgenMs), 14),
-        '',
+        `${pad('FPC TOTAL', 50)} ${pad(numFmt(r.fpcTotalGateCount), 14)} ${pad(msFmt(r.fpcTotalWitgenMs), 14)}`,
       );
     }
 
     // Full transaction trace.
     if (r.fullTrace?.length) {
       pinoLogger.info('\nFull Transaction Trace:');
-      pinoLogger.info(pad('Function', 50), pad('Own gates', 14), pad('Witgen (ms)', 14), 'Subtotal');
+      pinoLogger.info(`${pad('Function', 50)} ${pad('Own gates', 14)} ${pad('Witgen (ms)', 14)} Subtotal`);
       pinoLogger.info(LINE);
       let sub = 0;
       for (const gc of r.fullTrace) {
         sub += gc.gateCount ?? 0;
         pinoLogger.info(
-          pad(gc.circuitName, 50),
-          pad(numFmt(gc.gateCount ?? 0), 14),
-          pad(msFmt(gc.witgenMs), 14),
-          numFmt(sub),
+          `${pad(gc.circuitName, 50)} ${pad(numFmt(gc.gateCount ?? 0), 14)} ${pad(msFmt(gc.witgenMs), 14)} ${numFmt(sub)}`,
         );
       }
       pinoLogger.info(LINE);
-      pinoLogger.info(pad('TX TOTAL', 50), pad(numFmt(r.totalGateCount), 14), pad('', 14), '');
+      pinoLogger.info(`${pad('TX TOTAL', 50)} ${pad(numFmt(r.totalGateCount), 14)}`);
     }
 
     // Proving time + gas summary.

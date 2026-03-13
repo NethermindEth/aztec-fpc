@@ -116,7 +116,7 @@ export type SponsoredCallInteraction<TReceipt> = {
     };
     from: AztecAddress;
     wait: { timeout: number };
-  }): Promise<TReceipt>;
+  }): Promise<{ receipt: TReceipt }>;
 };
 
 export type SponsoredPostCheckContext<TReceipt> = {

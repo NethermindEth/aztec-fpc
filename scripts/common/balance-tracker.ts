@@ -15,11 +15,10 @@ export class PrivateBalanceTracker {
 
   async change(delta: bigint): Promise<void> {
     this.expected += delta;
-    const actual = BigInt(
-      (
-        await this.token.methods.balance_of_private(this.address).simulate({ from: this.address })
-      ).toString(),
-    );
+    const { result } = await this.token.methods
+      .balance_of_private(this.address)
+      .simulate({ from: this.address });
+    const actual = BigInt(result.toString());
     const expectStr = this.mode === "atLeast" ? `>=${this.expected}` : `${this.expected}`;
     pinoLogger.info(`${this.label}: private_balance=${actual} expected=${expectStr}`);
     if (this.mode === "exact" && actual !== this.expected) {

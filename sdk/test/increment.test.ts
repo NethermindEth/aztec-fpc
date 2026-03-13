@@ -58,12 +58,14 @@ function buildContext(input: {
   const counterContract = {
     methods: {
       get_counter: () => ({
-        simulate: async () => counterValues.shift() ?? input.counterAfter,
+        simulate: async () => ({ result: counterValues.shift() ?? input.counterAfter }),
       }),
       increment: () => ({
         send: async () => ({
-          transactionFee: 123n,
-          txHash: { toString: () => "0xabc" },
+          receipt: {
+            transactionFee: 123n,
+            txHash: { toString: () => "0xabc" },
+          },
         }),
       }),
     },
@@ -73,7 +75,7 @@ function buildContext(input: {
     acceptedAsset: {
       methods: {
         balance_of_private: () => ({
-          simulate: async () => privateValues.shift() ?? 90n,
+          simulate: async () => ({ result: privateValues.shift() ?? 90n }),
         }),
       },
     },
@@ -104,7 +106,7 @@ function buildContext(input: {
     token: {
       methods: {
         balance_of_private: () => ({
-          simulate: async () => privateValues.shift() ?? 90n,
+          simulate: async () => ({ result: privateValues.shift() ?? 90n }),
         }),
       },
     },

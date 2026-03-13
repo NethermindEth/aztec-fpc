@@ -29,9 +29,8 @@ describe("confirm", () => {
         initialPollMs: 1,
         maxPollMs: 5,
         messageContext: {
-          node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+          node: {} as Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">,
           messageHash: MESSAGE_HASH,
-          forPublicConsumption: false,
         },
       },
       {
@@ -70,9 +69,8 @@ describe("confirm", () => {
         initialPollMs: 1,
         maxPollMs: 5,
         messageContext: {
-          node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+          node: {} as Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">,
           messageHash: MESSAGE_HASH,
-          forPublicConsumption: false,
         },
       },
       {
@@ -104,9 +102,8 @@ describe("confirm", () => {
         initialPollMs: 1,
         maxPollMs: 5,
         messageContext: {
-          node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+          node: {} as Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">,
           messageHash: MESSAGE_HASH,
-          forPublicConsumption: false,
         },
       },
       {
@@ -139,9 +136,8 @@ describe("confirm", () => {
           initialPollMs: 1,
           maxPollMs: 5,
           messageContext: {
-            node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+            node: {} as Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">,
             messageHash: MESSAGE_HASH,
-            forPublicConsumption: false,
           },
         },
         {
@@ -170,9 +166,8 @@ describe("confirm", () => {
         initialPollMs: 1,
         maxPollMs: 5,
         messageContext: {
-          node: {} as Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">,
+          node: {} as Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">,
           messageHash: MESSAGE_HASH,
-          forPublicConsumption: false,
         },
         onMessageReady: () => {
           actionRuns += 1;

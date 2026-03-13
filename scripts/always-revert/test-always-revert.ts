@@ -16,6 +16,7 @@ import { BatchCall } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { TxExecutionResult } from "@aztec/aztec.js/tx";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { Gas } from "@aztec/stdlib/gas";
 import pino from "pino";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
@@ -51,7 +52,7 @@ export async function testAlwaysRevert(ctx: TestContext): Promise<void> {
   pinoLogger.info(`${LOG_PREFIX} user=${user.toString()}`);
 
   // Query faucet config to get drip amount
-  const faucetConfig = await faucet.methods.get_config().simulate({ from: user });
+  const { result: faucetConfig } = await faucet.methods.get_config().simulate({ from: user });
   const dripAmount = BigInt(faucetConfig.drip_amount.toString());
   pinoLogger.info(`${LOG_PREFIX} faucet drip_amount=${dripAmount}`);
 
@@ -89,9 +90,10 @@ export async function testAlwaysRevert(ctx: TestContext): Promise<void> {
   });
 
   // Initialize balance trackers
-  const operatorStartBalance = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
-  );
+  const { result: operatorStartBalanceRaw } = await token.methods
+    .balance_of_private(operator)
+    .simulate({ from: operator });
+  const operatorStartBalance = BigInt(operatorStartBalanceRaw.toString());
 
   // Assert: drip landed in public, then shield moved it all to private
   const userBal = new PrivateBalanceTracker(token, user, "User", 0n);
@@ -116,6 +118,12 @@ export async function testAlwaysRevert(ctx: TestContext): Promise<void> {
   const fjStart = await getFeeJuiceBalance(fpcAddress, node);
   pinoLogger.info(`${LOG_PREFIX} FPC FeeJuice balance before iterations=${fjStart}`);
 
+  // Simulate increment as a gas proxy (always_revert would revert during simulation)
+  const gasSettings = {
+    gasLimits: new Gas(5_000, 1_000_000),
+    teardownGasLimits: new Gas(0, 0),
+  };
+
   for (let i = 0; i < iterations; i += 1) {
     pinoLogger.info(`${LOG_PREFIX} iteration ${i + 1}/${iterations}`);
 
@@ -127,11 +135,12 @@ export async function testAlwaysRevert(ctx: TestContext): Promise<void> {
       wallet: ctx.wallet,
       user,
       tokenAddress,
+      estimatedGas: gasSettings,
     });
     const aaPaymentAmount = BigInt(fpcResult.quote.aa_payment_amount);
 
     // Send always_revert with dontThrowOnRevert so we get the receipt back
-    const receipt = await counter.methods.always_revert().send({
+    const { receipt } = await counter.methods.always_revert().send({
       from: user,
       fee: fpcResult.fee,
       wait: { dontThrowOnRevert: true },

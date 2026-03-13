@@ -119,13 +119,12 @@ export class OperatorTreasury implements OperatorTreasuryPort {
     const balances = await Promise.all(
       uniqueAddresses.map(async (address) => {
         const token = await this.attachTokenContract(context, address);
-        const balance = BigInt(
-          (
-            await token.methods.balance_of_private(context.operatorAddress).simulate({
-              from: context.operatorAddress,
-            })
-          ).toString(),
-        );
+        const { result: balanceRaw } = await token.methods
+          .balance_of_private(context.operatorAddress)
+          .simulate({
+            from: context.operatorAddress,
+          });
+        const balance = BigInt(balanceRaw.toString());
         return {
           address,
           balance: balance.toString(),
@@ -149,13 +148,12 @@ export class OperatorTreasury implements OperatorTreasuryPort {
     }
 
     const token = await this.attachTokenContract(context, acceptedAsset);
-    const balanceBefore = BigInt(
-      (
-        await token.methods.balance_of_private(context.operatorAddress).simulate({
-          from: context.operatorAddress,
-        })
-      ).toString(),
-    );
+    const { result: balanceBeforeRaw } = await token.methods
+      .balance_of_private(context.operatorAddress)
+      .simulate({
+        from: context.operatorAddress,
+      });
+    const balanceBefore = BigInt(balanceBeforeRaw.toString());
     const amount = args.amount ?? balanceBefore;
     if (amount <= 0n) {
       throw new Error("sweep amount must be greater than zero");
@@ -166,20 +164,19 @@ export class OperatorTreasury implements OperatorTreasuryPort {
       );
     }
 
-    const receipt = await token.methods
+    const { receipt } = await token.methods
       .transfer_private_to_private(context.operatorAddress, destination, amount, Fr.random())
       .send({
         from: context.operatorAddress,
         wait: { timeout: 180 },
       });
 
-    const balanceAfter = BigInt(
-      (
-        await token.methods.balance_of_private(context.operatorAddress).simulate({
-          from: context.operatorAddress,
-        })
-      ).toString(),
-    );
+    const { result: balanceAfterRaw } = await token.methods
+      .balance_of_private(context.operatorAddress)
+      .simulate({
+        from: context.operatorAddress,
+      });
+    const balanceAfter = BigInt(balanceAfterRaw.toString());
 
     return {
       acceptedAsset,

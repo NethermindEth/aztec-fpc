@@ -133,7 +133,7 @@ function getConfig(): LocalConfig {
     marketRateDen: readEnvInt("FPC_CHAOS_LOCAL_MARKET_RATE_DEN", 1000),
     feeBips: readEnvInt("FPC_CHAOS_LOCAL_FEE_BIPS", 200),
     quoteValiditySeconds: readEnvInt("FPC_CHAOS_LOCAL_QUOTE_VALIDITY_SECONDS", 3600),
-    daGasLimit: readEnvInt("FPC_CHAOS_LOCAL_DA_GAS_LIMIT", 1_000_000),
+    daGasLimit: readEnvInt("FPC_CHAOS_LOCAL_DA_GAS_LIMIT", 200_000),
     l2GasLimit: readEnvInt("FPC_CHAOS_LOCAL_L2_GAS_LIMIT", 1_000_000),
     topupCheckIntervalMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CHECK_INTERVAL_MS", 3_000),
     topupConfirmTimeoutMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_TIMEOUT_MS", 180_000),
@@ -299,7 +299,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   const operatorPubKey = await schnorr.computePublicKey(signingKey);
 
   pinoLogger.info("[chaos-local] Deploying Token contract...");
-  const token = await Contract.deploy(
+  const { contract: token } = await Contract.deploy(
     wallet,
     tokenArtifact,
     ["ChaosToken", "CTK", 18, operator, operator],
@@ -308,7 +308,7 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   pinoLogger.info(`[chaos-local] Token deployed at ${token.address.toString()}`);
 
   pinoLogger.info("[chaos-local] Deploying FPC contract...");
-  const fpc = await Contract.deploy(wallet, fpcArtifact, [
+  const { contract: fpc } = await Contract.deploy(wallet, fpcArtifact, [
     operator,
     operatorPubKey.x,
     operatorPubKey.y,

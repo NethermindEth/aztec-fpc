@@ -16,10 +16,10 @@ export type BalanceBootstrapInput = {
   token: {
     methods: {
       balance_of_private: (user: unknown) => {
-        simulate: (args: { from: unknown }) => Promise<{ toString(): string } | bigint>;
+        simulate: (args: { from: unknown }) => Promise<{ result: { toString(): string } | bigint }>;
       };
       balance_of_public: (user: unknown) => {
-        simulate: (args: { from: unknown }) => Promise<{ toString(): string } | bigint>;
+        simulate: (args: { from: unknown }) => Promise<{ result: { toString(): string } | bigint }>;
       };
       transfer_public_to_private: (
         from: unknown,
@@ -41,7 +41,8 @@ function toBigInt(value: { toString(): string } | bigint): bigint {
 
 export async function ensurePrivateBalance(input: BalanceBootstrapInput): Promise<bigint> {
   let userPrivateBalance = toBigInt(
-    await input.token.methods.balance_of_private(input.user).simulate({ from: input.from }),
+    (await input.token.methods.balance_of_private(input.user).simulate({ from: input.from }))
+      .result,
   );
 
   for (let attempt = 1; userPrivateBalance < input.minimumPrivateAcceptedAsset; attempt += 1) {
@@ -57,7 +58,8 @@ export async function ensurePrivateBalance(input: BalanceBootstrapInput): Promis
     }
 
     let userPublicBalance = toBigInt(
-      await input.token.methods.balance_of_public(input.user).simulate({ from: input.from }),
+      (await input.token.methods.balance_of_public(input.user).simulate({ from: input.from }))
+        .result,
     );
 
     if (userPublicBalance === 0n) {
@@ -67,7 +69,8 @@ export async function ensurePrivateBalance(input: BalanceBootstrapInput): Promis
       });
 
       userPublicBalance = toBigInt(
-        await input.token.methods.balance_of_public(input.user).simulate({ from: input.from }),
+        (await input.token.methods.balance_of_public(input.user).simulate({ from: input.from }))
+          .result,
       );
     }
 
@@ -88,7 +91,8 @@ export async function ensurePrivateBalance(input: BalanceBootstrapInput): Promis
       });
 
     userPrivateBalance = toBigInt(
-      await input.token.methods.balance_of_private(input.user).simulate({ from: input.from }),
+      (await input.token.methods.balance_of_private(input.user).simulate({ from: input.from }))
+        .result,
     );
   }
 

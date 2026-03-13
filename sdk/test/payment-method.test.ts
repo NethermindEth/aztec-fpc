@@ -48,10 +48,14 @@ const FPC_ADDRESS = AztecAddress.fromString(
 const FEE_PER_DA_GAS = 2n;
 const FEE_PER_L2_GAS = 3n;
 const MOCK_GAS_FEES = new GasFees(FEE_PER_DA_GAS, FEE_PER_L2_GAS);
-const DA_GAS_LIMIT = 1_000_000;
+const DA_GAS_LIMIT = 200_000;
 const L2_GAS_LIMIT = 1_000_000;
+const DA_GAS_BUFFER = 5_000;
+const L2_GAS_BUFFER = 10_000;
+const EFFECTIVE_DA_GAS_LIMIT = DA_GAS_LIMIT + DA_GAS_BUFFER;
+const EFFECTIVE_L2_GAS_LIMIT = L2_GAS_LIMIT + L2_GAS_BUFFER;
 const EXPECTED_FJ_AMOUNT =
-  BigInt(DA_GAS_LIMIT) * FEE_PER_DA_GAS + BigInt(L2_GAS_LIMIT) * FEE_PER_L2_GAS;
+  BigInt(EFFECTIVE_DA_GAS_LIMIT) * FEE_PER_DA_GAS + BigInt(EFFECTIVE_L2_GAS_LIMIT) * FEE_PER_L2_GAS;
 
 const QUOTE_RESPONSE = {
   accepted_asset: TOKEN_ADDRESS.toString(),
@@ -89,10 +93,15 @@ function createClient(nodeOverride?: ReturnType<typeof createMockNode>) {
     operator: OPERATOR,
     node: (nodeOverride ?? createMockNode()) as never,
     attestationBaseUrl: "https://example.com/v2",
-    daGasLimit: DA_GAS_LIMIT,
-    l2GasLimit: L2_GAS_LIMIT,
   });
 }
+
+const DEFAULT_GAS_INPUT = {
+  estimatedGas: {
+    gasLimits: new Gas(DA_GAS_LIMIT, L2_GAS_LIMIT),
+    teardownGasLimits: Gas.empty(),
+  },
+};
 
 describe("FpcClient", () => {
   let originalFetch: typeof globalThis.fetch;
@@ -115,14 +124,15 @@ describe("FpcClient", () => {
       wallet: wallet as never,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
+      ...DEFAULT_GAS_INPUT,
     });
 
     expect(await result.fee.paymentMethod.getAsset()).toBe(ProtocolContractAddress.FeeJuice);
     expect(await result.fee.paymentMethod.getFeePayer()).toBe(FPC_ADDRESS);
     expect(result.fee.paymentMethod.getGasSettings()).toEqual(
       new GasSettings(
-        new Gas(DA_GAS_LIMIT, L2_GAS_LIMIT),
-        new Gas(0, 0),
+        new Gas(EFFECTIVE_DA_GAS_LIMIT, EFFECTIVE_L2_GAS_LIMIT),
+        Gas.empty(),
         MOCK_GAS_FEES,
         GasFees.empty(),
       ),
@@ -139,6 +149,7 @@ describe("FpcClient", () => {
       wallet: wallet as never,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
+      ...DEFAULT_GAS_INPUT,
     });
 
     expect(result.quote.fj_amount).toBe(EXPECTED_FJ_AMOUNT.toString());
@@ -155,6 +166,7 @@ describe("FpcClient", () => {
       wallet: wallet as never,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
+      ...DEFAULT_GAS_INPUT,
     });
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -174,6 +186,7 @@ describe("FpcClient", () => {
       wallet: wallet as never,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
+      ...DEFAULT_GAS_INPUT,
     });
 
     expect(result.quote).toEqual(QUOTE_RESPONSE);
@@ -188,6 +201,7 @@ describe("FpcClient", () => {
       wallet: wallet as never,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
+      ...DEFAULT_GAS_INPUT,
     });
 
     expect(wallet.createAuthWit).toHaveBeenCalledTimes(1);
@@ -206,6 +220,7 @@ describe("FpcClient", () => {
       wallet: wallet as never,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
+      ...DEFAULT_GAS_INPUT,
     });
 
     expect(wallet.registerContract).toHaveBeenCalledTimes(2);
@@ -225,6 +240,7 @@ describe("FpcClient", () => {
         wallet: wallet as never,
         user: USER,
         tokenAddress: TOKEN_ADDRESS,
+        ...DEFAULT_GAS_INPUT,
       }),
     ).rejects.toThrow("Quote request failed (500)");
   });
@@ -242,6 +258,7 @@ describe("FpcClient", () => {
         wallet: wallet as never,
         user: USER,
         tokenAddress: TOKEN_ADDRESS,
+        ...DEFAULT_GAS_INPUT,
       }),
     ).rejects.toThrow("contract not found on node");
   });
