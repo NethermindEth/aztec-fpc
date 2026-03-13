@@ -17,11 +17,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NODE_URL="${AZTEC_NODE_URL:-http://127.0.0.1:8080}"
 PID_FILE="$SCRIPT_DIR/.aztec-network.pid"
 
-# ── Prerequisite checks ──────────────────────────────────────────────────────
-# Profiling is pinned to patch.1.
-PROFILING_DEFAULT_AZTEC_VERSION="4.0.0-devnet.2-patch.1"
-AZTEC_VERSION="${PROFILING_AZTEC_VERSION:-$PROFILING_DEFAULT_AZTEC_VERSION}"
-REPO_AZTEC_VERSION="$(tr -d '\n' < "$REPO_ROOT/.aztecrc")"
+# Prerequisite checks
+AZTEC_VERSION="$(tr -d '\n' < "$REPO_ROOT/.aztecrc")"
 
 check_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -34,10 +31,7 @@ check_cmd aztec "Install with: VERSION=$AZTEC_VERSION bash -i <(curl -sL https:/
 check_cmd aztec-up "Install with: VERSION=$AZTEC_VERSION bash -i <(curl -sL https://install.aztec.network/$AZTEC_VERSION)"
 check_cmd node  "Node.js >=20 is required (usually bundled with the Aztec toolchain)."
 
-echo "[setup] Profiling Aztec version: $AZTEC_VERSION"
-if [[ "$REPO_AZTEC_VERSION" != "$AZTEC_VERSION" ]]; then
-  echo "[setup] NOTE: repo .aztecrc is $REPO_AZTEC_VERSION; profiling remains pinned to $AZTEC_VERSION" >&2
-fi
+echo "[setup] Aztec version (from .aztecrc): $AZTEC_VERSION"
 
 echo "[setup] Switching aztec toolchain to $AZTEC_VERSION..."
 if ! aztec-up use "$AZTEC_VERSION" >/dev/null 2>&1; then
@@ -63,12 +57,12 @@ AZTEC_PKGS=(
   "@aztec/wallet-sdk"
 )
 
-# Non-Aztec packages needed for benchmarking (viem for L1 bridging,
-# aztec-benchmark for the structured profiler).
+# Non-Aztec packages needed for benchmarking (viem for L1 bridging, pino for logging).
 VIEM_VERSION="${PROFILING_VIEM_VERSION:-2.31.0}"
 EXTRA_PKGS=(
-  "@defi-wonderland/aztec-benchmark@${AZTEC_VERSION}"
   "viem@${VIEM_VERSION}"
+  "pino@^9.6.0"
+  "pino-pretty@^13.0.0"
 )
 
 install_deps() {
@@ -93,12 +87,7 @@ if [[ -d "$SCRIPT_DIR/node_modules/@aztec/aztec.js" ]]; then
   INSTALLED_VERSION=$(node -e "console.log(require('$SCRIPT_DIR/node_modules/@aztec/aztec.js/package.json').version)" 2>/dev/null || echo "")
 fi
 
-BENCHMARK_INSTALLED_VERSION=""
-if [[ -d "$SCRIPT_DIR/node_modules/@defi-wonderland/aztec-benchmark" ]]; then
-  BENCHMARK_INSTALLED_VERSION=$(node -e "console.log(require('$SCRIPT_DIR/node_modules/@defi-wonderland/aztec-benchmark/package.json').version)" 2>/dev/null || echo "")
-fi
-
-if [[ "$INSTALLED_VERSION" != "$AZTEC_VERSION" || "$BENCHMARK_INSTALLED_VERSION" != "$AZTEC_VERSION" ]]; then
+if [[ "$INSTALLED_VERSION" != "$AZTEC_VERSION" ]]; then
   echo "[setup] Installing Aztec SDK packages ($AZTEC_VERSION)..."
   install_deps
 else
