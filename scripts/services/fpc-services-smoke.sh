@@ -28,8 +28,8 @@ bun run --filter @aztec-fpc/attestation build
 echo "[services-smoke] Building topup service"
 bun run --filter @aztec-fpc/topup build
 
+echo "[services-smoke] Building SDK"
+bun run --filter @aztec-fpc/sdk build
+
 echo "[services-smoke] Running services end-to-end smoke"
-(
-  cd "$REPO_ROOT/scripts"
-  bun run "./services/fpc-services-smoke.ts"
-)
+bun run "$REPO_ROOT/scripts/services/fpc-services-smoke.ts"

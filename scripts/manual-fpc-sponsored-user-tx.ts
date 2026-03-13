@@ -83,7 +83,7 @@ function readConfig(): Config {
       path.join(repoRoot, "target", "mock_counter-Counter.json"),
     mockCounterAddress: process.env.MOCK_COUNTER_ADDRESS,
     ephemeralWallet,
-    daGasLimit: Number(process.env.DA_GAS_LIMIT ?? "1000000"),
+    daGasLimit: Number(process.env.DA_GAS_LIMIT ?? "200000"),
     l2GasLimit: Number(process.env.L2_GAS_LIMIT ?? "1000000"),
     feeJuiceWaitMs: Number(process.env.FEE_JUICE_WAIT_MS ?? "120000"),
     feeJuicePollMs: Number(process.env.FEE_JUICE_POLL_MS ?? "2000"),
@@ -231,9 +231,14 @@ async function main() {
     );
   } else {
     // Deploy Counter.initialize(headstart=0, owner=user) for this manual run.
-    counter = await Contract.deploy(wallet, counterArtifact, [0n, user], "initialize").send({
+    ({ contract: counter } = await Contract.deploy(
+      wallet,
+      counterArtifact,
+      [0n, user],
+      "initialize",
+    ).send({
       from: user,
-    });
+    }));
   }
   pinoLogger.info(`counter=${counter.address.toString()}`);
   if (deployCounterOnly) {
@@ -287,12 +292,14 @@ async function main() {
   });
 
   // Record balances before tx so we can prove token accounting after.
-  const userPrivateBefore = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
-  );
-  const operatorPrivateBefore = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
-  );
+  const { result: userPrivateBeforeRaw } = await token.methods
+    .balance_of_private(user)
+    .simulate({ from: user });
+  const userPrivateBefore = BigInt(userPrivateBeforeRaw.toString());
+  const { result: operatorPrivateBeforeRaw } = await token.methods
+    .balance_of_private(operator)
+    .simulate({ from: operator });
+  const operatorPrivateBefore = BigInt(operatorPrivateBeforeRaw.toString());
 
   // Step 7: build the FPC fee payload manually.
   // This is the critical piece that substitutes for a generic paymaster method.
@@ -362,10 +369,11 @@ async function main() {
 
   // Step 8: send a normal user call `y.x()` while attaching the FPC payment
   // payload. Here y = Counter and x = increment(owner).
-  const counterBefore = BigInt(
-    (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
-  );
-  const receipt = await counter.methods.increment(user).send({
+  const { result: counterBeforeRaw } = await counter.methods
+    .get_counter(user)
+    .simulate({ from: user });
+  const counterBefore = BigInt(counterBeforeRaw.toString());
+  const { receipt } = await counter.methods.increment(user).send({
     from: user,
     fee: {
       paymentMethod,
@@ -373,17 +381,20 @@ async function main() {
     },
     wait: { timeout: 180 },
   });
-  const counterAfter = BigInt(
-    (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
-  );
+  const { result: counterAfterRaw } = await counter.methods
+    .get_counter(user)
+    .simulate({ from: user });
+  const counterAfter = BigInt(counterAfterRaw.toString());
 
   // Step 9: verify accounting and print a concise summary.
-  const userPrivateAfter = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
-  );
-  const operatorPrivateAfter = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
-  );
+  const { result: userPrivateAfterRaw } = await token.methods
+    .balance_of_private(user)
+    .simulate({ from: user });
+  const userPrivateAfter = BigInt(userPrivateAfterRaw.toString());
+  const { result: operatorPrivateAfterRaw } = await token.methods
+    .balance_of_private(operator)
+    .simulate({ from: operator });
+  const operatorPrivateAfter = BigInt(operatorPrivateAfterRaw.toString());
 
   const userDebited = userPrivateBefore - userPrivateAfter;
   const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;

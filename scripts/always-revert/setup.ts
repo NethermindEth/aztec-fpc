@@ -161,8 +161,6 @@ export async function setup(args: CliArgs): Promise<TestContext> {
     operator,
     node,
     attestationBaseUrl: args.attestationUrl,
-    daGasLimit: args.daGasLimit,
-    l2GasLimit: args.l2GasLimit,
   });
 
   // 6. Wait for topup service to fund FPC with FeeJuice

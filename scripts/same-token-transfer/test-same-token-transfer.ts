@@ -37,7 +37,7 @@ export async function testSameTokenTransfer(ctx: TestContext): Promise<void> {
   pinoLogger.info(`${LOG_PREFIX} user=${user.toString()}`);
 
   // Query faucet config to get drip amount
-  const faucetConfig = await faucet.methods.get_config().simulate({ from: user });
+  const { result: faucetConfig } = await faucet.methods.get_config().simulate({ from: user });
   const dripAmount = BigInt(faucetConfig.drip_amount.toString());
   pinoLogger.info(`${LOG_PREFIX} faucet drip_amount=${dripAmount}`);
 
@@ -75,9 +75,10 @@ export async function testSameTokenTransfer(ctx: TestContext): Promise<void> {
   });
 
   // Initialize balance trackers
-  const operatorStartBalance = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
-  );
+  const { result: operatorStartBalanceRaw } = await token.methods
+    .balance_of_private(operator)
+    .simulate({ from: operator });
+  const operatorStartBalance = BigInt(operatorStartBalanceRaw.toString());
 
   // Assert: drip landed in public, then shield moved it all to private
   const userBal = new PrivateBalanceTracker(token, user, "User", 0n);
@@ -99,14 +100,20 @@ export async function testSameTokenTransfer(ctx: TestContext): Promise<void> {
     "atLeast",
   );
 
-  const counterBefore = BigInt(
-    (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
-  );
+  const { result: counterBeforeRaw } = await counter.methods
+    .get_counter(user)
+    .simulate({ from: user });
+  const counterBefore = BigInt(counterBeforeRaw.toString());
 
+  const counterSim = await counter.methods.increment(user).simulate({
+    from: user,
+    fee: { estimateGas: true },
+  });
   const counterFpc = await fpcClient.createPaymentMethod({
     wallet: ctx.wallet,
     user,
     tokenAddress,
+    estimatedGas: counterSim.estimatedGas,
   });
   const counterFeePayment = BigInt(counterFpc.quote.aa_payment_amount);
 
@@ -115,9 +122,10 @@ export async function testSameTokenTransfer(ctx: TestContext): Promise<void> {
     fee: counterFpc.fee,
   });
 
-  const counterAfter = BigInt(
-    (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
-  );
+  const { result: counterAfterRaw } = await counter.methods
+    .get_counter(user)
+    .simulate({ from: user });
+  const counterAfter = BigInt(counterAfterRaw.toString());
 
   if (counterAfter !== counterBefore + 1n) {
     throw new Error(`Counter mismatch: expected=${counterBefore + 1n} got=${counterAfter}`);
@@ -163,29 +171,35 @@ export async function testSameTokenTransfer(ctx: TestContext): Promise<void> {
   // Phase 5: Transfer tokens to a fresh recipient via FPC fee_entrypoint
   // =========================================================================
 
-  // TODO: Uncomment these lines when phase 5 test is ready.
+  pinoLogger.info(`${LOG_PREFIX} transferring tokens to recipient via FPC`);
 
-  // pinoLogger.info(`${LOG_PREFIX} transferring tokens to recipient via FPC`);
+  const recipient = (await deriveAccount(Fr.random(), ctx.wallet)).address;
+  const transferAmount = aaPaymentAmount;
 
-  // const recipient = (await deriveAccount(Fr.random(), ctx.wallet)).address;
-  // const transferAmount = aaPaymentAmount;
+  const transferSim = await token.methods
+    .transfer_private_to_private(user, recipient, transferAmount, 0)
+    .simulate({
+      from: user,
+      fee: { estimateGas: true },
+    });
+  const transferFpc = await fpcClient.createPaymentMethod({
+    wallet: ctx.wallet,
+    user,
+    tokenAddress,
+    estimatedGas: transferSim.estimatedGas,
+  });
+  const transferFeePayment = BigInt(transferFpc.quote.aa_payment_amount);
 
-  // const transferFpc = await fpcClient.createPaymentMethod({
-  //   wallet: ctx.wallet,
-  //   user,
-  // });
-  // const transferFeePayment = BigInt(transferFpc.quote.aa_payment_amount);
+  await token.methods.transfer_private_to_private(user, recipient, transferAmount, 0).send({
+    from: user,
+    fee: transferFpc.fee,
+  });
 
-  // await token.methods.transfer_private_to_private(user, recipient, transferAmount, 0).send({
-  //   from: user,
-  //   fee: { paymentMethod: transferFpc.paymentMethod },
-  // });
+  const recipientBal = new PrivateBalanceTracker(token, recipient, "Recipient", 0n);
+  await recipientBal.change(transferAmount);
+  await userBal.change(-transferAmount - transferFeePayment);
 
-  // const recipientBal = new PrivateBalanceTracker(token, recipient, "Recipient", 0n);
-  // await recipientBal.change(transferAmount);
-  // await userBal.change(-transferAmount - transferFeePayment);
+  await operatorBal.change(transferFeePayment);
 
-  // await operatorBal.change(counterFeePayment + transferFeePayment);
-
-  // pinoLogger.info(`${LOG_PREFIX} PASS: token transfer via FPC succeeded`);
+  pinoLogger.info(`${LOG_PREFIX} PASS: token transfer via FPC succeeded`);
 }

@@ -28,10 +28,10 @@ describe("bootstrap", () => {
       token: {
         methods: {
           balance_of_private: () => ({
-            simulate: async () => privateBalance,
+            simulate: async () => ({ result: privateBalance }),
           }),
           balance_of_public: () => ({
-            simulate: async () => publicBalance,
+            simulate: async () => ({ result: publicBalance }),
           }),
           transfer_public_to_private: () => ({
             send: async () => shield(),
@@ -63,8 +63,8 @@ describe("bootstrap", () => {
         minimumPrivateAcceptedAsset: 10n,
         token: {
           methods: {
-            balance_of_private: () => ({ simulate: async () => 0n }),
-            balance_of_public: () => ({ simulate: async () => 0n }),
+            balance_of_private: () => ({ simulate: async () => ({ result: 0n }) }),
+            balance_of_public: () => ({ simulate: async () => ({ result: 0n }) }),
             transfer_public_to_private: () => ({ send: async () => shield() }),
           },
         },

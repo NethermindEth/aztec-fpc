@@ -165,7 +165,7 @@ async function sendClaim(
   request: AutoClaimRequest,
   fee: ClaimFeeOptions,
 ): Promise<string> {
-  const receipt = await feeJuice.methods
+  const { receipt } = await feeJuice.methods
     .claim(
       request.recipient,
       request.amount,

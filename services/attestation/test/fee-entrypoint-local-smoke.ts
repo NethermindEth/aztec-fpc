@@ -14,6 +14,7 @@ import { FeeJuiceContract, ProtocolContractAddress } from "@aztec/aztec.js/proto
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
+import { Gas, GasFees, GasSettings } from "@aztec/stdlib/gas";
 import { computeSecretHash } from "@aztec/stdlib/hash";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
@@ -166,7 +167,7 @@ function getConfig(): SmokeConfig {
   const rateNum = readEnvBigInt("FPC_SMOKE_RATE_NUM", 10_200n);
   const rateDen = readEnvBigInt("FPC_SMOKE_RATE_DEN", 10_000_000n);
   const quoteTtlSeconds = readEnvBigInt("FPC_SMOKE_QUOTE_TTL_SECONDS", 3600n);
-  const daGasLimit = readEnvNumber("FPC_SMOKE_DA_GAS_LIMIT", 1_000_000);
+  const daGasLimit = readEnvNumber("FPC_SMOKE_DA_GAS_LIMIT", 200_000);
   const l2GasLimit = readEnvNumber("FPC_SMOKE_L2_GAS_LIMIT", 1_000_000);
   const feePerDaGasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_DA_GAS");
   const feePerL2GasOverride = readOptionalEnvBigInt("FPC_SMOKE_FEE_PER_L2_GAS");
@@ -346,7 +347,6 @@ async function claimFeeJuiceOnL2(
 ): Promise<void> {
   await waitForL1ToL2MessageReady(node, bridgeMessage.l1ToL2MessageHash, {
     timeoutSeconds: Math.floor(config.feeJuiceWaitTimeoutMs / 1000),
-    forPublicConsumption: false,
   });
 
   const feeJuice = FeeJuiceContract.at(wallet);
@@ -571,23 +571,22 @@ async function main() {
   const quoteSigBytes = Array.from(quoteSig.toBuffer());
 
   const transferAuthwitNonce = Fr.random();
-  const transferCall = token.methods.transfer_private_to_private(
-    user,
-    operator,
-    aaPaymentAmount,
-    transferAuthwitNonce,
-  );
+  const transferCall = await token.methods
+    .transfer_private_to_private(user, operator, aaPaymentAmount, transferAuthwitNonce)
+    .getFunctionCall();
   const transferAuthwit = await wallet.createAuthWit(user, {
     caller: fpc.address,
-    action: transferCall,
+    call: transferCall,
   });
 
-  const userBefore = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
-  );
-  const operatorBefore = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
-  );
+  const { result: userBeforeRaw } = await token.methods
+    .balance_of_private(user)
+    .simulate({ from: user });
+  const userBefore = BigInt(userBeforeRaw.toString());
+  const { result: operatorBeforeRaw } = await token.methods
+    .balance_of_private(operator)
+    .simulate({ from: operator });
+  const operatorBefore = BigInt(operatorBeforeRaw.toString());
 
   const feeEntrypointCall = await fpc.methods
     .fee_entrypoint(
@@ -608,25 +607,30 @@ async function main() {
   };
 
   // Execute a normal user action while paying fees through FPC.
-  const receipt = await token.methods.transfer_public_to_public(user, user, 1n, Fr.random()).send({
-    from: user,
-    fee: {
-      paymentMethod: fpcPaymentMethod,
-      gasSettings: {
-        gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-        teardownGasLimits: { daGas: 0, l2Gas: 0 },
-        maxFeesPerGas: { feePerDaGas, feePerL2Gas },
+  const { receipt } = await token.methods
+    .transfer_public_to_public(user, user, 1n, Fr.random())
+    .send({
+      from: user,
+      fee: {
+        paymentMethod: fpcPaymentMethod,
+        gasSettings: new GasSettings(
+          new Gas(config.daGasLimit, config.l2GasLimit),
+          new Gas(0, 0),
+          new GasFees(feePerDaGas, feePerL2Gas),
+          GasFees.empty(),
+        ),
       },
-    },
-    wait: { timeout: 180 },
-  });
+      wait: { timeout: 180 },
+    });
 
-  const userAfter = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
-  );
-  const operatorAfter = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
-  );
+  const { result: userAfterRaw } = await token.methods
+    .balance_of_private(user)
+    .simulate({ from: user });
+  const userAfter = BigInt(userAfterRaw.toString());
+  const { result: operatorAfterRaw } = await token.methods
+    .balance_of_private(operator)
+    .simulate({ from: operator });
+  const operatorAfter = BigInt(operatorAfterRaw.toString());
 
   const userDebited = userBefore - userAfter;
   const operatorCredited = operatorAfter - operatorBefore;
@@ -663,15 +667,12 @@ async function main() {
   );
   const negativeQuoteSigBytes = Array.from(negativeQuoteSig.toBuffer());
   const negativeTransferAuthwitNonce = Fr.random();
-  const negativeTransferCall = token.methods.transfer_private_to_private(
-    user,
-    operator,
-    aaPaymentAmount,
-    negativeTransferAuthwitNonce,
-  );
+  const negativeTransferCall = await token.methods
+    .transfer_private_to_private(user, operator, aaPaymentAmount, negativeTransferAuthwitNonce)
+    .getFunctionCall();
   const negativeTransferAuthwit = await wallet.createAuthWit(user, {
     caller: fpc.address,
-    action: negativeTransferCall,
+    call: negativeTransferCall,
   });
   const negativeFeeEntrypointCall = await fpc.methods
     .fee_entrypoint(

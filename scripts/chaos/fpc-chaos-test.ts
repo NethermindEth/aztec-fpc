@@ -42,7 +42,7 @@ const pinoLogger = pino();
  * FPC_CHAOS_RATE_LIMIT_BURST     requests per burst test (default: 70)
  * FPC_CHAOS_CONCURRENT_TXS       concurrent tx count for stress (default: 3)
  * FPC_CHAOS_HTTP_TIMEOUT_MS      HTTP timeout ms (default: 15000)
- * FPC_CHAOS_DA_GAS_LIMIT         DA gas limit (default: 1000000)
+ * FPC_CHAOS_DA_GAS_LIMIT         DA gas limit (default: 200000)
  * FPC_CHAOS_L2_GAS_LIMIT         L2 gas limit (default: 1000000)
  * FPC_CHAOS_REPORT_PATH          write JSON report to this path
  * FPC_CHAOS_FAIL_FAST            1 = stop on first failure (default: 0)
@@ -420,7 +420,7 @@ function getConfig(): ChaosConfig {
     rateLimitBurst: readEnvInt("FPC_CHAOS_RATE_LIMIT_BURST", 70),
     concurrentTxs: readEnvInt("FPC_CHAOS_CONCURRENT_TXS", 3),
     httpTimeoutMs: readEnvInt("FPC_CHAOS_HTTP_TIMEOUT_MS", 15_000),
-    daGasLimit: readEnvInt("FPC_CHAOS_DA_GAS_LIMIT", 1_000_000),
+    daGasLimit: readEnvInt("FPC_CHAOS_DA_GAS_LIMIT", 200_000),
     l2GasLimit: readEnvInt("FPC_CHAOS_L2_GAS_LIMIT", 1_000_000),
     reportPath: readEnvStr("FPC_CHAOS_REPORT_PATH"),
     failFast: readEnvBool("FPC_CHAOS_FAIL_FAST", false),

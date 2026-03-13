@@ -272,9 +272,6 @@ function createConfirmDependency(
       messageContext: {
         node: pxe,
         messageHash: bridgeResult.messageHash,
-        // Keep false here: SDK readiness with true may resolve one block
-        // earlier and trigger premature claim attempts.
-        forPublicConsumption: false,
       },
       onMessageReady: createOnMessageReadyHandler(
         autoClaimer,
