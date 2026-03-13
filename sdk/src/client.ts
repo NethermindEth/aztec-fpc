@@ -69,14 +69,14 @@ type CounterReceipt = {
 type CounterContractLike = {
   methods: {
     get_counter: (user: unknown) => {
-      simulate: (args: { from: unknown }) => Promise<{ toString(): string } | bigint>;
+      simulate: (args: { from: unknown }) => Promise<{ result: { toString(): string } | bigint }>;
     };
     increment: (user: unknown) => {
       send: (args: {
         fee: unknown;
         from: unknown;
         wait: { timeout: number };
-      }) => Promise<CounterReceipt>;
+      }) => Promise<{ receipt: CounterReceipt }>;
     };
   };
 };
@@ -135,9 +135,10 @@ function requireCounterSnapshots(state: CounterIncrementState): {
 
 async function buildCounterIncrementCall(ctx: SponsoredCallContext, state: CounterIncrementState) {
   const counter = asCounterContract(ctx.contracts.targets.counter);
-  const counterBefore = toBigInt(
-    await counter.methods.get_counter(ctx.user).simulate({ from: ctx.user }),
-  );
+  const { result: counterBeforeRaw } = await counter.methods
+    .get_counter(ctx.user)
+    .simulate({ from: ctx.user });
+  const counterBefore = toBigInt(counterBeforeRaw);
   state.counter = counter;
   state.counterBefore = counterBefore;
   return counter.methods.increment(ctx.user);
@@ -148,9 +149,10 @@ async function runCounterIncrementPostChecks(
   state: CounterIncrementState,
 ): Promise<void> {
   const { counter, counterBefore } = requireCounterPreState(state);
-  state.counterAfter = toBigInt(
-    await counter.methods.get_counter(ctx.user).simulate({ from: ctx.user }),
-  );
+  const { result: counterAfterRaw } = await counter.methods
+    .get_counter(ctx.user)
+    .simulate({ from: ctx.user });
+  state.counterAfter = toBigInt(counterAfterRaw);
   if (state.counterAfter !== counterBefore + 1n) {
     throw new SponsoredTxFailedError("Counter increment invariant failed.", {
       counterAfter: state.counterAfter.toString(),
@@ -408,11 +410,10 @@ async function bootstrapIfNeeded(input: {
 }
 
 async function readUserPrivateBalance(context: ConnectedContext): Promise<bigint> {
-  return toBigInt(
-    await context.acceptedAsset.methods
-      .balance_of_private(context.addresses.user)
-      .simulate({ from: context.addresses.user }),
-  );
+  const { result } = await context.acceptedAsset.methods
+    .balance_of_private(context.addresses.user)
+    .simulate({ from: context.addresses.user });
+  return toBigInt(result);
 }
 
 function assertInteraction<TReceipt>(interaction: unknown): asserts interaction is {
@@ -423,7 +424,7 @@ function assertInteraction<TReceipt>(interaction: unknown): asserts interaction 
     };
     from: unknown;
     wait: { timeout: number };
-  }): Promise<TReceipt>;
+  }): Promise<{ receipt: TReceipt }>;
 } {
   if (
     !interaction ||
@@ -443,7 +444,7 @@ async function sendSponsoredInteraction<TReceipt>(input: {
       };
       from: unknown;
       wait: { timeout: number };
-    }): Promise<TReceipt>;
+    }): Promise<{ receipt: TReceipt }>;
   };
   maxFeesPerGas: GasFees;
   daGasLimit: number;
@@ -456,7 +457,7 @@ async function sendSponsoredInteraction<TReceipt>(input: {
   const teardownGasLimits = new Gas(0, 0);
 
   try {
-    return await input.interaction.send({
+    const { receipt } = await input.interaction.send({
       fee: {
         gasSettings: { gasLimits, maxFeesPerGas: input.maxFeesPerGas, teardownGasLimits },
         paymentMethod: input.paymentMethod,
@@ -464,6 +465,7 @@ async function sendSponsoredInteraction<TReceipt>(input: {
       from: input.user,
       wait: { timeout: input.txWaitTimeoutSeconds },
     });
+    return receipt;
   } catch (error) {
     throw new SponsoredTxFailedError("Sponsored transaction submission failed.", {
       cause: error instanceof Error ? error.message : String(error),

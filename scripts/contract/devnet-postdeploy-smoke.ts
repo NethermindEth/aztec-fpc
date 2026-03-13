@@ -111,7 +111,7 @@ type AztecDeps = {
   waitForL1ToL2MessageReady: (
     node: NodeLike,
     messageHash: unknown,
-    opts: { timeoutSeconds: number; forPublicConsumption: boolean },
+    opts: { timeoutSeconds: number },
   ) => Promise<void>;
   AztecAddress: { fromString: (value: string) => AztecAddressLike };
   Contract: {
@@ -199,7 +199,7 @@ function usage(): string {
     "  --bridge-wait-timeout-ms 240000",
     "  --bridge-poll-ms 2000",
     "  --quote-ttl-seconds 3600",
-    "  --da-gas-limit 1000000",
+    "  --da-gas-limit 200000",
     "  --l2-gas-limit 1000000",
     "  --topup-safety-multiplier 5",
     "  --fpc-rate-num 10200",
@@ -308,7 +308,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
     "FPC_DEVNET_SMOKE_QUOTE_TTL_SECONDS",
   );
   let daGasLimit = parsePositiveInteger(
-    readEnvString("FPC_DEVNET_SMOKE_DA_GAS_LIMIT") ?? "1000000",
+    readEnvString("FPC_DEVNET_SMOKE_DA_GAS_LIMIT") ?? "200000",
     "FPC_DEVNET_SMOKE_DA_GAS_LIMIT",
   );
   let l2GasLimit = parsePositiveInteger(
@@ -858,7 +858,6 @@ async function topUpFeePayer(params: {
 
     await deps.waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
       timeoutSeconds: Math.max(1, Math.floor(args.bridgeWaitTimeoutMs / 1000)),
-      forPublicConsumption: false,
     });
 
     const feeJuice = deps.FeeJuiceContract.at(wallet);

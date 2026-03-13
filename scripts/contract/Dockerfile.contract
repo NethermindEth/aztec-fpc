@@ -1,4 +1,4 @@
-ARG AZTEC_VERSION=4.0.0-devnet.2-patch.3
+ARG AZTEC_VERSION=4.1.0-nightly.20260312.2
 
 FROM node:24-trixie-slim
 

@@ -11,9 +11,8 @@ const pinoLogger = pino();
 export type BridgeConfirmationStatus = "confirmed" | "timeout" | "aborted";
 
 export interface BridgeMessageContext {
-  node: Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">;
+  node: Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">;
   messageHash: Hex;
-  forPublicConsumption: boolean;
 }
 
 export interface BridgeConfirmationOptions {
@@ -182,7 +181,6 @@ function startMessageReadinessCheck(
   return deps
     .waitForL1ToL2MessageReady(options.messageContext.node, messageHash, {
       timeoutSeconds,
-      forPublicConsumption: options.messageContext.forPublicConsumption,
     })
     .then((ready) => {
       state.messageReady = ready;

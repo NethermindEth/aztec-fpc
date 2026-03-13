@@ -97,7 +97,7 @@ function usage(): string {
     "  --user-secret-key from L2_PRIVATE_KEY (fallback: FPC_DEVNET_USER_SECRET_KEY or USER_SECRET_KEY)",
     "  --wallet-alias from WALLET_ALIAS",
     `  --user-salt ${ZERO_SALT_HEX}`,
-    "  --da-gas-limit 1000000",
+    "  --da-gas-limit 200000",
     "  --l2-gas-limit 1000000",
     "",
     "Notes:",
@@ -248,7 +248,7 @@ function readConfig(argv: string[]): Config {
   let walletAlias = parseOptionalEnv("WALLET_ALIAS");
   let userSaltRaw = parseOptionalEnv("FPC_DEVNET_USER_SALT") ?? ZERO_SALT_HEX;
 
-  let daGasLimitRaw = parseOptionalEnv("DA_GAS_LIMIT") ?? "1000000";
+  let daGasLimitRaw = parseOptionalEnv("DA_GAS_LIMIT") ?? "200000";
   let l2GasLimitRaw = parseOptionalEnv("L2_GAS_LIMIT") ?? "1000000";
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -562,7 +562,7 @@ async function main() {
 
     const minimumPrivateAcceptedAsset = aaPaymentAmount + 1_000_000n;
     let userPrivateBalance = BigInt(
-      (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+      (await token.methods.balance_of_private(user).simulate({ from: user })).result.toString(),
     );
 
     for (let attempt = 1; userPrivateBalance < minimumPrivateAcceptedAsset; attempt += 1) {
@@ -573,7 +573,7 @@ async function main() {
       }
 
       let userPublicBalance = BigInt(
-        (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
+        (await token.methods.balance_of_public(user).simulate({ from: user })).result.toString(),
       );
 
       if (userPublicBalance === 0n) {
@@ -585,7 +585,7 @@ async function main() {
           wait: { timeout: 180 },
         });
         userPublicBalance = BigInt(
-          (await token.methods.balance_of_public(user).simulate({ from: user })).toString(),
+          (await token.methods.balance_of_public(user).simulate({ from: user })).result.toString(),
         );
       }
 
@@ -600,7 +600,7 @@ async function main() {
         .send({ from: user, wait: { timeout: 180 } });
 
       userPrivateBalance = BigInt(
-        (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+        (await token.methods.balance_of_private(user).simulate({ from: user })).result.toString(),
       );
     }
 
@@ -614,10 +614,10 @@ async function main() {
     });
 
     const counterBefore = BigInt(
-      (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
+      (await counter.methods.get_counter(user).simulate({ from: user })).result.toString(),
     );
     const userPrivateBefore = BigInt(
-      (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+      (await token.methods.balance_of_private(user).simulate({ from: user })).result.toString(),
     );
 
     const feeEntrypointCall = await fpc.methods
@@ -643,7 +643,7 @@ async function main() {
     const teardownGasLimits = new Gas(0, 0);
     const maxFeesPerGas = new GasFees(feePerDaGas, feePerL2Gas);
 
-    const receipt = await counter.methods.increment(user).send({
+    const { receipt } = await counter.methods.increment(user).send({
       from: user,
       fee: {
         paymentMethod,
@@ -653,10 +653,10 @@ async function main() {
     });
 
     const counterAfter = BigInt(
-      (await counter.methods.get_counter(user).simulate({ from: user })).toString(),
+      (await counter.methods.get_counter(user).simulate({ from: user })).result.toString(),
     );
     const userPrivateAfter = BigInt(
-      (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
+      (await token.methods.balance_of_private(user).simulate({ from: user })).result.toString(),
     );
     const userDebited = userPrivateBefore - userPrivateAfter;
 

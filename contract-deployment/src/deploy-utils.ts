@@ -49,7 +49,10 @@ export async function deployContract(
         opts.skipClassPublication = true;
       }
 
-      return await Contract.deploy(wallet, artifact, args, constructorName).send(opts);
+      const { contract } = await Contract.deploy(wallet, artifact, args, constructorName).send(
+        opts,
+      );
+      return contract;
     } catch (error) {
       if (isClassPublicationRace(error) && attempt < MAX_RETRIES) {
         pinoLogger.info(

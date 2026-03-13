@@ -210,7 +210,6 @@ async function deployWithClaim(
 ): Promise<void> {
   await waitForL1ToL2MessageReady(node, pending.messageHash, {
     timeoutSeconds: L1_TO_L2_MESSAGE_TIMEOUT_SECONDS,
-    forPublicConsumption: false,
   });
   pinoLogger.info(`L1→L2 message ready for account[${index}]`);
 

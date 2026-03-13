@@ -14,7 +14,7 @@ function buildSelfCheckFixture() {
     generated_at: "2026-03-02T00:00:00.000Z",
     network: {
       node_url: "https://v4-devnet-2.aztec-labs.com/",
-      node_version: "4.0.0-devnet.2-patch.3",
+      node_version: "4.1.0-nightly.20260312.2",
       l1_chain_id: 11155111,
       rollup_version: 615022430,
     },

@@ -8,19 +8,19 @@ const pinoLogger = pino();
 
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import { computeInnerAuthWitHash, lookupValidity } from "@aztec/aztec.js/authorization";
+import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
 import type { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
+import { Gas } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
-import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { deployContract } from "@aztec-fpc/contract-deployment/src/deploy-utils.ts";
+import { FpcClient } from "@aztec-fpc/sdk";
 import { createPublicClient, createWalletClient, type Hex, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
@@ -95,6 +95,8 @@ type ServiceFlowResult = {
   rateDen: bigint;
   validUntil: bigint;
   quoteSigBytes: number[];
+  attestationBaseUrl: string;
+  managed: ManagedProcess[];
 };
 
 function readEnvNumber(name: string, fallback: number): number {
@@ -272,7 +274,7 @@ function getConfig(): SmokeConfig {
     marketRateNum: readEnvNumber("FPC_SERVICES_SMOKE_MARKET_RATE_NUM", 1),
     marketRateDen: readEnvNumber("FPC_SERVICES_SMOKE_MARKET_RATE_DEN", 1000),
     feeBips: readEnvNumber("FPC_SERVICES_SMOKE_FEE_BIPS", 200),
-    daGasLimit: readEnvNumber("FPC_SERVICES_SMOKE_DA_GAS_LIMIT", 1_000_000),
+    daGasLimit: readEnvNumber("FPC_SERVICES_SMOKE_DA_GAS_LIMIT", 200_000),
     l2GasLimit: readEnvNumber("FPC_SERVICES_SMOKE_L2_GAS_LIMIT", 1_000_000),
     feeJuiceTopupSafetyMultiplier: readEnvBigInt("FPC_SERVICES_SMOKE_TOPUP_SAFETY_MULTIPLIER", 2n),
     topupConfirmTimeoutMs: readEnvNumber("FPC_SERVICES_SMOKE_TOPUP_CONFIRM_TIMEOUT_MS", 180_000),
@@ -878,104 +880,78 @@ async function runServiceScenario(
       rateDen: expectedRateDen,
       validUntil,
       quoteSigBytes,
+      attestationBaseUrl,
+      managed,
     };
-  } finally {
+  } catch (err) {
     for (const proc of managed.reverse()) {
       await stopManagedProcess(proc);
     }
+    throw err;
   }
 }
 
 async function runFpcFeeEntrypointScenario(
   config: SmokeConfig,
+  node: ReturnType<typeof createAztecNodeClient>,
   wallet: EmbeddedWallet,
   token: Contract,
-  fpc: Contract,
+  fpcAddress: AztecAddress,
   operator: AztecAddress,
   user: AztecAddress,
-  maxGasCostNoTeardown: bigint,
-  feePerDaGas: bigint,
-  feePerL2Gas: bigint,
-  quote: ServiceFlowResult,
+  attestationBaseUrl: string,
 ): Promise<void> {
-  const expectedCharge = quote.aaPaymentAmount;
-  const quotedFjAmount = quote.fjAmount;
-  if (quotedFjAmount !== maxGasCostNoTeardown) {
-    throw new Error(
-      `[services-smoke:fpc] quote fj amount mismatch. expected=${maxGasCostNoTeardown} got=${quotedFjAmount}`,
-    );
-  }
+  const fpcClient = new FpcClient({
+    fpcAddress,
+    operator,
+    node,
+    attestationBaseUrl,
+  });
+
+  const estimatedGas = {
+    gasLimits: new Gas(config.daGasLimit, config.l2GasLimit),
+    teardownGasLimits: new Gas(0, 0),
+  };
+
+  const { fee, quote } = await fpcClient.createPaymentMethod({
+    wallet,
+    user,
+    tokenAddress: token.address,
+    estimatedGas,
+  });
+
+  const expectedCharge = BigInt(quote.aa_payment_amount);
   const mintAmount = expectedCharge + 1_000_000n;
   pinoLogger.info(`[services-smoke:fpc] expected_charge=${expectedCharge}`);
 
   await token.methods.mint_to_private(user, mintAmount).send({ from: operator });
   await token.methods.mint_to_public(user, 2n).send({ from: operator });
 
-  const transferAuthwitNonce = Fr.random();
-  const transferCall = token.methods.transfer_private_to_private(
-    user,
-    operator,
-    quote.aaPaymentAmount,
-    transferAuthwitNonce,
-  );
-  const transferAuthwit = await wallet.createAuthWit(user, {
-    caller: fpc.address,
-    action: transferCall,
-  });
-  const transferValidity = await lookupValidity(
-    wallet,
-    user,
-    { caller: fpc.address, action: transferCall },
-    transferAuthwit,
-  );
-  pinoLogger.info(
-    `[services-smoke:fpc] transfer_authwit_valid_private=${transferValidity.isValidInPrivate} transfer_authwit_valid_public=${transferValidity.isValidInPublic}`,
-  );
+  const { result: userBeforeRaw } = await token.methods
+    .balance_of_private(user)
+    .simulate({ from: user });
+  const userBefore = BigInt(userBeforeRaw.toString());
+  const { result: operatorBeforeRaw } = await token.methods
+    .balance_of_private(operator)
+    .simulate({ from: operator });
+  const operatorBefore = BigInt(operatorBeforeRaw.toString());
 
-  const userBefore = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
-  );
-  const operatorBefore = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
-  );
+  const { receipt } = await token.methods
+    .transfer_public_to_public(user, user, 1n, Fr.random())
+    .send({
+      from: user,
+      fee,
+      wait: { timeout: 180 },
+    });
 
-  const feeEntrypointCall = await fpc.methods
-    .fee_entrypoint(
-      token.address,
-      transferAuthwitNonce,
-      quote.fjAmount,
-      quote.aaPaymentAmount,
-      quote.validUntil,
-      quote.quoteSigBytes,
-    )
-    .getFunctionCall();
-  const paymentMethod = {
-    getAsset: async () => ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], fpc.address),
-    getFeePayer: async () => fpc.address,
-    getGasSettings: () => undefined,
-  };
-
-  const receipt = await token.methods.transfer_public_to_public(user, user, 1n, Fr.random()).send({
-    from: user,
-    fee: {
-      paymentMethod,
-      gasSettings: {
-        gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-        teardownGasLimits: { daGas: 0, l2Gas: 0 },
-        maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-      },
-    },
-    wait: { timeout: 180 },
-  });
-
-  const userAfter = BigInt(
-    (await token.methods.balance_of_private(user).simulate({ from: user })).toString(),
-  );
-  const operatorAfter = BigInt(
-    (await token.methods.balance_of_private(operator).simulate({ from: operator })).toString(),
-  );
+  const { result: userAfterRaw } = await token.methods
+    .balance_of_private(user)
+    .simulate({ from: user });
+  const userAfter = BigInt(userAfterRaw.toString());
+  const { result: operatorAfterRaw } = await token.methods
+    .balance_of_private(operator)
+    .simulate({ from: operator });
+  const operatorAfter = BigInt(operatorAfterRaw.toString());
 
   const userDebited = userBefore - userAfter;
   const operatorCredited = operatorAfter - operatorBefore;
@@ -993,7 +969,7 @@ async function runFpcFeeEntrypointScenario(
   pinoLogger.info(
     `[services-smoke:fpc] tx_fee_juice=${receipt.transactionFee} user_debited=${userDebited} operator_credited=${operatorCredited}`,
   );
-  pinoLogger.info("[services-smoke:fpc] PASS: tx accepted with attestation quote + fee_entrypoint");
+  pinoLogger.info("[services-smoke:fpc] PASS: tx accepted with FpcClient payment method");
 }
 
 async function main() {
@@ -1137,7 +1113,7 @@ async function main() {
     }
     pinoLogger.info(`[services-smoke] operator_account_publicly_deployed=${operator.toString()}`);
 
-    const quote = await runServiceScenario(
+    const { attestationBaseUrl, managed: serviceProcesses } = await runServiceScenario(
       config,
       repoRoot,
       tmpDir,
@@ -1154,18 +1130,22 @@ async function main() {
       topupAmount,
       maxGasCostNoTeardown,
     );
-    await runFpcFeeEntrypointScenario(
-      config,
-      wallet,
-      token,
-      fpc,
-      operator,
-      user,
-      maxGasCostNoTeardown,
-      feePerDaGas,
-      feePerL2Gas,
-      quote,
-    );
+    try {
+      await runFpcFeeEntrypointScenario(
+        config,
+        node,
+        wallet,
+        token,
+        fpc.address,
+        operator,
+        user,
+        attestationBaseUrl,
+      );
+    } finally {
+      for (const proc of serviceProcesses.reverse()) {
+        await stopManagedProcess(proc);
+      }
+    }
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
   }

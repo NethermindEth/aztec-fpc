@@ -54,7 +54,7 @@ function buildContext() {
     acceptedAsset: {
       methods: {
         balance_of_private: () => ({
-          simulate: async () => privateValues.shift() ?? 90n,
+          simulate: async () => ({ result: privateValues.shift() ?? 90n }),
         }),
       },
     },
@@ -84,8 +84,10 @@ function buildContext() {
         methods: {
           do_work: () => ({
             send: async () => ({
-              transactionFee: 123n,
-              txHash: { toString: () => "0xabc" },
+              receipt: {
+                transactionFee: 123n,
+                txHash: { toString: () => "0xabc" },
+              },
             }),
           }),
         },
@@ -94,8 +96,10 @@ function buildContext() {
         methods: {
           increment: () => ({
             send: async () => ({
-              transactionFee: 123n,
-              txHash: { toString: () => "0xabc" },
+              receipt: {
+                transactionFee: 123n,
+                txHash: { toString: () => "0xabc" },
+              },
             }),
           }),
         },
@@ -104,7 +108,7 @@ function buildContext() {
     token: {
       methods: {
         balance_of_private: () => ({
-          simulate: async () => privateValues.shift() ?? 90n,
+          simulate: async () => ({ result: privateValues.shift() ?? 90n }),
         }),
       },
     },
@@ -136,8 +140,10 @@ describe("executeSponsoredCall", () => {
 
   it("executes arbitrary caller-built interaction with sponsorship", async () => {
     const send = vi.fn(async () => ({
-      transactionFee: 123n,
-      txHash: { toString: () => "0xabc" },
+      receipt: {
+        transactionFee: 123n,
+        txHash: { toString: () => "0xabc" },
+      },
     }));
 
     const out = await executeSponsoredCall({
@@ -202,8 +208,10 @@ describe("executeSponsoredCall", () => {
         account: USER,
         buildCall: async () => ({
           send: async () => ({
-            transactionFee: 123n,
-            txHash: { toString: () => "0xabc" },
+            receipt: {
+              transactionFee: 123n,
+              txHash: { toString: () => "0xabc" },
+            },
           }),
         }),
         postChecks: () => Promise.reject(new Error("post-check failed")),
@@ -226,8 +234,10 @@ describe("executeSponsoredCall", () => {
       account: USER,
       buildCall: async () => ({
         send: async () => ({
-          transactionFee: 123n,
-          txHash: { toString: () => "0xabc" },
+          receipt: {
+            transactionFee: 123n,
+            txHash: { toString: () => "0xabc" },
+          },
         }),
       }),
       sponsorship: {
@@ -275,8 +285,10 @@ describe("executeSponsoredCall", () => {
       account: USER,
       buildCall: async () => ({
         send: async () => ({
-          transactionFee: 123n,
-          txHash: { toString: () => "0xabc" },
+          receipt: {
+            transactionFee: 123n,
+            txHash: { toString: () => "0xabc" },
+          },
         }),
       }),
       sponsorship: {
@@ -321,8 +333,10 @@ describe("executeSponsoredEntrypoint", () => {
   it("executes target entrypoint without custom buildCall plumbing", async () => {
     const callMethod = vi.fn(() => ({
       send: async () => ({
-        transactionFee: 123n,
-        txHash: { toString: () => "0xdef" },
+        receipt: {
+          transactionFee: 123n,
+          txHash: { toString: () => "0xdef" },
+        },
       }),
     }));
 

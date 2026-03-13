@@ -15,11 +15,13 @@ import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
+import { Gas } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { deployContract } from "@aztec-fpc/contract-deployment/src/deploy-utils.ts";
+import { FpcClient } from "@aztec-fpc/sdk";
 import {
   installManagedProcessSignalHandlers,
   type ManagedProcess,
@@ -160,7 +162,7 @@ Config env vars:
 - FPC_FULL_E2E_TOPUP_POLL_MS (default: 2000)
 - FPC_FULL_E2E_ATTESTATION_PORT (default: 3300)
 - FPC_FULL_E2E_TOPUP_OPS_PORT (default: 3401)
-- FPC_FULL_E2E_DA_GAS_LIMIT (default: 1000000)
+- FPC_FULL_E2E_DA_GAS_LIMIT (default: 200000)
 - FPC_FULL_E2E_L2_GAS_LIMIT (default: 1000000)
 - FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER (default: 2)
 - FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS (default: 3600, max: 3600)
@@ -930,7 +932,7 @@ function getConfig(): FullE2EConfig {
     marketRateNum: readEnvPositiveInteger("FPC_FULL_E2E_MARKET_RATE_NUM", 1),
     marketRateDen: readEnvPositiveInteger("FPC_FULL_E2E_MARKET_RATE_DEN", 1000),
     feeBips,
-    daGasLimit: readEnvPositiveInteger("FPC_FULL_E2E_DA_GAS_LIMIT", 1_000_000),
+    daGasLimit: readEnvPositiveInteger("FPC_FULL_E2E_DA_GAS_LIMIT", 200_000),
     l2GasLimit: readEnvPositiveInteger("FPC_FULL_E2E_L2_GAS_LIMIT", 1_000_000),
     feeJuiceTopupSafetyMultiplier: readEnvBigInt("FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER", 2n),
     topupConfirmTimeoutMs,
@@ -1122,48 +1124,21 @@ async function deployContractsAndWriteRuntimeConfig(
 async function runFeePaidTargetTxAndAssert(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  attestationBaseUrl: string,
+  fpcClient: FpcClient,
   txLabel: "tx1" | "tx2",
   targetTransferAmount: bigint,
 ): Promise<bigint> {
-  const requestedFjAmount = result.maxGasCostNoTeardown;
-  const quote = await fetchQuote(
-    `${attestationBaseUrl}/quote?user=${result.user.toString()}&accepted_asset=${result.token.address.toString()}&fj_amount=${requestedFjAmount.toString()}`,
-    config.httpTimeoutMs,
-  );
-  const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace(/^0x/, ""), "hex"));
-  const fjAmount = BigInt(quote.fj_amount);
-  const aaPaymentAmount = BigInt(quote.aa_payment_amount);
-  const { rateNum, rateDen } = getFinalRate(config);
-  const validUntil = BigInt(quote.valid_until);
+  const { fee, quote } = await fpcClient.createPaymentMethod({
+    wallet: result.wallet,
+    user: result.user,
+    tokenAddress: result.token.address,
+    estimatedGas: {
+      gasLimits: new Gas(config.daGasLimit, config.l2GasLimit),
+      teardownGasLimits: new Gas(0, 0),
+    },
+  });
 
-  if (quoteSigBytes.length !== 64) {
-    throw new Error(`Quote signature length must be 64 bytes, got ${quoteSigBytes.length}`);
-  }
-  if (fjAmount <= 0n) {
-    throw new Error("Attestation quote returned non-positive fj_amount");
-  }
-  if (aaPaymentAmount <= 0n) {
-    throw new Error("Attestation quote returned non-positive aa_payment_amount");
-  }
-  if (fjAmount !== requestedFjAmount) {
-    throw new Error(
-      `Attestation quote fj_amount mismatch. expected=${requestedFjAmount} got=${fjAmount}`,
-    );
-  }
-  const expectedAaPaymentAmount = ceilDiv(fjAmount * rateNum, rateDen);
-  if (aaPaymentAmount !== expectedAaPaymentAmount) {
-    throw new Error(
-      `Attestation quote aa_payment_amount mismatch. expected=${expectedAaPaymentAmount} got=${aaPaymentAmount}`,
-    );
-  }
-  if (quote.accepted_asset.toLowerCase() !== result.token.address.toString().toLowerCase()) {
-    throw new Error(
-      `Quote accepted_asset mismatch. expected=${result.token.address.toString()} got=${quote.accepted_asset}`,
-    );
-  }
-
-  const expectedCharge = aaPaymentAmount;
+  const expectedCharge = BigInt(quote.aa_payment_amount);
   const mintAmount = expectedCharge + 1_000_000n;
   await result.token.methods
     .mint_to_private(result.user, mintAmount)
@@ -1172,100 +1147,59 @@ async function runFeePaidTargetTxAndAssert(
   const userPrivateBefore = BigInt(
     (
       await result.token.methods.balance_of_private(result.user).simulate({ from: result.user })
-    ).toString(),
+    ).result.toString(),
   );
   const operatorPrivateBefore = BigInt(
     (
       await result.token.methods
         .balance_of_private(result.operator)
         .simulate({ from: result.operator })
-    ).toString(),
+    ).result.toString(),
   );
   const userPublicBefore = BigInt(
     (
       await result.token.methods.balance_of_public(result.user).simulate({ from: result.user })
-    ).toString(),
+    ).result.toString(),
   );
   const operatorPublicBefore = BigInt(
     (
       await result.token.methods
         .balance_of_public(result.operator)
         .simulate({ from: result.operator })
-    ).toString(),
+    ).result.toString(),
   );
-
-  const transferAuthwitNonce = Fr.random();
-  const transferCall = result.token.methods.transfer_private_to_private(
-    result.user,
-    result.operator,
-    aaPaymentAmount,
-    transferAuthwitNonce,
-  );
-  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
-    caller: result.fpc.address,
-    action: transferCall,
-  });
-
-  const feeEntrypointCall = await result.fpc.methods
-    .fee_entrypoint(
-      result.token.address,
-      transferAuthwitNonce,
-      fjAmount,
-      aaPaymentAmount,
-      validUntil,
-      quoteSigBytes,
-    )
-    .getFunctionCall();
-
-  const paymentMethod = {
-    getAsset: async () => ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], result.fpc.address),
-    getFeePayer: async () => result.fpc.address,
-    getGasSettings: () => undefined,
-  };
 
   const receipt = await result.token.methods
     .transfer_public_to_public(result.user, result.operator, targetTransferAmount, Fr.random())
     .send({
       from: result.user,
-      fee: {
-        paymentMethod,
-        gasSettings: {
-          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
-          maxFeesPerGas: {
-            feePerDaGas: result.feePerDaGas,
-            feePerL2Gas: result.feePerL2Gas,
-          },
-        },
-      },
+      fee,
       wait: { timeout: 180 },
     });
 
   const userPrivateAfter = BigInt(
     (
       await result.token.methods.balance_of_private(result.user).simulate({ from: result.user })
-    ).toString(),
+    ).result.toString(),
   );
   const operatorPrivateAfter = BigInt(
     (
       await result.token.methods
         .balance_of_private(result.operator)
         .simulate({ from: result.operator })
-    ).toString(),
+    ).result.toString(),
   );
   const userPublicAfter = BigInt(
     (
       await result.token.methods.balance_of_public(result.user).simulate({ from: result.user })
-    ).toString(),
+    ).result.toString(),
   );
   const operatorPublicAfter = BigInt(
     (
       await result.token.methods
         .balance_of_public(result.operator)
         .simulate({ from: result.operator })
-    ).toString(),
+    ).result.toString(),
   );
 
   const userDebited = userPrivateBefore - userPrivateAfter;
@@ -1629,7 +1563,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     fjAmount,
     rateNum,
     rateDen,
-    quoteAnchor + 600n,
+    quoteAnchor + 3000n,
     result.user,
   );
   const quote2 = await signQuoteForUser(
@@ -1639,7 +1573,7 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
     fjAmount,
     rateNum,
     rateDen,
-    quoteAnchor + 601n,
+    quoteAnchor + 3001n,
     result.user,
   );
 
@@ -1747,6 +1681,13 @@ async function orchestrateServicesAndAssertBridgeCycles(
     await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
     pinoLogger.info("[full-lifecycle-e2e] PASS: attestation /health");
 
+    const fpcClient = new FpcClient({
+      fpcAddress: result.fpc.address,
+      operator: result.operator,
+      node,
+      attestationBaseUrl,
+    });
+
     topup = startManagedProcess(
       "full-e2e-topup",
       "bun",
@@ -1834,7 +1775,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
     const tx1ExpectedCharge = await runFeePaidTargetTxAndAssert(
       config,
       result,
-      attestationBaseUrl,
+      fpcClient,
       "tx1",
       1n,
     );
@@ -1888,7 +1829,7 @@ async function orchestrateServicesAndAssertBridgeCycles(
     const tx2ExpectedCharge = await runFeePaidTargetTxAndAssert(
       config,
       result,
-      attestationBaseUrl,
+      fpcClient,
       "tx2",
       1n,
     );

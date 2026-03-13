@@ -9,7 +9,7 @@ export type ReconciliationOutcome = "none" | "confirmed" | "timeout" | "aborted"
 export interface ReconcileBridgeStateOptions {
   stateStore: BridgeStateStore;
   balanceReader: FeeJuiceBalanceReader;
-  node: Pick<AztecNode, "getBlockNumber" | "getL1ToL2MessageBlock">;
+  node: Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">;
   fpcAddress: AztecAddress;
   timeoutMs: number;
   initialPollMs: number;
@@ -57,7 +57,6 @@ export async function reconcilePersistedBridgeState(
     messageContext: {
       node: options.node,
       messageHash: persistedBridge.messageHash,
-      forPublicConsumption: false,
     },
   });
 

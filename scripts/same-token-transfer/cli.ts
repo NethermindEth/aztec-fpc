@@ -24,8 +24,6 @@ export type CliArgs = {
   manifestPath: string;
   operatorSecretKey: string;
   aaPaymentAmount: bigint;
-  daGasLimit: number;
-  l2GasLimit: number;
   feePerDaGas: bigint | null;
   feePerL2Gas: bigint | null;
   messageTimeoutSeconds: number;
@@ -63,8 +61,6 @@ export function usage(): string {
     "  --aa-payment-amount <uint>       AA payment amount (default: 1000000000) [env: FPC_COLD_START_AA_PAYMENT_AMOUNT]",
     "",
     "Gas:",
-    "  --da-gas-limit <uint>            DA gas limit (default: 1000000) [env: FPC_SMOKE_DA_GAS_LIMIT]",
-    "  --l2-gas-limit <uint>            L2 gas limit (default: 1000000) [env: FPC_SMOKE_L2_GAS_LIMIT]",
     "  --fee-per-da-gas <uint>          Override fee per DA gas [env: FPC_SMOKE_FEE_PER_DA_GAS]",
     "  --fee-per-l2-gas <uint>          Override fee per L2 gas [env: FPC_SMOKE_FEE_PER_L2_GAS]",
     "",
@@ -122,14 +118,6 @@ function parsePositiveBigInt(value: string, fieldName: string): bigint {
   return parsed;
 }
 
-function parsePositiveInt(value: string, fieldName: string): number {
-  const big = parsePositiveBigInt(value, fieldName);
-  if (big > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new CliError(`Invalid ${fieldName}: exceeds Number.MAX_SAFE_INTEGER`);
-  }
-  return Number(big);
-}
-
 function parseNonNegativeInt(value: string, fieldName: string): number {
   const trimmed = value.trim();
   if (!DECIMAL_UINT_PATTERN.test(trimmed)) {
@@ -152,8 +140,6 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   let manifestPath: string | null = process.env.FPC_COLD_START_MANIFEST ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let aaPaymentAmount: string = process.env.FPC_COLD_START_AA_PAYMENT_AMOUNT ?? "1000000000";
-  let daGasLimit: string = process.env.FPC_SMOKE_DA_GAS_LIMIT ?? "1000000";
-  let l2GasLimit: string = process.env.FPC_SMOKE_L2_GAS_LIMIT ?? "1000000";
   let feePerDaGas: string | null = process.env.FPC_SMOKE_FEE_PER_DA_GAS ?? null;
   let feePerL2Gas: string | null = process.env.FPC_SMOKE_FEE_PER_L2_GAS ?? null;
   let messageTimeoutSeconds: string = process.env.FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS ?? "120";
@@ -179,14 +165,6 @@ export function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--aa-payment-amount":
         aaPaymentAmount = nextArg(argv, i, arg);
-        i += 1;
-        break;
-      case "--da-gas-limit":
-        daGasLimit = nextArg(argv, i, arg);
-        i += 1;
-        break;
-      case "--l2-gas-limit":
-        l2GasLimit = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--fee-per-da-gas":
@@ -228,8 +206,6 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       manifestPath: path.resolve(manifestPath),
       operatorSecretKey: parseHex32(operatorSecretKey, "--operator-secret-key"),
       aaPaymentAmount: parsePositiveBigInt(aaPaymentAmount, "--aa-payment-amount"),
-      daGasLimit: parsePositiveInt(daGasLimit, "--da-gas-limit"),
-      l2GasLimit: parsePositiveInt(l2GasLimit, "--l2-gas-limit"),
       feePerDaGas: feePerDaGas ? parsePositiveBigInt(feePerDaGas, "--fee-per-da-gas") : null,
       feePerL2Gas: feePerL2Gas ? parsePositiveBigInt(feePerL2Gas, "--fee-per-l2-gas") : null,
       messageTimeoutSeconds: parseNonNegativeInt(messageTimeoutSeconds, "--message-timeout"),

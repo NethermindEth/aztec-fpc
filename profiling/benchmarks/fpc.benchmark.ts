@@ -417,7 +417,7 @@ export default class FPCBenchmark {
     );
 
     pinoLogger.info('\nDeploying Token...');
-    const tokenDeploy = await Contract.deploy(wallet, tokenArtifact, [
+    const { contract: tokenDeploy } = await Contract.deploy(wallet, tokenArtifact, [
       'TestToken',
       'TST',
       18,
@@ -431,14 +431,14 @@ export default class FPCBenchmark {
     const constructorArgs = hasAcceptedAssetInConstructor
       ? [operatorAddress, operatorPubKey.x, operatorPubKey.y, tokenAddress]
       : [operatorAddress, operatorPubKey.x, operatorPubKey.y];
-    const fpcDeploy = await Contract.deploy(wallet, fpcArtifact, [
+    const { contract: fpcDeploy } = await Contract.deploy(wallet, fpcArtifact, [
       ...constructorArgs,
     ]).send({ from: userAddress });
     const fpcAddress = fpcDeploy.address;
     pinoLogger.info('FPC:  ', fpcAddress.toString());
 
     pinoLogger.info('Deploying Noop...');
-    const noopDeploy = await Contract.deploy(wallet, noopArtifact, []).send({
+    const { contract: noopDeploy } = await Contract.deploy(wallet, noopArtifact, []).send({
       from: userAddress,
     });
     pinoLogger.info('Noop: ', noopDeploy.address.toString());

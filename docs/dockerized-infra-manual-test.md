@@ -122,7 +122,7 @@ AZTEC_NODE_URL=http://localhost:8080 \
 QUOTE_BASE_URL=http://localhost:3000 \
 EMBEDDED_WALLET_EPHEMERAL=1 \
 MOCK_COUNTER_ADDRESS="$COUNTER_ADDRESS" \
-DA_GAS_LIMIT=1000000 \
+DA_GAS_LIMIT=200000 \
 L2_GAS_LIMIT=1000000 \
 bunx tsx ./scripts/manual-fpc-sponsored-user-tx.ts
 ```

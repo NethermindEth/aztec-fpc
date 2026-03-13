@@ -10,14 +10,14 @@
     "start": "bun run dist/index.js"
   },
   "dependencies": {
-    "@aztec/accounts": "4.0.0-devnet.2-patch.3",
-    "@aztec/aztec.js": "4.0.0-devnet.2-patch.3",
-    "@aztec/bb.js": "4.0.0-devnet.2-patch.3",
-    "@aztec/foundation": "4.0.0-devnet.2-patch.3",
-    "@aztec/noir-noirc_abi": "4.0.0-devnet.2-patch.3",
-    "@aztec/noir-acvm_js": "4.0.0-devnet.2-patch.3",
-    "@aztec/stdlib": "4.0.0-devnet.2-patch.3",
-    "@aztec/wallets": "4.0.0-devnet.2-patch.3",
+    "@aztec/accounts": "4.1.0-nightly.20260312.2",
+    "@aztec/aztec.js": "4.1.0-nightly.20260312.2",
+    "@aztec/bb.js": "4.1.0-nightly.20260312.2",
+    "@aztec/foundation": "4.1.0-nightly.20260312.2",
+    "@aztec/noir-noirc_abi": "4.1.0-nightly.20260312.2",
+    "@aztec/noir-acvm_js": "4.1.0-nightly.20260312.2",
+    "@aztec/stdlib": "4.1.0-nightly.20260312.2",
+    "@aztec/wallets": "4.1.0-nightly.20260312.2",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3"
   },
