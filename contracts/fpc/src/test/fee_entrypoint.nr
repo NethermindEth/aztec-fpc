@@ -8,7 +8,7 @@ global TRANSFER_AUTHWIT_NONCE_2: Field = 43;
 
 #[test(should_fail_with = "invalid operator")]
 unconstrained fn constructor_rejects_zero_operator() {
-    let (mut env, _, _, operator, _) = utils::setup();
+    let (mut env, _, _, _, operator, _) = utils::setup();
 
     let pk = utils::test_operator_pubkey();
     let fpc_initializer = FPCMultiAsset::interface().constructor(AztecAddress::zero(), pk.x, pk.y);
@@ -17,14 +17,14 @@ unconstrained fn constructor_rejects_zero_operator() {
 
 #[test]
 unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
-    let (mut env, fpc_address, token_address, operator, user) = utils::setup();
+    let (mut env, fpc_address, token_address, bridge_address, operator, user) = utils::setup();
     let fpc = FPCMultiAsset::at(fpc_address);
     let token = Token::at(token_address);
 
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
     let aa_payment_amount = fj_fee_amount * (5 as u128) / (4 as u128) + (1 as u128);
     let mint_amount = aa_payment_amount + (1000 as u128);
-    env.call_private(operator, token.mint_to_private(user, mint_amount));
+    env.call_private(bridge_address, token.mint_to_private(user, mint_amount));
 
     let valid_until = env.last_block_timestamp() + 3600;
     let quote_sig = utils::sign_quote(
@@ -68,7 +68,7 @@ unconstrained fn fee_entrypoint_happy_path_transfers_expected_charge() {
 
 #[test(should_fail_with = "quoted fee amount mismatch")]
 unconstrained fn fee_entrypoint_rejects_mismatched_fj_fee_amount() {
-    let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
+    let (mut env, fpc_address, token_address, _bridge_address, _operator, user) = utils::setup();
     let fpc = FPCMultiAsset::at(fpc_address);
 
     let actual_fj_fee_amount = utils::max_gas_cost_no_teardown(env);
@@ -100,14 +100,14 @@ unconstrained fn fee_entrypoint_rejects_mismatched_fj_fee_amount() {
 
 #[test(should_fail_with = "Unknown auth witness for message hash")]
 unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
-    let (mut env, fpc_address, token_address, operator, user) = utils::setup();
+    let (mut env, fpc_address, token_address, bridge_address, operator, user) = utils::setup();
     let fpc = FPCMultiAsset::at(fpc_address);
     let token = Token::at(token_address);
 
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
     let aa_payment_amount = fj_fee_amount;
     let mint_amount = aa_payment_amount * (2 as u128) + (1000 as u128);
-    env.call_private(operator, token.mint_to_private(user, mint_amount));
+    env.call_private(bridge_address, token.mint_to_private(user, mint_amount));
 
     let valid_until = env.last_block_timestamp() + 3600;
     let quote_sig = utils::sign_quote(
@@ -166,7 +166,7 @@ unconstrained fn fee_entrypoint_requires_fresh_transfer_authwit_each_call() {
 
 #[test(should_fail_with = "quote expired")]
 unconstrained fn fee_entrypoint_rejects_expired_quote() {
-    let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
+    let (mut env, fpc_address, token_address, _bridge_address, _operator, user) = utils::setup();
     let fpc = FPCMultiAsset::at(fpc_address);
 
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
@@ -202,7 +202,7 @@ unconstrained fn fee_entrypoint_rejects_expired_quote() {
 
 #[test(should_fail_with = "quote ttl too large")]
 unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
-    let (mut env, fpc_address, token_address, _operator, user) = utils::setup();
+    let (mut env, fpc_address, token_address, _bridge_address, _operator, user) = utils::setup();
     let fpc = FPCMultiAsset::at(fpc_address);
 
     let fj_fee_amount = utils::max_gas_cost_no_teardown(env);
@@ -235,7 +235,7 @@ unconstrained fn fee_entrypoint_rejects_overlong_quote_ttl() {
 
 #[test(should_fail)]
 unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
-    let (mut env, fpc_address, token_address, operator, user) = utils::setup();
+    let (mut env, fpc_address, token_address, bridge_address, operator, user) = utils::setup();
     let fpc = FPCMultiAsset::at(fpc_address);
     let token = Token::at(token_address);
     let other_user = env.create_contract_account();
@@ -245,7 +245,10 @@ unconstrained fn fee_entrypoint_rejects_quote_bound_to_another_user() {
     let authwit_nonce = 7;
     let valid_until = env.last_block_timestamp() + 3600;
 
-    env.call_private(operator, token.mint_to_private(other_user, aa_payment_amount + (100 as u128)));
+    env.call_private(
+        bridge_address,
+        token.mint_to_private(other_user, aa_payment_amount + (100 as u128)),
+    );
     let transfer_call =
         token.transfer_private_to_private(other_user, operator, aa_payment_amount, authwit_nonce);
     add_private_authwit_from_call(env, other_user, fpc_address, transfer_call);
