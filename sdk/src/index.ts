@@ -1,7 +1,7 @@
+export { FpcClient } from "./payment-method";
 export type {
   CreatePaymentMethodInput,
   FpcClientConfig,
   FpcPaymentMethodResult,
   QuoteResponse,
-} from "./payment-method";
-export { FpcClient } from "./payment-method";
+} from "./types";

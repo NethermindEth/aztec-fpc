@@ -4,10 +4,14 @@ SDK helper for constructing FPC payment methods.
 
 ## API
 
-This package currently exposes a single public API:
+This package currently exposes:
 
 - `FpcClient`
 - `FpcClient#createPaymentMethod(...)`
+- `CreatePaymentMethodInput`
+- `FpcClientConfig`
+- `FpcPaymentMethodResult`
+- `QuoteResponse`
 
 
 ## Install
@@ -44,6 +48,8 @@ npm install /absolute/path/to/aztec-fpc/sdk
 Direct GitHub installation of the repo root is not the same thing as installing the SDK package, because `@aztec-fpc/sdk` is a workspace package under `sdk/`, not the repository root package.
 
 ## Exports
+
+All public SDK types are re-exported from the package entrypoint.
 
 ```ts
 import {
@@ -118,13 +124,7 @@ The returned `fee.paymentMethod` is suitable for Aztec interaction fee options a
 type FpcPaymentMethodResult = {
   fee: InteractionFeeOptions;
   nonce: Fr;
-  quote: {
-    accepted_asset: string;
-    fj_amount: string;
-    aa_payment_amount: string;
-    valid_until: string;
-    signature: string;
-  };
+  quote: QuoteResponse;
 };
 ```
 

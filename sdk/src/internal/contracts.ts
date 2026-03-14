@@ -19,9 +19,8 @@ const DEFAULT_ARTIFACT_FILENAMES: Record<DefaultArtifactLabel, string> = {
   token: "token_contract-Token.json",
 };
 
-const defaultArtifactCache: Partial<Record<DefaultArtifactLabel, ContractArtifact>> = Object.create(
-  null,
-);
+const defaultArtifactCache: Partial<Record<DefaultArtifactLabel, ContractArtifact>> =
+  Object.create(null);
 
 function resolveArtifactSearchDirs(): string[] {
   const dirs = [
