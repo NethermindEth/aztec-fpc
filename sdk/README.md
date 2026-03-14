@@ -1,207 +1,154 @@
 # `@aztec-fpc/sdk`
 
-SDK for sponsored Aztec calls through an FPC attestation service.
+SDK helper for constructing FPC payment methods.
+
+## API
+
+This package currently exposes a single public API:
+
+- `FpcClient`
+- `FpcClient#createPaymentMethod(...)`
+
 
 ## Install
 
-```bash
-bun add @aztec-fpc/sdk
-```
+`@aztec-fpc/sdk` is not published to npm yet.
 
-## APIs
+Until the package is published, install it from a local checkout of this GitHub repo after building the SDK.
 
-- Generic API: `executeSponsoredCall(...)`
-- Convenience API: `executeSponsoredEntrypoint(...)`
-- Legacy convenience API: `createSponsoredCounterClient(...).increment()`
-- Helper utilities: `firstEnv`, `requiredEnvGroup`, `loadEnvIfPresent`, `parsePositiveInt`, `parseJsonArray`, `sameAddress`
-
-## Example Script (Devnet)
-
-Use the runnable example at `sdk/example/manual-fpc-sponsored-user-tx-devnet-attestation-v2-sdk.ts`.
-
-1. Copy env template and fill required fields:
+### Bun
 
 ```bash
-cp sdk/example/.env.example .env
+git clone https://github.com/NethermindEth/aztec-fpc.git
+cd aztec-fpc
+bun install
+cd sdk
+bun run build
+
+cd /path/to/your-app
+bun add /absolute/path/to/aztec-fpc/sdk
 ```
 
-2. Run:
+### npm / Node.js
 
 ```bash
-bunx tsx sdk/example/manual-fpc-sponsored-user-tx-devnet-attestation-v2-sdk.ts
+git clone https://github.com/NethermindEth/aztec-fpc.git
+cd aztec-fpc
+npm install
+npm run build --workspace @aztec-fpc/sdk
+
+cd /path/to/your-app
+npm install /absolute/path/to/aztec-fpc/sdk
 ```
 
-The default target address in the example is:
-`0x226762b1e122bd46054de3fd21a19f0500ebe072aeac35fe0bb82d43b85f94fd`
+Direct GitHub installation of the repo root is not the same thing as installing the SDK package, because `@aztec-fpc/sdk` is a workspace package under `sdk/`, not the repository root package.
 
-## Generic API
+## Exports
+
+```ts
+import {
+  FpcClient,
+  type CreatePaymentMethodInput,
+  type FpcClientConfig,
+  type FpcPaymentMethodResult,
+  type QuoteResponse,
+} from "@aztec-fpc/sdk";
+```
+
+## Usage
 
 ```ts
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import type { NoirCompiledContract } from "@aztec/aztec.js/abi";
+import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import type { Wallet } from "@aztec/aztec.js/wallet";
-import { executeSponsoredCall } from "@aztec-fpc/sdk";
+import { FpcClient } from "@aztec-fpc/sdk";
 
-export async function runSponsoredCall(input: {
-  account: string;
-  targetAddress: string;
-  targetArtifact: NoirCompiledContract;
-  targetMethod: string;
-  targetArgs: unknown[];
+export async function createFeeOptions(input: {
+  attestationBaseUrl: string;
+  fpcAddress: string;
+  operatorAddress: string;
+  tokenAddress: string;
+  userAddress: string;
   wallet: Wallet;
 }) {
-  const account = AztecAddress.fromString(input.account);
+  const node = createAztecNodeClient("http://127.0.0.1:8080");
 
-  const out = await executeSponsoredCall({
-    wallet: input.wallet,
-    account,
-    sponsorship: {
-      attestationBaseUrl: "https://attestation.example/v2",
-      resolveFpcFromDiscovery: true,
-      runtimeConfig: {
-        nodeUrl: "https://your-aztec-node",
-        operatorAddress:
-          "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",
-        fpc: {},
-        acceptedAsset: {},
-        targets: {
-          target: {
-            address: input.targetAddress,
-            artifact: input.targetArtifact as never,
-          },
-        },
-      },
-      tokenSelection: {
-        // optional:
-        // explicitAcceptedAsset: "0x...",
-        // selector: (assets) => assets.find((asset) => asset.name === "humanUSDC")?.address,
-      },
-    },
-    buildCall: async (ctx) => {
-      const contract = ctx.contracts.targets.target as {
-        methods: {
-          [name: string]: (...args: unknown[]) => {
-            send: (args: unknown) => Promise<unknown>;
-          };
-        };
-      };
-      const method = contract.methods[input.targetMethod];
-      if (!method) {
-        throw new Error(`Unknown target method: ${input.targetMethod}`);
-      }
-      return method(...input.targetArgs);
-    },
+  const client = new FpcClient({
+    fpcAddress: AztecAddress.fromString(input.fpcAddress),
+    operator: AztecAddress.fromString(input.operatorAddress),
+    node,
+    attestationBaseUrl: input.attestationBaseUrl,
   });
 
-  return out;
+  const simulation = await someContract.methods.someEntrypoint().simulate({
+    from: AztecAddress.fromString(input.userAddress),
+    fee: { estimateGas: true },
+  });
+
+  const result = await client.createPaymentMethod({
+    wallet: input.wallet,
+    user: AztecAddress.fromString(input.userAddress),
+    tokenAddress: AztecAddress.fromString(input.tokenAddress),
+    estimatedGas: simulation.estimatedGas,
+  });
+
+  return result.fee;
 }
 ```
 
-`executeSponsoredCall` returns:
+## What `createPaymentMethod` does
+
+`FpcClient#createPaymentMethod(...)`:
+
+1. Attaches the FPC and token contracts through the provided Aztec node and wallet.
+2. Reads current minimum gas fees from the node and computes `fj_amount`.
+3. Requests a quote from `GET {attestationBaseUrl}/quote`.
+4. Builds the token transfer auth witness for the user-to-operator accepted-asset payment.
+5. Builds the FPC `fee_entrypoint` call payload.
+6. Returns:
+   - `fee.paymentMethod`
+   - `nonce`
+   - raw `quote`
+
+The returned `fee.paymentMethod` is suitable for Aztec interaction fee options and includes gas settings derived from the node response.
+
+## Returned shape
 
 ```ts
-type SponsoredExecutionResult<TReceipt> = {
-  txHash: string;
-  txFeeJuice: bigint;
-  expectedCharge: bigint;
-  userDebited: bigint;
-  fjAmount: bigint;
-  quoteValidUntil: bigint;
-  receipt: TReceipt;
+type FpcPaymentMethodResult = {
+  fee: InteractionFeeOptions;
+  nonce: Fr;
+  quote: {
+    accepted_asset: string;
+    fj_amount: string;
+    aa_payment_amount: string;
+    valid_until: string;
+    signature: string;
+  };
 };
 ```
 
-`fpc.artifact` and `acceptedAsset.artifact` are optional. When omitted, the SDK auto-loads standard artifacts (`fpc-FPCMultiAsset.json` and `token_contract-Token.json`) from `target/` when available, with bundled SDK artifact fallback.
+## Contract artifacts
 
-## Token Discovery Behavior
+The SDK auto-loads default artifacts for:
 
-Accepted-asset discovery fallback order is:
+- `fpc-FPCMultiAsset.json`
+- `token_contract-Token.json`
 
-1. `GET /accepted-assets` (from discovery `endpoints.accepted_assets` when present)
-2. `supported_assets` from `GET /.well-known/fpc.json`
-3. legacy `GET /asset`
+Artifact lookup checks:
 
-Selection options:
+1. packaged SDK artifact directories
+2. repo `target/` locations during local development
+3. `target/` under the current working directory
 
-- explicit address: `tokenSelection.explicitAcceptedAsset`
-- strategy callback: `tokenSelection.selector`
-- default fallback: first supported asset
+## Development
 
-## FPC Address Resolution
-
-`executeSponsoredCall` resolves FPC address in this order:
-
-1. `runtimeConfig.fpc.address` when provided
-2. discovery `fpc_address` when `resolveFpcFromDiscovery: true`
-
-If both are provided and mismatched, execution fails with a typed error.
-
-## Legacy Counter API
-
-```ts
-import { createSponsoredCounterClient } from "@aztec-fpc/sdk";
-
-const client = await createSponsoredCounterClient({ wallet, account });
-const result = await client.increment();
-```
-
-`createSponsoredCounterClient` is now a wrapper over `executeSponsoredCall`, preserving:
-
-```ts
-type SponsoredIncrementResult = {
-  txHash: string;
-  txFeeJuice: bigint;
-  expectedCharge: bigint;
-  userDebited: bigint;
-  counterBefore: bigint;
-  counterAfter: bigint;
-  quoteValidUntil: bigint;
-};
-```
-
-## Migration Example
-
-Before:
-
-```ts
-const client = await createSponsoredCounterClient({ wallet, account });
-await client.increment();
-```
-
-After:
-
-```ts
-await executeSponsoredCall({
-  wallet,
-  account,
-  sponsorship: { attestationBaseUrl, runtimeConfig },
-  buildCall: async (ctx) => {
-    const target = ctx.contracts.targets.target as any;
-    return target.methods.someEntrypoint(...args);
-  },
-});
-```
-
-## Error Codes
-
-Errors are typed and include stable `code` and optional `details`.
-
-- `PUBLISHED_ACCOUNT_REQUIRED`
-- `INSUFFICIENT_FPC_FEE_JUICE`
-- `QUOTE_VALIDATION_FAILED`
-- `BALANCE_BOOTSTRAP_FAILED`
-- `SPONSORED_TX_FAILED`
-
-## Release (No Git Tags)
-
-1. Bump only `sdk` version:
+From `sdk/`:
 
 ```bash
-bun run release:sdk:version:patch
-# or: bun run release:sdk:version:minor
-# or: bun run release:sdk:version:major
+bun run typecheck
+bun run test
+bun run build
 ```
 
-2. Update `sdk/CHANGELOG.md` and commit.
-3. Push to `main`.
-4. GitHub Actions `publish-sdk.yml` publishes only when `sdk/package.json` has a version not yet on npm.
+Current test coverage is focused on [`test/payment-method.test.ts`](./test/payment-method.test.ts).
