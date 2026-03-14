@@ -29,6 +29,9 @@ aztec-fpc/
 │   ├── attestation/            ← Quote-signing REST service (TypeScript)
 │   │   └── test/               ← Contract + service smoke harnesses
 │   └── topup/                  ← L2 balance monitor + L1 bridge service (TypeScript)
+├── sdk/                        ← TypeScript SDK for constructing FPC payment methods
+│   ├── src/                    ← Public client, exported types, and artifact loading
+│   └── test/                   ← SDK unit tests
 ├── scripts/
 │   ├── chaos/                  ← FPC chaos / adversarial test suite (see scripts/chaos/README.md)
 │   ├── contract/               ← Deploy + contract smoke wrappers
