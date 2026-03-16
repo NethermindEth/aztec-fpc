@@ -146,7 +146,13 @@ export async function setup(args: CliArgs): Promise<TestContext> {
   });
 
   // 3. Setup accounts
-  const { l1PrivateKey } = await resolveScriptAccounts(args.nodeUrl, args.l1RpcUrl, wallet, 0);
+  let l1PrivateKey: Hex;
+  if (args.userL1PrivateKey) {
+    l1PrivateKey = args.userL1PrivateKey as Hex;
+    pinoLogger.info("[cold-start-smoke] using user-provided L1 private key");
+  } else {
+    ({ l1PrivateKey } = await resolveScriptAccounts(args.nodeUrl, args.l1RpcUrl, wallet, 0));
+  }
 
   const operatorSecretFr = Fr.fromHexString(args.operatorSecretKey);
   const operatorAccount = await deriveAccount(operatorSecretFr, wallet);
@@ -198,11 +204,12 @@ export async function setup(args: CliArgs): Promise<TestContext> {
     chains: Object.values(viemChains) as readonly Chain[],
     id: nodeInfo.l1ChainId,
   });
-  const l1WalletClient = createExtendedL1Client([args.l1RpcUrl], l1PrivateKey as Hex, l1Chain);
+  const l1WalletClient = createExtendedL1Client([args.l1RpcUrl], l1PrivateKey, l1Chain);
 
-  // 6. Set up L1 clients for token bridging (tests bridge their own tokens)
-  const l1MintKey = (args.l1DeployerKey ?? l1PrivateKey) as Hex;
-  const l1MintClient = createExtendedL1Client([args.l1RpcUrl], l1MintKey, l1Chain);
+  if (!args.l1DeployerKey) {
+    throw new Error("Missing --l1-deployer-key or FPC_L1_DEPLOYER_KEY");
+  }
+  const l1MintClient = createExtendedL1Client([args.l1RpcUrl], args.l1DeployerKey, l1Chain);
 
   const l1Erc20 = getContract({
     address: l1Erc20Address as Hex,

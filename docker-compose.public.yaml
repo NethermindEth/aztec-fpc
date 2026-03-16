@@ -86,6 +86,7 @@ services:
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
+      FPC_L1_USER_KEY: "${FPC_L1_USER_KEY}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:

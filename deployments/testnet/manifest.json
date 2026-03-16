@@ -1,6 +1,6 @@
 {
   "status": "deploy_ok",
-  "generated_at": "2026-03-16T12:27:50.432Z",
+  "generated_at": "2026-03-16T15:13:26.404Z",
   "network": {
     "node_url": "https://rpc.testnet.aztec-labs.com/",
     "node_version": "4.1.0-rc.2",
@@ -32,9 +32,15 @@
     }
   },
   "contracts": {
-    "accepted_asset": "0x2b4de698c2cc98e781aed32c77fb322410aa213455d4fface3e37b872697caad",
-    "fpc": "0x29740a49c59208d9d581a15d08326caf850058a48c7c6008c10c2a6226b0fac2",
-    "counter": "0x1a33393c4b31aaaea7d13deb10183fa68ad0ec839d195fcf289343e2fa9aa52f"
+    "accepted_asset": "0x1b6a3479389c0890b5b5c12fb8c2c5e415d02b7be653d37a2296c64b6f3a31bf",
+    "fpc": "0x244fd9caaea2e4ca4800e3877a3cf984b5c15dbeef0b3dd3aa25ae51a7c44f76",
+    "faucet": "0x275232f4c33e719f0fe7b9e878c1808f419cd799785fc8458f794bf57afde559",
+    "counter": "0x0e6afe2f0a9fe98eee667fd7748cdeb33352cd6abbd5b35fb191ab75b81ef29f",
+    "bridge": "0x132f9e26001f063db2c3e9f20a6672ad326e857918c43ec21b6a71bea6dc91b4"
+  },
+  "l1_contracts": {
+    "token_portal": "0x707af74916d14cc8db07576a5100613641cb9623",
+    "erc20": "0xa98dd1e6c7a78839f75ca49f95861e2061f07b26"
   },
   "fpc_artifact": {
     "name": "FPCMultiAsset",
@@ -50,6 +56,11 @@
     "fpc_deploy": null,
     "counter_deploy": null,
     "bridge_deploy": null
+  },
+  "faucet_config": {
+    "drip_amount": "1000000000000000000",
+    "cooldown_seconds": 0,
+    "initial_supply": "100000000000000000000"
   },
   "payment_mode": "fee_juice"
 }
