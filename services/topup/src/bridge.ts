@@ -9,17 +9,9 @@ const pinoLogger = pino();
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { L1FeeJuicePortalManager, type L2AmountClaim } from "@aztec/aztec.js/ethereum";
 import type { AztecNode } from "@aztec/aztec.js/node";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { createLogger, type Logger } from "@aztec/foundation/log";
-import {
-  type Chain,
-  createWalletClient,
-  defineChain,
-  fallback,
-  type Hex,
-  http,
-  publicActions,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { type Chain, extractChain, type Hex } from "viem";
 import * as viemChains from "viem/chains";
 
 export interface BridgeResult {
@@ -63,68 +55,18 @@ function isNonceConflictError(error: unknown): boolean {
 }
 
 export interface BridgeDeps {
-  createWalletClient: typeof createWalletClient;
-  defineChain: typeof defineChain;
-  http: typeof http;
-  privateKeyToAccount: typeof privateKeyToAccount;
+  createExtendedL1Client: typeof createExtendedL1Client;
   createPortalManager: CreatePortalManager;
   createLogger: () => Logger;
-  knownChains: Chain[];
+  chains: readonly Chain[];
 }
 
 const DEFAULT_BRIDGE_DEPS: BridgeDeps = {
-  createWalletClient,
-  defineChain,
-  http,
-  privateKeyToAccount,
+  createExtendedL1Client,
   createPortalManager,
   createLogger: makeBridgeLogger,
-  knownChains: Object.values(viemChains).filter(isChain),
+  chains: Object.values(viemChains),
 };
-
-function isChain(value: unknown): value is Chain {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const candidate = value as {
-    id?: unknown;
-    name?: unknown;
-    nativeCurrency?: unknown;
-    rpcUrls?: unknown;
-  };
-
-  return (
-    typeof candidate.id === "number" &&
-    typeof candidate.name === "string" &&
-    typeof candidate.nativeCurrency === "object" &&
-    typeof candidate.rpcUrls === "object"
-  );
-}
-
-function resolveL1Chain(chainId: number, rpcUrl: string, deps: BridgeDeps): Chain {
-  const known = deps.knownChains.find((chain) => chain.id === chainId);
-  if (known) {
-    return {
-      ...known,
-      rpcUrls: {
-        ...known.rpcUrls,
-        default: { http: [rpcUrl] },
-        public: { http: [rpcUrl] },
-      },
-    };
-  }
-
-  return deps.defineChain({
-    id: chainId,
-    name: `L1 Chain ${chainId}`,
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: {
-      default: { http: [rpcUrl] },
-      public: { http: [rpcUrl] },
-    },
-  });
-}
 
 /**
  * Bridge `amount` wei of Fee Juice from L1 to the FPC's L2 address.
@@ -146,20 +88,18 @@ export async function bridgeFeeJuice(
   }
 
   const deps: BridgeDeps = { ...DEFAULT_BRIDGE_DEPS, ...depsOverride };
-  const chain = resolveL1Chain(l1ChainId, l1RpcUrl, deps);
-  const account = deps.privateKeyToAccount(privateKey as Hex);
+  const chain = extractChain({ chains: deps.chains as readonly Chain[], id: l1ChainId });
   const logger = deps.createLogger();
   let lastError: unknown;
   let claim: L2AmountClaim | undefined;
 
   for (let attempt = 1; attempt <= MAX_NONCE_RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const walletClient = deps.createWalletClient({
-        account,
+      const extendedClient = deps.createExtendedL1Client(
+        [l1RpcUrl],
+        privateKey as Hex,
         chain,
-        transport: fallback([deps.http(l1RpcUrl)]),
-      });
-      const extendedClient = walletClient.extend(publicActions) as ExtendedWalletClient;
+      ) as ExtendedWalletClient;
       const portalManager = await deps.createPortalManager(node, extendedClient, logger);
       claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
       break;

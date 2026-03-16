@@ -24,8 +24,7 @@ import { deriveKeys, deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
-import type { Chain, Hex } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { type Chain, extractChain, type Hex } from "viem";
 import * as viemChains from "viem/chains";
 import { deployContract } from "./deploy-utils.js";
 import { writeDevnetDeployManifest } from "./devnet-manifest.js";
@@ -492,43 +491,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isChain(value: unknown): value is Chain {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as {
-    id?: unknown;
-    name?: unknown;
-    nativeCurrency?: unknown;
-    rpcUrls?: unknown;
-  };
-  return (
-    typeof candidate.id === "number" &&
-    typeof candidate.name === "string" &&
-    typeof candidate.nativeCurrency === "object" &&
-    typeof candidate.rpcUrls === "object"
-  );
-}
-
-function resolveL1Chain(chainId: number, l1RpcUrl: string): Chain {
-  const known = Object.values(viemChains)
-    .filter(isChain)
-    .find((chain) => chain.id === chainId);
-  if (!known) {
-    throw new CliError(
-      `Unsupported L1 chain ID ${chainId}. No matching chain found in viem/chains.`,
-    );
-  }
-  return {
-    ...known,
-    rpcUrls: {
-      ...known.rpcUrls,
-      default: { http: [l1RpcUrl] },
-      public: { http: [l1RpcUrl] },
-    },
-  };
-}
-
 function isJsonRpcFailure(payload: unknown): payload is JsonRpcFailure {
   if (!payload || typeof payload !== "object") {
     return false;
@@ -959,18 +921,17 @@ async function deployTestTokenEcosystem(opts: {
 }): Promise<TestTokenEcosystem> {
   pinoLogger.info("[deploy-fpc-devnet] deploying L1 + L2 bridge contracts");
 
-  const l1Account = privateKeyToAccount(opts.l1DeployerKey as Hex);
   const l1WalletClient = createExtendedL1Client(
     [opts.l1RpcUrl],
-    l1Account,
-    resolveL1Chain(opts.l1ChainId, opts.l1RpcUrl),
+    opts.l1DeployerKey as Hex,
+    extractChain({ chains: Object.values(viemChains) as readonly Chain[], id: opts.l1ChainId }),
   );
 
   // 1. Deploy L1 TestERC20
   const l1Erc20Hash = await l1WalletClient.deployContract({
     abi: TestERC20Abi,
     bytecode: TestERC20Bytecode as Hex,
-    args: ["TestToken", "TST", l1Account.address],
+    args: ["TestToken", "TST", l1WalletClient.account.address],
   });
   const l1Erc20Receipt = await l1WalletClient.waitForTransactionReceipt({ hash: l1Erc20Hash });
   if (!l1Erc20Receipt.contractAddress) {
@@ -1063,7 +1024,7 @@ async function deployTestTokenEcosystem(opts: {
     address: l1Erc20Address as Hex,
     abi: TestERC20Abi,
     functionName: "mint",
-    args: [l1Account.address, faucetConfig.initialSupply],
+    args: [l1WalletClient.account.address, faucetConfig.initialSupply],
   });
   await l1WalletClient.waitForTransactionReceipt({ hash: l1MintHash });
 

@@ -3,9 +3,9 @@ import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
+import type { createExtendedL1Client } from "@aztec/ethereum/client";
 import { createLogger } from "@aztec/foundation/log";
-import type { Chain, createWalletClient, defineChain, http } from "viem";
-import type { privateKeyToAccount } from "viem/accounts";
+import type { Chain } from "viem";
 import type { BridgeDeps } from "../src/bridge.js";
 import { bridgeFeeJuice } from "../src/bridge.js";
 
@@ -21,16 +21,7 @@ function makeNode(): AztecNode {
 
 function makeDeps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
   return {
-    createWalletClient: (() =>
-      ({
-        extend: () => ({}),
-      }) as never) as typeof createWalletClient,
-    defineChain: ((chain) => chain) as typeof defineChain,
-    http: ((_url) => ({}) as never) as typeof http,
-    privateKeyToAccount: (() =>
-      ({
-        address: `0x${"11".repeat(20)}`,
-      }) as never) as typeof privateKeyToAccount,
+    createExtendedL1Client: (() => ({})) as never as typeof createExtendedL1Client,
     createPortalManager: async () =>
       ({
         bridgeTokensPublic: (_to: AztecAddress, amount: bigint) =>
@@ -43,7 +34,7 @@ function makeDeps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
           }),
       }) as never,
     createLogger: () => createLogger("topup:test"),
-    knownChains: [
+    chains: [
       {
         id: 31337,
         name: "Anvil",
@@ -65,11 +56,9 @@ describe("bridge", () => {
     let capturedAmount: bigint | undefined;
 
     const deps = makeDeps({
-      createWalletClient: ((args: { chain: { id: number } }) => {
-        capturedChainId = args.chain.id;
-        return {
-          extend: () => ({}),
-        };
+      createExtendedL1Client: ((_rpcUrls: string[], _account: unknown, chain?: { id: number }) => {
+        capturedChainId = chain?.id;
+        return {};
       }) as never,
       createPortalManager: async () =>
         ({
