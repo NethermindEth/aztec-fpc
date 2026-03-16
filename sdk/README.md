@@ -8,9 +8,13 @@ This package currently exposes:
 
 - `FpcClient`
 - `FpcClient#createPaymentMethod(...)`
+- `FpcClient#executeColdStart(...)`
 - `CreatePaymentMethodInput`
+- `ExecuteColdStartInput`
 - `FpcClientConfig`
 - `FpcPaymentMethodResult`
+- `ColdStartResult`
+- `ColdStartQuoteResponse`
 - `QuoteResponse`
 
 
@@ -54,14 +58,21 @@ All public SDK types are re-exported from the package entrypoint.
 ```ts
 import {
   FpcClient,
+  type ColdStartQuoteResponse,
+  type ColdStartResult,
   type CreatePaymentMethodInput,
+  type ExecuteColdStartInput,
   type FpcClientConfig,
   type FpcPaymentMethodResult,
   type QuoteResponse,
 } from "@aztec-fpc/sdk";
 ```
 
-## Usage
+## Payment method
+
+Use `createPaymentMethod` when the user already has an L2 token balance and needs fee options for an existing transaction.
+
+### Usage
 
 ```ts
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -102,7 +113,7 @@ export async function createFeeOptions(input: {
 }
 ```
 
-## What `createPaymentMethod` does
+### What `createPaymentMethod` does
 
 `FpcClient#createPaymentMethod(...)`:
 
@@ -118,13 +129,87 @@ export async function createFeeOptions(input: {
 
 The returned `fee.paymentMethod` is suitable for Aztec interaction fee options and includes gas settings derived from the node response.
 
-## Returned shape
+### Returned shape
 
 ```ts
 type FpcPaymentMethodResult = {
   fee: InteractionFeeOptions;
   nonce: Fr;
   quote: QuoteResponse;
+};
+```
+
+## Cold start
+
+Use `executeColdStart` when a user has bridged tokens from L1 but has no existing L2 balance to pay fees. It claims the bridged tokens and pays for the transaction in a single step.
+
+### Usage
+
+```ts
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import type { Wallet } from "@aztec/aztec.js/wallet";
+import type { L2AmountClaim } from "@aztec/aztec.js/ethereum";
+import { FpcClient } from "@aztec-fpc/sdk";
+
+export async function coldStart(input: {
+  attestationBaseUrl: string;
+  fpcAddress: string;
+  operatorAddress: string;
+  tokenAddress: string;
+  bridgeAddress: string;
+  userAddress: string;
+  bridgeClaim: L2AmountClaim;
+  wallet: Wallet;
+}) {
+  const node = createAztecNodeClient("http://127.0.0.1:8080");
+
+  const client = new FpcClient({
+    fpcAddress: AztecAddress.fromString(input.fpcAddress),
+    operator: AztecAddress.fromString(input.operatorAddress),
+    node,
+    attestationBaseUrl: input.attestationBaseUrl,
+  });
+
+  const result = await client.executeColdStart({
+    wallet: input.wallet,
+    userAddress: AztecAddress.fromString(input.userAddress),
+    tokenAddress: AztecAddress.fromString(input.tokenAddress),
+    bridgeAddress: AztecAddress.fromString(input.bridgeAddress),
+    bridgeClaim: input.bridgeClaim,
+  });
+
+  return result;
+}
+```
+
+### What `executeColdStart` does
+
+`FpcClient#executeColdStart(...)`:
+
+1. Attaches the FPC contract through the provided Aztec node and wallet.
+2. Reads current minimum gas fees from the node and computes `fj_amount` using predefined cold-start gas limits.
+3. Requests a cold-start quote from `GET {attestationBaseUrl}/cold-start-quote`, providing the user's claim details.
+4. Builds the FPC `cold_start_entrypoint` call payload, which claims the bridged tokens and pays the fee in one transaction.
+5. Proves and sends the transaction, then waits for confirmation.
+6. Returns:
+   - `txHash`
+   - `txFee`
+   - `fjAmount`
+   - `aaPaymentAmount`
+   - `quoteValidUntil`
+
+The default transaction wait timeout is 180 seconds. Override it with `txWaitTimeoutMs`.
+
+### Returned shape
+
+```ts
+type ColdStartResult = {
+  txHash: string;
+  txFee: bigint;
+  fjAmount: bigint;
+  aaPaymentAmount: bigint;
+  quoteValidUntil: bigint;
 };
 ```
 
