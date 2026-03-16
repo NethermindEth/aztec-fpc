@@ -1,7 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import rateLimit from "fastify-rate-limit";
 import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
@@ -196,76 +197,6 @@ function resolveQuoteRateLimitIdentity(
   return { cacheKey: `ip:${remoteIp}`, kind: "ip" };
 }
 
-interface RateLimitState {
-  windowStart: bigint;
-  count: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  retryAfterSeconds: bigint;
-}
-
-class FixedWindowRateLimiter {
-  private readonly state = new Map<string, RateLimitState>();
-  private readonly windowSeconds: bigint;
-
-  constructor(
-    private readonly maxRequests: number,
-    windowSeconds: number,
-    private readonly maxTrackedKeys: number,
-  ) {
-    this.windowSeconds = BigInt(windowSeconds);
-  }
-
-  consume(identity: string, nowSeconds: bigint): RateLimitDecision {
-    const windowStart = nowSeconds - (nowSeconds % this.windowSeconds);
-    let bucket = this.state.get(identity);
-
-    if (!bucket || bucket.windowStart !== windowStart) {
-      if (!bucket) {
-        this.ensureCapacity(windowStart);
-      }
-      bucket = { windowStart, count: 0 };
-      this.state.set(identity, bucket);
-    }
-
-    if (bucket.count >= this.maxRequests) {
-      return {
-        allowed: false,
-        retryAfterSeconds: windowStart + this.windowSeconds - nowSeconds,
-      };
-    }
-
-    bucket.count += 1;
-    return {
-      allowed: true,
-      retryAfterSeconds: 0n,
-    };
-  }
-
-  private ensureCapacity(currentWindowStart: bigint): void {
-    if (this.state.size < this.maxTrackedKeys) {
-      return;
-    }
-
-    for (const [key, value] of this.state.entries()) {
-      if (value.windowStart < currentWindowStart) {
-        this.state.delete(key);
-      }
-    }
-
-    if (this.state.size < this.maxTrackedKeys) {
-      return;
-    }
-
-    const oldestKey = this.state.keys().next().value;
-    if (oldestKey) {
-      this.state.delete(oldestKey);
-    }
-  }
-}
-
 interface QuoteRequestQuery {
   user?: string;
   accepted_asset?: string;
@@ -313,11 +244,6 @@ interface QuotePricing {
 }
 
 type QuotePricingResult = { ok: true; value: QuotePricing } | { ok: false; message: string };
-
-interface RateLimitRejection {
-  identityKind: QuoteRateLimitIdentity["kind"];
-  retryAfterSeconds: bigint;
-}
 
 function createQuoteObserver(metrics: AttestationMetrics): (outcome: QuoteOutcome) => void {
   const startedAtNs = process.hrtime.bigint();
@@ -487,29 +413,6 @@ function computeQuotePricing(
   };
 }
 
-function consumeQuoteRateLimit(
-  rateLimiter: FixedWindowRateLimiter | undefined,
-  config: Config,
-  headers: Record<string, string | string[] | undefined>,
-  remoteIp: string,
-  nowSeconds: bigint,
-): RateLimitRejection | undefined {
-  if (!rateLimiter) {
-    return undefined;
-  }
-
-  const identity = resolveQuoteRateLimitIdentity(config, headers, remoteIp);
-  const decision = rateLimiter.consume(identity.cacheKey, nowSeconds);
-  if (decision.allowed) {
-    return undefined;
-  }
-
-  return {
-    identityKind: identity.kind,
-    retryAfterSeconds: decision.retryAfterSeconds,
-  };
-}
-
 function signQuoteForRequest(
   config: Config,
   quoteSigner: QuoteSchnorrSigner,
@@ -596,7 +499,6 @@ interface ServerContext {
   metrics: AttestationMetrics;
   nowUnixSeconds: () => Promise<bigint> | bigint;
   quoteSigner: QuoteSchnorrSigner;
-  rateLimiter?: FixedWindowRateLimiter;
   treasury?: OperatorTreasuryPort;
 }
 
@@ -752,10 +654,12 @@ function isBadSweepRequestError(message: string): boolean {
   );
 }
 
+const NO_RATE_LIMIT = { config: { rateLimit: false as const } };
+
 function registerPublicRoutes(context: ServerContext): void {
   const { app, assetPolicyStore, config, metrics } = context;
 
-  app.get("/.well-known/fpc.json", (req) => ({
+  app.get("/.well-known/fpc.json", NO_RATE_LIMIT, (req) => ({
     discovery_version: DISCOVERY_VERSION,
     attestation_api_version: ATTESTATION_API_VERSION,
     network_id: config.network_id,
@@ -773,15 +677,15 @@ function registerPublicRoutes(context: ServerContext): void {
     supported_assets: buildSupportedAssetsForDiscovery(assetPolicyStore),
   }));
 
-  app.get("/health", () => ({ status: "ok" }));
+  app.get("/health", NO_RATE_LIMIT, () => ({ status: "ok" }));
 
-  app.get("/metrics", (_req, reply) =>
+  app.get("/metrics", NO_RATE_LIMIT, (_req, reply) =>
     reply
       .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
       .send(metrics.renderPrometheus()),
   );
 
-  app.get("/asset", () => {
+  app.get("/asset", NO_RATE_LIMIT, () => {
     const primaryAsset = assetPolicyStore.getPrimaryAsset();
     return {
       name: primaryAsset.name,
@@ -789,7 +693,9 @@ function registerPublicRoutes(context: ServerContext): void {
     };
   });
 
-  app.get("/accepted-assets", () => buildSupportedAssetsForDiscovery(assetPolicyStore));
+  app.get("/accepted-assets", NO_RATE_LIMIT, () =>
+    buildSupportedAssetsForDiscovery(assetPolicyStore),
+  );
 }
 
 function registerQuoteRoute(context: ServerContext): void {
@@ -801,7 +707,6 @@ function registerQuoteRoute(context: ServerContext): void {
     metrics,
     nowUnixSeconds,
     quoteSigner,
-    rateLimiter,
     treasury,
   } = context;
   const validUntil = validUntilFactory(config);
@@ -811,29 +716,6 @@ function registerQuoteRoute(context: ServerContext): void {
   }>("/quote", async (req, reply) => {
     const observe = createQuoteObserver(metrics);
     const nowSeconds = BigInt(await nowUnixSeconds());
-
-    const rateLimitRejection = consumeQuoteRateLimit(
-      rateLimiter,
-      config,
-      req.headers,
-      req.ip,
-      nowSeconds,
-    );
-    if (rateLimitRejection) {
-      req.log.warn(
-        {
-          event: "quote_rate_limited",
-          identity_kind: rateLimitRejection.identityKind,
-          retry_after_seconds: rateLimitRejection.retryAfterSeconds,
-        },
-        "Rate limited quote request",
-      );
-      observe("rate_limited");
-      return reply
-        .header("retry-after", rateLimitRejection.retryAfterSeconds.toString())
-        .code(429)
-        .send(rateLimited());
-    }
 
     if (!isQuoteAuthorized(config, req.headers)) {
       req.log.warn(
@@ -923,7 +805,7 @@ function registerQuoteRoute(context: ServerContext): void {
 function registerAdminRoutes(context: ServerContext): void {
   const { app, assetPolicyStore, config, treasury } = context;
 
-  app.get("/admin/asset-policies", (req, reply) => {
+  app.get("/admin/asset-policies", NO_RATE_LIMIT, (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -934,7 +816,7 @@ function registerAdminRoutes(context: ServerContext): void {
   app.put<{
     Params: AdminAssetPolicyParams;
     Body: AdminAssetPolicyBody;
-  }>("/admin/asset-policies/:assetAddress", async (req, reply) => {
+  }>("/admin/asset-policies/:assetAddress", NO_RATE_LIMIT, async (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -963,7 +845,7 @@ function registerAdminRoutes(context: ServerContext): void {
 
   app.delete<{
     Params: AdminAssetPolicyParams;
-  }>("/admin/asset-policies/:assetAddress", async (req, reply) => {
+  }>("/admin/asset-policies/:assetAddress", NO_RATE_LIMIT, async (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -993,7 +875,7 @@ function registerAdminRoutes(context: ServerContext): void {
     }
   });
 
-  app.get("/admin/operator-balances", async (req, reply) => {
+  app.get("/admin/operator-balances", NO_RATE_LIMIT, async (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -1018,7 +900,7 @@ function registerAdminRoutes(context: ServerContext): void {
 
   app.post<{
     Body: AdminSweepRequestBody;
-  }>("/admin/sweeps", async (req, reply) => {
+  }>("/admin/sweeps", NO_RATE_LIMIT, async (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -1052,12 +934,45 @@ function registerAdminRoutes(context: ServerContext): void {
   });
 }
 
-export function buildServer(
+export async function buildServer(
   config: Config,
   quoteSigner: QuoteSchnorrSigner,
   deps: BuildServerDependencies = {},
 ) {
   const app = Fastify({ logger: true });
+  const metrics = new AttestationMetrics();
+
+  await app.register(rateLimit, {
+    global: true,
+    max: config.quote_rate_limit.maxRequests,
+    timeWindow: config.quote_rate_limit.windowSeconds * 1000,
+    keyGenerator: (req: FastifyRequest) =>
+      resolveQuoteRateLimitIdentity(config, req.headers, req.ip).cacheKey,
+    errorResponseBuilder: () => ({ statusCode: 429, ...rateLimited() }),
+    onExceeded: (req: FastifyRequest, key: string) => {
+      const identityKind = key.startsWith("api_key:") ? "api_key" : "ip";
+      const isColdStart = req.url.startsWith("/cold-start-quote");
+      req.log.warn(
+        {
+          event: isColdStart ? "cold_start_quote_rate_limited" : "quote_rate_limited",
+          identity_kind: identityKind,
+        },
+        isColdStart ? "Rate limited cold-start quote request" : "Rate limited quote request",
+      );
+      createQuoteObserver(metrics)("rate_limited");
+    },
+    ...(config.quote_rate_limit.enabled
+      ? { cache: config.quote_rate_limit.maxTrackedKeys }
+      : { allowList: () => true }),
+  });
+
+  app.setErrorHandler((error, _request, reply) => {
+    if (error.statusCode === 429) {
+      return reply.code(429).send(rateLimited());
+    }
+    reply.send(error);
+  });
+
   const context: ServerContext = {
     app,
     assetPolicyStore:
@@ -1068,16 +983,9 @@ export function buildServer(
       ),
     config,
     fpcAddress: AztecAddress.fromString(config.fpc_address),
-    metrics: new AttestationMetrics(),
+    metrics,
     nowUnixSeconds: deps.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000))),
     quoteSigner,
-    rateLimiter: config.quote_rate_limit.enabled
-      ? new FixedWindowRateLimiter(
-          config.quote_rate_limit.maxRequests,
-          config.quote_rate_limit.windowSeconds,
-          config.quote_rate_limit.maxTrackedKeys,
-        )
-      : undefined,
     treasury: deps.treasury,
   };
 
@@ -1098,7 +1006,6 @@ function registerColdStartQuoteRoute(context: ServerContext): void {
     metrics,
     nowUnixSeconds,
     quoteSigner,
-    rateLimiter,
     treasury,
   } = context;
   const validUntil = validUntilFactory(config);
@@ -1108,29 +1015,6 @@ function registerColdStartQuoteRoute(context: ServerContext): void {
   }>("/cold-start-quote", async (req, reply) => {
     const observe = createQuoteObserver(metrics);
     const nowSeconds = BigInt(await nowUnixSeconds());
-
-    const rateLimitRejection = consumeQuoteRateLimit(
-      rateLimiter,
-      config,
-      req.headers,
-      req.ip,
-      nowSeconds,
-    );
-    if (rateLimitRejection) {
-      req.log.warn(
-        {
-          event: "cold_start_quote_rate_limited",
-          identity_kind: rateLimitRejection.identityKind,
-          retry_after_seconds: rateLimitRejection.retryAfterSeconds,
-        },
-        "Rate limited cold-start quote request",
-      );
-      observe("rate_limited");
-      return reply
-        .header("retry-after", rateLimitRejection.retryAfterSeconds.toString())
-        .code(429)
-        .send(rateLimited());
-    }
 
     if (!isQuoteAuthorized(config, req.headers)) {
       req.log.warn(
