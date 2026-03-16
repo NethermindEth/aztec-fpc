@@ -139,7 +139,7 @@ function mockTreasury(overrides: Partial<OperatorTreasuryPort> = {}): OperatorTr
 
 describe("server", () => {
   it("returns health status", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({ method: "GET", url: "/health" });
@@ -151,7 +151,7 @@ describe("server", () => {
   });
 
   it("returns wallet discovery metadata", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({
@@ -190,7 +190,7 @@ describe("server", () => {
   });
 
   it("returns configured multi-asset discovery metadata", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       {
         ...TEST_CONFIG,
         supported_assets: [
@@ -240,7 +240,7 @@ describe("server", () => {
   });
 
   it("returns accepted-assets list", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       {
         ...TEST_CONFIG,
         supported_assets: [
@@ -279,7 +279,7 @@ describe("server", () => {
   });
 
   it("returns accepted asset metadata", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({ method: "GET", url: "/asset" });
@@ -294,7 +294,7 @@ describe("server", () => {
   });
 
   it("exposes baseline quote metrics on /metrics", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const success = await app.inject({
@@ -335,7 +335,7 @@ describe("server", () => {
         return Promise.resolve("0xabc123");
       },
     };
-    const app = buildServer(TEST_CONFIG, signer);
+    const app = await buildServer(TEST_CONFIG, signer);
 
     try {
       const nowBefore = Math.floor(Date.now() / 1000);
@@ -381,7 +381,7 @@ describe("server", () => {
   });
 
   it("returns 400 for missing user", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({ method: "GET", url: "/quote" });
@@ -398,7 +398,7 @@ describe("server", () => {
   });
 
   it("returns 400 for invalid user address", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({
@@ -418,7 +418,7 @@ describe("server", () => {
   });
 
   it("returns 400 for missing fj_amount", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({
@@ -438,7 +438,7 @@ describe("server", () => {
   });
 
   it("returns 400 for missing accepted_asset", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({
@@ -458,7 +458,7 @@ describe("server", () => {
   });
 
   it("returns 400 for unsupported accepted_asset", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({
@@ -483,7 +483,7 @@ describe("server", () => {
 
   it("issues quote using selected supported asset pricing policy", async () => {
     let calledQuoteHashHex: string | undefined;
-    const app = buildServer(
+    const app = await buildServer(
       {
         ...TEST_CONFIG,
         supported_assets: [
@@ -544,7 +544,7 @@ describe("server", () => {
   });
 
   it("returns 400 for fj_amount above u128 range", async () => {
-    const app = buildServer(TEST_CONFIG, mockSigner());
+    const app = await buildServer(TEST_CONFIG, mockSigner());
 
     try {
       const response = await app.inject({
@@ -564,7 +564,7 @@ describe("server", () => {
   });
 
   it("returns 400 when computed aa_payment_amount exceeds u128 range", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       {
         ...TEST_CONFIG,
         market_rate_num: 2,
@@ -601,7 +601,7 @@ describe("server", () => {
   });
 
   it("returns 500 when quote signer fails", async () => {
-    const app = buildServer(TEST_CONFIG, failingSigner());
+    const app = await buildServer(TEST_CONFIG, failingSigner());
 
     try {
       const response = await app.inject({
@@ -621,7 +621,7 @@ describe("server", () => {
   });
 
   it("returns 401 for protected mode when auth header is missing", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteAuth({
         mode: "api_key",
         apiKey: "super-secret",
@@ -647,7 +647,7 @@ describe("server", () => {
   });
 
   it("returns 200 for protected mode when api key header is valid", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteAuth({
         mode: "api_key",
         apiKey: "super-secret",
@@ -670,7 +670,7 @@ describe("server", () => {
   });
 
   it("returns 401 for protected mode when api key header is wrong", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteAuth({
         mode: "api_key",
         apiKey: "super-secret",
@@ -699,7 +699,7 @@ describe("server", () => {
   });
 
   it("returns 200 in trusted_header mode when trusted upstream header is valid", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteAuth({
         mode: "trusted_header",
         trustedHeaderName: "x-internal-attestation",
@@ -723,7 +723,7 @@ describe("server", () => {
   });
 
   it("returns 200 in api_key_or_trusted_header mode when either header is valid", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteAuth({
         mode: "api_key_or_trusted_header",
         apiKey: "super-secret",
@@ -748,7 +748,7 @@ describe("server", () => {
   });
 
   it("returns 401 in api_key_and_trusted_header mode when one header is missing", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteAuth({
         mode: "api_key_and_trusted_header",
         apiKey: "super-secret",
@@ -779,7 +779,7 @@ describe("server", () => {
   });
 
   it("returns 200 in api_key_and_trusted_header mode when both headers are valid", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteAuth({
         mode: "api_key_and_trusted_header",
         apiKey: "super-secret",
@@ -805,17 +805,13 @@ describe("server", () => {
   });
 
   it("returns 429 when quote rate limit is exceeded", async () => {
-    const nowUnix = 1_700_000_000n;
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteRateLimit({
         enabled: true,
         maxRequests: 2,
         windowSeconds: 60,
       }),
       mockSigner(),
-      {
-        nowUnixSeconds: () => nowUnix,
-      },
     );
 
     try {
@@ -842,24 +838,25 @@ describe("server", () => {
         },
       });
 
-      const expectedRetryAfter = String(60 - (Number(nowUnix) % 60) || 60);
-      assert.equal(r3.headers["retry-after"], expectedRetryAfter);
+      const retryAfter = Number(r3.headers["retry-after"]);
+      assert.equal(
+        retryAfter > 0 && retryAfter <= 60,
+        true,
+        `retry-after should be in (0, 60], got ${retryAfter}`,
+      );
     } finally {
       await app.close();
     }
   });
 
   it("does not throttle when quote rate limiting is disabled", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteRateLimit({
         enabled: false,
         maxRequests: 1,
         windowSeconds: 60,
       }),
       mockSigner(),
-      {
-        nowUnixSeconds: () => 1_700_000_000n,
-      },
     );
 
     try {
@@ -880,17 +877,13 @@ describe("server", () => {
   });
 
   it("resets quote rate limit after the fixed window elapses", async () => {
-    let nowUnix = 1_700_000_000n;
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteRateLimit({
         enabled: true,
         maxRequests: 1,
-        windowSeconds: 60,
+        windowSeconds: 1,
       }),
       mockSigner(),
-      {
-        nowUnixSeconds: () => nowUnix,
-      },
     );
 
     try {
@@ -902,14 +895,16 @@ describe("server", () => {
         method: "GET",
         url: quoteUrl(),
       });
-      nowUnix += 60n;
+
+      assert.equal(r1.statusCode, 200);
+      assert.equal(r2.statusCode, 429);
+
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
       const r3 = await app.inject({
         method: "GET",
         url: quoteUrl(),
       });
-
-      assert.equal(r1.statusCode, 200);
-      assert.equal(r2.statusCode, 429);
       assert.equal(r3.statusCode, 200);
     } finally {
       await app.close();
@@ -917,7 +912,7 @@ describe("server", () => {
   });
 
   it("uses api key identity for rate limiting when a valid api key is presented", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteRateLimit(
         {
           enabled: true,
@@ -930,9 +925,6 @@ describe("server", () => {
         }),
       ),
       mockSigner(),
-      {
-        nowUnixSeconds: () => 1_700_000_000n,
-      },
     );
 
     try {
@@ -967,7 +959,7 @@ describe("server", () => {
   });
 
   it("falls back to ip rate limiting when api key is missing or invalid", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteRateLimit(
         {
           enabled: true,
@@ -980,9 +972,6 @@ describe("server", () => {
         }),
       ),
       mockSigner(),
-      {
-        nowUnixSeconds: () => 1_700_000_000n,
-      },
     );
 
     try {
@@ -1015,16 +1004,13 @@ describe("server", () => {
   });
 
   it("uses ip identity for rate limiting when api key auth mode is disabled", async () => {
-    const app = buildServer(
+    const app = await buildServer(
       withQuoteRateLimit({
         enabled: true,
         maxRequests: 1,
         windowSeconds: 60,
       }),
       mockSigner(),
-      {
-        nowUnixSeconds: () => 1_700_000_000n,
-      },
     );
 
     try {
@@ -1052,7 +1038,7 @@ describe("server", () => {
       enabled: true,
       apiKey: "admin-secret",
     });
-    const app = buildServer(adminConfig, mockSigner(), {
+    const app = await buildServer(adminConfig, mockSigner(), {
       assetPolicyStore: new MemoryAssetPolicyStore(
         adminConfig.supported_assets,
         adminConfig.accepted_asset_address,
@@ -1091,7 +1077,7 @@ describe("server", () => {
       enabled: true,
       apiKey: "admin-secret",
     });
-    const app = buildServer(adminConfig, mockSigner(), {
+    const app = await buildServer(adminConfig, mockSigner(), {
       assetPolicyStore: new MemoryAssetPolicyStore(
         [
           ...adminConfig.supported_assets,
@@ -1132,7 +1118,7 @@ describe("server", () => {
       enabled: true,
       apiKey: "admin-secret",
     });
-    const app = buildServer(adminConfig, mockSigner(), {
+    const app = await buildServer(adminConfig, mockSigner(), {
       treasury: mockTreasury({
         getPrivateBalances: async (assetAddresses) =>
           assetAddresses.map((address, index) => ({
@@ -1172,7 +1158,7 @@ describe("server", () => {
       }),
       treasury_destination_address: destination,
     };
-    const app = buildServer(adminConfig, mockSigner(), {
+    const app = await buildServer(adminConfig, mockSigner(), {
       treasury: mockTreasury({
         sweep: async ({ acceptedAsset, destination: requestedDestination, amount }) => ({
           acceptedAsset,

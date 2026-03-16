@@ -1,7 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import rateLimit from "@fastify/rate-limit";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
@@ -196,76 +197,6 @@ function resolveQuoteRateLimitIdentity(
   return { cacheKey: `ip:${remoteIp}`, kind: "ip" };
 }
 
-interface RateLimitState {
-  windowStart: bigint;
-  count: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  retryAfterSeconds: bigint;
-}
-
-class FixedWindowRateLimiter {
-  private readonly state = new Map<string, RateLimitState>();
-  private readonly windowSeconds: bigint;
-
-  constructor(
-    private readonly maxRequests: number,
-    windowSeconds: number,
-    private readonly maxTrackedKeys: number,
-  ) {
-    this.windowSeconds = BigInt(windowSeconds);
-  }
-
-  consume(identity: string, nowSeconds: bigint): RateLimitDecision {
-    const windowStart = nowSeconds - (nowSeconds % this.windowSeconds);
-    let bucket = this.state.get(identity);
-
-    if (!bucket || bucket.windowStart !== windowStart) {
-      if (!bucket) {
-        this.ensureCapacity(windowStart);
-      }
-      bucket = { windowStart, count: 0 };
-      this.state.set(identity, bucket);
-    }
-
-    if (bucket.count >= this.maxRequests) {
-      return {
-        allowed: false,
-        retryAfterSeconds: windowStart + this.windowSeconds - nowSeconds,
-      };
-    }
-
-    bucket.count += 1;
-    return {
-      allowed: true,
-      retryAfterSeconds: 0n,
-    };
-  }
-
-  private ensureCapacity(currentWindowStart: bigint): void {
-    if (this.state.size < this.maxTrackedKeys) {
-      return;
-    }
-
-    for (const [key, value] of this.state.entries()) {
-      if (value.windowStart < currentWindowStart) {
-        this.state.delete(key);
-      }
-    }
-
-    if (this.state.size < this.maxTrackedKeys) {
-      return;
-    }
-
-    const oldestKey = this.state.keys().next().value;
-    if (oldestKey) {
-      this.state.delete(oldestKey);
-    }
-  }
-}
-
 interface QuoteRequestQuery {
   user?: string;
   accepted_asset?: string;
@@ -313,11 +244,6 @@ interface QuotePricing {
 }
 
 type QuotePricingResult = { ok: true; value: QuotePricing } | { ok: false; message: string };
-
-interface RateLimitRejection {
-  identityKind: QuoteRateLimitIdentity["kind"];
-  retryAfterSeconds: bigint;
-}
 
 function createQuoteObserver(metrics: AttestationMetrics): (outcome: QuoteOutcome) => void {
   const startedAtNs = process.hrtime.bigint();
@@ -487,29 +413,6 @@ function computeQuotePricing(
   };
 }
 
-function consumeQuoteRateLimit(
-  rateLimiter: FixedWindowRateLimiter | undefined,
-  config: Config,
-  headers: Record<string, string | string[] | undefined>,
-  remoteIp: string,
-  nowSeconds: bigint,
-): RateLimitRejection | undefined {
-  if (!rateLimiter) {
-    return undefined;
-  }
-
-  const identity = resolveQuoteRateLimitIdentity(config, headers, remoteIp);
-  const decision = rateLimiter.consume(identity.cacheKey, nowSeconds);
-  if (decision.allowed) {
-    return undefined;
-  }
-
-  return {
-    identityKind: identity.kind,
-    retryAfterSeconds: decision.retryAfterSeconds,
-  };
-}
-
 function signQuoteForRequest(
   config: Config,
   quoteSigner: QuoteSchnorrSigner,
@@ -596,7 +499,6 @@ interface ServerContext {
   metrics: AttestationMetrics;
   nowUnixSeconds: () => Promise<bigint> | bigint;
   quoteSigner: QuoteSchnorrSigner;
-  rateLimiter?: FixedWindowRateLimiter;
   treasury?: OperatorTreasuryPort;
 }
 
@@ -752,30 +654,6 @@ function isBadSweepRequestError(message: string): boolean {
   );
 }
 
-function buildQuoteRateLimitHook(context: ServerContext, logEvent: string, logMessage: string) {
-  const { rateLimiter, config, metrics, nowUnixSeconds } = context;
-  return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    const nowSeconds = BigInt(await nowUnixSeconds());
-    const rejection = consumeQuoteRateLimit(rateLimiter, config, req.headers, req.ip, nowSeconds);
-    if (rejection) {
-      const observe = createQuoteObserver(metrics);
-      req.log.warn(
-        {
-          event: logEvent,
-          identity_kind: rejection.identityKind,
-          retry_after_seconds: rejection.retryAfterSeconds,
-        },
-        logMessage,
-      );
-      observe("rate_limited");
-      reply
-        .header("retry-after", rejection.retryAfterSeconds.toString())
-        .code(429)
-        .send(rateLimited());
-    }
-  };
-}
-
 function registerPublicRoutes(context: ServerContext): void {
   const { app, assetPolicyStore, config, metrics } = context;
 
@@ -828,101 +706,120 @@ function registerQuoteRoute(context: ServerContext): void {
     treasury,
   } = context;
   const validUntil = validUntilFactory(config);
-  const rateLimitHook = buildQuoteRateLimitHook(
-    context,
-    "quote_rate_limited",
-    "Rate limited quote request",
-  );
 
   app.get<{
     Querystring: QuoteRequestQuery;
-  }>("/quote", { preHandler: rateLimitHook }, async (req, reply) => {
-    const observe = createQuoteObserver(metrics);
-    const nowSeconds = BigInt(await nowUnixSeconds());
-
-    if (!isQuoteAuthorized(config, req.headers)) {
-      req.log.warn(
-        {
-          event: "quote_auth_rejected",
-          mode: config.quote_auth.mode,
+  }>(
+    "/quote",
+    {
+      config: {
+        rateLimit: {
+          max: config.quote_rate_limit.maxRequests,
+          timeWindow: config.quote_rate_limit.windowSeconds * 1000,
+          onExceeded: (req: FastifyRequest, key: string) => {
+            const identityKind = key.startsWith("api_key:") ? "api_key" : "ip";
+            req.log.warn(
+              { event: "quote_rate_limited", identity_kind: identityKind },
+              "Rate limited quote request",
+            );
+            createQuoteObserver(metrics)("rate_limited");
+          },
         },
-        "Rejected unauthorized quote request",
-      );
-      observe("unauthorized");
-      return reply.code(401).send(unauthorized());
-    }
+      },
+    },
+    async (req, reply) => {
+      const observe = createQuoteObserver(metrics);
+      const nowSeconds = BigInt(await nowUnixSeconds());
 
-    const parsedRequest = parseQuoteRequest(assetPolicyStore.getAll(), req.query);
-    if (!parsedRequest.ok) {
-      observe("bad_request");
-      return reply.code(400).send(badRequest(parsedRequest.message));
-    }
-
-    const { acceptedAsset, fjFeeAmount, selectedAssetPolicy, userAddress } = parsedRequest.value;
-
-    try {
-      const quotePricing = computeQuotePricing(
-        selectedAssetPolicy,
-        fjFeeAmount,
-        nowSeconds,
-        validUntil,
-      );
-      if (!quotePricing.ok) {
-        observe("bad_request");
-        return reply.code(400).send(badRequest(quotePricing.message));
+      if (!isQuoteAuthorized(config, req.headers)) {
+        req.log.warn(
+          {
+            event: "quote_auth_rejected",
+            mode: config.quote_auth.mode,
+          },
+          "Rejected unauthorized quote request",
+        );
+        observe("unauthorized");
+        return reply.code(401).send(unauthorized());
       }
 
-      const { aaPaymentAmount, rateDen, rateNum, validUntil: quoteValidUntil } = quotePricing.value;
-      await ensureSenderRegistered(treasury, userAddress, req.log);
-      const signature = await signQuoteForRequest(config, quoteSigner, {
-        fpcAddress,
-        acceptedAsset,
-        userAddress,
-        fjFeeAmount,
-        aaPaymentAmount,
-        validUntil: quoteValidUntil,
-        rateNum,
-        rateDen,
-      });
+      const parsedRequest = parseQuoteRequest(assetPolicyStore.getAll(), req.query);
+      if (!parsedRequest.ok) {
+        observe("bad_request");
+        return reply.code(400).send(badRequest(parsedRequest.message));
+      }
 
-      req.log.info(
-        {
-          event: "quote_issued",
-          user: userAddress.toString(),
-          accepted_asset: selectedAssetPolicy.address,
-          valid_until: quoteValidUntil.toString(),
-          fj_amount: fjFeeAmount.toString(),
-          aa_payment_amount: aaPaymentAmount.toString(),
-          rate_num: rateNum.toString(),
-          rate_den: rateDen.toString(),
-          quote_format: config.quote_format,
-        },
-        "Quote issued",
-      );
-      observe("success");
+      const { acceptedAsset, fjFeeAmount, selectedAssetPolicy, userAddress } = parsedRequest.value;
 
-      return buildQuoteResponse(
-        config,
-        selectedAssetPolicy,
-        fjFeeAmount,
-        aaPaymentAmount,
-        quoteValidUntil,
-        signature,
-        rateNum,
-        rateDen,
-      );
-    } catch (error) {
-      observe("internal_error");
-      req.log.error(
-        {
-          err: error,
-          user: userAddress.toString(),
-        },
-        "Failed to issue quote",
-      );
-      return reply.code(500).send(internalErrorBody());
-    }
-  });
+      try {
+        const quotePricing = computeQuotePricing(
+          selectedAssetPolicy,
+          fjFeeAmount,
+          nowSeconds,
+          validUntil,
+        );
+        if (!quotePricing.ok) {
+          observe("bad_request");
+          return reply.code(400).send(badRequest(quotePricing.message));
+        }
+
+        const {
+          aaPaymentAmount,
+          rateDen,
+          rateNum,
+          validUntil: quoteValidUntil,
+        } = quotePricing.value;
+        await ensureSenderRegistered(treasury, userAddress, req.log);
+        const signature = await signQuoteForRequest(config, quoteSigner, {
+          fpcAddress,
+          acceptedAsset,
+          userAddress,
+          fjFeeAmount,
+          aaPaymentAmount,
+          validUntil: quoteValidUntil,
+          rateNum,
+          rateDen,
+        });
+
+        req.log.info(
+          {
+            event: "quote_issued",
+            user: userAddress.toString(),
+            accepted_asset: selectedAssetPolicy.address,
+            valid_until: quoteValidUntil.toString(),
+            fj_amount: fjFeeAmount.toString(),
+            aa_payment_amount: aaPaymentAmount.toString(),
+            rate_num: rateNum.toString(),
+            rate_den: rateDen.toString(),
+            quote_format: config.quote_format,
+          },
+          "Quote issued",
+        );
+        observe("success");
+
+        return buildQuoteResponse(
+          config,
+          selectedAssetPolicy,
+          fjFeeAmount,
+          aaPaymentAmount,
+          quoteValidUntil,
+          signature,
+          rateNum,
+          rateDen,
+        );
+      } catch (error) {
+        observe("internal_error");
+        req.log.error(
+          {
+            err: error,
+            user: userAddress.toString(),
+          },
+          "Failed to issue quote",
+        );
+        return reply.code(500).send(internalErrorBody());
+      }
+    },
+  );
 }
 
 function registerAdminRoutes(context: ServerContext): void {
@@ -1057,12 +954,32 @@ function registerAdminRoutes(context: ServerContext): void {
   });
 }
 
-export function buildServer(
+export async function buildServer(
   config: Config,
   quoteSigner: QuoteSchnorrSigner,
   deps: BuildServerDependencies = {},
 ) {
   const app = Fastify({ logger: true });
+
+  await app.register(rateLimit, {
+    global: true,
+    max: config.quote_rate_limit.maxRequests,
+    timeWindow: config.quote_rate_limit.windowSeconds * 1000,
+    keyGenerator: (req: FastifyRequest) =>
+      resolveQuoteRateLimitIdentity(config, req.headers, req.ip).cacheKey,
+    errorResponseBuilder: () => ({ statusCode: 429, ...rateLimited() }),
+    ...(config.quote_rate_limit.enabled
+      ? { cache: config.quote_rate_limit.maxTrackedKeys }
+      : { allowList: () => true }),
+  });
+
+  app.setErrorHandler((error, _request, reply) => {
+    if (error.statusCode === 429) {
+      return reply.code(429).send(rateLimited());
+    }
+    reply.send(error);
+  });
+
   const context: ServerContext = {
     app,
     assetPolicyStore:
@@ -1076,13 +993,6 @@ export function buildServer(
     metrics: new AttestationMetrics(),
     nowUnixSeconds: deps.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000))),
     quoteSigner,
-    rateLimiter: config.quote_rate_limit.enabled
-      ? new FixedWindowRateLimiter(
-          config.quote_rate_limit.maxRequests,
-          config.quote_rate_limit.windowSeconds,
-          config.quote_rate_limit.maxTrackedKeys,
-        )
-      : undefined,
     treasury: deps.treasury,
   };
 
@@ -1106,112 +1016,126 @@ function registerColdStartQuoteRoute(context: ServerContext): void {
     treasury,
   } = context;
   const validUntil = validUntilFactory(config);
-  const rateLimitHook = buildQuoteRateLimitHook(
-    context,
-    "cold_start_quote_rate_limited",
-    "Rate limited cold-start quote request",
-  );
 
   app.get<{
     Querystring: ColdStartQuoteRequestQuery;
-  }>("/cold-start-quote", { preHandler: rateLimitHook }, async (req, reply) => {
-    const observe = createQuoteObserver(metrics);
-    const nowSeconds = BigInt(await nowUnixSeconds());
-
-    if (!isQuoteAuthorized(config, req.headers)) {
-      req.log.warn(
-        {
-          event: "cold_start_quote_auth_rejected",
-          mode: config.quote_auth.mode,
+  }>(
+    "/cold-start-quote",
+    {
+      config: {
+        rateLimit: {
+          max: config.quote_rate_limit.maxRequests,
+          timeWindow: config.quote_rate_limit.windowSeconds * 1000,
+          onExceeded: (req: FastifyRequest, key: string) => {
+            const identityKind = key.startsWith("api_key:") ? "api_key" : "ip";
+            req.log.warn(
+              { event: "cold_start_quote_rate_limited", identity_kind: identityKind },
+              "Rate limited cold-start quote request",
+            );
+            createQuoteObserver(metrics)("rate_limited");
+          },
         },
-        "Rejected unauthorized cold-start quote request",
-      );
-      observe("unauthorized");
-      return reply.code(401).send(unauthorized());
-    }
+      },
+    },
+    async (req, reply) => {
+      const observe = createQuoteObserver(metrics);
+      const nowSeconds = BigInt(await nowUnixSeconds());
 
-    const parsedRequest = parseColdStartQuoteRequest(assetPolicyStore.getAll(), req.query);
-    if (!parsedRequest.ok) {
-      observe("bad_request");
-      return reply.code(400).send(badRequest(parsedRequest.message));
-    }
+      if (!isQuoteAuthorized(config, req.headers)) {
+        req.log.warn(
+          {
+            event: "cold_start_quote_auth_rejected",
+            mode: config.quote_auth.mode,
+          },
+          "Rejected unauthorized cold-start quote request",
+        );
+        observe("unauthorized");
+        return reply.code(401).send(unauthorized());
+      }
 
-    const {
-      userAddress,
-      acceptedAsset,
-      selectedAssetPolicy,
-      fjFeeAmount,
-      claimAmount,
-      claimSecretHash,
-    } = parsedRequest.value;
+      const parsedRequest = parseColdStartQuoteRequest(assetPolicyStore.getAll(), req.query);
+      if (!parsedRequest.ok) {
+        observe("bad_request");
+        return reply.code(400).send(badRequest(parsedRequest.message));
+      }
 
-    try {
-      const quotePricing = computeQuotePricing(
+      const {
+        userAddress,
+        acceptedAsset,
         selectedAssetPolicy,
         fjFeeAmount,
-        nowSeconds,
-        validUntil,
-      );
-      if (!quotePricing.ok) {
-        observe("bad_request");
-        return reply.code(400).send(badRequest(quotePricing.message));
-      }
-
-      const { validUntil: quoteValidUntil, aaPaymentAmount } = quotePricing.value;
-
-      if (claimAmount < aaPaymentAmount) {
-        observe("bad_request");
-        return reply.code(400).send(badRequest("claim_amount must be >= aa_payment_amount"));
-      }
-
-      await ensureSenderRegistered(treasury, fpcAddress, req.log);
-
-      const coldStartParams: ColdStartQuoteParams = {
-        fpcAddress,
-        acceptedAsset,
-        fjFeeAmount,
-        aaPaymentAmount,
-        validUntil: quoteValidUntil,
-        userAddress,
         claimAmount,
         claimSecretHash,
-      };
-      const signature = await signColdStartQuote(quoteSigner, coldStartParams);
+      } = parsedRequest.value;
 
-      req.log.info(
-        {
-          event: "cold_start_quote_issued",
-          user: userAddress.toString(),
+      try {
+        const quotePricing = computeQuotePricing(
+          selectedAssetPolicy,
+          fjFeeAmount,
+          nowSeconds,
+          validUntil,
+        );
+        if (!quotePricing.ok) {
+          observe("bad_request");
+          return reply.code(400).send(badRequest(quotePricing.message));
+        }
+
+        const { validUntil: quoteValidUntil, aaPaymentAmount } = quotePricing.value;
+
+        if (claimAmount < aaPaymentAmount) {
+          observe("bad_request");
+          return reply.code(400).send(badRequest("claim_amount must be >= aa_payment_amount"));
+        }
+
+        await ensureSenderRegistered(treasury, fpcAddress, req.log);
+
+        const coldStartParams: ColdStartQuoteParams = {
+          fpcAddress,
+          acceptedAsset,
+          fjFeeAmount,
+          aaPaymentAmount,
+          validUntil: quoteValidUntil,
+          userAddress,
+          claimAmount,
+          claimSecretHash,
+        };
+        const signature = await signColdStartQuote(quoteSigner, coldStartParams);
+
+        req.log.info(
+          {
+            event: "cold_start_quote_issued",
+            user: userAddress.toString(),
+            accepted_asset: selectedAssetPolicy.address,
+            valid_until: quoteValidUntil.toString(),
+            fj_amount: fjFeeAmount.toString(),
+            aa_payment_amount: aaPaymentAmount.toString(),
+            claim_amount: claimAmount.toString(),
+            claim_secret_hash: claimSecretHash.toString(),
+          },
+          "Cold-start quote issued",
+        );
+        observe("success");
+
+        return {
           accepted_asset: selectedAssetPolicy.address,
-          valid_until: quoteValidUntil.toString(),
           fj_amount: fjFeeAmount.toString(),
           aa_payment_amount: aaPaymentAmount.toString(),
+          valid_until: quoteValidUntil.toString(),
           claim_amount: claimAmount.toString(),
           claim_secret_hash: claimSecretHash.toString(),
-        },
-        "Cold-start quote issued",
-      );
-      observe("success");
-
-      return {
-        accepted_asset: selectedAssetPolicy.address,
-        fj_amount: fjFeeAmount.toString(),
-        aa_payment_amount: aaPaymentAmount.toString(),
-        valid_until: quoteValidUntil.toString(),
-        claim_amount: claimAmount.toString(),
-        claim_secret_hash: claimSecretHash.toString(),
-        signature,
-      };
-    } catch (error) {
-      observe("internal_error");
-      req.log.error(
-        {
-          err: error,
-          user: userAddress.toString(),
-        },
-        "Failed to issue cold-start quote",
-      );
-      return reply.code(500).send(internalErrorBody());
-    }
-  });
+          signature,
+        };
+      } catch (error) {
+        observe("internal_error");
+        req.log.error(
+          {
+            err: error,
+            user: userAddress.toString(),
+          },
+          "Failed to issue cold-start quote",
+        );
+        return reply.code(500).send(internalErrorBody());
+      }
+    },
+  );
 }

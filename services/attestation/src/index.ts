@@ -116,7 +116,7 @@ async function main() {
     );
   }
 
-  const app = buildServer(config, quoteSigner, {
+  const app = await buildServer(config, quoteSigner, {
     assetPolicyStore,
     nowUnixSeconds: async () => {
       const latest = await node.getBlock("latest");
