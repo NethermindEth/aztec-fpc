@@ -22,7 +22,7 @@
     "@aztec/pxe": "4.1.0-nightly.20260312.2",
     "@aztec/stdlib": "4.1.0-nightly.20260312.2",
     "@aztec/wallets": "4.1.0-nightly.20260312.2",
-    "@fastify/rate-limit": "9",
+    "fastify-rate-limit": "npm:@fastify/rate-limit@9",
     "fastify": "^4.28.0",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
