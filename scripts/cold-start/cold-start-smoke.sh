@@ -27,7 +27,7 @@ aztec compile
 echo "[cold-start] Deploying contracts"
 FPC_L1_DEPLOYER_KEY="${FPC_L1_DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}" \
 FPC_OUT="$TMP_DIR/cold-start-manifest.json" \
-FPC_L1_RPC_URL="$(setup_l1_rpc_url)" \
+L1_RPC_URL="$(setup_l1_rpc_url)" \
   bash "$REPO_ROOT/scripts/contract/deploy-fpc.sh" "$@"
 
 if [[ ! -f "$TMP_DIR/cold-start-manifest.json" ]]; then
@@ -37,5 +37,5 @@ fi
 
 echo "[cold-start] Running cold-start local smoke flow"
 FPC_COLD_START_MANIFEST="$TMP_DIR/cold-start-manifest.json" \
-FPC_SMOKE_L1_RPC_URL="$(setup_l1_rpc_url)" \
+L1_RPC_URL="$(setup_l1_rpc_url)" \
   bunx tsx "$REPO_ROOT/scripts/cold-start/cold-start-smoke.ts"

@@ -160,7 +160,7 @@ function resolveFpcArtifactPath(repoRoot: string): string {
 function getConfig(): SmokeConfig {
   const nodeUrl = process.env.AZTEC_NODE_URL ?? "http://localhost:8080";
   const nodeTimeoutMs = readEnvNumber("FPC_SMOKE_NODE_TIMEOUT_MS", 30_000);
-  const l1RpcUrl = process.env.FPC_SMOKE_L1_RPC_URL ?? "http://localhost:8545";
+  const l1RpcUrl = process.env.L1_RPC_URL ?? "http://localhost:8545";
   const l1PrivateKey = "" as Hex; // Set by resolveScriptAccounts
   const feeJuiceTopupWei = readOptionalEnvBigInt("FPC_SMOKE_FEE_JUICE_TOPUP_WEI");
   const feeJuiceWaitTimeoutMs = readEnvNumber("FPC_SMOKE_FEE_JUICE_WAIT_TIMEOUT_MS", 120_000);

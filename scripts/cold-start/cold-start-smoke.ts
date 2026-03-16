@@ -10,7 +10,7 @@
  * All arguments are optional. CLI args take precedence over env vars.
  *
  *   --node-url <url>                 Aztec node URL [env: AZTEC_NODE_URL] (default: http://localhost:8080)
- *   --l1-rpc-url <url>               L1 RPC URL (required) [env: FPC_SMOKE_L1_RPC_URL]
+ *   --l1-rpc-url <url>               L1 RPC URL (required) [env: L1_RPC_URL]
  *   --attestation-url <url>          Attestation server base URL (required) [env: FPC_ATTESTATION_URL]
  *   --manifest <path>                Deployment manifest path (required) [env: FPC_COLD_START_MANIFEST]
  *   --operator-secret-key <hex32>    Operator secret key (required) [env: FPC_OPERATOR_SECRET_KEY]

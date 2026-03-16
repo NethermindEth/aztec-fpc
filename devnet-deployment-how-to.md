@@ -46,7 +46,7 @@ FPC_PREFLIGHT_ONLY=1 bun run deploy:fpc
 
 If unset, wrapper defaults are:
 
-- `FPC_NODE_URL=https://v4-devnet-2.aztec-labs.com/`
+- `AZTEC_NODE_URL=https://v4-devnet-2.aztec-labs.com/`
 - `FPC_SPONSORED_FPC_ADDRESS=0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2`
 - `FPC_OUT=./deployments/devnet-manifest-v2.json`
 
@@ -65,7 +65,7 @@ Artifact behavior:
 If you want explicit control, set env vars before running:
 
 ```bash
-export FPC_NODE_URL="https://v4-devnet-2.aztec-labs.com/"
+export AZTEC_NODE_URL="https://v4-devnet-2.aztec-labs.com/"
 export FPC_SPONSORED_FPC_ADDRESS="0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2"
 export FPC_OUT="./deployments/devnet-manifest-v2.json"
 ```
@@ -106,7 +106,7 @@ bun run deploy:fpc
 To enforce node/L1 RPC chain-id match:
 
 ```bash
-export FPC_L1_RPC_URL="https://..."
+export L1_RPC_URL="https://..."
 export FPC_VALIDATE_TOPUP_PATH=1
 bun run deploy:fpc
 ```
@@ -201,7 +201,7 @@ Run runtime validation against deployed contracts in the manifest:
 cd /home/ametel/source/aztec-fpc
 set -a; source .env; set +a
 export L1_OPERATOR_PRIVATE_KEY="$L1_ADDRESS_PK"
-export FPC_L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
+export L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
 bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \
   --manifest ./deployments/devnet-manifest-v2.json
 ```

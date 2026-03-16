@@ -214,7 +214,7 @@ function usage(): string {
     "  FPC_DEVNET_SMOKE_MANIFEST",
     "  FPC_FPC_ARTIFACT",
     "  FPC_DEVNET_L1_RPC_URL (or L1_RPC_URL)",
-    "  FPC_DEVNET_OPERATOR_SECRET_KEY",
+    "  FPC_OPERATOR_SECRET_KEY",
     "  L1_OPERATOR_PRIVATE_KEY",
     "  FPC_DEVNET_SMOKE_* for numeric options",
     "",
@@ -293,7 +293,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
     readEnvString("FPC_DEVNET_L1_RPC_URL") ??
     readEnvString("L1_RPC_URL") ??
     "http://127.0.0.1:8545";
-  let operatorSecretKey = readEnvString("FPC_DEVNET_OPERATOR_SECRET_KEY");
+  let operatorSecretKey = readEnvString("FPC_OPERATOR_SECRET_KEY");
   let l1OperatorPrivateKey = readEnvString("L1_OPERATOR_PRIVATE_KEY");
 
   let nodeReadyTimeoutMs = parsePositiveInteger(

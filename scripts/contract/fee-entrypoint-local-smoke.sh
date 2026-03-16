@@ -23,5 +23,5 @@ echo "[smoke] Compiling contracts workspace"
 aztec compile
 
 echo "[smoke] Running fee entrypoint local smoke flow"
-FPC_SMOKE_L1_RPC_URL="$(setup_l1_rpc_url)" \
+L1_RPC_URL="$(setup_l1_rpc_url)" \
   bunx tsx "$REPO_ROOT/services/attestation/test/fee-entrypoint-local-smoke.ts"
