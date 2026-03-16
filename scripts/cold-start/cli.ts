@@ -25,6 +25,7 @@ export type CliArgs = {
   manifestPath: string;
   operatorSecretKey: string;
   l1DeployerKey: string | null;
+  userL1PrivateKey: string | null;
   claimAmount: bigint;
   aaPaymentAmount: bigint;
   quoteTtlSeconds: bigint;
@@ -58,11 +59,14 @@ export function usage(): string {
     "  --operator-secret-key <hex32>    Operator secret key [env: FPC_OPERATOR_SECRET_KEY]",
     "  --l1-deployer-key <hex32>        L1 deployer private key (ERC20 owner) [env: FPC_L1_DEPLOYER_KEY]",
     "",
+    "Optional:",
+    "  --user-l1-private-key <hex32>    Pre-funded L1 private key (skips anvil_setBalance) [env: FPC_L1_USER_KEY]",
+    "",
     "Network:",
     "  --node-url <url>                 Aztec node URL (default: http://localhost:8080) [env: AZTEC_NODE_URL]",
     "",
     "Amounts:",
-    "  --claim-amount <uint>            Claim amount (default: 10000000000000) [env: FPC_COLD_START_CLAIM_AMOUNT]",
+    "  --claim-amount <uint>            Claim amount (default: 10000000000000000) [env: FPC_COLD_START_CLAIM_AMOUNT]",
     "  --aa-payment-amount <uint>       AA payment amount (default: 1000000000) [env: FPC_COLD_START_AA_PAYMENT_AMOUNT]",
     "",
     "Timing:",
@@ -143,7 +147,8 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   let manifestPath: string | null = process.env.FPC_COLD_START_MANIFEST ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let l1DeployerKey: string | null = process.env.FPC_L1_DEPLOYER_KEY ?? null;
-  let claimAmount: string = process.env.FPC_COLD_START_CLAIM_AMOUNT ?? "10000000000000";
+  let userL1PrivateKey: string | null = process.env.FPC_L1_USER_KEY ?? null;
+  let claimAmount: string = process.env.FPC_COLD_START_CLAIM_AMOUNT ?? "10000000000000000";
   let aaPaymentAmount: string = process.env.FPC_COLD_START_AA_PAYMENT_AMOUNT ?? "1000000000";
   let quoteTtlSeconds: string = process.env.FPC_SMOKE_QUOTE_TTL_SECONDS ?? "3600";
   let messageTimeoutSeconds: string = process.env.FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS ?? "120";
@@ -173,6 +178,10 @@ export function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--l1-deployer-key":
         l1DeployerKey = nextArg(argv, i, arg);
+        i += 1;
+        break;
+      case "--user-l1-private-key":
+        userL1PrivateKey = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--claim-amount":
@@ -222,6 +231,9 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       manifestPath: path.resolve(manifestPath),
       operatorSecretKey: parseHex32(operatorSecretKey, "--operator-secret-key"),
       l1DeployerKey: l1DeployerKey ? parseHex32(l1DeployerKey, "--l1-deployer-key") : null,
+      userL1PrivateKey: userL1PrivateKey
+        ? parseHex32(userL1PrivateKey, "--user-l1-private-key")
+        : null,
       claimAmount: parsePositiveBigInt(claimAmount, "--claim-amount"),
       aaPaymentAmount: parsePositiveBigInt(aaPaymentAmount, "--aa-payment-amount"),
       quoteTtlSeconds: parsePositiveBigInt(quoteTtlSeconds, "--quote-ttl-seconds"),
