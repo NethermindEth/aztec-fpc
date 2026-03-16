@@ -1,0 +1,13 @@
+accepted_asset_name: "humanUSDC"
+market_rate_num: 1
+market_rate_den: 1000
+fee_bips: 200
+port: 3000
+quote_validity_seconds: 300
+quote_auth_mode: "disabled"
+quote_rate_limit_enabled: true
+quote_rate_limit_max_requests: 60
+quote_rate_limit_window_seconds: 60
+quote_rate_limit_max_tracked_keys: 10000
+fpc_address: "0x29740a49c59208d9d581a15d08326caf850058a48c7c6008c10c2a6226b0fac2"
+accepted_asset_address: "0x2b4de698c2cc98e781aed32c77fb322410aa213455d4fface3e37b872697caad"

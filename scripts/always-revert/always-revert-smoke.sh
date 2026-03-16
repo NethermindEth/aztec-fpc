@@ -28,7 +28,7 @@ aztec compile
 echo "[always-revert] Deploying contracts (faucet mode, no bridge)"
 FPC_L1_DEPLOYER_KEY="${FPC_L1_DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}" \
 FPC_OUT="$TMP_DIR/always-revert-manifest.json" \
-FPC_L1_RPC_URL="$(setup_l1_rpc_url)" \
+L1_RPC_URL="$(setup_l1_rpc_url)" \
 FPC_SKIP_CONFIG_GEN=1 \
   bash "$REPO_ROOT/scripts/contract/deploy-fpc.sh"
 

@@ -1,0 +1,136 @@
+name: aztec-fpc-public
+services:
+  deploy:
+    image: "${DEPLOY_IMAGE:-nethermind/aztec-fpc-contract-deployment:local}"
+    volumes:
+      - ./deployments/${DEPLOYMENT}:/app/data
+      - deploy-crs-cache:/app/.bb-crs
+    environment:
+      FPC_ACCEPTED_ASSET: "${FPC_ACCEPTED_ASSET}"
+      PXE_PROVER: "${PXE_PROVER:-wasm}"
+      FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY}"
+      FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
+      FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
+      FPC_DATA_DIR: "/app/data"
+    env_file:
+      - .env.${DEPLOYMENT}
+
+  postdeploy:
+    image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
+    command:
+      - "scripts/contract/devnet-postdeploy-smoke.ts"
+    volumes:
+      - ./deployments/${DEPLOYMENT}:/app/data:ro
+    environment:
+      FPC_DEVNET_SMOKE_MANIFEST: "/app/data/manifest.json"
+      FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
+      L1_OPERATOR_PRIVATE_KEY: "${FPC_L1_DEPLOYER_KEY}"
+    env_file:
+      - .env.${DEPLOYMENT}
+    depends_on:
+      deploy:
+        condition: service_completed_successfully
+
+  attestation:
+    image: "${ATTESTATION_IMAGE:-nethermind/aztec-fpc-attestation:local}"
+    ports:
+      - "${ATTESTATION_PORT:-3000}:3000"
+    volumes:
+      - ./deployments/${DEPLOYMENT}:/app/data:ro
+    command: ["--config", "/app/data/attestation/config.yaml"]
+    environment:
+      FPC_RUNTIME_PROFILE: "${FPC_RUNTIME_PROFILE:-development}"
+      OPERATOR_SECRET_PROVIDER: "${OPERATOR_SECRET_PROVIDER:-env}"
+      OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
+      QUOTE_AUTH_MODE: "${QUOTE_AUTH_MODE:-disabled}"
+    env_file:
+      - .env.${DEPLOYMENT}
+    depends_on:
+      deploy:
+        condition: service_completed_successfully
+
+  topup:
+    image: "${TOPUP_IMAGE:-nethermind/aztec-fpc-topup:local}"
+    ports:
+      - "${TOPUP_OPS_PORT:-3001}:3001"
+    volumes:
+      - ./deployments/${DEPLOYMENT}:/app/data:ro
+    command: ["--config", "/app/data/topup/config.yaml"]
+    environment:
+      FPC_RUNTIME_PROFILE: "${FPC_RUNTIME_PROFILE:-development}"
+      L1_OPERATOR_SECRET_PROVIDER: "${L1_OPERATOR_SECRET_PROVIDER:-env}"
+      L1_OPERATOR_PRIVATE_KEY: "${FPC_L1_DEPLOYER_KEY}"
+      OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-}"
+      TOPUP_AUTOCLAIM_SECRET_KEY: "${TOPUP_AUTOCLAIM_SECRET_KEY:-}"
+      TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY: "${TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY:-1}"
+      TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: "${TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS:-}"
+      TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "${TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT:-0}"
+      TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
+      TOPUP_BRIDGE_STATE_PATH: "${TOPUP_BRIDGE_STATE_PATH:-/tmp/.topup-bridge-state.json}"
+      TOPUP_AUTOCLAIM_ENABLED: "${TOPUP_AUTOCLAIM_ENABLED:-1}"
+    env_file:
+      - .env.${DEPLOYMENT}
+    depends_on:
+      deploy:
+        condition: service_completed_successfully
+
+  smoke-cold-start:
+    image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
+    profiles: ["smoke"]
+    command:
+      - "scripts/cold-start/cold-start-smoke.ts"
+    volumes:
+      - ./deployments/${DEPLOYMENT}:/app/data:ro
+    environment:
+      FPC_ATTESTATION_URL: "http://attestation:3000"
+      FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
+      FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
+    env_file:
+      - .env.${DEPLOYMENT}
+    depends_on:
+      attestation:
+        condition: service_healthy
+      topup:
+        condition: service_healthy
+
+  smoke-same-token-transfer:
+    image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
+    profiles: ["smoke"]
+    command:
+      - "scripts/same-token-transfer/same-token-transfer-smoke.ts"
+    volumes:
+      - ./deployments/${DEPLOYMENT}:/app/data:ro
+    environment:
+      FPC_ATTESTATION_URL: "http://attestation:3000"
+      FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
+    env_file:
+      - .env.${DEPLOYMENT}
+    depends_on:
+      attestation:
+        condition: service_healthy
+      topup:
+        condition: service_healthy
+
+  smoke-always-revert:
+    image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
+    profiles: ["smoke"]
+    command:
+      - "scripts/always-revert/always-revert-smoke.ts"
+    volumes:
+      - ./deployments/${DEPLOYMENT}:/app/data:ro
+    environment:
+      FPC_ATTESTATION_URL: "http://attestation:3000"
+      FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
+    env_file:
+      - .env.${DEPLOYMENT}
+    depends_on:
+      attestation:
+        condition: service_healthy
+      topup:
+        condition: service_healthy
+
+volumes:
+  deploy-crs-cache:

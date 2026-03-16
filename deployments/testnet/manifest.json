@@ -1,0 +1,55 @@
+{
+  "status": "deploy_ok",
+  "generated_at": "2026-03-16T12:27:50.432Z",
+  "network": {
+    "node_url": "https://rpc.testnet.aztec-labs.com/",
+    "node_version": "4.1.0-rc.2",
+    "l1_chain_id": 11155111,
+    "rollup_version": 4127419662
+  },
+  "aztec_required_addresses": {
+    "l1_contract_addresses": {
+      "registryAddress": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba",
+      "rollupAddress": "0xf6d0d42ace06829becb78c74f49879528fc632c1",
+      "inboxAddress": "0xf1bb424ac888aa239f1e658b5bddabc65a1c94e6",
+      "outboxAddress": "0x5fe63c32b7ca20445e813bdb1019f1ffc5f52376",
+      "feeJuiceAddress": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
+      "feeJuicePortalAddress": "0xd3361019e40026ce8a9745c19e67fd3acc10d596",
+      "feeAssetHandlerAddress": "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9"
+    },
+    "protocol_contract_addresses": {
+      "instanceRegistry": "0x0000000000000000000000000000000000000000000000000000000000000002",
+      "classRegistry": "0x0000000000000000000000000000000000000000000000000000000000000003",
+      "multiCallEntrypoint": "0x0000000000000000000000000000000000000000000000000000000000000004",
+      "feeJuice": "0x0000000000000000000000000000000000000000000000000000000000000005"
+    }
+  },
+  "deployment_accounts": {
+    "l2_deployer": {
+      "alias": "deployer",
+      "address": "0x233a3b27b7a07a3d6c59b7dbe0610191e865740c4ba8749ed43bdf5b85c4aa3e",
+      "private_key": "0x228073e435bcbd64d97f6040e6762ec96906fd0bd3494935df55a3340d9afbfc"
+    }
+  },
+  "contracts": {
+    "accepted_asset": "0x2b4de698c2cc98e781aed32c77fb322410aa213455d4fface3e37b872697caad",
+    "fpc": "0x29740a49c59208d9d581a15d08326caf850058a48c7c6008c10c2a6226b0fac2",
+    "counter": "0x1a33393c4b31aaaea7d13deb10183fa68ad0ec839d195fcf289343e2fa9aa52f"
+  },
+  "fpc_artifact": {
+    "name": "FPCMultiAsset",
+    "path": "/app/target/fpc-FPCMultiAsset.json"
+  },
+  "operator": {
+    "address": "0x233a3b27b7a07a3d6c59b7dbe0610191e865740c4ba8749ed43bdf5b85c4aa3e",
+    "pubkey_x": "0x04224aee165df3dd750f3aaaaa92ed700631c9a25829427088d83594088da3a6",
+    "pubkey_y": "0x05f7748ee7486e396ce5d38a250f99846e1fed1802b85208a276a8d84cf61d41"
+  },
+  "tx_hashes": {
+    "accepted_asset_deploy": null,
+    "fpc_deploy": null,
+    "counter_deploy": null,
+    "bridge_deploy": null
+  },
+  "payment_mode": "fee_juice"
+}

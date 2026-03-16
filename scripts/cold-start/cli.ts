@@ -52,7 +52,7 @@ export function usage(): string {
     "All arguments are optional. CLI args take precedence over env vars.",
     "",
     "Required (via env or CLI):",
-    "  --l1-rpc-url <url>               L1 RPC URL [env: FPC_SMOKE_L1_RPC_URL]",
+    "  --l1-rpc-url <url>               L1 RPC URL [env: L1_RPC_URL]",
     "  --attestation-url <url>          Attestation server base URL [env: FPC_ATTESTATION_URL]",
     "  --manifest <path>                Deployment manifest path [env: FPC_COLD_START_MANIFEST]",
     "  --operator-secret-key <hex32>    Operator secret key [env: FPC_OPERATOR_SECRET_KEY]",
@@ -138,7 +138,7 @@ function parseNonNegativeInt(value: string, fieldName: string): number {
 
 export function parseCliArgs(argv: string[]): CliParseResult {
   let nodeUrl: string = process.env.AZTEC_NODE_URL ?? "http://localhost:8080";
-  let l1RpcUrl: string | null = process.env.FPC_SMOKE_L1_RPC_URL ?? null;
+  let l1RpcUrl: string | null = process.env.L1_RPC_URL ?? null;
   let attestationUrl: string | null = process.env.FPC_ATTESTATION_URL ?? null;
   let manifestPath: string | null = process.env.FPC_COLD_START_MANIFEST ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
@@ -201,7 +201,7 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   }
 
   if (!l1RpcUrl) {
-    throw new CliError("Missing --l1-rpc-url or FPC_SMOKE_L1_RPC_URL");
+    throw new CliError("Missing --l1-rpc-url or L1_RPC_URL");
   }
   if (!attestationUrl) {
     throw new CliError("Missing --attestation-url or FPC_ATTESTATION_URL");

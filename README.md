@@ -158,7 +158,7 @@ Smoke implementation file:
 Optional overrides:
 
 - `AZTEC_NODE_URL` (default `http://localhost:8080`)
-- `FPC_SMOKE_L1_RPC_URL` (default `http://127.0.0.1:8545`)
+- `L1_RPC_URL` (default `http://127.0.0.1:8545`)
 - `FPC_SMOKE_START_LOCAL_NETWORK` (default `1`; auto-starts `aztec start --local-network` when `8080/8545` are unavailable)
 - `FPC_SMOKE_NODE_TIMEOUT_MS` (default `30000`)
 - `FPC_SMOKE_RATE_NUM`, `FPC_SMOKE_RATE_DEN` (defaults: `10200` / `10000000`)

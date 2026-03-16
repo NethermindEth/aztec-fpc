@@ -175,8 +175,8 @@ function usage(): string {
     "  --l1-deployer-key <hex32>        L1 deployer private key for bridge contracts [env: FPC_L1_DEPLOYER_KEY]",
     "",
     "Network:",
-    `  --node-url <url>                 Aztec node URL (default: ${DEVNET_DEFAULT_NODE_URL}) [env: FPC_NODE_URL]`,
-    "  --l1-rpc-url <url>               L1 RPC URL [env: FPC_L1_RPC_URL]",
+    `  --node-url <url>                 Aztec node URL (default: ${DEVNET_DEFAULT_NODE_URL}) [env: AZTEC_NODE_URL]`,
+    "  --l1-rpc-url <url>               L1 RPC URL [env: L1_RPC_URL]",
     "",
     "Options:",
     "  --operator <aztec_address>       Operator address (default: derived from key) [env: FPC_OPERATOR]",
@@ -274,8 +274,8 @@ function parseSecretPair(
 }
 
 function parseCliArgs(argv: string[]): CliParseResult {
-  let nodeUrl: string = process.env.FPC_NODE_URL ?? DEVNET_DEFAULT_NODE_URL;
-  let l1RpcUrl: string | null = process.env.FPC_L1_RPC_URL ?? null;
+  let nodeUrl: string = process.env.AZTEC_NODE_URL ?? DEVNET_DEFAULT_NODE_URL;
+  let l1RpcUrl: string | null = process.env.L1_RPC_URL ?? null;
   let validateTopupPath = process.env.FPC_VALIDATE_TOPUP_PATH === "1";
   let sponsoredFpcAddress: string | null = process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
   let deployerSecretKey: string | null = process.env.FPC_DEPLOYER_SECRET_KEY ?? null;

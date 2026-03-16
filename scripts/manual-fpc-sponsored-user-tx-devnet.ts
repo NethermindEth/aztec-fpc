@@ -100,7 +100,7 @@ function usage(): string {
     "  --manifest ./deployments/devnet-manifest-v2.json",
     "  --node-url from AZTEC_NODE_URL or manifest.network.node_url",
     "  --quote-base-url http://localhost:3000",
-    "  --operator-secret-key from FPC_DEVNET_OPERATOR_SECRET_KEY | OPERATOR_SECRET_KEY | manifest.deployment_accounts.l2_deployer.private_key",
+    "  --operator-secret-key from FPC_OPERATOR_SECRET_KEY | OPERATOR_SECRET_KEY | manifest.deployment_accounts.l2_deployer.private_key",
     "  --user-secret-key from FPC_DEVNET_USER_SECRET_KEY | USER_SECRET_KEY | L2_PRIVATE_KEY | operator-secret-key",
     `  --operator-salt ${ZERO_SALT_HEX}`,
     `  --user-salt ${ZERO_SALT_HEX}`,
@@ -240,7 +240,7 @@ function readConfig(argv: string[]): Config {
   let counterAddress = parseOptionalEnv("MOCK_COUNTER_ADDRESS");
 
   let operatorSecretKeyRaw =
-    parseOptionalEnv("FPC_DEVNET_OPERATOR_SECRET_KEY") ?? parseOptionalEnv("OPERATOR_SECRET_KEY");
+    parseOptionalEnv("FPC_OPERATOR_SECRET_KEY") ?? parseOptionalEnv("OPERATOR_SECRET_KEY");
   let userSecretKeyRaw =
     parseOptionalEnv("FPC_DEVNET_USER_SECRET_KEY") ??
     parseOptionalEnv("USER_SECRET_KEY") ??
@@ -325,7 +325,7 @@ function readConfig(argv: string[]): Config {
   }
   if (!operatorSecretKeyRaw) {
     throw new Error(
-      "Missing operator secret key. Set FPC_DEVNET_OPERATOR_SECRET_KEY or OPERATOR_SECRET_KEY.",
+      "Missing operator secret key. Set FPC_OPERATOR_SECRET_KEY or OPERATOR_SECRET_KEY.",
     );
   }
 
