@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
@@ -752,6 +752,30 @@ function isBadSweepRequestError(message: string): boolean {
   );
 }
 
+function buildQuoteRateLimitHook(context: ServerContext, logEvent: string, logMessage: string) {
+  const { rateLimiter, config, metrics, nowUnixSeconds } = context;
+  return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const nowSeconds = BigInt(await nowUnixSeconds());
+    const rejection = consumeQuoteRateLimit(rateLimiter, config, req.headers, req.ip, nowSeconds);
+    if (rejection) {
+      const observe = createQuoteObserver(metrics);
+      req.log.warn(
+        {
+          event: logEvent,
+          identity_kind: rejection.identityKind,
+          retry_after_seconds: rejection.retryAfterSeconds,
+        },
+        logMessage,
+      );
+      observe("rate_limited");
+      reply
+        .header("retry-after", rejection.retryAfterSeconds.toString())
+        .code(429)
+        .send(rateLimited());
+    }
+  };
+}
+
 function registerPublicRoutes(context: ServerContext): void {
   const { app, assetPolicyStore, config, metrics } = context;
 
@@ -801,39 +825,20 @@ function registerQuoteRoute(context: ServerContext): void {
     metrics,
     nowUnixSeconds,
     quoteSigner,
-    rateLimiter,
     treasury,
   } = context;
   const validUntil = validUntilFactory(config);
+  const rateLimitHook = buildQuoteRateLimitHook(
+    context,
+    "quote_rate_limited",
+    "Rate limited quote request",
+  );
 
   app.get<{
     Querystring: QuoteRequestQuery;
-  }>("/quote", async (req, reply) => {
+  }>("/quote", { preHandler: rateLimitHook }, async (req, reply) => {
     const observe = createQuoteObserver(metrics);
     const nowSeconds = BigInt(await nowUnixSeconds());
-
-    const rateLimitRejection = consumeQuoteRateLimit(
-      rateLimiter,
-      config,
-      req.headers,
-      req.ip,
-      nowSeconds,
-    );
-    if (rateLimitRejection) {
-      req.log.warn(
-        {
-          event: "quote_rate_limited",
-          identity_kind: rateLimitRejection.identityKind,
-          retry_after_seconds: rateLimitRejection.retryAfterSeconds,
-        },
-        "Rate limited quote request",
-      );
-      observe("rate_limited");
-      return reply
-        .header("retry-after", rateLimitRejection.retryAfterSeconds.toString())
-        .code(429)
-        .send(rateLimited());
-    }
 
     if (!isQuoteAuthorized(config, req.headers)) {
       req.log.warn(
@@ -1098,39 +1103,20 @@ function registerColdStartQuoteRoute(context: ServerContext): void {
     metrics,
     nowUnixSeconds,
     quoteSigner,
-    rateLimiter,
     treasury,
   } = context;
   const validUntil = validUntilFactory(config);
+  const rateLimitHook = buildQuoteRateLimitHook(
+    context,
+    "cold_start_quote_rate_limited",
+    "Rate limited cold-start quote request",
+  );
 
   app.get<{
     Querystring: ColdStartQuoteRequestQuery;
-  }>("/cold-start-quote", async (req, reply) => {
+  }>("/cold-start-quote", { preHandler: rateLimitHook }, async (req, reply) => {
     const observe = createQuoteObserver(metrics);
     const nowSeconds = BigInt(await nowUnixSeconds());
-
-    const rateLimitRejection = consumeQuoteRateLimit(
-      rateLimiter,
-      config,
-      req.headers,
-      req.ip,
-      nowSeconds,
-    );
-    if (rateLimitRejection) {
-      req.log.warn(
-        {
-          event: "cold_start_quote_rate_limited",
-          identity_kind: rateLimitRejection.identityKind,
-          retry_after_seconds: rateLimitRejection.retryAfterSeconds,
-        },
-        "Rate limited cold-start quote request",
-      );
-      observe("rate_limited");
-      return reply
-        .header("retry-after", rateLimitRejection.retryAfterSeconds.toString())
-        .code(429)
-        .send(rateLimited());
-    }
 
     if (!isQuoteAuthorized(config, req.headers)) {
       req.log.warn(
