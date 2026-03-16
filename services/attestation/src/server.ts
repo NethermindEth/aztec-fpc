@@ -654,10 +654,12 @@ function isBadSweepRequestError(message: string): boolean {
   );
 }
 
+const NO_RATE_LIMIT = { config: { rateLimit: false as const } };
+
 function registerPublicRoutes(context: ServerContext): void {
   const { app, assetPolicyStore, config, metrics } = context;
 
-  app.get("/.well-known/fpc.json", (req) => ({
+  app.get("/.well-known/fpc.json", NO_RATE_LIMIT, (req) => ({
     discovery_version: DISCOVERY_VERSION,
     attestation_api_version: ATTESTATION_API_VERSION,
     network_id: config.network_id,
@@ -675,15 +677,15 @@ function registerPublicRoutes(context: ServerContext): void {
     supported_assets: buildSupportedAssetsForDiscovery(assetPolicyStore),
   }));
 
-  app.get("/health", () => ({ status: "ok" }));
+  app.get("/health", NO_RATE_LIMIT, () => ({ status: "ok" }));
 
-  app.get("/metrics", (_req, reply) =>
+  app.get("/metrics", NO_RATE_LIMIT, (_req, reply) =>
     reply
       .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
       .send(metrics.renderPrometheus()),
   );
 
-  app.get("/asset", () => {
+  app.get("/asset", NO_RATE_LIMIT, () => {
     const primaryAsset = assetPolicyStore.getPrimaryAsset();
     return {
       name: primaryAsset.name,
@@ -691,7 +693,9 @@ function registerPublicRoutes(context: ServerContext): void {
     };
   });
 
-  app.get("/accepted-assets", () => buildSupportedAssetsForDiscovery(assetPolicyStore));
+  app.get("/accepted-assets", NO_RATE_LIMIT, () =>
+    buildSupportedAssetsForDiscovery(assetPolicyStore),
+  );
 }
 
 function registerQuoteRoute(context: ServerContext): void {
@@ -709,123 +713,99 @@ function registerQuoteRoute(context: ServerContext): void {
 
   app.get<{
     Querystring: QuoteRequestQuery;
-  }>(
-    "/quote",
-    {
-      config: {
-        rateLimit: {
-          max: config.quote_rate_limit.maxRequests,
-          timeWindow: config.quote_rate_limit.windowSeconds * 1000,
-          onExceeded: (req: FastifyRequest, key: string) => {
-            const identityKind = key.startsWith("api_key:") ? "api_key" : "ip";
-            req.log.warn(
-              { event: "quote_rate_limited", identity_kind: identityKind },
-              "Rate limited quote request",
-            );
-            createQuoteObserver(metrics)("rate_limited");
-          },
+  }>("/quote", async (req, reply) => {
+    const observe = createQuoteObserver(metrics);
+    const nowSeconds = BigInt(await nowUnixSeconds());
+
+    if (!isQuoteAuthorized(config, req.headers)) {
+      req.log.warn(
+        {
+          event: "quote_auth_rejected",
+          mode: config.quote_auth.mode,
         },
-      },
-    },
-    async (req, reply) => {
-      const observe = createQuoteObserver(metrics);
-      const nowSeconds = BigInt(await nowUnixSeconds());
+        "Rejected unauthorized quote request",
+      );
+      observe("unauthorized");
+      return reply.code(401).send(unauthorized());
+    }
 
-      if (!isQuoteAuthorized(config, req.headers)) {
-        req.log.warn(
-          {
-            event: "quote_auth_rejected",
-            mode: config.quote_auth.mode,
-          },
-          "Rejected unauthorized quote request",
-        );
-        observe("unauthorized");
-        return reply.code(401).send(unauthorized());
-      }
+    const parsedRequest = parseQuoteRequest(assetPolicyStore.getAll(), req.query);
+    if (!parsedRequest.ok) {
+      observe("bad_request");
+      return reply.code(400).send(badRequest(parsedRequest.message));
+    }
 
-      const parsedRequest = parseQuoteRequest(assetPolicyStore.getAll(), req.query);
-      if (!parsedRequest.ok) {
+    const { acceptedAsset, fjFeeAmount, selectedAssetPolicy, userAddress } = parsedRequest.value;
+
+    try {
+      const quotePricing = computeQuotePricing(
+        selectedAssetPolicy,
+        fjFeeAmount,
+        nowSeconds,
+        validUntil,
+      );
+      if (!quotePricing.ok) {
         observe("bad_request");
-        return reply.code(400).send(badRequest(parsedRequest.message));
+        return reply.code(400).send(badRequest(quotePricing.message));
       }
 
-      const { acceptedAsset, fjFeeAmount, selectedAssetPolicy, userAddress } = parsedRequest.value;
+      const { aaPaymentAmount, rateDen, rateNum, validUntil: quoteValidUntil } = quotePricing.value;
+      await ensureSenderRegistered(treasury, userAddress, req.log);
+      const signature = await signQuoteForRequest(config, quoteSigner, {
+        fpcAddress,
+        acceptedAsset,
+        userAddress,
+        fjFeeAmount,
+        aaPaymentAmount,
+        validUntil: quoteValidUntil,
+        rateNum,
+        rateDen,
+      });
 
-      try {
-        const quotePricing = computeQuotePricing(
-          selectedAssetPolicy,
-          fjFeeAmount,
-          nowSeconds,
-          validUntil,
-        );
-        if (!quotePricing.ok) {
-          observe("bad_request");
-          return reply.code(400).send(badRequest(quotePricing.message));
-        }
+      req.log.info(
+        {
+          event: "quote_issued",
+          user: userAddress.toString(),
+          accepted_asset: selectedAssetPolicy.address,
+          valid_until: quoteValidUntil.toString(),
+          fj_amount: fjFeeAmount.toString(),
+          aa_payment_amount: aaPaymentAmount.toString(),
+          rate_num: rateNum.toString(),
+          rate_den: rateDen.toString(),
+          quote_format: config.quote_format,
+        },
+        "Quote issued",
+      );
+      observe("success");
 
-        const {
-          aaPaymentAmount,
-          rateDen,
-          rateNum,
-          validUntil: quoteValidUntil,
-        } = quotePricing.value;
-        await ensureSenderRegistered(treasury, userAddress, req.log);
-        const signature = await signQuoteForRequest(config, quoteSigner, {
-          fpcAddress,
-          acceptedAsset,
-          userAddress,
-          fjFeeAmount,
-          aaPaymentAmount,
-          validUntil: quoteValidUntil,
-          rateNum,
-          rateDen,
-        });
-
-        req.log.info(
-          {
-            event: "quote_issued",
-            user: userAddress.toString(),
-            accepted_asset: selectedAssetPolicy.address,
-            valid_until: quoteValidUntil.toString(),
-            fj_amount: fjFeeAmount.toString(),
-            aa_payment_amount: aaPaymentAmount.toString(),
-            rate_num: rateNum.toString(),
-            rate_den: rateDen.toString(),
-            quote_format: config.quote_format,
-          },
-          "Quote issued",
-        );
-        observe("success");
-
-        return buildQuoteResponse(
-          config,
-          selectedAssetPolicy,
-          fjFeeAmount,
-          aaPaymentAmount,
-          quoteValidUntil,
-          signature,
-          rateNum,
-          rateDen,
-        );
-      } catch (error) {
-        observe("internal_error");
-        req.log.error(
-          {
-            err: error,
-            user: userAddress.toString(),
-          },
-          "Failed to issue quote",
-        );
-        return reply.code(500).send(internalErrorBody());
-      }
-    },
-  );
+      return buildQuoteResponse(
+        config,
+        selectedAssetPolicy,
+        fjFeeAmount,
+        aaPaymentAmount,
+        quoteValidUntil,
+        signature,
+        rateNum,
+        rateDen,
+      );
+    } catch (error) {
+      observe("internal_error");
+      req.log.error(
+        {
+          err: error,
+          user: userAddress.toString(),
+        },
+        "Failed to issue quote",
+      );
+      return reply.code(500).send(internalErrorBody());
+    }
+  });
 }
 
 function registerAdminRoutes(context: ServerContext): void {
   const { app, assetPolicyStore, config, treasury } = context;
 
-  app.get("/admin/asset-policies", (req, reply) => {
+  app.get("/admin/asset-policies", NO_RATE_LIMIT, (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -836,7 +816,7 @@ function registerAdminRoutes(context: ServerContext): void {
   app.put<{
     Params: AdminAssetPolicyParams;
     Body: AdminAssetPolicyBody;
-  }>("/admin/asset-policies/:assetAddress", async (req, reply) => {
+  }>("/admin/asset-policies/:assetAddress", NO_RATE_LIMIT, async (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -865,7 +845,7 @@ function registerAdminRoutes(context: ServerContext): void {
 
   app.delete<{
     Params: AdminAssetPolicyParams;
-  }>("/admin/asset-policies/:assetAddress", async (req, reply) => {
+  }>("/admin/asset-policies/:assetAddress", NO_RATE_LIMIT, async (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -895,7 +875,7 @@ function registerAdminRoutes(context: ServerContext): void {
     }
   });
 
-  app.get("/admin/operator-balances", async (req, reply) => {
+  app.get("/admin/operator-balances", NO_RATE_LIMIT, async (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -920,7 +900,7 @@ function registerAdminRoutes(context: ServerContext): void {
 
   app.post<{
     Body: AdminSweepRequestBody;
-  }>("/admin/sweeps", async (req, reply) => {
+  }>("/admin/sweeps", NO_RATE_LIMIT, async (req, reply) => {
     const access = requireAdminAccess(config, req.headers);
     if (!access.ok) {
       return reply.code(access.statusCode).send(access.body);
@@ -960,6 +940,7 @@ export async function buildServer(
   deps: BuildServerDependencies = {},
 ) {
   const app = Fastify({ logger: true });
+  const metrics = new AttestationMetrics();
 
   await app.register(rateLimit, {
     global: true,
@@ -968,6 +949,18 @@ export async function buildServer(
     keyGenerator: (req: FastifyRequest) =>
       resolveQuoteRateLimitIdentity(config, req.headers, req.ip).cacheKey,
     errorResponseBuilder: () => ({ statusCode: 429, ...rateLimited() }),
+    onExceeded: (req: FastifyRequest, key: string) => {
+      const identityKind = key.startsWith("api_key:") ? "api_key" : "ip";
+      const isColdStart = req.url.startsWith("/cold-start-quote");
+      req.log.warn(
+        {
+          event: isColdStart ? "cold_start_quote_rate_limited" : "quote_rate_limited",
+          identity_kind: identityKind,
+        },
+        isColdStart ? "Rate limited cold-start quote request" : "Rate limited quote request",
+      );
+      createQuoteObserver(metrics)("rate_limited");
+    },
     ...(config.quote_rate_limit.enabled
       ? { cache: config.quote_rate_limit.maxTrackedKeys }
       : { allowList: () => true }),
@@ -990,7 +983,7 @@ export async function buildServer(
       ),
     config,
     fpcAddress: AztecAddress.fromString(config.fpc_address),
-    metrics: new AttestationMetrics(),
+    metrics,
     nowUnixSeconds: deps.nowUnixSeconds ?? (() => BigInt(Math.floor(Date.now() / 1000))),
     quoteSigner,
     treasury: deps.treasury,
@@ -1019,123 +1012,104 @@ function registerColdStartQuoteRoute(context: ServerContext): void {
 
   app.get<{
     Querystring: ColdStartQuoteRequestQuery;
-  }>(
-    "/cold-start-quote",
-    {
-      config: {
-        rateLimit: {
-          max: config.quote_rate_limit.maxRequests,
-          timeWindow: config.quote_rate_limit.windowSeconds * 1000,
-          onExceeded: (req: FastifyRequest, key: string) => {
-            const identityKind = key.startsWith("api_key:") ? "api_key" : "ip";
-            req.log.warn(
-              { event: "cold_start_quote_rate_limited", identity_kind: identityKind },
-              "Rate limited cold-start quote request",
-            );
-            createQuoteObserver(metrics)("rate_limited");
-          },
+  }>("/cold-start-quote", async (req, reply) => {
+    const observe = createQuoteObserver(metrics);
+    const nowSeconds = BigInt(await nowUnixSeconds());
+
+    if (!isQuoteAuthorized(config, req.headers)) {
+      req.log.warn(
+        {
+          event: "cold_start_quote_auth_rejected",
+          mode: config.quote_auth.mode,
         },
-      },
-    },
-    async (req, reply) => {
-      const observe = createQuoteObserver(metrics);
-      const nowSeconds = BigInt(await nowUnixSeconds());
+        "Rejected unauthorized cold-start quote request",
+      );
+      observe("unauthorized");
+      return reply.code(401).send(unauthorized());
+    }
 
-      if (!isQuoteAuthorized(config, req.headers)) {
-        req.log.warn(
-          {
-            event: "cold_start_quote_auth_rejected",
-            mode: config.quote_auth.mode,
-          },
-          "Rejected unauthorized cold-start quote request",
-        );
-        observe("unauthorized");
-        return reply.code(401).send(unauthorized());
-      }
+    const parsedRequest = parseColdStartQuoteRequest(assetPolicyStore.getAll(), req.query);
+    if (!parsedRequest.ok) {
+      observe("bad_request");
+      return reply.code(400).send(badRequest(parsedRequest.message));
+    }
 
-      const parsedRequest = parseColdStartQuoteRequest(assetPolicyStore.getAll(), req.query);
-      if (!parsedRequest.ok) {
-        observe("bad_request");
-        return reply.code(400).send(badRequest(parsedRequest.message));
-      }
+    const {
+      userAddress,
+      acceptedAsset,
+      selectedAssetPolicy,
+      fjFeeAmount,
+      claimAmount,
+      claimSecretHash,
+    } = parsedRequest.value;
 
-      const {
-        userAddress,
-        acceptedAsset,
+    try {
+      const quotePricing = computeQuotePricing(
         selectedAssetPolicy,
         fjFeeAmount,
+        nowSeconds,
+        validUntil,
+      );
+      if (!quotePricing.ok) {
+        observe("bad_request");
+        return reply.code(400).send(badRequest(quotePricing.message));
+      }
+
+      const { validUntil: quoteValidUntil, aaPaymentAmount } = quotePricing.value;
+
+      if (claimAmount < aaPaymentAmount) {
+        observe("bad_request");
+        return reply.code(400).send(badRequest("claim_amount must be >= aa_payment_amount"));
+      }
+
+      await ensureSenderRegistered(treasury, fpcAddress, req.log);
+
+      const coldStartParams: ColdStartQuoteParams = {
+        fpcAddress,
+        acceptedAsset,
+        fjFeeAmount,
+        aaPaymentAmount,
+        validUntil: quoteValidUntil,
+        userAddress,
         claimAmount,
         claimSecretHash,
-      } = parsedRequest.value;
+      };
+      const signature = await signColdStartQuote(quoteSigner, coldStartParams);
 
-      try {
-        const quotePricing = computeQuotePricing(
-          selectedAssetPolicy,
-          fjFeeAmount,
-          nowSeconds,
-          validUntil,
-        );
-        if (!quotePricing.ok) {
-          observe("bad_request");
-          return reply.code(400).send(badRequest(quotePricing.message));
-        }
-
-        const { validUntil: quoteValidUntil, aaPaymentAmount } = quotePricing.value;
-
-        if (claimAmount < aaPaymentAmount) {
-          observe("bad_request");
-          return reply.code(400).send(badRequest("claim_amount must be >= aa_payment_amount"));
-        }
-
-        await ensureSenderRegistered(treasury, fpcAddress, req.log);
-
-        const coldStartParams: ColdStartQuoteParams = {
-          fpcAddress,
-          acceptedAsset,
-          fjFeeAmount,
-          aaPaymentAmount,
-          validUntil: quoteValidUntil,
-          userAddress,
-          claimAmount,
-          claimSecretHash,
-        };
-        const signature = await signColdStartQuote(quoteSigner, coldStartParams);
-
-        req.log.info(
-          {
-            event: "cold_start_quote_issued",
-            user: userAddress.toString(),
-            accepted_asset: selectedAssetPolicy.address,
-            valid_until: quoteValidUntil.toString(),
-            fj_amount: fjFeeAmount.toString(),
-            aa_payment_amount: aaPaymentAmount.toString(),
-            claim_amount: claimAmount.toString(),
-            claim_secret_hash: claimSecretHash.toString(),
-          },
-          "Cold-start quote issued",
-        );
-        observe("success");
-
-        return {
+      req.log.info(
+        {
+          event: "cold_start_quote_issued",
+          user: userAddress.toString(),
           accepted_asset: selectedAssetPolicy.address,
+          valid_until: quoteValidUntil.toString(),
           fj_amount: fjFeeAmount.toString(),
           aa_payment_amount: aaPaymentAmount.toString(),
-          valid_until: quoteValidUntil.toString(),
           claim_amount: claimAmount.toString(),
           claim_secret_hash: claimSecretHash.toString(),
-          signature,
-        };
-      } catch (error) {
-        observe("internal_error");
-        req.log.error(
-          {
-            err: error,
-            user: userAddress.toString(),
-          },
-          "Failed to issue cold-start quote",
-        );
-        return reply.code(500).send(internalErrorBody());
-      }
-    },
-  );
+        },
+        "Cold-start quote issued",
+      );
+      observe("success");
+
+      return {
+        accepted_asset: selectedAssetPolicy.address,
+        fj_amount: fjFeeAmount.toString(),
+        aa_payment_amount: aaPaymentAmount.toString(),
+        valid_until: quoteValidUntil.toString(),
+        claim_amount: claimAmount.toString(),
+        claim_secret_hash: claimSecretHash.toString(),
+        signature,
+      };
+    } catch (error) {
+      observe("internal_error");
+      req.log.error(
+        {
+          err: error,
+          user: userAddress.toString(),
+        },
+        "Failed to issue cold-start quote",
+      );
+      return reply.code(500).send(internalErrorBody());
+    }
+  });
 }
