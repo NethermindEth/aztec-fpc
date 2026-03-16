@@ -1,40 +1,82 @@
 # FPC Contracts
 
-Operator-run fee payment contracts for Aztec L2:
-- `FPC`: pay fees directly in one fixed token via private transfer to the operator.
+Operator-run fee payment contracts for Aztec L2. Pay transaction fees in any supported token via private transfer to the operator.
 
-Full protocol specification: [docs/spec.md](docs/spec.md)
-
-Wallet discovery contract (`GET /.well-known/fpc.json`): [docs/wallet-discovery-spec.md](docs/wallet-discovery-spec.md)
-
-Operational probes and metrics: [docs/operational-metrics.md](docs/operational-metrics.md)
-
-Alpha asset model decision: [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md)
-
-Current contract surface is multi-asset: `FPCMultiAsset`.
+Current contract surface: `FPCMultiAsset`.
 
 ---
 
 ## Deploy FPC
 
-Deploy the FPC contract and generate service configs with a single Docker command. No local toolchain required — the image ships with pre-compiled contract artifacts.
+Deploy the FPC contract and run the full operator stack with a single Docker Compose command. No local toolchain required — the images ship with pre-compiled contract artifacts.
 
 ```bash
-export FPC_DEPLOYER_SECRET_KEY=0x<deployer_hex32>
-export FPC_OPERATOR_SECRET_KEY=0x<operator_hex32>
+export FPC_DEPLOYER_SECRET_KEY=0x<deployer_key>
+export FPC_OPERATOR_SECRET_KEY=0x<operator_key>
+export FPC_L1_DEPLOYER_KEY=0x<l1_deployer_key>
 
-docker run \
-  -e AZTEC_NODE_URL=https://rpc.testnet.aztec-labs.com \
-  -e FPC_DEPLOYER_SECRET_KEY \
-  -e FPC_OPERATOR_SECRET_KEY \
-  -v ./deployments:/app/deployments \
-  nethermind/aztec-fpc-contract-deployment:local \
-  --accepted-asset 0x<token_address>
+DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
 ```
 
-This deploys the `FPCMultiAsset` contract (and optionally a `Token` if `--accepted-asset` is omitted), writes a deployment manifest, and generates ready-to-use configs for the attestation and topup services under `./deployments/`.
+This deploys contracts, generates service configs, and starts the attestation and topup services. Output goes to `deployments/testnet/`.
 
-Full guide: [docs/docker-deployment.md](docs/docker-deployment.md) — covers master config setup, all CLI arguments, environment variables, config generation, and advanced examples.
+To deploy FPC against an existing token (skip test token deployment):
+
+```bash
+export FPC_ACCEPTED_ASSET=0x<token_address>
+DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
+```
+
+**[Full deployment guide](docs/docker-deployment.md)** — standalone Docker commands, all CLI arguments, environment variables, config generation, Docker Compose, and advanced examples.
+
+---
+
+## Integrate with the SDK
+
+Use [`@aztec-fpc/sdk`](sdk/) to construct FPC payment methods and execute cold-start flows from your application.
+
+```ts
+import { FpcClient } from "@aztec-fpc/sdk";
+
+const client = new FpcClient({
+  fpcAddress,
+  operator,
+  node,
+  attestationBaseUrl: "https://your-attestation-service.example.com",
+});
+
+// Create a payment method for an existing transaction
+const result = await client.createPaymentMethod({
+  wallet,
+  user,
+  tokenAddress,
+  estimatedGas: simulation.estimatedGas,
+});
+
+// Or cold-start: claim bridged tokens and pay fees in one tx
+const coldStart = await client.executeColdStart({
+  wallet,
+  userAddress,
+  tokenAddress,
+  bridgeAddress,
+  bridgeClaim,
+});
+```
+
+**[Full SDK documentation](sdk/README.md)** — installation, API reference, `createPaymentMethod` and `executeColdStart` usage, artifact loading, and returned types.
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/docker-deployment.md](docs/docker-deployment.md) | Docker deployment guide |
+| [sdk/README.md](sdk/README.md) | SDK integration guide |
+| [docs/spec.md](docs/spec.md) | Full protocol specification |
+| [docs/wallet-discovery-spec.md](docs/wallet-discovery-spec.md) | Wallet discovery (`GET /.well-known/fpc.json`) |
+| [docs/operational-metrics.md](docs/operational-metrics.md) | Operational probes and metrics |
+| [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md) | Alpha asset model decision |
 
 ---
 
