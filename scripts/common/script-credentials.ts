@@ -18,12 +18,14 @@ import { type Fq, Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import type { AccountManager } from "@aztec/aztec.js/wallet";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { createLogger } from "@aztec/foundation/log";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
-import { createWalletClient, fallback, type Hex, http, publicActions } from "viem";
+import { type Chain, extractChain, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import * as viemChains from "viem/chains";
 
 const pinoLogger = pino();
 
@@ -82,10 +84,12 @@ export async function resolveScriptAccounts(
   const node = createAztecNodeClient(nodeUrl);
 
   // Set up L1 portal for bridging FeeJuice.
-  const l1WalletClient = createWalletClient({
-    account: l1Account,
-    transport: fallback([http(l1RpcUrl)]),
-  }).extend(publicActions);
+  const nodeInfo = await node.getNodeInfo();
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as readonly Chain[],
+    id: nodeInfo.l1ChainId,
+  });
+  const l1WalletClient = createExtendedL1Client([l1RpcUrl], l1Key, l1Chain);
   const portal = await L1FeeJuicePortalManager.new(
     node,
     l1WalletClient,

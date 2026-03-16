@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
 import pino from "pino";
-import { type Address, createPublicClient, createWalletClient, http, isAddress } from "viem";
+import { type Address, type Chain, createPublicClient, extractChain, http, isAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import * as viemChains from "viem/chains";
 
 const pinoLogger = pino();
 
@@ -535,11 +537,13 @@ async function tryDirectMint(params: {
   amount: bigint;
 }): Promise<boolean> {
   const funder = privateKeyToAccount(params.funderPrivateKey);
-  const walletClient = createWalletClient({
-    account: funder,
-    transport: http(params.l1RpcUrl),
-  });
   const publicClient = createPublicClient({ transport: http(params.l1RpcUrl) });
+  const l1ChainId = await publicClient.getChainId();
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as readonly Chain[],
+    id: l1ChainId,
+  });
+  const walletClient = createExtendedL1Client([params.l1RpcUrl], params.funderPrivateKey, l1Chain);
 
   try {
     const { hash } = await sendWithManagedNonce({
@@ -547,7 +551,6 @@ async function tryDirectMint(params: {
       accountAddress: funder.address,
       send: (nonce) =>
         walletClient.writeContract({
-          chain: null,
           address: params.tokenAddress,
           abi: ERC20_MINT_ABI,
           functionName: "mint",
@@ -580,11 +583,13 @@ async function mintViaFeeAssetHandler(params: {
   targetBalanceWei: bigint;
 }): Promise<void> {
   const funder = privateKeyToAccount(params.funderPrivateKey);
-  const walletClient = createWalletClient({
-    account: funder,
-    transport: http(params.l1RpcUrl),
-  });
   const publicClient = createPublicClient({ transport: http(params.l1RpcUrl) });
+  const l1ChainId = await publicClient.getChainId();
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as readonly Chain[],
+    id: l1ChainId,
+  });
+  const walletClient = createExtendedL1Client([params.l1RpcUrl], params.funderPrivateKey, l1Chain);
 
   const mintAmount = await publicClient.readContract({
     address: params.handlerAddress,
@@ -612,7 +617,6 @@ async function mintViaFeeAssetHandler(params: {
       initialNonce: nextNonce,
       send: (nonce) =>
         walletClient.writeContract({
-          chain: null,
           address: params.handlerAddress,
           abi: FEE_ASSET_HANDLER_ABI,
           functionName: "mint",

@@ -28,16 +28,8 @@ import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
 import pino from "pino";
-import {
-  createWalletClient,
-  fallback,
-  type GetContractReturnType,
-  getContract,
-  type Hex,
-  http,
-  publicActions,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
+import * as viemChains from "viem/chains";
 import { deriveAccount, resolveScriptAccounts } from "../common/script-credentials.ts";
 import { type CliArgs, CliError } from "./cli.ts";
 
@@ -201,16 +193,16 @@ export async function setup(args: CliArgs): Promise<TestContext> {
   }
   pinoLogger.info(`[cold-start-smoke] FPC FeeJuice balance=${fpcFeeJuiceBalance}`);
 
-  const l1Account = privateKeyToAccount(l1PrivateKey as Hex);
-  const l1WalletClient = createExtendedL1Client([args.l1RpcUrl], l1Account);
+  const nodeInfo = await node.getNodeInfo();
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as readonly Chain[],
+    id: nodeInfo.l1ChainId,
+  });
+  const l1WalletClient = createExtendedL1Client([args.l1RpcUrl], l1PrivateKey as Hex, l1Chain);
 
   // 6. Set up L1 clients for token bridging (tests bridge their own tokens)
   const l1MintKey = (args.l1DeployerKey ?? l1PrivateKey) as Hex;
-  const l1MintAccount = privateKeyToAccount(l1MintKey);
-  const l1MintClient = createWalletClient({
-    account: l1MintAccount,
-    transport: fallback([http(args.l1RpcUrl)]),
-  }).extend(publicActions);
+  const l1MintClient = createExtendedL1Client([args.l1RpcUrl], l1MintKey, l1Chain);
 
   const l1Erc20 = getContract({
     address: l1Erc20Address as Hex,

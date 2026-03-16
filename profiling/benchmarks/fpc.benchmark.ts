@@ -55,14 +55,10 @@ import {
   AVM_MAX_PROCESSABLE_L2_GAS,
   MAX_PROCESSABLE_DA_GAS_PER_CHECKPOINT,
 } from '@aztec/constants';
+import { createExtendedL1Client } from '@aztec/ethereum/client';
 import { createPXE, getPXEConfig } from '@aztec/pxe/server';
-import {
-  createWalletClient,
-  defineChain,
-  http,
-  publicActions,
-} from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { extractChain, type Chain } from 'viem';
+import * as viemChains from 'viem/chains';
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -159,19 +155,8 @@ function constructorHasAcceptedAsset(fpcArtifact: any): boolean {
 
 async function createL1Client(node: any) {
   const nodeInfo = await node.getNodeInfo();
-  const chain = defineChain({
-    id: nodeInfo.l1ChainId,
-    name: 'Local L1',
-    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpcUrls: { default: { http: [L1_RPC_URL] } },
-  });
-  const account = privateKeyToAccount(ANVIL_PRIVATE_KEY as `0x${string}`);
-  const walletClient = createWalletClient({
-    account,
-    chain,
-    transport: http(L1_RPC_URL),
-  });
-  return walletClient.extend(publicActions);
+  const chain = extractChain({ chains: Object.values(viemChains) as readonly Chain[], id: nodeInfo.l1ChainId });
+  return createExtendedL1Client([L1_RPC_URL], ANVIL_PRIVATE_KEY, chain);
 }
 
 async function mineL1Blocks(l1Client: any, count: number) {
