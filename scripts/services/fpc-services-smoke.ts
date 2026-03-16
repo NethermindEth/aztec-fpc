@@ -13,6 +13,7 @@ import type { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { Gas } from "@aztec/stdlib/gas";
@@ -21,8 +22,9 @@ import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { deployContract } from "@aztec-fpc/contract-deployment/src/deploy-utils.ts";
 import { FpcClient } from "@aztec-fpc/sdk";
-import { createPublicClient, createWalletClient, type Hex, http, parseAbi } from "viem";
+import { type Chain, createPublicClient, extractChain, type Hex, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import * as viemChains from "viem/chains";
 import {
   installManagedProcessSignalHandlers,
   type ManagedProcess,
@@ -231,10 +233,12 @@ async function tryMintL1FeeJuice(
 
   const { tokenAddress } = await getFeeJuiceL1Addresses(node);
   const account = privateKeyToAccount(l1PrivateKey);
-  const walletClient = createWalletClient({
-    account,
-    transport: http(l1RpcUrl),
+  const nodeInfo = await node.getNodeInfo();
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as readonly Chain[],
+    id: nodeInfo.l1ChainId,
   });
+  const walletClient = createExtendedL1Client([l1RpcUrl], l1PrivateKey, l1Chain);
   const publicClient = createPublicClient({
     transport: http(l1RpcUrl),
   });

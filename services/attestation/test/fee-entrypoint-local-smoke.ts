@@ -12,6 +12,7 @@ import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { FeeJuiceContract, ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { Gas, GasFees, GasSettings } from "@aztec/stdlib/gas";
@@ -22,14 +23,16 @@ import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { deployContract } from "@aztec-fpc/contract-deployment/src/deploy-utils.ts";
 import {
+  type Chain,
   createPublicClient,
-  createWalletClient,
   decodeEventLog,
+  extractChain,
   type Hex,
   http,
   parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import * as viemChains from "viem/chains";
 import { resolveScriptAccounts } from "../../../scripts/common/script-credentials.ts";
 
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
@@ -200,7 +203,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 type PublicClient = ReturnType<typeof createPublicClient>;
-type WalletClient = ReturnType<typeof createWalletClient>;
+type WalletClient = ReturnType<typeof createExtendedL1Client>;
 type L1Receipt = Awaited<ReturnType<PublicClient["waitForTransactionReceipt"]>>;
 
 interface FeeJuiceBridgeContracts {
@@ -241,17 +244,20 @@ async function resolveFeeJuiceBridgeContracts(
   };
 }
 
-function createL1Clients(config: SmokeConfig): L1Clients {
+async function createL1Clients(config: SmokeConfig): Promise<L1Clients> {
   const account = privateKeyToAccount(config.l1PrivateKey);
+  const publicClient = createPublicClient({
+    transport: http(config.l1RpcUrl),
+  });
+  const l1ChainId = await publicClient.getChainId();
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as readonly Chain[],
+    id: l1ChainId,
+  });
   return {
     accountAddress: account.address,
-    walletClient: createWalletClient({
-      account,
-      transport: http(config.l1RpcUrl),
-    }),
-    publicClient: createPublicClient({
-      transport: http(config.l1RpcUrl),
-    }),
+    walletClient: createExtendedL1Client([config.l1RpcUrl], config.l1PrivateKey, l1Chain),
+    publicClient,
   };
 }
 
@@ -385,7 +391,7 @@ async function topUpFpcFeeJuice(
   topupWei: bigint,
 ): Promise<bigint> {
   const contracts = await resolveFeeJuiceBridgeContracts(node, fpcAddress);
-  const { accountAddress, walletClient, publicClient } = createL1Clients(config);
+  const { accountAddress, walletClient, publicClient } = await createL1Clients(config);
   const bridgeAmount = await resolveBridgeAmount(
     publicClient,
     contracts.feeJuiceTokenAddress,

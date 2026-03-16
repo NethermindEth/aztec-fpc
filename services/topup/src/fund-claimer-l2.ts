@@ -15,12 +15,11 @@ import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { FeeJuiceContract } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { createLogger } from "@aztec/foundation/log";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import type { Chain, Hex } from "viem";
-import { createPublicClient, createWalletClient, defineChain, http, publicActions } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { type Chain, createPublicClient, extractChain, http } from "viem";
 import * as viemChains from "viem/chains";
 
 const LOG_PREFIX = "[fund-claimer-l2]";
@@ -307,49 +306,6 @@ function deriveAddressFromSecret(secretKey: string): Promise<AztecAddress> {
   return getSchnorrAccountContractAddress(secret, Fr.ZERO);
 }
 
-function isChain(value: unknown): value is Chain {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as {
-    id?: unknown;
-    name?: unknown;
-    nativeCurrency?: unknown;
-    rpcUrls?: unknown;
-  };
-  return (
-    typeof candidate.id === "number" &&
-    typeof candidate.name === "string" &&
-    typeof candidate.nativeCurrency === "object" &&
-    typeof candidate.rpcUrls === "object"
-  );
-}
-
-function resolveL1Chain(chainId: number, l1RpcUrl: string): Chain {
-  const known = Object.values(viemChains)
-    .filter(isChain)
-    .find((chain) => chain.id === chainId);
-  if (known) {
-    return {
-      ...known,
-      rpcUrls: {
-        ...known.rpcUrls,
-        default: { http: [l1RpcUrl] },
-        public: { http: [l1RpcUrl] },
-      },
-    };
-  }
-  return defineChain({
-    id: chainId,
-    name: `L1 Chain ${chainId}`,
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: {
-      default: { http: [l1RpcUrl] },
-      public: { http: [l1RpcUrl] },
-    },
-  });
-}
-
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -488,13 +444,11 @@ async function assertL1ChainIdMatchesRpc(l1RpcUrl: string, l1ChainId: number): P
 }
 
 function createL1WalletClient(l1RpcUrl: string, l1ChainId: number, l1PrivateKey: string) {
-  const l1Chain = resolveL1Chain(l1ChainId, l1RpcUrl);
-  const l1Account = privateKeyToAccount(l1PrivateKey as Hex);
-  return createWalletClient({
-    account: l1Account,
-    chain: l1Chain,
-    transport: http(l1RpcUrl),
-  }).extend(publicActions);
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as readonly Chain[],
+    id: l1ChainId,
+  });
+  return createExtendedL1Client([l1RpcUrl], l1PrivateKey, l1Chain);
 }
 
 async function setupBridgePortal(

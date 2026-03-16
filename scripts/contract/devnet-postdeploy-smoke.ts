@@ -130,11 +130,16 @@ type AztecDeps = {
   ExecutionPayload: new (...args: unknown[]) => unknown;
   EmbeddedWallet: { create: (node: NodeLike) => Promise<WalletLike> };
   createPublicClient: (config: { transport: unknown }) => L1PublicClientLike;
-  createWalletClient: (config: { account: unknown; transport: unknown }) => L1WalletClientLike;
+  createExtendedL1Client: (
+    rpcUrls: string[],
+    account: unknown,
+    chain?: unknown,
+  ) => L1WalletClientLike & L1PublicClientLike;
   decodeEventLog: (config: { abi: unknown; data: string; topics: string[] }) => unknown;
   http: (url: string) => unknown;
   parseAbi: (abi: string[]) => unknown;
-  privateKeyToAccount: (privateKey: string) => unknown;
+  extractChain: (args: { chains: unknown[]; id: number }) => unknown;
+  viemChains: unknown[];
 };
 
 class CliError extends Error {
@@ -497,8 +502,9 @@ async function loadDeps(): Promise<AztecDeps> {
     keysApi,
     txApi,
     embeddedApi,
+    ethereumClientApi,
     viemApi,
-    viemAccountsApi,
+    viemChainsApi,
   ] = await Promise.all([
     importWithWorkspaceFallback("@aztec/aztec.js/node"),
     importWithWorkspaceFallback("@aztec/aztec.js/messaging"),
@@ -514,8 +520,9 @@ async function loadDeps(): Promise<AztecDeps> {
     importWithWorkspaceFallback("@aztec/stdlib/keys"),
     importWithWorkspaceFallback("@aztec/stdlib/tx"),
     importWithWorkspaceFallback("@aztec/wallets/embedded"),
+    importWithWorkspaceFallback("@aztec/ethereum/client"),
     importWithWorkspaceFallback("viem"),
-    importWithWorkspaceFallback("viem/accounts"),
+    importWithWorkspaceFallback("viem/chains"),
   ]);
 
   const deps: AztecDeps = {
@@ -541,11 +548,13 @@ async function loadDeps(): Promise<AztecDeps> {
     ExecutionPayload: txApi.ExecutionPayload as AztecDeps["ExecutionPayload"],
     EmbeddedWallet: embeddedApi.EmbeddedWallet as AztecDeps["EmbeddedWallet"],
     createPublicClient: viemApi.createPublicClient as AztecDeps["createPublicClient"],
-    createWalletClient: viemApi.createWalletClient as AztecDeps["createWalletClient"],
+    createExtendedL1Client:
+      ethereumClientApi.createExtendedL1Client as AztecDeps["createExtendedL1Client"],
     decodeEventLog: viemApi.decodeEventLog as AztecDeps["decodeEventLog"],
     http: viemApi.http as AztecDeps["http"],
     parseAbi: viemApi.parseAbi as AztecDeps["parseAbi"],
-    privateKeyToAccount: viemAccountsApi.privateKeyToAccount as AztecDeps["privateKeyToAccount"],
+    extractChain: viemApi.extractChain as AztecDeps["extractChain"],
+    viemChains: Object.values(viemChainsApi),
   };
 
   const requiredFunctions: Array<[string, unknown]> = [
@@ -557,11 +566,10 @@ async function loadDeps(): Promise<AztecDeps> {
     ["computeSecretHash", deps.computeSecretHash],
     ["deriveSigningKey", deps.deriveSigningKey],
     ["createPublicClient", deps.createPublicClient],
-    ["createWalletClient", deps.createWalletClient],
+    ["createExtendedL1Client", deps.createExtendedL1Client],
     ["decodeEventLog", deps.decodeEventLog],
     ["http", deps.http],
     ["parseAbi", deps.parseAbi],
-    ["privateKeyToAccount", deps.privateKeyToAccount],
   ];
   for (const [name, value] of requiredFunctions) {
     if (typeof value !== "function") {
@@ -943,10 +951,12 @@ async function runSmoke(args: CliArgs): Promise<void> {
     );
   }
 
-  const l1WalletClient = deps.createWalletClient({
-    account: deps.privateKeyToAccount(l1OperatorPrivateKeyHex),
-    transport: deps.http(args.l1RpcUrl),
-  });
+  const l1Chain = deps.extractChain({ chains: deps.viemChains, id: l1ChainId });
+  const l1WalletClient = deps.createExtendedL1Client(
+    [args.l1RpcUrl],
+    l1OperatorPrivateKeyHex,
+    l1Chain,
+  );
 
   const tokenArtifact = loadArtifact(
     deps,
