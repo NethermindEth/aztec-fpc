@@ -36,13 +36,7 @@ function buildSelfCheckFixture() {
       },
       sponsored_fpc_address: "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2",
     },
-    deployment_accounts: {
-      l2_deployer: {
-        alias: "my-wallet",
-        address: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-        private_key_ref: "secret-manager://devnet/l2-deployer",
-      },
-    },
+    deployer_address: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
     contracts: {
       accepted_asset: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       fpc: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -90,15 +84,6 @@ function runSelfCheck(): void {
     const broken = buildSelfCheckFixture() as unknown as Record<string, unknown>;
     const contracts = broken.contracts as Record<string, unknown>;
     delete contracts.fpc;
-    validateDevnetDeployManifest(broken);
-  });
-
-  expectThrow("l2_deployer missing private_key/private_key_ref", () => {
-    const broken = buildSelfCheckFixture() as unknown as Record<string, unknown>;
-    const deploymentAccounts = broken.deployment_accounts as Record<string, unknown>;
-    const l2Deployer = deploymentAccounts.l2_deployer as Record<string, unknown>;
-    delete l2Deployer.private_key;
-    delete l2Deployer.private_key_ref;
     validateDevnetDeployManifest(broken);
   });
 

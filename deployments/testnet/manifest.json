@@ -24,13 +24,7 @@
       "feeJuice": "0x0000000000000000000000000000000000000000000000000000000000000005"
     }
   },
-  "deployment_accounts": {
-    "l2_deployer": {
-      "alias": "deployer",
-      "address": "0x233a3b27b7a07a3d6c59b7dbe0610191e865740c4ba8749ed43bdf5b85c4aa3e",
-      "private_key": "0x228073e435bcbd64d97f6040e6762ec96906fd0bd3494935df55a3340d9afbfc"
-    }
-  },
+  "deployer_address": "0x233a3b27b7a07a3d6c59b7dbe0610191e865740c4ba8749ed43bdf5b85c4aa3e",
   "contracts": {
     "accepted_asset": "0x1b6a3479389c0890b5b5c12fb8c2c5e415d02b7be653d37a2296c64b6f3a31bf",
     "fpc": "0x244fd9caaea2e4ca4800e3877a3cf984b5c15dbeef0b3dd3aa25ae51a7c44f76",

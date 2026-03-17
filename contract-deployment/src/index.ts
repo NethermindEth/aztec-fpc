@@ -1295,15 +1295,7 @@ async function main(): Promise<void> {
       },
       ...(args.sponsoredFpcAddress ? { sponsored_fpc_address: args.sponsoredFpcAddress } : {}),
     },
-    deployment_accounts: {
-      l2_deployer: {
-        alias: "deployer",
-        address: deployerAddress.toString(),
-        ...(args.deployerSecretKey
-          ? { private_key: args.deployerSecretKey }
-          : { private_key_ref: args.deployerSecretKeyRef }),
-      },
-    },
+    deployer_address: deployerAddress.toString(),
     contracts: {
       accepted_asset: acceptedAssetAddress,
       fpc: fpcAddress,

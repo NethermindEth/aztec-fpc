@@ -32,12 +32,6 @@ type PartialManifest = {
   network?: {
     node_url?: string;
   };
-  deployment_accounts?: {
-    l2_deployer?: {
-      private_key?: string;
-      address?: string;
-    };
-  };
 };
 
 function usage(): string {
@@ -55,7 +49,7 @@ function usage(): string {
     "Defaults / fallbacks:",
     `  --manifest ${DEFAULT_MANIFEST_PATH}`,
     "  --node-url from AZTEC_NODE_URL or manifest.network.node_url",
-    "  --secret-key from TOPUP_AUTOCLAIM_SECRET_KEY or (if enabled) OPERATOR_SECRET_KEY or manifest.deployment_accounts.l2_deployer.private_key",
+    "  --secret-key from TOPUP_AUTOCLAIM_SECRET_KEY or (if enabled) OPERATOR_SECRET_KEY",
     "  --use-operator-secret-key from TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY (default false)",
     `  --test-account-index from TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX (default ${DEFAULT_TEST_ACCOUNT_INDEX})`,
     "  --auto-claim-enabled from TOPUP_AUTOCLAIM_ENABLED (default true)",
@@ -213,20 +207,14 @@ async function resolveClaimer(params: {
   explicitSecretKey: string | null;
   useOperatorSecretKey: boolean;
   testAccountIndex: number;
-  manifest: PartialManifest;
 }): Promise<{
   address: AztecAddress;
   source: "secret_key" | "test_account";
   detail: string;
 }> {
   const operatorSecretKey = parseOptionalSecretKey(parseOptionalEnv("OPERATOR_SECRET_KEY"));
-  const manifestSecretKey = parseOptionalSecretKey(
-    params.manifest.deployment_accounts?.l2_deployer?.private_key ?? null,
-  );
   const chosenSecretKey =
-    params.explicitSecretKey ??
-    (params.useOperatorSecretKey ? operatorSecretKey : null) ??
-    manifestSecretKey;
+    params.explicitSecretKey ?? (params.useOperatorSecretKey ? operatorSecretKey : null);
 
   if (chosenSecretKey) {
     const secretFr = Fr.fromHexString(chosenSecretKey);
@@ -237,9 +225,7 @@ async function resolveClaimer(params: {
       detail:
         params.explicitSecretKey !== null
           ? "TOPUP_AUTOCLAIM_SECRET_KEY/--secret-key"
-          : params.useOperatorSecretKey && operatorSecretKey
-            ? "OPERATOR_SECRET_KEY (fallback enabled)"
-            : "manifest.deployment_accounts.l2_deployer.private_key",
+          : "OPERATOR_SECRET_KEY (fallback enabled)",
     };
   }
 
@@ -291,7 +277,6 @@ async function main(): Promise<void> {
     explicitSecretKey: args.secretKey,
     useOperatorSecretKey,
     testAccountIndex,
-    manifest,
   });
 
   pinoLogger.info(
@@ -309,16 +294,6 @@ async function main(): Promise<void> {
   pinoLogger.info(
     `${LOG_PREFIX} ok: claimer account is publicly deployed (${claimer.address.toString()})`,
   );
-
-  const manifestDeployerAddress = manifest.deployment_accounts?.l2_deployer?.address ?? null;
-  if (
-    manifestDeployerAddress &&
-    manifestDeployerAddress.toLowerCase() !== claimer.address.toString().toLowerCase()
-  ) {
-    pinoLogger.info(
-      `${LOG_PREFIX} note: claimer differs from manifest deployment_accounts.l2_deployer.address (${manifestDeployerAddress})`,
-    );
-  }
 }
 
 main().catch((error) => {

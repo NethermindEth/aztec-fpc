@@ -7,6 +7,7 @@ const pinoLogger = pino();
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
+import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -520,21 +521,25 @@ async function main() {
   const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
   const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-  const token = await deployContract(
+  const tokenDeploy = Contract.deploy(
     wallet,
     tokenArtifact,
     ["SmokeToken", "SMK", 18, operator, operator],
-    { from: operator },
     "constructor_with_minter",
   );
+  const tokenAddress = (await tokenDeploy.getInstance()).address;
+  await deployContract(wallet, tokenArtifact, tokenDeploy, { from: operator });
+  const token = Contract.at(tokenAddress, tokenArtifact, wallet);
   pinoLogger.info(`[smoke] token=${token.address.toString()}`);
 
-  const fpc = await deployContract(
-    wallet,
-    fpcArtifact,
-    [operator, operatorPubKey.x, operatorPubKey.y],
-    { from: operator },
-  );
+  const fpcDeploy = Contract.deploy(wallet, fpcArtifact, [
+    operator,
+    operatorPubKey.x,
+    operatorPubKey.y,
+  ]);
+  const fpcAddress = (await fpcDeploy.getInstance()).address;
+  await deployContract(wallet, fpcArtifact, fpcDeploy, { from: operator });
+  const fpc = Contract.at(fpcAddress, fpcArtifact, wallet);
   pinoLogger.info(`[smoke] fpc=${fpc.address.toString()}`);
 
   pinoLogger.info(`[smoke] fee_per_da_gas=${feePerDaGas}`);
