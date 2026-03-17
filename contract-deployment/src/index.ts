@@ -1042,19 +1042,22 @@ async function deployTestTokenEcosystem(opts: {
   await bridgeBatch.send(opts.deployOpts);
   pinoLogger.info("[deploy-fpc-devnet] L2 batch 1 completed (bridge deploy + set_config)");
 
-  // ── Phase 3: L2 batch 2 — token deploy + counter deploy (6 units) ─
-  const tokenBatch = new BatchCall(opts.wallet, [tokenDeploy, counterDeploy]);
-  await tokenBatch.send(opts.deployOpts);
-  pinoLogger.info("[deploy-fpc-devnet] L2 batch 2 completed (token + counter deploy)");
+  // ── Phase 3: L2 batch 2 — token deploy ─────────────────────────────
+  await tokenDeploy.send(opts.deployOpts);
+  pinoLogger.info("[deploy-fpc-devnet] L2 batch 2 completed (token deploy)");
 
-  // ── Phase 4: Wait for L1→L2 message ───────────────────────────────
+  // ── Phase 4: L2 batch 3 — counter deploy ───────────────────────────
+  await counterDeploy.send(opts.deployOpts);
+  pinoLogger.info("[deploy-fpc-devnet] L2 batch 3 completed (counter deploy)");
+
+  // ── Phase 5: Wait for L1→L2 message ───────────────────────────────
   const faucetMsgHash = Fr.fromHexString(faucetBridgeClaim.messageHash);
   await waitForL1ToL2MessageReady(opts.node, faucetMsgHash, {
     timeoutSeconds: parseEnvPositiveNumber("FPC_BRIDGE_TIMEOUT_SECONDS", 120),
   });
   pinoLogger.info("[deploy-fpc-devnet] L1→L2 message ready");
 
-  // ── Phase 5: L2 batch 3 — faucet deploy + claim_public (4 units) ──
+  // ── Phase 6: L2 batch 4 — faucet deploy + claim_public (4 units) ──
   const faucetBatch = new BatchCall(opts.wallet, [
     faucetDeploy,
     bridgeContract.methods.claim_public(
@@ -1066,7 +1069,7 @@ async function deployTestTokenEcosystem(opts: {
   ]);
   await faucetBatch.send(opts.deployOpts);
   pinoLogger.info(
-    `[deploy-fpc-devnet] L2 batch 3 completed (faucet deploy + claim_public, ${faucetConfig.initialSupply} tokens)`,
+    `[deploy-fpc-devnet] L2 batch 4 completed (faucet deploy + claim_public, ${faucetConfig.initialSupply} tokens)`,
   );
 
   return {
