@@ -121,16 +121,18 @@ jobs:
         if: always()
         run: docker compose --profile full down -v --remove-orphans
 
-      - name: Deploy to devnet
+      - name: Deploy to testnet
         env:
           FPC_DEPLOYER_SECRET_KEY: ${{ secrets.FPC_DEPLOYER_SECRET_KEY }}
           FPC_OPERATOR_SECRET_KEY: ${{ secrets.FPC_OPERATOR_SECRET_KEY }}
           FPC_ACCEPTED_ASSET: ${{ vars.FPC_ACCEPTED_ASSET }}
+          AZTEC_NODE_URL: ${{ vars.AZTEC_NODE_URL }}
         run: |
           docker run \
             -e FPC_DEPLOYER_SECRET_KEY \
             -e FPC_OPERATOR_SECRET_KEY \
             -e FPC_ACCEPTED_ASSET \
+            -e AZTEC_NODE_URL \
             -e FPC_SKIP_CONFIG_GEN=1 \
             -v ${{ github.workspace }}/deployments:/app/data \
             nethermind/aztec-fpc-contract-deployment:local
