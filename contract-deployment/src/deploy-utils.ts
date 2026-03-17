@@ -8,12 +8,16 @@
  * already published before each attempt.
  */
 
+import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import {
-  Contract,
+  BatchCall,
+  type Contract,
+  type ContractFunctionInteraction,
+  type DeployMethod,
   type DeployOptions,
   getContractClassFromArtifact,
 } from "@aztec/aztec.js/contracts";
-import type { PublicKeys } from "@aztec/stdlib/keys";
+import type { Wallet } from "@aztec/aztec.js/wallet";
 import pino from "pino";
 
 const pinoLogger = pino();
@@ -21,27 +25,22 @@ const pinoLogger = pino();
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 3000;
 
-type DeployParams = Parameters<typeof Contract.deploy>;
-
 /**
  * Deploy a contract with automatic retry on class publication races.
  *
- * @param wallet   - Wallet instance to deploy with
- * @param artifact - Contract artifact
- * @param args     - Constructor arguments
- * @param sendOptions - Options forwarded to `.send()` (`from`, `fee`, etc.)
- * @param constructorName - Optional non-default constructor name
- * @param publicKeys - Optional public keys embedded in the contract instance
- *                     (defaults to PublicKeys.default() when omitted)
+ * @param wallet       - Wallet instance to deploy with
+ * @param artifact     - Contract artifact
+ * @param deployMethod - Pre-built deploy method (from Contract.deploy or Contract.deployWithPublicKeys)
+ * @param sendOptions  - Options forwarded to `.send()` (`from`, `fee`, etc.)
+ * @param extraCalls   - Optional extra calls to batch with the deploy via BatchCall
  */
 export async function deployContract(
-  wallet: DeployParams[0],
-  artifact: DeployParams[1],
-  args: DeployParams[2],
+  wallet: Wallet,
+  artifact: ContractArtifact,
+  deployMethod: DeployMethod<Contract>,
   sendOptions: DeployOptions,
-  constructorName?: DeployParams[3],
-  publicKeys?: PublicKeys,
-) {
+  extraCalls?: ContractFunctionInteraction[],
+): Promise<void> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const opts = { ...sendOptions };
@@ -53,11 +52,14 @@ export async function deployContract(
         opts.skipClassPublication = true;
       }
 
-      const deployMethod = publicKeys
-        ? Contract.deployWithPublicKeys(publicKeys, wallet, artifact, args, constructorName)
-        : Contract.deploy(wallet, artifact, args, constructorName);
-      const { contract } = await deployMethod.send(opts);
-      return contract;
+      if (extraCalls && extraCalls.length > 0) {
+        const batch = new BatchCall(wallet, [deployMethod, ...extraCalls]);
+        await batch.send(opts);
+        return;
+      }
+
+      await deployMethod.send(opts);
+      return;
     } catch (error) {
       if (isClassPublicationRace(error) && attempt < MAX_RETRIES) {
         pinoLogger.info(

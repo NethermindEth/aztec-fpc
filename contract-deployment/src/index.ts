@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { BatchCall, Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
+import { Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
 import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
@@ -1035,19 +1035,17 @@ async function deployTestTokenEcosystem(opts: {
 
   // ── Phase 2: L2 batch 1 — bridge deploy + set_config (4 units) ────
   const bridgeContract = Contract.at(bridgeAddress, bridgeArtifact, opts.wallet);
-  const bridgeBatch = new BatchCall(opts.wallet, [
-    bridgeDeploy,
+  await deployContract(opts.wallet, bridgeArtifact, bridgeDeploy, opts.deployOpts, [
     bridgeContract.methods.set_config(tokenAddress, EthAddress.fromString(l1TokenPortalAddress)),
   ]);
-  await bridgeBatch.send(opts.deployOpts);
   pinoLogger.info("[deploy-fpc-devnet] L2 batch 1 completed (bridge deploy + set_config)");
 
   // ── Phase 3: L2 batch 2 — token deploy ─────────────────────────────
-  await tokenDeploy.send(opts.deployOpts);
+  await deployContract(opts.wallet, opts.tokenArtifact, tokenDeploy, opts.deployOpts);
   pinoLogger.info("[deploy-fpc-devnet] L2 batch 2 completed (token deploy)");
 
   // ── Phase 4: L2 batch 3 — counter deploy ───────────────────────────
-  await counterDeploy.send(opts.deployOpts);
+  await deployContract(opts.wallet, counterArtifact, counterDeploy, opts.deployOpts);
   pinoLogger.info("[deploy-fpc-devnet] L2 batch 3 completed (counter deploy)");
 
   // ── Phase 5: Wait for L1→L2 message ───────────────────────────────
@@ -1058,8 +1056,7 @@ async function deployTestTokenEcosystem(opts: {
   pinoLogger.info("[deploy-fpc-devnet] L1→L2 message ready");
 
   // ── Phase 6: L2 batch 4 — faucet deploy + claim_public (4 units) ──
-  const faucetBatch = new BatchCall(opts.wallet, [
-    faucetDeploy,
+  await deployContract(opts.wallet, faucetArtifact, faucetDeploy, opts.deployOpts, [
     bridgeContract.methods.claim_public(
       faucetAddress,
       faucetBridgeClaim.claimAmount,
@@ -1067,7 +1064,6 @@ async function deployTestTokenEcosystem(opts: {
       faucetBridgeClaim.messageLeafIndex,
     ),
   ]);
-  await faucetBatch.send(opts.deployOpts);
   pinoLogger.info(
     `[deploy-fpc-devnet] L2 batch 4 completed (faucet deploy + claim_public, ${faucetConfig.initialSupply} tokens)`,
   );
@@ -1263,15 +1259,13 @@ async function main(): Promise<void> {
   const fpcArtifact = loadArtifact(fpcSelection.artifactPath);
 
   const { publicKeys: fpcPublicKeys } = await deriveKeys(Fr.ZERO);
-  const fpcContract = await deployContract(
-    wallet,
-    fpcArtifact,
-    [operatorAddress, operatorIdentity.pubkeyX, operatorIdentity.pubkeyY],
-    deployOpts,
-    undefined,
-    fpcPublicKeys,
-  );
-  const fpcAddress = fpcContract.address.toString();
+  const fpcDeployMethod = Contract.deployWithPublicKeys(fpcPublicKeys, wallet, fpcArtifact, [
+    operatorAddress,
+    operatorIdentity.pubkeyX,
+    operatorIdentity.pubkeyY,
+  ]);
+  const fpcAddress = (await fpcDeployMethod.getInstance()).address.toString();
+  await deployContract(wallet, fpcArtifact, fpcDeployMethod, deployOpts);
   pinoLogger.info(`[deploy-fpc-devnet] fpc deployed. address=${fpcAddress}`);
 
   const manifest = writeDevnetDeployManifest(args.out, {
