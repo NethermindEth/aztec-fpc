@@ -667,42 +667,15 @@ function fieldStringToBigInt(value: string, fieldName: string): bigint {
   throw new CliError(`Invalid ${fieldName}: expected decimal or 0x-prefixed field value`);
 }
 
-function resolveOperatorSecretKey(args: CliArgs, manifest: DevnetDeployManifest): string {
+function resolveOperatorSecretKey(args: CliArgs): string {
   if (args.operatorSecretKey) {
     return args.operatorSecretKey;
   }
-  const operatorMatchesDeployer =
-    manifest.operator.address.toLowerCase() ===
-    manifest.deployment_accounts.l2_deployer.address.toLowerCase();
-  if (!operatorMatchesDeployer) {
-    throw new CliError(
-      "Missing operator key. Provide --operator-secret-key because manifest.operator.address differs from manifest.deployment_accounts.l2_deployer.address.",
-    );
-  }
-  if (manifest.deployment_accounts.l2_deployer.private_key) {
-    return manifest.deployment_accounts.l2_deployer.private_key;
-  }
-  if (manifest.deployment_accounts.l2_deployer.private_key_ref) {
-    throw new CliError(
-      "Manifest has only deployment_accounts.l2_deployer.private_key_ref. Provide --operator-secret-key explicitly.",
-    );
-  }
-  throw new CliError("Missing operator key in both CLI/env and manifest.");
+  throw new CliError("Missing operator key. Provide --operator-secret-key.");
 }
 
-function resolveL1OperatorPrivateKey(args: CliArgs, manifest: DevnetDeployManifest): string {
-  if (args.l1OperatorPrivateKey) {
-    return args.l1OperatorPrivateKey;
-  }
-  if (manifest.deployment_accounts.l1_topup_operator?.private_key) {
-    return manifest.deployment_accounts.l1_topup_operator.private_key;
-  }
-  if (manifest.deployment_accounts.l1_topup_operator?.private_key_ref) {
-    throw new CliError(
-      "Manifest has only deployment_accounts.l1_topup_operator.private_key_ref. Provide --l1-operator-private-key explicitly.",
-    );
-  }
-  return DEFAULT_LOCAL_L1_PRIVATE_KEY;
+function resolveL1OperatorPrivateKey(args: CliArgs): string {
+  return args.l1OperatorPrivateKey ?? DEFAULT_LOCAL_L1_PRIVATE_KEY;
 }
 
 function ceilDiv(numerator: bigint, denominator: bigint): bigint {
@@ -894,8 +867,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const manifest = parseManifestFromDisk(args.manifestPath);
   const fpcSelection = resolveFpcArtifactSelection(manifest, args);
 
-  const operatorSecretKeyHex = resolveOperatorSecretKey(args, manifest);
-  const l1OperatorPrivateKeyHex = resolveL1OperatorPrivateKey(args, manifest);
+  const operatorSecretKeyHex = resolveOperatorSecretKey(args);
+  const l1OperatorPrivateKeyHex = resolveL1OperatorPrivateKey(args);
   const operatorSecret = deps.Fr.fromHexString(operatorSecretKeyHex);
   const operatorSigningKey = deps.deriveSigningKey(operatorSecret);
 

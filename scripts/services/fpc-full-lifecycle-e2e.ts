@@ -7,7 +7,7 @@ const pinoLogger = pino();
 
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import type { Contract } from "@aztec/aztec.js/contracts";
+import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
@@ -987,24 +987,29 @@ async function deployContractsAndWriteRuntimeConfig(
   const operatorSecretHex = operatorData.secret.toString();
   assertPrivateKeyHex(operatorSecretHex, "operator secret");
 
-  const token = await deployContract(
+  const tokenDeploy = Contract.deploy(
     wallet,
     tokenArtifact,
     ["SmokeToken", "SMK", 18, operator, operator],
-    { from: operator },
     "constructor_with_minter",
   );
+  const tokenAddress = (await tokenDeploy.getInstance()).address;
+  await deployContract(wallet, tokenArtifact, tokenDeploy, { from: operator });
+  const token = Contract.at(tokenAddress, tokenArtifact, wallet);
 
   const schnorr = new Schnorr();
   const operatorSigningKey = operatorData.signingKey ?? deriveSigningKey(operatorData.secret);
   const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-  const fpc = await deployContract(
-    wallet,
-    fpcArtifact,
-    [operator, operatorPubKey.x, operatorPubKey.y, token.address],
-    { from: operator },
-  );
+  const fpcDeploy = Contract.deploy(wallet, fpcArtifact, [
+    operator,
+    operatorPubKey.x,
+    operatorPubKey.y,
+    tokenAddress,
+  ]);
+  const fpcAddress = (await fpcDeploy.getInstance()).address;
+  await deployContract(wallet, fpcArtifact, fpcDeploy, { from: operator });
+  const fpc = Contract.at(fpcAddress, fpcArtifact, wallet);
 
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas;
@@ -1458,24 +1463,31 @@ async function negativeInsufficientFeeJuiceSecondTxRejected(
   const tokenArtifact = loadArtifact(tokenArtifactPath);
   const fpcArtifact = loadArtifact(fpcArtifactPath);
 
-  const isolatedToken = await deployContract(
+  const isolatedTokenDeploy = Contract.deploy(
     result.wallet,
     tokenArtifact,
     ["InsufficientToken", "INS", 18, result.operator, result.operator],
-    { from: result.operator },
     "constructor_with_minter",
   );
+  const isolatedTokenAddress = (await isolatedTokenDeploy.getInstance()).address;
+  await deployContract(result.wallet, tokenArtifact, isolatedTokenDeploy, {
+    from: result.operator,
+  });
+  const isolatedToken = Contract.at(isolatedTokenAddress, tokenArtifact, result.wallet);
 
   const secret = Fr.fromHexString(result.operatorSecretHex);
   const signingKey = deriveSigningKey(secret);
   const schnorr = new Schnorr();
   const operatorPubKey = await schnorr.computePublicKey(signingKey);
-  const isolatedFpc = await deployContract(
-    result.wallet,
-    fpcArtifact,
-    [result.operator, operatorPubKey.x, operatorPubKey.y, isolatedToken.address],
-    { from: result.operator },
-  );
+  const isolatedFpcDeploy = Contract.deploy(result.wallet, fpcArtifact, [
+    result.operator,
+    operatorPubKey.x,
+    operatorPubKey.y,
+    isolatedTokenAddress,
+  ]);
+  const isolatedFpcAddress = (await isolatedFpcDeploy.getInstance()).address;
+  await deployContract(result.wallet, fpcArtifact, isolatedFpcDeploy, { from: result.operator });
+  const isolatedFpc = Contract.at(isolatedFpcAddress, fpcArtifact, result.wallet);
 
   const isolatedCasesRoot = path.join(result.runDir, "insufficient");
   mkdirSync(isolatedCasesRoot, { recursive: true });

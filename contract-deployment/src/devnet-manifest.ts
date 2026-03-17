@@ -9,8 +9,6 @@ const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_TX_HASH_PATTERN = /^0x0{64}$/i;
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
-const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
-
 export type FpcArtifactName = "FPC" | "FPCMultiAsset";
 
 export type DevnetDeployManifest = {
@@ -40,19 +38,7 @@ export type DevnetDeployManifest = {
     };
     sponsored_fpc_address?: string;
   };
-  deployment_accounts: {
-    l2_deployer: {
-      alias: string;
-      address: string;
-      private_key?: string;
-      private_key_ref?: string;
-    };
-    l1_topup_operator?: {
-      address: string;
-      private_key?: string;
-      private_key_ref?: string;
-    };
-  };
+  deployer_address: string;
   contracts: {
     accepted_asset: string;
     fpc: string;
@@ -212,28 +198,6 @@ function parseTxHashOrNull(value: unknown, fieldPath: string): string | null {
   return value;
 }
 
-function parseKeyMaterial(
-  root: Record<string, unknown>,
-  context: string,
-): { privateKey?: string; privateKeyRef?: string } {
-  const privateKey = optionalString(root, "private_key", context);
-  const privateKeyRef = optionalString(root, "private_key_ref", context);
-
-  if (!privateKey && !privateKeyRef) {
-    throw new ManifestValidationError(
-      `Invalid ${context}: must include private_key or private_key_ref`,
-    );
-  }
-
-  if (privateKey && !HEX_32_PATTERN.test(privateKey)) {
-    throw new ManifestValidationError(
-      `Invalid ${context}.private_key: expected 32-byte 0x-prefixed hex`,
-    );
-  }
-
-  return { privateKey, privateKeyRef };
-}
-
 function hasOwn(root: Record<string, unknown>, key: string): boolean {
   return Object.hasOwn(root, key);
 }
@@ -368,48 +332,10 @@ function parseManifest(input: unknown): DevnetDeployManifest {
     ),
   };
 
-  const deploymentAccountsRaw = requireObject(input, "deployment_accounts", "manifest");
-  const l2DeployerRaw = requireObject(
-    deploymentAccountsRaw,
-    "l2_deployer",
-    "manifest.deployment_accounts",
+  const deployerAddress = parseAztecAddress(
+    requireString(input, "deployer_address", "manifest"),
+    "manifest.deployer_address",
   );
-  const l2DeployerKeyMaterial = parseKeyMaterial(
-    l2DeployerRaw,
-    "manifest.deployment_accounts.l2_deployer",
-  );
-  const l2Deployer: DevnetDeployManifest["deployment_accounts"]["l2_deployer"] = {
-    alias: requireString(l2DeployerRaw, "alias", "manifest.deployment_accounts.l2_deployer"),
-    address: parseAztecAddress(
-      requireString(l2DeployerRaw, "address", "manifest.deployment_accounts.l2_deployer"),
-      "manifest.deployment_accounts.l2_deployer.address",
-    ),
-    ...(l2DeployerKeyMaterial.privateKey ? { private_key: l2DeployerKeyMaterial.privateKey } : {}),
-    ...(l2DeployerKeyMaterial.privateKeyRef
-      ? { private_key_ref: l2DeployerKeyMaterial.privateKeyRef }
-      : {}),
-  };
-
-  let l1TopupOperator: DevnetDeployManifest["deployment_accounts"]["l1_topup_operator"];
-  if (hasOwn(deploymentAccountsRaw, "l1_topup_operator")) {
-    const l1TopupRaw = requireObject(
-      deploymentAccountsRaw,
-      "l1_topup_operator",
-      "manifest.deployment_accounts",
-    );
-    const l1KeyMaterial = parseKeyMaterial(
-      l1TopupRaw,
-      "manifest.deployment_accounts.l1_topup_operator",
-    );
-    l1TopupOperator = {
-      address: parseEthAddress(
-        requireString(l1TopupRaw, "address", "manifest.deployment_accounts.l1_topup_operator"),
-        "manifest.deployment_accounts.l1_topup_operator.address",
-      ),
-      ...(l1KeyMaterial.privateKey ? { private_key: l1KeyMaterial.privateKey } : {}),
-      ...(l1KeyMaterial.privateKeyRef ? { private_key_ref: l1KeyMaterial.privateKeyRef } : {}),
-    };
-  }
 
   const contractsRaw = requireObject(input, "contracts", "manifest");
   const faucetAddressRaw = hasOwn(contractsRaw, "faucet")
@@ -578,10 +504,7 @@ function parseManifest(input: unknown): DevnetDeployManifest {
           }
         : {}),
     },
-    deployment_accounts: {
-      l2_deployer: l2Deployer,
-      ...(l1TopupOperator ? { l1_topup_operator: l1TopupOperator } : {}),
-    },
+    deployer_address: deployerAddress,
     contracts,
     ...(l1Contracts ? { l1_contracts: l1Contracts } : {}),
     ...(fpcArtifact ? { fpc_artifact: fpcArtifact } : {}),

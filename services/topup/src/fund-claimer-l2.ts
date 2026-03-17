@@ -53,12 +53,6 @@ type PartialManifest = {
   network?: {
     node_url?: string;
   };
-  deployment_accounts?: {
-    l2_deployer?: {
-      private_key?: string;
-      address?: string;
-    };
-  };
 };
 
 type BridgeClaim = L2AmountClaim;
@@ -90,8 +84,8 @@ function usage(): string {
     "  --node-url from AZTEC_NODE_URL or manifest.network.node_url",
     "  --l1-rpc-url from L1_RPC_URL",
     "  --l1-private-key from L1_OPERATOR_PRIVATE_KEY",
-    "  --claimer-secret-key from TOPUP_AUTOCLAIM_SECRET_KEY, then OPERATOR_SECRET_KEY, then manifest.deployment_accounts.l2_deployer.private_key",
-    "  --claimer-address from --claimer-address or derived from claimer secret key or manifest.deployment_accounts.l2_deployer.address",
+    "  --claimer-secret-key from TOPUP_AUTOCLAIM_SECRET_KEY, then OPERATOR_SECRET_KEY",
+    "  --claimer-address from --claimer-address or derived from claimer secret key",
     "  --fee-payer-secret-key from TOPUP_AUTOCLAIM_FEE_PAYER_SECRET_KEY, else --claimer-secret-key",
     "",
     "Notes:",
@@ -340,23 +334,12 @@ function requireL1PrivateKey(args: CliArgs): string {
   return args.l1PrivateKey;
 }
 
-function resolveClaimerSecretKey(args: CliArgs, manifest: PartialManifest): string | null {
-  const manifestDeployerKey = parseOptionalHex32(
-    "manifest.deployment_accounts.l2_deployer.private_key",
-    manifest.deployment_accounts?.l2_deployer?.private_key ?? null,
-  );
+function resolveClaimerSecretKey(args: CliArgs): string | null {
   const fallbackOperatorKey = parseOptionalHex32(
     "OPERATOR_SECRET_KEY",
     parseOptionalEnv("OPERATOR_SECRET_KEY"),
   );
-  return args.claimerSecretKey ?? fallbackOperatorKey ?? manifestDeployerKey;
-}
-
-function resolveManifestDeployerAddress(manifest: PartialManifest): string | null {
-  return parseOptionalAztecAddress(
-    "manifest.deployment_accounts.l2_deployer.address",
-    manifest.deployment_accounts?.l2_deployer?.address ?? null,
-  );
+  return args.claimerSecretKey ?? fallbackOperatorKey;
 }
 
 function assertClaimerAddressMatchesDerived(
@@ -375,7 +358,6 @@ function assertClaimerAddressMatchesDerived(
 async function resolveClaimerAddress(
   args: CliArgs,
   claimerSecretKey: string | null,
-  manifestDeployerAddress: string | null,
 ): Promise<AztecAddress> {
   if (claimerSecretKey) {
     const derived = await deriveAddressFromSecret(claimerSecretKey);
@@ -387,11 +369,8 @@ async function resolveClaimerAddress(
   if (args.claimerAddress) {
     return AztecAddress.fromString(args.claimerAddress);
   }
-  if (manifestDeployerAddress) {
-    return AztecAddress.fromString(manifestDeployerAddress);
-  }
   throw new Error(
-    "Could not resolve claimer address. Provide --claimer-address or --claimer-secret-key, or include deployment_accounts.l2_deployer in manifest.",
+    "Could not resolve claimer address. Provide --claimer-address or --claimer-secret-key.",
   );
 }
 
@@ -658,13 +637,8 @@ async function main(): Promise<void> {
   const nodeUrl = resolveNodeUrl(args, manifest);
   const l1RpcUrl = requireL1RpcUrl(args);
   const l1PrivateKey = requireL1PrivateKey(args);
-  const claimerSecretKey = resolveClaimerSecretKey(args, manifest);
-  const manifestDeployerAddress = resolveManifestDeployerAddress(manifest);
-  const claimerAddress = await resolveClaimerAddress(
-    args,
-    claimerSecretKey,
-    manifestDeployerAddress,
-  );
+  const claimerSecretKey = resolveClaimerSecretKey(args);
+  const claimerAddress = await resolveClaimerAddress(args, claimerSecretKey);
   const feePayerSecretKey = resolveFeePayerSecretKey(args, claimerSecretKey);
   logRunConfig(args, nodeUrl, l1RpcUrl, claimerAddress);
 

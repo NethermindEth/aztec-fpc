@@ -40,12 +40,6 @@ type PartialManifest = {
   network?: {
     node_url?: string;
   };
-  deployment_accounts?: {
-    l2_deployer?: {
-      private_key?: string;
-      address?: string;
-    };
-  };
   aztec_required_addresses?: {
     sponsored_fpc_address?: string;
   };
@@ -73,7 +67,7 @@ function usage(): string {
     "Defaults / fallbacks:",
     `  --manifest ${DEFAULT_MANIFEST_PATH}`,
     "  --node-url from AZTEC_NODE_URL or manifest.network.node_url",
-    "  --secret-key from TOPUP_AUTOCLAIM_SECRET_KEY or (if enabled) OPERATOR_SECRET_KEY or manifest.deployment_accounts.l2_deployer.private_key",
+    "  --secret-key from TOPUP_AUTOCLAIM_SECRET_KEY or (if enabled) OPERATOR_SECRET_KEY",
     "  --use-operator-secret-key from TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY (default false)",
     "  --sponsored-fpc-address from TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS / FPC_DEVNET_SPONSORED_FPC_ADDRESS / SPONSORED_FPC_ADDRESS / manifest.aztec_required_addresses.sponsored_fpc_address",
     "  --payment-mode from TOPUP_AUTOCLAIM_BOOTSTRAP_PAYMENT_MODE (default auto)",
@@ -278,17 +272,10 @@ function pickOptional<T>(...values: (T | null | undefined)[]): T | null {
   return null;
 }
 
-function resolveSecretKey(
-  args: CliArgs,
-  manifest: PartialManifest,
-): { secretKey: string; source: string } {
+function resolveSecretKey(args: CliArgs): { secretKey: string; source: string } {
   const operatorSecretKey = parseOptionalSecretKey(
     "OPERATOR_SECRET_KEY",
     parseOptionalEnv("OPERATOR_SECRET_KEY"),
-  );
-  const manifestSecretKey = parseOptionalSecretKey(
-    "manifest.deployment_accounts.l2_deployer.private_key",
-    manifest.deployment_accounts?.l2_deployer?.private_key ?? null,
   );
   const useOperatorSecretKey = args.useOperatorSecretKey ?? false;
 
@@ -301,14 +288,8 @@ function resolveSecretKey(
   if (useOperatorSecretKey && operatorSecretKey) {
     return { secretKey: operatorSecretKey, source: "OPERATOR_SECRET_KEY" };
   }
-  if (manifestSecretKey) {
-    return {
-      secretKey: manifestSecretKey,
-      source: "manifest.deployment_accounts.l2_deployer.private_key",
-    };
-  }
   throw new CliError(
-    "Could not resolve claimer secret key. Set TOPUP_AUTOCLAIM_SECRET_KEY (or pass --secret-key), or enable TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY=1 with OPERATOR_SECRET_KEY set, or include deployment_accounts.l2_deployer.private_key in manifest.",
+    "Could not resolve claimer secret key. Set TOPUP_AUTOCLAIM_SECRET_KEY (or pass --secret-key), or enable TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY=1 with OPERATOR_SECRET_KEY set.",
   );
 }
 
@@ -637,7 +618,7 @@ async function main(): Promise<void> {
     );
   }
   const nodeUrl = parseHttpUrl("node URL", nodeUrlRaw);
-  const resolvedSecretKey = resolveSecretKey(args, manifest);
+  const resolvedSecretKey = resolveSecretKey(args);
   const sponsoredFpcAddress = resolveSponsoredFpcAddress(args, manifest);
   const paymentMode = resolvePaymentMode(args, sponsoredFpcAddress);
   const claimerAddress = await deriveAddress(resolvedSecretKey.secretKey);

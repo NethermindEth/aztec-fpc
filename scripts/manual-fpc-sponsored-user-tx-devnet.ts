@@ -61,11 +61,6 @@ type Manifest = {
   operator?: {
     address?: string;
   };
-  deployment_accounts?: {
-    l2_deployer?: {
-      private_key?: string;
-    };
-  };
 };
 
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -100,7 +95,7 @@ function usage(): string {
     "  --manifest ./deployments/devnet-manifest-v2.json",
     "  --node-url from AZTEC_NODE_URL or manifest.network.node_url",
     "  --quote-base-url http://localhost:3000",
-    "  --operator-secret-key from FPC_OPERATOR_SECRET_KEY | OPERATOR_SECRET_KEY | manifest.deployment_accounts.l2_deployer.private_key",
+    "  --operator-secret-key from FPC_OPERATOR_SECRET_KEY | OPERATOR_SECRET_KEY",
     "  --user-secret-key from FPC_DEVNET_USER_SECRET_KEY | USER_SECRET_KEY | L2_PRIVATE_KEY | operator-secret-key",
     `  --operator-salt ${ZERO_SALT_HEX}`,
     `  --user-salt ${ZERO_SALT_HEX}`,
@@ -320,9 +315,6 @@ function readConfig(argv: string[]): Config {
     );
   }
 
-  if (!operatorSecretKeyRaw) {
-    operatorSecretKeyRaw = manifestRaw.deployment_accounts?.l2_deployer?.private_key ?? null;
-  }
   if (!operatorSecretKeyRaw) {
     throw new Error(
       "Missing operator secret key. Set FPC_OPERATOR_SECRET_KEY or OPERATOR_SECRET_KEY.",

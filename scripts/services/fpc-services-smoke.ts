@@ -9,7 +9,7 @@ const pinoLogger = pino();
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
-import type { Contract } from "@aztec/aztec.js/contracts";
+import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
@@ -1081,13 +1081,15 @@ async function main() {
     pinoLogger.info(`[services-smoke] operator=${operator.toString()}`);
     pinoLogger.info(`[services-smoke] user=${user.toString()}`);
 
-    const token = await deployContract(
+    const tokenDeploy = Contract.deploy(
       wallet,
       tokenArtifact,
       ["SmokeToken", "SMK", 18, operator, operator],
-      { from: operator },
       "constructor_with_minter",
     );
+    const tokenAddress = (await tokenDeploy.getInstance()).address;
+    await deployContract(wallet, tokenArtifact, tokenDeploy, { from: operator });
+    const token = Contract.at(tokenAddress, tokenArtifact, wallet);
     pinoLogger.info(`[services-smoke] token=${token.address.toString()}`);
 
     // Derive operator signing pubkey for inline Schnorr verification.
@@ -1095,12 +1097,15 @@ async function main() {
     const operatorSigningKey = deriveSigningKey(testAccounts[0].secret);
     const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
 
-    const fpc = await deployContract(
-      wallet,
-      fpcArtifact,
-      [operator, operatorPubKey.x, operatorPubKey.y, token.address],
-      { from: operator },
-    );
+    const fpcDeploy = Contract.deploy(wallet, fpcArtifact, [
+      operator,
+      operatorPubKey.x,
+      operatorPubKey.y,
+      token.address,
+    ]);
+    const fpcAddress = (await fpcDeploy.getInstance()).address;
+    await deployContract(wallet, fpcArtifact, fpcDeploy, { from: operator });
+    const fpc = Contract.at(fpcAddress, fpcArtifact, wallet);
     pinoLogger.info(`[services-smoke] fpc=${fpc.address.toString()}`);
 
     pinoLogger.info(
