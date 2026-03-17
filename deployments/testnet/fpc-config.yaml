@@ -3,7 +3,7 @@
 # are injected from the deploy output at generation time.
 
 attestation:
-  accepted_asset_name: "humanUSDC"
+  accepted_asset_name: "FpcAcceptedAsset"
   market_rate_num: 1
   market_rate_den: 1000
   fee_bips: 200

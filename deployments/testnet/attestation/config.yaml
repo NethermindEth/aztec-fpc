@@ -1,4 +1,4 @@
-accepted_asset_name: "humanUSDC"
+accepted_asset_name: "FpcAcceptedAsset"
 market_rate_num: 1
 market_rate_den: 1000
 fee_bips: 200
@@ -9,5 +9,5 @@ quote_rate_limit_enabled: true
 quote_rate_limit_max_requests: 60
 quote_rate_limit_window_seconds: 60
 quote_rate_limit_max_tracked_keys: 10000
-fpc_address: "0x244fd9caaea2e4ca4800e3877a3cf984b5c15dbeef0b3dd3aa25ae51a7c44f76"
-accepted_asset_address: "0x1b6a3479389c0890b5b5c12fb8c2c5e415d02b7be653d37a2296c64b6f3a31bf"
+fpc_address: "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f"
+accepted_asset_address: "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb"

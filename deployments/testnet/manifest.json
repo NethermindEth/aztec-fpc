@@ -1,6 +1,6 @@
 {
   "status": "deploy_ok",
-  "generated_at": "2026-03-16T15:13:26.404Z",
+  "generated_at": "2026-03-17T14:37:26.643Z",
   "network": {
     "node_url": "https://rpc.testnet.aztec-labs.com/",
     "node_version": "4.1.0-rc.2",
@@ -24,26 +24,26 @@
       "feeJuice": "0x0000000000000000000000000000000000000000000000000000000000000005"
     }
   },
-  "deployer_address": "0x233a3b27b7a07a3d6c59b7dbe0610191e865740c4ba8749ed43bdf5b85c4aa3e",
+  "deployer_address": "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
   "contracts": {
-    "accepted_asset": "0x1b6a3479389c0890b5b5c12fb8c2c5e415d02b7be653d37a2296c64b6f3a31bf",
-    "fpc": "0x244fd9caaea2e4ca4800e3877a3cf984b5c15dbeef0b3dd3aa25ae51a7c44f76",
-    "faucet": "0x275232f4c33e719f0fe7b9e878c1808f419cd799785fc8458f794bf57afde559",
-    "counter": "0x0e6afe2f0a9fe98eee667fd7748cdeb33352cd6abbd5b35fb191ab75b81ef29f",
-    "bridge": "0x132f9e26001f063db2c3e9f20a6672ad326e857918c43ec21b6a71bea6dc91b4"
+    "accepted_asset": "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb",
+    "fpc": "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f",
+    "faucet": "0x291b988c66f0314b3e2758fe7c85b85f39c3007a9478ccc46f443f8b48783db4",
+    "counter": "0x263c89363fce2523e53d36f62ae514770fce7642770882c307250635479f7638",
+    "bridge": "0x19b200d772d3e9068921e6f5df7530271229e958acc9efc2c637afe64db9763f"
   },
   "l1_contracts": {
-    "token_portal": "0x707af74916d14cc8db07576a5100613641cb9623",
-    "erc20": "0xa98dd1e6c7a78839f75ca49f95861e2061f07b26"
+    "token_portal": "0x57a426552a472e953ecc1342f25b17cc192326be",
+    "erc20": "0xf49de848d9c00c4dfb088b2e6ba2dac81e34aa5d"
   },
   "fpc_artifact": {
     "name": "FPCMultiAsset",
     "path": "/app/target/fpc-FPCMultiAsset.json"
   },
   "operator": {
-    "address": "0x233a3b27b7a07a3d6c59b7dbe0610191e865740c4ba8749ed43bdf5b85c4aa3e",
-    "pubkey_x": "0x04224aee165df3dd750f3aaaaa92ed700631c9a25829427088d83594088da3a6",
-    "pubkey_y": "0x05f7748ee7486e396ce5d38a250f99846e1fed1802b85208a276a8d84cf61d41"
+    "address": "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
+    "pubkey_x": "0x137514cff4c383c6fd6dcf3b914c1651e221525553ee2a87c4629e8d3e23074e",
+    "pubkey_y": "0x17700f56ba224e972fa101a7c43862113556dd716ba4f3f1d6b2579397908488"
   },
   "tx_hashes": {
     "accepted_asset_deploy": null,
