@@ -6,4 +6,4 @@ check_interval_ms: 60000
 confirmation_timeout_ms: 180000
 confirmation_poll_initial_ms: 1000
 confirmation_poll_max_ms: 15000
-fpc_address: "0x244fd9caaea2e4ca4800e3877a3cf984b5c15dbeef0b3dd3aa25ae51a7c44f76"
+fpc_address: "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f"
