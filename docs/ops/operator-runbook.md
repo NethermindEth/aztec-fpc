@@ -5,7 +5,7 @@ Repository root: `<repo-root>`
 
 ## Alpha Asset Model Decision
 
-Source of truth: [ADR-0001](adr-0001-alpha-asset-model.md).
+Source of truth: [ADR-0001](../spec/adr-0001-alpha-asset-model.md).
 
 - Alpha target is **single-deployment multi-asset support**.
 - Current contract surface in this repo follows that target (`FPCMultiAsset`).
