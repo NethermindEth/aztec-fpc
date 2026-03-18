@@ -47,6 +47,7 @@ type CliArgs = {
   l1DeployerKey: string | null;
   fpcArtifact: string;
   out: string;
+  proverEnabled: boolean;
   preflightOnly: boolean;
 };
 
@@ -184,6 +185,7 @@ function usage(): string {
     "  --sponsored-fpc-address <addr>   Use sponsored FPC payment mode [env: FPC_SPONSORED_FPC_ADDRESS]",
     "  --accepted-asset <addr>          Reuse existing token [env: FPC_ACCEPTED_ASSET]",
     "  --validate-topup-path            Enforce L1 chain-id matching [env: FPC_VALIDATE_TOPUP_PATH=1]",
+    "  --pxe-prover-enabled <bool>      Enable PXE prover (default: true) [env: PXE_PROVER_ENABLED]",
     "  --preflight-only                 Run checks only, do not deploy [env: FPC_PREFLIGHT_ONLY=1]",
     "",
     "Outputs:",
@@ -251,6 +253,13 @@ function parseAztecAddress(value: string, fieldName: string): string {
   return value;
 }
 
+function parseBooleanFlag(value: string, fieldName: string): boolean {
+  const lower = value.toLowerCase();
+  if (lower === "1" || lower === "true") return true;
+  if (lower === "0" || lower === "false") return false;
+  throw new CliError(`Invalid ${fieldName}: expected "true", "false", "1", or "0", got "${value}"`);
+}
+
 function parseHex32(value: string, fieldName: string): string {
   if (!HEX_32_PATTERN.test(value)) {
     throw new CliError(`Invalid ${fieldName}: expected 32-byte 0x-prefixed hex value`);
@@ -289,6 +298,9 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let dataDir: string = process.env.FPC_DATA_DIR ?? DEVNET_DEFAULT_DATA_DIR;
   let outExplicit = !!process.env.FPC_OUT;
   let out: string = process.env.FPC_OUT ?? path.join(dataDir, "manifest.json");
+  let proverEnabled = process.env.PXE_PROVER_ENABLED
+    ? parseBooleanFlag(process.env.PXE_PROVER_ENABLED, "PXE_PROVER_ENABLED")
+    : true;
   let preflightOnly = process.env.FPC_PREFLIGHT_ONLY === "1";
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -348,6 +360,10 @@ function parseCliArgs(argv: string[]): CliParseResult {
       case "--out":
         out = nextArg(argv, i, arg);
         outExplicit = true;
+        i += 1;
+        break;
+      case "--pxe-prover-enabled":
+        proverEnabled = parseBooleanFlag(nextArg(argv, i, arg), arg);
         i += 1;
         break;
       case "--preflight-only":
@@ -424,6 +440,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
       l1DeployerKey: l1DeployerKey ? parseHex32(l1DeployerKey, "--l1-deployer-key") : null,
       fpcArtifact: parseNonEmptyString(fpcArtifact, "--fpc-artifact"),
       out,
+      proverEnabled,
       preflightOnly,
     },
   };
@@ -1173,7 +1190,7 @@ async function main(): Promise<void> {
   // --- JS API wallet setup for contract deployments ---
   const node = createAztecNodeClient(args.nodeUrl);
   const wallet = await EmbeddedWallet.create(node, {
-    pxeConfig: { proverEnabled: true },
+    pxeConfig: { proverEnabled: args.proverEnabled },
   });
 
   const deployerSecretFr = Fr.fromHexString(args.deployerSecretKey);
