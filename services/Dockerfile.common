@@ -15,6 +15,7 @@ FROM base AS deps
 # Bun workspace resolution requires every member's package.json present
 # before `bun install` will accept the lockfile.
 COPY package.json bun.lock ./
+COPY examples/package.json examples/
 COPY sdk/package.json sdk/
 COPY scripts/package.json scripts/
 COPY services/attestation/package.json services/attestation/

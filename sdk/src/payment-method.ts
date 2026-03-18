@@ -93,7 +93,11 @@ export class FpcClient {
     const { wallet, userAddress, tokenAddress, bridgeAddress, bridgeClaim } = input;
     const timeoutMs = input.txWaitTimeoutMs ?? DEFAULT_TX_WAIT_TIMEOUT_MS;
 
-    const fpc = await attachContract(fpcAddress, "fpc", node, wallet);
+    const [fpc, _token, _bridge] = await Promise.all([
+      attachContract(fpcAddress, "fpc", node, wallet),
+      attachContract(tokenAddress, "token", node, wallet),
+      attachContract(bridgeAddress, "bridge", node, wallet),
+    ]);
 
     const gasFees = await node.getCurrentMinFees();
     const fjAmount = computeFjAmount(COLD_START_GAS_LIMITS, gasFees);
@@ -248,7 +252,7 @@ async function waitForTx(txHash: TxHash, node: AztecNode, timeoutMs: number): Pr
 
 async function attachContract(
   address: AztecAddress,
-  label: "fpc" | "token",
+  label: "fpc" | "token" | "bridge",
   node: AztecNode,
   wallet: AccountWallet,
 ): Promise<Contract> {
@@ -257,7 +261,8 @@ async function attachContract(
   if (!instance) {
     throw new Error(`${label} contract not found on node at ${address.toString()}`);
   }
-  await wallet.registerContract(instance, artifact);
+  const secretKey = label === "fpc" ? Fr.ZERO : undefined;
+  await wallet.registerContract(instance, artifact, secretKey);
   return Contract.at(address, artifact, wallet);
 }
 

@@ -17,8 +17,8 @@
     "ci": "bun run format && bun run biome:ci && bun run lint && bun run typecheck && bun run test:ts && bun run test:contracts",
     "biome:check": "biome check --write",
     "biome:ci": "biome ci --config-path ./biome.json",
-    "format": "biome format --write package.json tsconfig.base.json services scripts sdk contract-deployment",
-    "lint": "biome lint package.json tsconfig.base.json services scripts sdk contract-deployment",
+    "format": "biome format --write package.json tsconfig.base.json examples services scripts sdk contract-deployment",
+    "lint": "biome lint package.json tsconfig.base.json examples services scripts sdk contract-deployment",
     "check:docs:quote-schema": "bash scripts/check-docs-quote-schema.sh",
     "release:sdk:version:patch": "bash -lc 'cd sdk && npm version patch --no-git-tag-version'",
     "release:sdk:version:minor": "bash -lc 'cd sdk && npm version minor --no-git-tag-version'",
@@ -85,6 +85,7 @@
     "chaos:local": "bash scripts/chaos/fpc-chaos-local.sh"
   },
   "workspaces": [
+    "examples",
     "scripts",
     "services/*",
     "sdk",
