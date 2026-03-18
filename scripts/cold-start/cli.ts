@@ -29,6 +29,7 @@ export type CliArgs = {
   claimAmount: bigint;
   aaPaymentAmount: bigint;
   quoteTtlSeconds: bigint;
+  proverEnabled: boolean;
   messageTimeoutSeconds: number;
 };
 
@@ -72,6 +73,9 @@ export function usage(): string {
     "Timing:",
     "  --quote-ttl-seconds <uint>       Quote TTL in seconds (default: 3600) [env: FPC_SMOKE_QUOTE_TTL_SECONDS]",
     "  --message-timeout <uint>         L1→L2 message wait timeout seconds (default: 120) [env: FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS]",
+    "",
+    "PXE:",
+    "  --pxe-prover-enabled <bool>      Enable PXE prover (default: true) [env: PXE_PROVER_ENABLED]",
     "",
     "  --help, -h                       Show this help",
   ].join("\n");
@@ -124,6 +128,13 @@ function parsePositiveBigInt(value: string, fieldName: string): bigint {
   return parsed;
 }
 
+function parseBooleanFlag(value: string, fieldName: string): boolean {
+  const lower = value.toLowerCase();
+  if (lower === "1" || lower === "true") return true;
+  if (lower === "0" || lower === "false") return false;
+  throw new CliError(`Invalid ${fieldName}: expected "true", "false", "1", or "0", got "${value}"`);
+}
+
 function parseNonNegativeInt(value: string, fieldName: string): number {
   const trimmed = value.trim();
   if (!DECIMAL_UINT_PATTERN.test(trimmed)) {
@@ -151,6 +162,9 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   let claimAmount: string = process.env.FPC_COLD_START_CLAIM_AMOUNT ?? "10000000000000000";
   let aaPaymentAmount: string = process.env.FPC_COLD_START_AA_PAYMENT_AMOUNT ?? "1000000000";
   let quoteTtlSeconds: string = process.env.FPC_SMOKE_QUOTE_TTL_SECONDS ?? "3600";
+  let proverEnabled = process.env.PXE_PROVER_ENABLED
+    ? parseBooleanFlag(process.env.PXE_PROVER_ENABLED, "PXE_PROVER_ENABLED")
+    : true;
   let messageTimeoutSeconds: string = process.env.FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS ?? "120";
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -200,6 +214,10 @@ export function parseCliArgs(argv: string[]): CliParseResult {
         messageTimeoutSeconds = nextArg(argv, i, arg);
         i += 1;
         break;
+      case "--pxe-prover-enabled":
+        proverEnabled = parseBooleanFlag(nextArg(argv, i, arg), arg);
+        i += 1;
+        break;
       case "--help":
       case "-h":
         pinoLogger.info(usage());
@@ -234,6 +252,7 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       userL1PrivateKey: userL1PrivateKey
         ? parseHex32(userL1PrivateKey, "--user-l1-private-key")
         : null,
+      proverEnabled,
       claimAmount: parsePositiveBigInt(claimAmount, "--claim-amount"),
       aaPaymentAmount: parsePositiveBigInt(aaPaymentAmount, "--aa-payment-amount"),
       quoteTtlSeconds: parsePositiveBigInt(quoteTtlSeconds, "--quote-ttl-seconds"),

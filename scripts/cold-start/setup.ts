@@ -142,7 +142,8 @@ export async function setup(args: CliArgs): Promise<TestContext> {
   const node = createAztecNodeClient(args.nodeUrl);
   await waitForNode(node);
   const wallet = await EmbeddedWallet.create(node, {
-    pxeConfig: { proverEnabled: true },
+    ephemeral: true,
+    pxeConfig: { proverEnabled: args.proverEnabled },
   });
 
   // 3. Setup accounts

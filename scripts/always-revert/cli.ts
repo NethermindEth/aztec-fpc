@@ -23,6 +23,7 @@ export type CliArgs = {
   attestationUrl: string;
   manifestPath: string;
   operatorSecretKey: string;
+  proverEnabled: boolean;
   messageTimeoutSeconds: number;
   iterations: number;
 };
@@ -60,6 +61,9 @@ export function usage(): string {
     "",
     "Test:",
     "  --iterations <uint>              Number of always-revert iterations (default: 3) [env: FPC_SMOKE_ITERATIONS]",
+    "",
+    "PXE:",
+    "  --pxe-prover-enabled <bool>      Enable PXE prover (default: true) [env: PXE_PROVER_ENABLED]",
     "",
     "  --help, -h                       Show this help",
   ].join("\n");
@@ -120,6 +124,13 @@ function parsePositiveInt(value: string, fieldName: string): number {
   return Number(big);
 }
 
+function parseBooleanFlag(value: string, fieldName: string): boolean {
+  const lower = value.toLowerCase();
+  if (lower === "1" || lower === "true") return true;
+  if (lower === "0" || lower === "false") return false;
+  throw new CliError(`Invalid ${fieldName}: expected "true", "false", "1", or "0", got "${value}"`);
+}
+
 function parseNonNegativeInt(value: string, fieldName: string): number {
   const trimmed = value.trim();
   if (!DECIMAL_UINT_PATTERN.test(trimmed)) {
@@ -142,6 +153,9 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   let manifestPath: string | null = process.env.FPC_COLD_START_MANIFEST ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let messageTimeoutSeconds: string = process.env.FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS ?? "120";
+  let proverEnabled = process.env.PXE_PROVER_ENABLED
+    ? parseBooleanFlag(process.env.PXE_PROVER_ENABLED, "PXE_PROVER_ENABLED")
+    : true;
   let iterations: string = process.env.FPC_SMOKE_ITERATIONS ?? "3";
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -171,6 +185,10 @@ export function parseCliArgs(argv: string[]): CliParseResult {
         iterations = nextArg(argv, i, arg);
         i += 1;
         break;
+      case "--pxe-prover-enabled":
+        proverEnabled = parseBooleanFlag(nextArg(argv, i, arg), arg);
+        i += 1;
+        break;
       case "--help":
       case "-h":
         pinoLogger.info(usage());
@@ -197,6 +215,7 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       attestationUrl: parseHttpUrl(attestationUrl, "--attestation-url"),
       manifestPath: path.resolve(manifestPath),
       operatorSecretKey: parseHex32(operatorSecretKey, "--operator-secret-key"),
+      proverEnabled,
       messageTimeoutSeconds: parseNonNegativeInt(messageTimeoutSeconds, "--message-timeout"),
       iterations: parsePositiveInt(iterations, "--iterations"),
     },

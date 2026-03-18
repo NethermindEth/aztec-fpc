@@ -4,13 +4,12 @@ services:
     image: "${DEPLOY_IMAGE:-nethermind/aztec-fpc-contract-deployment:local}"
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data
-      - deploy-crs-cache:/app/.bb-crs
     environment:
       FPC_ACCEPTED_ASSET: "${FPC_ACCEPTED_ASSET}"
-      PXE_PROVER: "${PXE_PROVER:-wasm}"
       FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY}"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
       FPC_DATA_DIR: "/app/data"
     env_file:
       - .env.${DEPLOYMENT}
@@ -87,6 +86,7 @@ services:
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
       FPC_L1_USER_KEY: "${FPC_L1_USER_KEY}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:
@@ -106,6 +106,7 @@ services:
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:
@@ -125,6 +126,7 @@ services:
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:
@@ -132,6 +134,3 @@ services:
         condition: service_healthy
       topup:
         condition: service_healthy
-
-volumes:
-  deploy-crs-cache:
