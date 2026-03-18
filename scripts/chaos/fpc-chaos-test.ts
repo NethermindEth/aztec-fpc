@@ -70,8 +70,7 @@ import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/Sponsored
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
-import { Gas } from "@aztec/stdlib/gas";
-import { GasFees } from "@aztec/stdlib/gas";
+import { Gas, GasFees } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
@@ -285,7 +284,7 @@ class ChaosRunner {
       .filter((r) => r.status === "fail")
       .map((r) => `  ${RED}✗ [${r.category}] ${r.name}${RESET}`);
     process.stderr.write(
-      [
+      `${[
         "",
         sep,
         `  Chaos Test Result: ${status}  (${(totalMs / 1000).toFixed(1)}s)`,
@@ -293,7 +292,7 @@ class ChaosRunner {
         ...failedNames,
         sep,
         "",
-      ].join("\n") + "\n",
+      ].join("\n")}\n`,
     );
   }
 
@@ -442,8 +441,7 @@ function getConfig(): ChaosConfig {
     nodeUrl,
     fpcAddress,
     acceptedAsset,
-    faucetAddress:
-      readEnvStr("FPC_CHAOS_FAUCET_ADDRESS") ?? manifest?.contracts?.faucet ?? null,
+    faucetAddress: readEnvStr("FPC_CHAOS_FAUCET_ADDRESS") ?? manifest?.contracts?.faucet ?? null,
     operatorAddress,
     operatorSecretKey: readEnvStr("FPC_CHAOS_OPERATOR_SECRET_KEY"),
     rateLimitBurst: readEnvInt("FPC_CHAOS_RATE_LIMIT_BURST", 70),
@@ -593,7 +591,11 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
   // the resulting address matches the token contract's configured minter.
   const operatorSecret = Fr.fromHexString(config.operatorSecretKey);
   const operatorSigningKey = deriveSigningKey(operatorSecret);
-  const operatorAcct = await wallet.createSchnorrAccount(operatorSecret, Fr.ZERO, operatorSigningKey);
+  const operatorAcct = await wallet.createSchnorrAccount(
+    operatorSecret,
+    Fr.ZERO,
+    operatorSigningKey,
+  );
   const operator = operatorAcct.address;
 
   // User and otherUser can be any valid accounts; derive from test data.
@@ -674,7 +676,8 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
     const faucetArtifact = loadArtifact(faucetArtifactPath);
     const faucetAddr = AztecAddress.fromString(config.faucetAddress);
     const faucetInstance = await node.getContract(faucetAddr);
-    if (!faucetInstance) throw new Error(`Faucet contract not found on-chain: ${config.faucetAddress}`);
+    if (!faucetInstance)
+      throw new Error(`Faucet contract not found on-chain: ${config.faucetAddress}`);
     await wallet.registerContract(faucetInstance, faucetArtifact);
     faucet = Contract.at(faucetAddr, faucetArtifact, wallet);
     pinoLogger.info(`Faucet registered: ${config.faucetAddress}`);
@@ -1064,7 +1067,10 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /quote without fj_amount param returns 4xx",
     async () => {
-      const { status, body } = await httpGet(`${base}/quote?user=${SENTINEL_USER}&accepted_asset=${config.acceptedAsset}`, config);
+      const { status, body } = await httpGet(
+        `${base}/quote?user=${SENTINEL_USER}&accepted_asset=${config.acceptedAsset}`,
+        config,
+      );
       assertClientError(status, body, "/quote (missing fj_amount)");
       return { status };
     },
@@ -1296,8 +1302,9 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
       "Topup GET /ready returns 200 or 503 (not 500)",
       async () => {
         const { status, body } = await httpGet(`${topupBase}/ready`, config);
-        if (status >= 500) {
-          throw new Error(`Topup /ready returned server error ${status}: ${body.slice(0, 200)}`);
+        // 200 = ready, 503 = not ready yet (legitimate). Only 500 is a real error.
+        if (status === 500) {
+          throw new Error(`Topup /ready returned internal server error: ${body.slice(0, 200)}`);
         }
         return { status, ready: status === 200 };
       },
@@ -1572,19 +1579,16 @@ async function runOnchainTests(
       );
 
       // Pass fjAmount+1 but keep original signature – sig covers original fjAmount
-      await expectOnchainFailure(
-        "tampered fj_amount",
-        ["signature", "mismatch"],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount + 1n, // tampered
-            aaPaymentAmount,
-            validUntil,
-          ),
+      await expectOnchainFailure("tampered fj_amount", ["signature", "mismatch"], () =>
+        submitFeePaidTx(
+          config,
+          ctx,
+          ctx.user,
+          sigBytes,
+          fjAmount + 1n, // tampered
+          aaPaymentAmount,
+          validUntil,
+        ),
       );
     },
   );
@@ -1609,19 +1613,16 @@ async function runOnchainTests(
       // Reduce aaPaymentAmount by 1 (would reduce operator revenue if accepted)
       const cheaper = aaPaymentAmount - 1n;
 
-      await expectOnchainFailure(
-        "tampered aa_payment_amount",
-        ["signature"],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            cheaper, // tampered – cheaper payment than signed
-            validUntil,
-          ),
+      await expectOnchainFailure("tampered aa_payment_amount", ["signature"], () =>
+        submitFeePaidTx(
+          config,
+          ctx,
+          ctx.user,
+          sigBytes,
+          fjAmount,
+          cheaper, // tampered – cheaper payment than signed
+          validUntil,
+        ),
       );
     },
   );
@@ -1852,11 +1853,8 @@ async function runOnchainTests(
         validUntil,
         ctx.user,
       );
-      await expectOnchainFailure(
-        "quote signed for wrong FPC address",
-        ["signature"],
-        () =>
-          submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
+      await expectOnchainFailure("quote signed for wrong FPC address", ["signature"], () =>
+        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
       );
     },
   );
@@ -1878,11 +1876,8 @@ async function runOnchainTests(
         validUntil,
         ctx.user,
       );
-      await expectOnchainFailure(
-        "quote signed for wrong accepted_asset",
-        ["signature"],
-        () =>
-          submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
+      await expectOnchainFailure("quote signed for wrong accepted_asset", ["signature"], () =>
+        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
       );
     },
   );
