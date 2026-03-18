@@ -34,7 +34,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
@@ -57,6 +56,7 @@ import {
   waitForHealth,
   waitForNodeReady,
 } from "../common/managed-process.ts";
+import { resolveScriptAccounts } from "../common/script-credentials.ts";
 
 const DEFAULT_L1_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
@@ -276,21 +276,17 @@ async function deployAndConfigure(config: LocalConfig): Promise<SetupResult> {
   await waitForNodeReady(node, config.nodeTimeoutMs);
 
   const wallet = await EmbeddedWallet.create(node);
-  const testAccounts = await getInitialTestAccountsData();
 
-  const [opData, userData] = [testAccounts.at(0), testAccounts.at(1)];
-  if (!opData || !userData) {
-    throw new Error("Need at least 2 initial test accounts");
-  }
-
-  const [operator, user] = await Promise.all([
-    wallet
-      .createSchnorrAccount(opData.secret, opData.salt, opData.signingKey)
-      .then((a) => a.address),
-    wallet
-      .createSchnorrAccount(userData.secret, userData.salt, userData.signingKey)
-      .then((a) => a.address),
-  ]);
+  pinoLogger.info("[chaos-local] Resolving script accounts (L1 fund + L2 deploy)...");
+  const { accounts } = await resolveScriptAccounts(
+    config.nodeUrl,
+    config.l1RpcUrl,
+    wallet,
+    2, // [0]=operator, [1]=user
+  );
+  const [opData, userData] = [accounts[0], accounts[1]];
+  const operator = opData.address;
+  const user = userData.address;
 
   const operatorSecretHex = opData.secret.toString();
   pinoLogger.info(`[chaos-local] Operator: ${operator.toString()}`);
@@ -543,6 +539,7 @@ async function runChaosTest(config: LocalConfig, setup: SetupResult): Promise<nu
     FPC_CHAOS_DA_GAS_LIMIT: String(config.daGasLimit),
     FPC_CHAOS_L2_GAS_LIMIT: String(config.l2GasLimit),
     FPC_CHAOS_HTTP_TIMEOUT_MS: String(config.httpTimeoutMs),
+    FPC_CHAOS_L1_RPC_URL: config.l1RpcUrl,
     // Do not set FPC_CHAOS_FAIL_FAST – run all tests and collect results
   };
 

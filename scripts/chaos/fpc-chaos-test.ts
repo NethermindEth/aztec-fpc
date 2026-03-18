@@ -55,7 +55,6 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
@@ -76,6 +75,8 @@ import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 
+import { resolveScriptAccounts } from "../common/script-credentials.ts";
+
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const U128_MAX = 2n ** 128n - 1n;
 const MAX_QUOTE_TTL_SECONDS = 3600n;
@@ -89,6 +90,7 @@ type ChaosConfig = {
   attestationUrl: string;
   topupUrl: string | null;
   nodeUrl: string | null;
+  l1RpcUrl: string | null;
   fpcAddress: string | null;
   acceptedAsset: string | null;
   faucetAddress: string | null;
@@ -439,6 +441,7 @@ function getConfig(): ChaosConfig {
     attestationUrl,
     topupUrl: readEnvStr("FPC_CHAOS_TOPUP_URL")?.replace(/\/$/, "") ?? null,
     nodeUrl,
+    l1RpcUrl: readEnvStr("FPC_CHAOS_L1_RPC_URL"),
     fpcAddress,
     acceptedAsset,
     faucetAddress: readEnvStr("FPC_CHAOS_FAUCET_ADDRESS") ?? manifest?.contracts?.faucet ?? null,
@@ -573,6 +576,7 @@ function loadArtifact(artifactPath: string): ContractArtifact {
 
 async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext> {
   if (!config.nodeUrl) throw new Error("nodeUrl is required for onchain tests");
+  if (!config.l1RpcUrl) throw new Error("FPC_CHAOS_L1_RPC_URL is required for onchain tests");
   if (!config.fpcAddress) throw new Error("fpcAddress is required for onchain tests");
   if (!config.acceptedAsset) throw new Error("acceptedAsset is required for onchain tests");
   if (!config.operatorSecretKey)
@@ -598,20 +602,17 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
   );
   const operator = operatorAcct.address;
 
-  // User and otherUser can be any valid accounts; derive from test data.
-  const testAccounts = await getInitialTestAccountsData();
-  const [userDat, otherUserData] = [testAccounts.at(1), testAccounts.at(2)];
-  if (!userDat || !otherUserData) {
-    throw new Error("Need at least 3 initial test accounts for chaos tests");
-  }
-  const [user, otherUser] = await Promise.all([
-    wallet
-      .createSchnorrAccount(userDat.secret, userDat.salt, userDat.signingKey)
-      .then((a) => a.address),
-    wallet
-      .createSchnorrAccount(otherUserData.secret, otherUserData.salt, otherUserData.signingKey)
-      .then((a) => a.address),
-  ]);
+  // User and otherUser: fresh accounts deployed with funded FeeJuice,
+  // isolated from the node's genesis accounts to avoid note conflicts.
+  pinoLogger.info("Resolving test accounts (L1 fund + L2 deploy)...");
+  const { accounts: scriptAccounts } = await resolveScriptAccounts(
+    config.nodeUrl,
+    config.l1RpcUrl,
+    wallet,
+    2, // [0]=user, [1]=otherUser
+  );
+  const user = scriptAccounts[0].address;
+  const otherUser = scriptAccounts[1].address;
 
   const fpcAddress = AztecAddress.fromString(config.fpcAddress);
   const acceptedAsset = AztecAddress.fromString(config.acceptedAsset);
@@ -1953,14 +1954,16 @@ async function runStressTests(
       // and subsequent txs fail with a nullifier collision, not an FPC error.
       // Sequential submission ensures each tx is confirmed (its nullifiers
       // committed) before the next one is built, giving each its own note.
-      const testAccounts = await getInitialTestAccountsData();
-      const userDat = testAccounts.at(1);
-      if (!userDat) {
-        throw new Error("Need at least 2 initial test accounts for stress test");
+      if (!config.l1RpcUrl || !config.nodeUrl) {
+        throw new Error("l1RpcUrl and nodeUrl are required for stress tests");
       }
-      const userAddress = await ctx.wallet
-        .createSchnorrAccount(userDat.secret, userDat.salt, userDat.signingKey)
-        .then((a) => a.address);
+      const { accounts: stressAccounts } = await resolveScriptAccounts(
+        config.nodeUrl,
+        config.l1RpcUrl,
+        ctx.wallet,
+        1,
+      );
+      const userAddress = stressAccounts[0].address;
 
       // Each tx fetches the current L2 timestamp right before signing.
       // This is required because each iteration waits for multiple tx confirmations
