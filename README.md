@@ -27,7 +27,7 @@ export FPC_ACCEPTED_ASSET=0x<token_address>
 DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
 ```
 
-**[Full deployment guide](docs/docker-deployment.md)** — standalone Docker commands, all CLI arguments, environment variables, config generation, Docker Compose, and advanced examples.
+**[Full deployment & integration guide](docs/aztec-deployer-user-guide.md)** — deployer setup, service configuration, SDK integration, API reference, and troubleshooting.
 
 ---
 
@@ -71,12 +71,16 @@ const coldStart = await client.executeColdStart({
 
 | Document | Description |
 |----------|-------------|
-| [docs/docker-deployment.md](docs/docker-deployment.md) | Docker deployment guide |
+| **[docs/aztec-deployer-user-guide.md](docs/aztec-deployer-user-guide.md)** | **Main guide** — deployment, services, SDK integration, API reference |
 | [sdk/README.md](sdk/README.md) | SDK integration guide |
-| [docs/spec.md](docs/spec.md) | Full protocol specification |
-| [docs/wallet-discovery-spec.md](docs/wallet-discovery-spec.md) | Wallet discovery (`GET /.well-known/fpc.json`) |
-| [docs/operational-metrics.md](docs/operational-metrics.md) | Operational probes and metrics |
-| [docs/adr-0001-alpha-asset-model.md](docs/adr-0001-alpha-asset-model.md) | Alpha asset model decision |
+| [docs/ops/docker-deployment-guide.md](docs/ops/docker-deployment-guide.md) | Docker image CLI arguments, config generation, Compose examples |
+| [docs/ops/devnet-deployment-how-to.md](docs/ops/devnet-deployment-how-to.md) | Non-Docker devnet deployment via `bun run deploy:fpc` |
+| [docs/ops/operator-runbook.md](docs/ops/operator-runbook.md) | 30-minute local operator quick-start |
+| [docs/ops/operational-metrics.md](docs/ops/operational-metrics.md) | Prometheus metrics and health probes reference |
+| [docs/spec/protocol-spec.md](docs/spec/protocol-spec.md) | Full protocol specification |
+| [docs/spec/wallet-discovery-spec.md](docs/spec/wallet-discovery-spec.md) | Wallet discovery (`GET /.well-known/fpc.json`) |
+| [docs/spec/e2e-test-spec.md](docs/spec/e2e-test-spec.md) | E2E test definition and runbook |
+| [docs/spec/adr-0001-alpha-asset-model.md](docs/spec/adr-0001-alpha-asset-model.md) | Alpha asset model decision record |
 
 ---
 
@@ -104,7 +108,9 @@ aztec-fpc/
 ├── vendor/
 │   └── aztec-standards/        ← Git submodule (token contract dependency)
 └── docs/
-    └── spec.md                 ← Full protocol specification
+    ├── aztec-deployer-user-guide.md  ← Main deployment & integration guide
+    ├── spec/                         ← Protocol & design specs
+    └── ops/                          ← Operator runbooks & deployment guides
 ```
 
 ---
@@ -303,10 +309,7 @@ Useful overrides:
 
 ### Devnet deployment and validation (live network)
 
-For the current devnet deployment flow, use:
-
-- [devnet-deployment-how-to.md](devnet-deployment-how-to.md)
-- [local-docs/devnet-deployment-implementation-plan.md](local-docs/devnet-deployment-implementation-plan.md)
+For the current devnet deployment flow, see [devnet-deployment-how-to.md](docs/ops/devnet-deployment-how-to.md).
 
 Canonical command sequence:
 
@@ -550,7 +553,7 @@ User private token balance →[transfer_private_to_private]→ Operator private 
 - Quote binds to `msg_sender` and is nullified after first use.
 - `FPC.fee_entrypoint` pays directly with token each transaction.
 
-See [docs/spec.md](docs/spec.md) for the base quote/topup/fee design and security considerations.
+See [docs/spec/protocol-spec.md](docs/spec/protocol-spec.md) for the base quote/topup/fee design and security considerations.
 
 ---
 

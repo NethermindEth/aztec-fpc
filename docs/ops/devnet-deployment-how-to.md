@@ -1,26 +1,20 @@
 # Devnet Deployment How-To
 
-Date: 2026-02-27
-Repository: `aztec-fpc`
+> Non-Docker deployment flow for Aztec devnet using shell scripts and `bun`.
+> For Docker-based deployment, see [aztec-deployer-user-guide.md](../aztec-deployer-user-guide.md).
 
-This is the current deployment flow for Aztec devnet using:
+Scripts used:
 
-- `scripts/contract/deploy-fpc.sh` (recommended)
-- `contract-deployment/src/index.ts` (advanced/manual)
-- `scripts/contract/verify-fpc-devnet-deployment.ts` (post-deploy verification)
-- `scripts/contract/devnet-postdeploy-smoke.ts` (post-deploy runtime smoke)
-
-Live deployment snapshot (from `deployments/devnet-manifest-v2.json`, generated at `2026-02-27T10:42:49.308Z`):
-
-- `contracts.accepted_asset=0x105721a4fe56f8a7c20f7ce36c661ef609a8dec30a7595585dd2f2ada5fad40a`
-- `contracts.fpc=0x0041782f166133790183c9877441cd9692a987cc37f70edbcd8af0068df7d4b5`
+- `scripts/contract/deploy-fpc.sh` — recommended wrapper
+- `contract-deployment/src/index.ts` — advanced/manual TypeScript entrypoint
+- `scripts/contract/verify-fpc-devnet-deployment.ts` — post-deploy verification
+- `scripts/contract/devnet-postdeploy-smoke.ts` — post-deploy runtime smoke
 
 ## 1. One Command Deploy
 
 From repo root:
 
 ```bash
-cd /home/ametel/source/aztec-fpc
 bun run deploy:fpc
 ```
 
@@ -38,7 +32,6 @@ It writes the manifest to:
 To run checks only (no contract deploy txs):
 
 ```bash
-cd /home/ametel/source/aztec-fpc
 FPC_PREFLIGHT_ONLY=1 bun run deploy:fpc
 ```
 
@@ -137,12 +130,11 @@ Manifest contains:
 
 The output is schema-validated via `writeDevnetDeployManifest(...)`.
 
-## 9. Post-Deploy Verification (Step 5)
+## 9. Post-Deploy Verification
 
 Run verifier against the deployment manifest:
 
 ```bash
-cd /home/ametel/source/aztec-fpc
 bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts \
   --manifest ./deployments/devnet-manifest-v2.json
 ```
@@ -164,19 +156,17 @@ bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts \
   --node-ready-timeout-ms 45000
 ```
 
-## 10. Render Service Configs From Manifest (Step 6)
+## 10. Render Service Configs From Manifest
 
 Render `services/attestation/config.yaml` and `services/topup/config.yaml` from the canonical manifest:
 
 ```bash
-cd /home/ametel/source/aztec-fpc
 bun run generate:configs
 ```
 
 If your local `.env` stores the L1 key as `L1_ADDRESS_PK`, map it before running:
 
 ```bash
-cd /home/ametel/source/aztec-fpc
 set -a; source .env; set +a
 export L1_OPERATOR_PRIVATE_KEY="$L1_ADDRESS_PK"
 ```
@@ -193,12 +183,11 @@ Notes:
 - Script default manifest is `./deployments/devnet-manifest-v2.json`.
 - Topup bridge addresses are intentionally not written; topup resolves them dynamically from `node_getNodeInfo`.
 
-## 11. Post-Deploy Runtime Smoke (Step 7)
+## 11. Post-Deploy Runtime Smoke
 
 Run runtime validation against deployed contracts in the manifest:
 
 ```bash
-cd /home/ametel/source/aztec-fpc
 set -a; source .env; set +a
 export L1_OPERATOR_PRIVATE_KEY="$L1_ADDRESS_PK"
 export L1_RPC_URL="https://sepolia.infura.io/v3/<key>"
