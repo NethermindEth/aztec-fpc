@@ -15,6 +15,8 @@
       "services/*/src/**/*.ts",
       "services/*/test/**/*.ts",
       "services/*/package.json",
+      "examples/**/*.ts",
+      "examples/package.json",
       "scripts/**/*.ts",
       "scripts/*/package.json",
       "sdk/src/**/*.ts",
@@ -46,7 +48,7 @@
   },
   "overrides": [
     {
-      "includes": ["services/**", "sdk/**", "scripts/**", "contract-deployment/**"],
+      "includes": ["examples/**", "services/**", "sdk/**", "scripts/**", "contract-deployment/**"],
       "linter": {
         "rules": {
           "correctness": {
@@ -75,6 +77,16 @@
       }
     },
     {
+      "includes": ["examples/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["scripts/**", "contract-deployment/**"],
       "linter": {
         "rules": {
@@ -97,7 +109,7 @@
       }
     },
     {
-      "includes": ["services/**", "sdk/**"],
+      "includes": ["examples/**", "services/**", "sdk/**"],
       "linter": {
         "rules": {
           "complexity": {

@@ -12,11 +12,12 @@ import {
 const currentDir =
   typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
-type DefaultArtifactLabel = "token" | "fpc";
+type DefaultArtifactLabel = "token" | "fpc" | "bridge";
 
 const DEFAULT_ARTIFACT_FILENAMES: Record<DefaultArtifactLabel, string> = {
   fpc: "fpc-FPCMultiAsset.json",
   token: "token_contract-Token.json",
+  bridge: "token_bridge_contract-TokenBridge.json",
 };
 
 const defaultArtifactCache: Partial<Record<DefaultArtifactLabel, ContractArtifact>> =
