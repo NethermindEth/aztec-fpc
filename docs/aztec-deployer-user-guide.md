@@ -8,14 +8,14 @@
 
 | Dependency | Version |
 |------------|---------|
-| Aztec | `4.0.0-devnet.2-patch.3` |
+| Aztec | `4.1.0-nightly.20260312.2` |
 | Bun | `1.3.9` |
 | `@aztec/*` npm packages | Match the Aztec version above |
 
 Install the required Aztec CLI:
 
 ```bash
-VERSION=4.0.0-devnet.2-patch.3 bash -i <(curl -sL https://install.aztec.network/4.0.0-devnet.2-patch.3)
+VERSION=4.1.0-nightly.20260312.2 bash -i <(curl -sL https://install.aztec.network/$VERSION)
 ```
 
 > Your `@aztec/*` SDK dependencies (e.g. `@aztec/aztec.js`, `@aztec/entrypoints`) must match this version. Mismatched versions will cause serialisation or ABI errors at runtime.
@@ -38,7 +38,6 @@ VERSION=4.0.0-devnet.2-patch.3 bash -i <(curl -sL https://install.aztec.network/
    - [Install the SDK](#install-the-sdk)
    - [Pay Fees with an Existing Balance](#pay-fees-with-an-existing-balance)
    - [Cold Start (Bridge from L1 + Pay in One Tx)](#cold-start-bridge-from-l1--pay-in-one-tx)
-   - [Generic Sponsored Call](#generic-sponsored-call)
 5. [API Reference — Attestation Service](#api-reference--attestation-service)
 6. [Debugging & Troubleshooting](#debugging--troubleshooting)
 7. [Security Notes](#security-notes)
@@ -196,6 +195,7 @@ Key fields:
 | `attestation` | `market_rate_num` / `market_rate_den` | Exchange rate: accepted_asset per 1 FeeJuice |
 | `attestation` | `fee_bips` | Operator margin in basis points (200 = 2%) |
 | `attestation` | `quote_validity_seconds` | Quote TTL (default 300) |
+| `attestation` | `quote_format` | `amount_quote` (default) or `rate_quote`; changes response shape |
 | `attestation` | `quote_auth_mode` | Auth mode: `disabled`, `api_key`, `trusted_header`, etc. |
 | `topup` | `threshold` | Bridge when FPC balance drops below this (wei) |
 | `topup` | `top_up_amount` | Amount to bridge each time (wei) |
@@ -320,6 +320,7 @@ The top-up service bridges Fee Juice from L1 to L2. Its L1 operator account must
 Fund the L1 operator account before starting the service. The repo includes a helper script:
 
 ```bash
+export AZTEC_NODE_URL=<AZTEC_NODE_URL>
 export L1_RPC_URL=<L1_RPC_URL>
 export L1_OPERATOR_PRIVATE_KEY=0x<l1_key>
 bun run fund:l1:fee-juice
@@ -342,6 +343,9 @@ l1_operator_secret_provider: "env"             # reads L1_OPERATOR_PRIVATE_KEY e
 threshold: "1000000000000000000"               # 1 FeeJuice — bridge when below this
 top_up_amount: "10000000000000000000"          # 10 FeeJuice — amount to bridge each time
 
+# Persist in-flight bridge state across restarts (important for crash recovery)
+bridge_state_path: ".topup-bridge-state.json"
+
 # Polling
 check_interval_ms: 60000                       # check every 60s
 ops_port: 3001                                 # health/metrics port
@@ -360,7 +364,8 @@ After the top-up service bridges Fee Juice from L1, the tokens must be claimed o
 |---------|-------------|
 | `TOPUP_AUTOCLAIM_ENABLED=1` | Enable auto-claim (enabled by default) |
 | `TOPUP_AUTOCLAIM_SECRET_KEY` | L2 secret key for the claimer account |
-| `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | Use a sponsored FPC to pay claim tx fees (recommended) |
+| `TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY` | When `1`, falls back to `OPERATOR_SECRET_KEY` if no explicit claimer key is set |
+| `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | Use a sponsored FPC to pay claim tx fees (recommended). Falls back to `FPC_DEVNET_SPONSORED_FPC_ADDRESS` then `SPONSORED_FPC_ADDRESS` |
 | `TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT` | Require claimer account to be published (default: `true`; set `0` only for local debugging) |
 | `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX` | Test account index when no explicit key is provided (default: `0`) |
 
@@ -549,44 +554,15 @@ const result = await client.executeColdStart({
 });
 
 console.log(`Tx hash: ${result.txHash}`);
+console.log(`Tx fee: ${result.txFee}`);
 console.log(`Fee paid (FJ): ${result.fjAmount}`);
 console.log(`Token charged: ${result.aaPaymentAmount}`);
+console.log(`Quote valid until: ${result.quoteValidUntil}`);
 ```
 
 **What happens:** Claims the bridged tokens and pays the FPC fee in a single atomic transaction via `cold_start_entrypoint`.
 
 > **Where to find `<BRIDGE_ADDRESS>`:** The token bridge address is recorded in the deployment manifest (`manifest.json`) after contract deployment. If you deployed test tokens, the bridge was deployed alongside them. If you used an existing token (`--accepted-asset`), obtain the bridge address from the token's deployment records or the operator.
-
-### Generic Sponsored Call
-
-For a fully generic sponsored transaction using the SDK's high-level API:
-
-```ts
-import { executeSponsoredCall } from "@aztec-fpc/sdk";
-
-const result = await executeSponsoredCall({
-  wallet,
-  account,
-  sponsorship: {
-    attestationBaseUrl: "<ATTESTATION_URL>",
-    runtimeConfig: {
-      nodeUrl: "<AZTEC_NODE_URL>",
-      operatorAddress: "<OPERATOR_ADDRESS>",
-      fpc: {},
-      acceptedAsset: {},
-      targets: {
-        myContract: { address: "<TARGET_ADDRESS>", artifact: myArtifact },
-      },
-    },
-  },
-  buildCall: async (ctx) => {
-    return ctx.contracts.targets.myContract.methods.myMethod(arg1, arg2);
-  },
-});
-
-console.log(`Tx hash: ${result.txHash}`);
-console.log(`User debited: ${result.userDebited}`);
-```
 
 ---
 
@@ -621,8 +597,8 @@ console.log(`User debited: ${result.userDebited}`);
   "accepted_asset": "<TOKEN_ADDRESS>",
   "fj_amount": "1000000000",
   "aa_payment_amount": "1023000",
-  "valid_until": 1700000000,
-  "signature": "<128-hex-chars>"
+  "valid_until": "1700000000",
+  "signature": "0x<128-hex-chars>"
 }
 ```
 
@@ -654,7 +630,7 @@ admin_api_key_header: "x-admin-api-key"    # default header name
 }
 ```
 
-All fields are optional — omitted fields keep their current values.
+All fields (`name`, `market_rate_num`, `market_rate_den`, `fee_bips`) are required.
 
 #### `POST /admin/sweeps`
 
@@ -668,7 +644,7 @@ All fields are optional — omitted fields keep their current values.
 
 - `destination` is optional if `treasury_destination_address` is configured.
 - `amount` is optional — omit to sweep the full operator balance.
-- Returns `{ acceptedAsset, destination, sweptAmount, txHash }`.
+- Returns `{ acceptedAsset, destination, sweptAmount, balanceBefore, balanceAfter, txHash }`.
 
 ### `GET /cold-start-quote`
 
@@ -691,10 +667,10 @@ Used by the cold-start flow when the user has no existing L2 balance. The attest
   "accepted_asset": "<TOKEN_ADDRESS>",
   "fj_amount": "1000000000",
   "aa_payment_amount": "1023000",
-  "valid_until": 1700000000,
+  "valid_until": "1700000000",
   "claim_amount": "5000000000",
   "claim_secret_hash": "0xabc123...",
-  "signature": "<128-hex-chars>"
+  "signature": "0x<128-hex-chars>"
 }
 ```
 
@@ -744,7 +720,7 @@ Example: if `market_rate_num=1`, `market_rate_den=1000`, `fee_bips=200` (2%):
 - `attestation_quote_latency_seconds{outcome}` — quote signing latency
 
 **Top-up:**
-- `topup_bridge_events_total{event}` — bridge lifecycle (submitted, confirmed, timeout, failed)
+- `topup_bridge_events_total{event}` — bridge lifecycle (submitted, confirmed, timeout, aborted, failed)
 - `topup_balance_checks_total{outcome}` — balance check results
 - `topup_readiness_status` — 1 = ready, 0 = not ready
 
@@ -780,7 +756,7 @@ docker run -v ./deployments:/app/deployments \
 ## Deployment Checklist
 
 ```
-[ ] Aztec version 4.0.0-devnet.2-patch.3 installed (or matching node version)
+[ ] Aztec version 4.1.0-nightly.20260312.2 installed (or matching node version)
 [ ] Aztec node accessible at <AZTEC_NODE_URL>
 [ ] L1 RPC accessible at <L1_RPC_URL>
 [ ] Deployer and operator keys generated and secured
