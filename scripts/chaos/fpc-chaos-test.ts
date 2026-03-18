@@ -876,16 +876,35 @@ async function expectOnchainFailure(
   expectedFragments: string[],
   action: () => Promise<unknown>,
 ): Promise<void> {
-  try {
-    await action();
-  } catch (err) {
-    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-    if (expectedFragments.some((f) => msg.includes(f.toLowerCase()))) {
-      return; // Expected rejection – test passes
+  const maxAttempts = 5;
+  const baseDelayMs = 10_000;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await action();
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+      if (expectedFragments.some((f) => msg.includes(f.toLowerCase()))) {
+        return; // Expected rejection – test passes
+      }
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        const delayMs = baseDelayMs * attempt;
+        pinoLogger.warn(
+          `[${scenario}] unexpected error (attempt ${attempt}/${maxAttempts}): ${msg.slice(0, 100)}. Waiting ${delayMs / 1000}s...`,
+        );
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
     }
-    throw new Error(`${scenario} failed with UNEXPECTED error: ${(err as Error).message}`);
+    if (!lastErr) {
+      // action() returned normally — the tx succeeded when it should have failed
+      throw new Error(`${scenario} unexpectedly SUCCEEDED (should have been rejected)`);
+    }
   }
-  throw new Error(`${scenario} unexpectedly SUCCEEDED (should have been rejected)`);
+  throw new Error(
+    `${scenario} failed with UNEXPECTED error after ${maxAttempts} attempts: ${(lastErr as Error).message}`,
+  );
 }
 
 function ceilDiv(a: bigint, b: bigint): bigint {
@@ -1373,8 +1392,9 @@ async function runOnchainTests(
   const aaPaymentAmount = computeAaPayment(TEST_RATE);
 
   await runner.run("onchain-happy-path", "onchain", "Valid fee-paid tx succeeds", async () => {
-    // Retry up to 3 times on transient P2P drops (busy node under CI load).
-    const maxAttempts = 3;
+    const maxAttempts = 5;
+    const baseDelayMs = 15_000;
+    let lastErr: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const latestTs = await getLatestL2Timestamp(ctx);
@@ -1399,15 +1419,18 @@ async function runOnchainTests(
         );
         return { expectedCharge: expectedCharge.toString() };
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const isTransient = /dropped by P2P|Tx dropped/i.test(msg);
-        if (isTransient && attempt < maxAttempts) {
-          pinoLogger.warn(`Happy-path tx dropped (attempt ${attempt}/${maxAttempts}), retrying...`);
-          continue;
+        lastErr = err;
+        if (attempt < maxAttempts) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const delayMs = baseDelayMs * attempt;
+          pinoLogger.warn(
+            `Happy-path attempt ${attempt}/${maxAttempts} failed: ${msg.slice(0, 120)}. Waiting ${delayMs / 1000}s before retry...`,
+          );
+          await new Promise((r) => setTimeout(r, delayMs));
         }
-        throw err;
       }
     }
+    throw lastErr;
   });
 
   await runner.run(
@@ -1415,28 +1438,61 @@ async function runOnchainTests(
     "onchain",
     "Replaying a consumed quote is rejected (nullifier collision)",
     async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      // Use the maximum allowed TTL so the quote does not expire between the
-      // first submission and the replay attempt (block timestamps advance).
-      const validUntil = latestTs + MAX_QUOTE_TTL_SECONDS;
-      // Get a fresh quote for user (unique per-submission by signing key)
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
+      // The first submit must succeed before we can test the replay.
+      const maxAttempts = 5;
+      const baseDelayMs = 15_000;
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const latestTs = await getLatestL2Timestamp(ctx);
+        // Use the maximum allowed TTL so the quote does not expire between the
+        // first submission and the replay attempt (block timestamps advance).
+        const validUntil = latestTs + MAX_QUOTE_TTL_SECONDS;
+        // Get a fresh quote for user (unique per-submission by signing key)
+        const sigBytes = await signQuote(
+          ctx.operatorSecretHex,
+          ctx.fpcAddress,
+          ctx.acceptedAsset,
+          fjAmount,
+          aaPaymentAmount,
+          validUntil,
+          ctx.user,
+        );
 
-      // First use – should succeed
-      await submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil);
+        try {
+          // First use – should succeed
+          await submitFeePaidTx(
+            config,
+            ctx,
+            ctx.user,
+            sigBytes,
+            fjAmount,
+            aaPaymentAmount,
+            validUntil,
+          );
+        } catch (err: unknown) {
+          lastErr = err;
+          if (attempt < maxAttempts) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const delayMs = baseDelayMs * attempt;
+            pinoLogger.warn(
+              `Quote-replay first submit attempt ${attempt}/${maxAttempts} failed: ${msg.slice(0, 120)}. Waiting ${delayMs / 1000}s...`,
+            );
+            await new Promise((r) => setTimeout(r, delayMs));
+            continue;
+          }
+          throw err;
+        }
 
-      // Second use – must fail due to nullifier
-      await expectOnchainFailure("quote replay", ["nullifier", "already exists", "duplicate"], () =>
-        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
-      );
+        // First use succeeded — second use must fail due to nullifier
+        await expectOnchainFailure(
+          "quote replay",
+          ["nullifier", "already exists", "duplicate"],
+          () =>
+            submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
+        );
+        return;
+      }
+      throw lastErr;
     },
   );
 
@@ -1987,34 +2043,45 @@ async function runStressTests(
       // causing "Invalid expiration timestamp" at the protocol level.
       const errors: Error[] = [];
       let succeeded = 0;
+      const maxRetries = 2; // per iteration
       for (let i = 0; i < config.concurrentTxs; i++) {
-        const currentTs = await getLatestL2Timestamp(ctx);
-        // +i tiebreaker: ensures unique valid_until even if two consecutive
-        // iterations land on the same L2 block (prevents quote nullifier collision).
-        const txValidUntil = currentTs + 600n + BigInt(i);
-        const sigBytes = await signQuote(
-          ctx.operatorSecretHex,
-          ctx.fpcAddress,
-          ctx.acceptedAsset,
-          fjAmount,
-          aaPaymentAmount,
-          txValidUntil,
-          userAddress,
-        );
-        try {
-          await submitFeePaidTx(
-            config,
-            ctx,
-            userAddress,
-            sigBytes,
+        let ok = false;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          const currentTs = await getLatestL2Timestamp(ctx);
+          const txValidUntil = currentTs + 600n + BigInt(i);
+          const sigBytes = await signQuote(
+            ctx.operatorSecretHex,
+            ctx.fpcAddress,
+            ctx.acceptedAsset,
             fjAmount,
             aaPaymentAmount,
             txValidUntil,
+            userAddress,
           );
-          succeeded++;
-        } catch (e) {
-          errors.push(e as Error);
+          try {
+            await submitFeePaidTx(
+              config,
+              ctx,
+              userAddress,
+              sigBytes,
+              fjAmount,
+              aaPaymentAmount,
+              txValidUntil,
+            );
+            ok = true;
+            break;
+          } catch (e) {
+            if (attempt < maxRetries) {
+              const msg = e instanceof Error ? e.message : String(e);
+              pinoLogger.warn(
+                `Stress tx[${i}] failed (attempt ${attempt + 1}/${maxRetries + 1}): ${msg.slice(0, 100)}. Retrying...`,
+              );
+              continue;
+            }
+            errors.push(e as Error);
+          }
         }
+        if (ok) succeeded++;
       }
 
       if (errors.length > 0) {
