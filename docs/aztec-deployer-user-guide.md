@@ -446,44 +446,39 @@ This reads network defaults from `.env.testnet` and outputs everything to `deplo
 
 ## For Users (SDK Integration)
 
+> For a complete runnable example covering cold-start and FPC-paid deployment, see [`examples/fpc-full-flow.ts`](../examples/fpc-full-flow.ts). Run it from the repo root with:
+>
+> ```bash
+> bun run examples/fpc-full-flow.ts
+> ```
+
 ### User Prerequisites
 
 - An Aztec wallet / account
 - The deployed FPC details (provided by the operator):
 
-| Value | Description |
-|-------|-------------|
-| `<ATTESTATION_URL>` | Attestation service base URL |
-| `<FPC_ADDRESS>` | Deployed FPC contract address |
-| `<OPERATOR_ADDRESS>` | Operator's Aztec address |
-| `<TOKEN_ADDRESS>` | Accepted token address |
-| `<AZTEC_NODE_URL>` | Aztec node RPC URL |
+| Value | Testnet | Description |
+|-------|---------|-------------|
+| `<AZTEC_NODE_URL>` | `https://rpc.testnet.aztec-labs.com/` | Aztec node RPC URL |
+| `<ATTESTATION_URL>` | `https://aztec-fpc-testnet.staging-nethermind.xyz/` | Attestation service base URL |
+| `<FPC_ADDRESS>` | `0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f` | Deployed FPC contract address |
+| `<OPERATOR_ADDRESS>` | `0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974` | Operator's Aztec address |
+| `<TOKEN_ADDRESS>` | `0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb` | Accepted token address |
 
 ### Install the SDK
 
 The SDK is not yet published to npm. Install from a local clone:
 
-**Bun:**
-
 ```bash
 git clone https://github.com/NethermindEth/aztec-fpc.git
-cd aztec-fpc && bun install && cd sdk && bun run build
+cd aztec-fpc
+git submodule update --init --recursive
+aztec compile --workspace --force
+bun install && bun run build
 
 cd /path/to/your-app
 bun add /absolute/path/to/aztec-fpc/sdk
 ```
-
-**npm / Node.js:**
-
-```bash
-git clone https://github.com/NethermindEth/aztec-fpc.git
-cd aztec-fpc && npm install && npm run build --workspace @aztec-fpc/sdk
-
-cd /path/to/your-app
-npm install /absolute/path/to/aztec-fpc/sdk
-```
-
-> `@aztec-fpc/sdk` is a workspace package under `sdk/`, not the repository root. Do not `npm install` the repo root directly.
 
 ### Pay Fees with an Existing Balance
 
@@ -491,76 +486,150 @@ Use `createPaymentMethod` when the user already has L2 tokens and wants to pay f
 
 ```ts
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import type { Wallet } from "@aztec/aztec.js/wallet";
+import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@aztec-fpc/sdk";
 
-// 1. Create the FPC client
-const node = createAztecNodeClient("<AZTEC_NODE_URL>");
-const client = new FpcClient({
-  fpcAddress: AztecAddress.fromString("<FPC_ADDRESS>"),
-  operator: AztecAddress.fromString("<OPERATOR_ADDRESS>"),
-  node,
-  attestationBaseUrl: "<ATTESTATION_URL>",
+// 1. Connect to the Aztec node and create a wallet
+const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
+await waitForNode(node);
+const wallet = await EmbeddedWallet.create(node, {
+  ephemeral: true,
+  pxeConfig: { proverEnabled: true },
 });
 
-// 2. Simulate your tx to estimate gas
-const simulation = await myContract.methods
+// 2. Create the FPC client
+const fpcClient = new FpcClient({
+  fpcAddress: AztecAddress.fromString(
+    "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f",
+  ),
+  operator: AztecAddress.fromString(
+    "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
+  ),
+  node,
+  attestationBaseUrl: "https://aztec-fpc-testnet.staging-nethermind.xyz/",
+});
+
+// 3. Simulate your tx to estimate gas
+const { estimatedGas } = await myContract.methods
   .myMethod(arg1, arg2)
   .simulate({ from: userAddress, fee: { estimateGas: true } });
+if (!estimatedGas) {
+  throw new Error("Failed to estimate gas");
+}
 
-// 3. Build the FPC payment method
-const result = await client.createPaymentMethod({
+// 4. Build the FPC payment method
+const payment = await fpcClient.createPaymentMethod({
   wallet,
   user: userAddress,
-  tokenAddress: AztecAddress.fromString("<TOKEN_ADDRESS>"),
-  estimatedGas: simulation.estimatedGas,
+  tokenAddress: AztecAddress.fromString(
+    "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb",
+  ),
+  estimatedGas,
 });
 
-// 4. Send the tx with FPC fee options
+// 5. Send the tx with FPC fee options
 await myContract.methods.myMethod(arg1, arg2).send({
   from: userAddress,
-  fee: result.fee,
-}).wait();
+  fee: payment.fee,
+});
 ```
 
 **What happens under the hood:**
 
-1. SDK reads gas prices from the node and computes `fj_amount`
+1. SDK fetches current gas prices from the node and computes `fj_amount` (with a gas buffer)
 2. SDK fetches a signed quote from `GET <ATTESTATION_URL>/quote`
-3. SDK builds a token transfer auth-witness (user → operator)
-4. SDK builds the `fee_entrypoint` call payload
-5. Returns `fee` options ready to attach to any Aztec tx
+3. SDK builds a token transfer auth-witness (user → operator) for the quoted `aa_payment_amount`
+4. SDK builds the `fee_entrypoint` call payload with the quote signature
+5. Returns `fee` options ready to attach to any Aztec tx — you send the tx yourself
 
 ### Cold Start (Bridge from L1 + Pay in One Tx)
 
 Use `executeColdStart` when the user has bridged tokens from L1 but has **no existing L2 balance** to pay fees.
 
 ```ts
-import type { L2AmountClaim } from "@aztec/aztec.js/ethereum";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
+import { Fr } from "@aztec/aztec.js/fields";
+import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
+import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
+import { EthAddress } from "@aztec/foundation/eth-address";
+import { createLogger } from "@aztec/foundation/log";
+import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@aztec-fpc/sdk";
 
-const result = await client.executeColdStart({
+// 1. Connect to the Aztec node and create a wallet
+const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
+await waitForNode(node);
+const wallet = await EmbeddedWallet.create(node, {
+  ephemeral: true,
+  pxeConfig: { proverEnabled: true },
+});
+
+const fpcClient = new FpcClient({
+  fpcAddress: AztecAddress.fromString(
+    "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f",
+  ),
+  operator: AztecAddress.fromString(
+    "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
+  ),
+  node,
+  attestationBaseUrl: "https://aztec-fpc-testnet.staging-nethermind.xyz/",
+});
+
+// 2. Create an L1 client and bridge tokens from L1 to L2
+const l1WalletClient = createExtendedL1Client(
+  ["https://ethereum-sepolia-rpc.publicnode.com"],
+  "0x<your_l1_private_key>",
+  l1Chain,
+);
+
+const portalManager = new L1ToL2TokenPortalManager(
+  EthAddress.fromString("0x57a426552a472e953ecc1342f25b17cc192326be"),
+  EthAddress.fromString("0xf49de848d9c00c4dfb088b2e6ba2dac81e34aa5d"),
+  undefined,
+  l1WalletClient,
+  createLogger("bridge"),
+);
+
+const bridgeClaim = await portalManager.bridgeTokensPrivate(
+  userAddress,
+  10_000_000_000_000_000n, // amount to bridge
+  false,
+);
+
+// 3. Wait for the L1→L2 message to be available on L2
+await waitForL1ToL2MessageReady(
+  node,
+  Fr.fromHexString(bridgeClaim.messageHash as string),
+  { timeoutSeconds: 300 },
+);
+
+// 4. Execute cold-start: claim bridged tokens + pay FPC fee in one tx
+const result = await fpcClient.executeColdStart({
   wallet,
   userAddress,
-  tokenAddress: AztecAddress.fromString("<TOKEN_ADDRESS>"),
-  bridgeAddress: AztecAddress.fromString("<BRIDGE_ADDRESS>"),
-  bridgeClaim: {
-    claimAmount,
-    claimSecret,
-    claimSecretHash,
-    messageLeafIndex,
-  } as L2AmountClaim,
+  tokenAddress: AztecAddress.fromString(
+    "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb",
+  ),
+  bridgeAddress: AztecAddress.fromString(
+    "0x19b200d772d3e9068921e6f5df7530271229e958acc9efc2c637afe64db9763f",
+  ),
+  bridgeClaim,
 });
 
 console.log(`Tx hash: ${result.txHash}`);
 console.log(`Tx fee: ${result.txFee}`);
-console.log(`Fee paid (FJ): ${result.fjAmount}`);
 console.log(`Token charged: ${result.aaPaymentAmount}`);
-console.log(`Quote valid until: ${result.quoteValidUntil}`);
 ```
 
-**What happens:** Claims the bridged tokens and pays the FPC fee in a single atomic transaction via `cold_start_entrypoint`.
+**What happens:** The code above bridges tokens from L1 and waits for the message to land on L2. Then `executeColdStart`:
+
+1. Fetches current gas prices and computes `fj_amount` (using fixed cold-start gas limits)
+2. Fetches a signed cold-start quote from `GET <ATTESTATION_URL>/cold-start-quote`
+3. Builds the `cold_start_entrypoint` call that atomically claims bridged tokens and pays the FPC fee
+4. Proves, sends, and waits for the tx — returns the result once mined
 
 > **Where to find `<BRIDGE_ADDRESS>`:** The token bridge address is recorded in the deployment manifest (`manifest.json`) after contract deployment. If you deployed test tokens, the bridge was deployed alongside them. If you used an existing token (`--accepted-asset`), obtain the bridge address from the token's deployment records or the operator.
 
