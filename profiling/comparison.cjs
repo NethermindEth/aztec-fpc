@@ -4,6 +4,17 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const pino = require('pino');
+
+const pinoLogger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: false,
+      ignore: 'pid,hostname,time,level',
+    },
+  },
+});
 
 /**
  * Formats system info as a markdown table.
@@ -142,9 +153,9 @@ function findBenchmarkPairs(reportsDir, baseSuffix, prSuffix) {
   } catch (error) {
     // Handle cases where the directory doesn't exist
     if (error.code === 'ENOENT') {
-      console.warn(`Reports directory not found: ${reportsDir}`);
+      pinoLogger.warn(`Reports directory not found: ${reportsDir}`);
     } else {
-      console.error(`Error reading reports directory ${reportsDir}:`, error);
+      pinoLogger.error(`Error reading reports directory ${reportsDir}: ${error}`);
     }
   }
   return pairs;
@@ -162,9 +173,9 @@ function generateContractComparisonTable(pair, threshold) {
   const isNewContract = baseJsonPath === null;
   
   if (isNewContract) {
-    console.log(` Generating report for new contract: ${contractName} in ${prJsonPath}`);
+    pinoLogger.info(` Generating report for new contract: ${contractName} in ${prJsonPath}`);
   } else {
-    console.log(` Comparing: ${baseJsonPath} vs ${prJsonPath}`);
+    pinoLogger.info(` Comparing: ${baseJsonPath} vs ${prJsonPath}`);
   }
 
   // Check that PR report exists
@@ -202,7 +213,7 @@ function generateContractComparisonTable(pair, threshold) {
 
   for (const name of allFunctionNames) {
      if (!name || name.startsWith('unknown_function') || name.includes('(FAILED)') || name === 'BENCHMARK_RUNNER_ERROR') {
-      console.log(` Skipping comparison for malformed/failed entry: ${name}`);
+      pinoLogger.info(` Skipping comparison for malformed/failed entry: ${name}`);
       continue;
     }
     const mainResult = mainData.results.find((r) => r.name === name);
@@ -298,17 +309,17 @@ function generateContractComparisonTable(pair, threshold) {
  */
 function runComparison(inputs) {
   const { reportsDir, baseSuffix, prSuffix, threshold } = inputs;
-  console.log("Comparison script starting...");
-  console.log(` Reports Dir: ${reportsDir} (expected ./benchmarks)`);
-  console.log(` Base Suffix: '${baseSuffix}' (expected _base)`);
-  console.log(` PR Suffix: '${prSuffix}' (expected _latest)`);
-  console.log(` Threshold: ${threshold}%`);
+  pinoLogger.info("Comparison script starting...");
+  pinoLogger.info(` Reports Dir: ${reportsDir} (expected ./benchmarks)`);
+  pinoLogger.info(` Base Suffix: '${baseSuffix}' (expected _base)`);
+  pinoLogger.info(` PR Suffix: '${prSuffix}' (expected _latest)`);
+  pinoLogger.info(` Threshold: ${threshold}%`);
 
   // Find pairs by scanning the directory
   const benchmarkPairs = findBenchmarkPairs(reportsDir, baseSuffix, prSuffix);
 
   if (!benchmarkPairs.length) {
-    console.log("No matching benchmark report pairs found in the directory.");
+    pinoLogger.info("No matching benchmark report pairs found in the directory.");
     return '# Benchmark Comparison\n\nNo matching benchmark report pairs found to compare.\n';
   }
 
@@ -324,7 +335,7 @@ function runComparison(inputs) {
       const firstReport = JSON.parse(fs.readFileSync(benchmarkPairs[0].prJsonPath, 'utf-8'));
       systemInfo = firstReport.systemInfo;
     } catch (e) {
-      console.warn('Could not read system info from benchmark report:', e.message);
+      pinoLogger.warn(`Could not read system info from benchmark report: ${e.message}`);
     }
   }
 
@@ -332,14 +343,14 @@ function runComparison(inputs) {
   markdownOutput.push(formatSystemInfoTable(systemInfo));
 
   for (const pair of benchmarkPairs) {
-    console.log(`\nProcessing contract: ${pair.contractName}...`);
+    pinoLogger.info(`\nProcessing contract: ${pair.contractName}...`);
     const tableMarkdown = generateContractComparisonTable(pair, threshold);
     markdownOutput.push(`## Contract: ${pair.contractName}\n`);
     markdownOutput.push(tableMarkdown);
     markdownOutput.push('\n');
   }
 
-  console.log(`\nComparison report generated for ${benchmarkPairs.length} contract pair(s).`);
+  pinoLogger.info(`\nComparison report generated for ${benchmarkPairs.length} contract pair(s).`);
   return markdownOutput.join('\n');
 }
 

@@ -2,6 +2,7 @@
  * Shared utilities for FPC gate count profiling scripts.
  */
 
+import pino from 'pino';
 import { AccountManager }              from '@aztec/aztec.js/wallet';
 import { SchnorrAccountContract }      from '@aztec/accounts/schnorr';
 import { Fr }                          from '@aztec/foundation/curves/bn254';
@@ -12,6 +13,16 @@ import { BaseWallet }                  from '@aztec/wallet-sdk/base-wallet';
 import { readdirSync }                 from 'fs';
 import { fileURLToPath }               from 'url';
 import { dirname, join }               from 'path';
+
+const pinoLogger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: false,
+      ignore: 'pid,hostname,time,level',
+    },
+  },
+});
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TARGET    = join(__dirname, '../target');
@@ -154,18 +165,18 @@ export function extractFpcSteps(executionSteps, fpcContractName) {
 
 export function printFpcGateTable(title, executionSteps, fpcContractName) {
   const fpcSteps = extractFpcSteps(executionSteps, fpcContractName);
-  console.log(`\n=== FPC Gate Count: ${title} ===\n`);
+  pinoLogger.info(`\n=== FPC Gate Count: ${title} ===\n`);
   const pad    = (s, n) => String(s).padEnd(n);
   const numFmt = n => n.toLocaleString();
-  console.log(pad('Function', 60), pad('Own gates', 12), 'Subtotal');
-  console.log('─'.repeat(88));
+  pinoLogger.info(`${pad('Function', 60)} ${pad('Own gates', 12)} Subtotal`);
+  pinoLogger.info('─'.repeat(88));
   let subtotal = 0;
   for (const step of fpcSteps) {
     subtotal += step.gateCount ?? 0;
     const name = step.functionName ?? '(unknown)';
-    console.log(pad(name, 60), pad(numFmt(step.gateCount ?? 0), 12), numFmt(subtotal));
+    pinoLogger.info(`${pad(name, 60)} ${pad(numFmt(step.gateCount ?? 0), 12)} ${numFmt(subtotal)}`);
   }
-  console.log('─'.repeat(88));
-  console.log(pad('FPC TOTAL', 60), '', numFmt(subtotal));
+  pinoLogger.info('─'.repeat(88));
+  pinoLogger.info(`${pad('FPC TOTAL', 60)}              ${numFmt(subtotal)}`);
   return subtotal;
 }

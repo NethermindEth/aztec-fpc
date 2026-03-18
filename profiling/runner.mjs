@@ -13,6 +13,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as os from 'node:os';
 import { parseArgs } from 'node:util';
+import pino from 'pino';
+
+const pinoLogger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: false,
+      ignore: 'pid,hostname,time,level',
+    },
+  },
+});
 
 // ── System info ─────────────────────────────────────────────────────────────
 
@@ -55,7 +66,7 @@ class Profiler {
 
   async #profileOne(f, customName) {
     const name = customName ?? 'unknown_function';
-    console.log(`Profiling ${name}...`);
+    pinoLogger.info(`Profiling ${name}...`);
 
     const origin = f.caller;
     const feeOpts = this.#feePaymentMethod
@@ -102,14 +113,14 @@ class Profiler {
     const daGas = gas?.gasLimits?.daGas ?? 'N/A';
     const l2Gas = gas?.gasLimits?.l2Gas ?? 'N/A';
     const provingDisplay = provingTime !== undefined ? `${provingTime}ms` : 'skipped';
-    console.log(` -> ${name}: ${result.totalGateCount} gates, Gas (DA: ${daGas}, L2: ${l2Gas}), Proving: ${provingDisplay}`);
+    pinoLogger.info(` -> ${name}: ${result.totalGateCount} gates, Gas (DA: ${daGas}, L2: ${l2Gas}), Proving: ${provingDisplay}`);
     return result;
   }
 
   async saveResults(results, filename) {
     const systemInfo = getSystemInfo();
     if (!results.length) {
-      console.log(`No results to save for ${filename}. Saving empty report.`);
+      pinoLogger.info(`No results to save for ${filename}. Saving empty report.`);
       fs.writeFileSync(filename, JSON.stringify({ summary: {}, results: [], gasSummary: {}, provingTimeSummary: {}, systemInfo }, null, 2));
       return;
     }
@@ -121,7 +132,7 @@ class Profiler {
     const provingTimeSummary = Object.fromEntries(results.map((r) => [r.name, r.provingTime ?? 0]));
 
     const report = { summary, results, gasSummary, provingTimeSummary, systemInfo };
-    console.log(`Saving results for ${results.length} methods in ${filename}`);
+    pinoLogger.info(`Saving results for ${results.length} methods in ${filename}`);
     fs.writeFileSync(filename, JSON.stringify(report, null, 2));
   }
 }
@@ -164,7 +175,7 @@ async function main() {
   const skipProving   = opts['skip-proving'];
 
   if (!fs.existsSync(nargoTomlPath)) {
-    console.error(`Error: Nargo.toml not found at ${nargoTomlPath}`);
+    pinoLogger.error(`Error: Nargo.toml not found at ${nargoTomlPath}`);
     process.exit(1);
   }
   fs.mkdirSync(outputDir, { recursive: true });
@@ -173,7 +184,7 @@ async function main() {
   const names = Object.keys(available);
 
   if (!names.length) {
-    console.error('No contracts found in the [benchmark] section of Nargo.toml.');
+    pinoLogger.error('No contracts found in the [benchmark] section of Nargo.toml.');
     process.exit(1);
   }
 
@@ -182,23 +193,23 @@ async function main() {
     : names;
 
   if (!toRun.length) {
-    console.error(`Error: None of the specified contracts found: ${specified.join(', ')}`);
+    pinoLogger.error(`Error: None of the specified contracts found: ${specified.join(', ')}`);
     process.exit(1);
   }
 
-  console.log(`Found ${toRun.length} benchmark(s) to run: ${toRun.join(', ')}`);
+  pinoLogger.info(`Found ${toRun.length} benchmark(s) to run: ${toRun.join(', ')}`);
 
   for (const contractName of toRun) {
     const benchmarkFilePath = path.resolve(path.dirname(nargoTomlPath), available[contractName]);
     const outputFilename    = `${contractName}${suffix}.benchmark.json`;
     const outputJsonPath    = path.join(outputDir, outputFilename);
 
-    console.log(`--- Running benchmark for ${contractName}${suffix ? ` (suffix: ${suffix})` : ''} ---`);
-    console.log(` -> Benchmark file: ${benchmarkFilePath}`);
-    console.log(` -> Output report: ${outputJsonPath}`);
+    pinoLogger.info(`--- Running benchmark for ${contractName}${suffix ? ` (suffix: ${suffix})` : ''} ---`);
+    pinoLogger.info(` -> Benchmark file: ${benchmarkFilePath}`);
+    pinoLogger.info(` -> Output report: ${outputJsonPath}`);
 
     if (!fs.existsSync(benchmarkFilePath)) {
-      console.error(`Error: Benchmark file not found: ${benchmarkFilePath}`);
+      pinoLogger.error(`Error: Benchmark file not found: ${benchmarkFilePath}`);
       process.exit(1);
     }
 
@@ -206,7 +217,7 @@ async function main() {
       const mod = await import(benchmarkFilePath);
       const BenchmarkClass = mod.default;
       if (!BenchmarkClass || typeof BenchmarkClass !== 'function' || typeof BenchmarkClass.prototype.getMethods !== 'function') {
-        console.error(`Error: ${benchmarkFilePath} does not export a default class with a getMethods method.`);
+        pinoLogger.error(`Error: ${benchmarkFilePath} does not export a default class with a getMethods method.`);
         process.exit(1);
       }
 
@@ -214,28 +225,28 @@ async function main() {
       let ctx = {};
 
       if (typeof instance.setup === 'function') {
-        console.log(`Running setup for ${contractName}...`);
+        pinoLogger.info(`Running setup for ${contractName}...`);
         ctx = await instance.setup();
-        console.log(`Setup complete for ${contractName}.`);
+        pinoLogger.info(`Setup complete for ${contractName}.`);
       }
 
       const profiler = new Profiler(ctx.wallet, { skipProving, feePaymentMethod: ctx.feePaymentMethod });
-      console.log(`Getting methods to benchmark for ${contractName}...`);
+      pinoLogger.info(`Getting methods to benchmark for ${contractName}...`);
       const interactions = instance.getMethods(ctx);
 
       if (!Array.isArray(interactions) || !interactions.length) {
-        console.warn(`No benchmark methods returned for ${contractName}. Saving empty report.`);
+        pinoLogger.warn(`No benchmark methods returned for ${contractName}. Saving empty report.`);
         await profiler.saveResults([], outputJsonPath);
       } else {
-        console.log(`Profiling ${interactions.length} methods for ${contractName}...`);
+        pinoLogger.info(`Profiling ${interactions.length} methods for ${contractName}...`);
         const results = await profiler.profile(interactions);
         await profiler.saveResults(results, outputJsonPath);
       }
 
       if (typeof instance.teardown === 'function') {
-        console.log(`Running teardown for ${contractName}...`);
+        pinoLogger.info(`Running teardown for ${contractName}...`);
         await instance.teardown(ctx);
-        console.log(`Teardown complete for ${contractName}.`);
+        pinoLogger.info(`Teardown complete for ${contractName}.`);
       }
 
       // Cleanup: PXE.stop() doesn't release all resources
@@ -251,17 +262,17 @@ async function main() {
         }
       }
 
-      console.log(`--- Benchmark finished for ${contractName} ---`);
+      pinoLogger.info(`--- Benchmark finished for ${contractName} ---`);
     } catch (error) {
-      console.error(`Failed to run benchmark for ${contractName}:`, error);
+      pinoLogger.error(`Failed to run benchmark for ${contractName}: ${error}`);
       process.exit(1);
     }
   }
 
-  console.log('All specified benchmarks completed successfully.');
+  pinoLogger.info('All specified benchmarks completed successfully.');
 }
 
 main().catch((err) => {
-  console.error(err);
+  pinoLogger.error(err);
   process.exit(1);
 });
