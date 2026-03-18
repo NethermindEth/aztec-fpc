@@ -86,6 +86,7 @@ type LocalConfig = {
   topupConfirmTimeoutMs: number;
   topupConfirmPollInitialMs: number;
   topupConfirmPollMaxMs: number;
+  relayAdvanceBlocks: number;
   repoRoot: string;
   runDir: string;
 };
@@ -139,6 +140,7 @@ function getConfig(): LocalConfig {
     topupConfirmTimeoutMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_TIMEOUT_MS", 180_000),
     topupConfirmPollInitialMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_INITIAL_MS", 1_000),
     topupConfirmPollMaxMs: readEnvInt("FPC_CHAOS_LOCAL_TOPUP_CONFIRM_POLL_MAX_MS", 15_000),
+    relayAdvanceBlocks: readEnvInt("FPC_CHAOS_LOCAL_RELAY_ADVANCE_BLOCKS", 3),
     repoRoot,
     runDir,
   };
@@ -466,6 +468,9 @@ async function startServicesAndFundFpc(
       env: {
         ...process.env,
         L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
+        // Genesis-deployed test accounts may not be indexed by node.getContract()
+        // on a fresh local network, so skip the published-account assertion.
+        TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "0",
       },
     },
   );

@@ -196,6 +196,7 @@ bun run ci
 - `spec-deploy-smoke.yml`: local deploy smoke for `deploy-fpc-local` output validation
 - `spec-services-smoke.yml`: service-integrated local-network smoke covering quote + topup + contract fee flow
 - `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suite for `FPC`, with uploaded diagnostics artifacts
+- `spec-chaos-smoke.yml`: chaos / adversarial test suite (API + on-chain + stress)
 
 ### 5. Run local-devnet FPC fee-entrypoint smoke test
 
@@ -265,7 +266,49 @@ Useful overrides:
 - `FPC_SERVICES_SMOKE_ATTESTATION_PORT` (default `3300`)
 - `FPC_SERVICES_SMOKE_TOPUP_OPS_PORT` (default `3401`)
 
-### 7. Deploy contracts (recommended)
+### 7. Run chaos / adversarial tests
+
+The chaos suite exercises the FPC protocol under edge cases and adversarial conditions across three tiers:
+
+| Mode      | What runs                          | Use case                          |
+|-----------|------------------------------------|-----------------------------------|
+| `api`     | API tests only                     | Safe against any endpoint (incl. prod) |
+| `onchain` | API + on-chain security tests      | Node + operator key + FPC required    |
+| `full`    | API + on-chain + stress tests      | Full validation (local or staging)     |
+
+**Self-contained local run (recommended):**
+
+```bash
+bun run chaos:local
+```
+
+This starts a local Aztec network, compiles contracts, deploys Token + FPC, starts services, funds the FPC, and runs the full suite. No manual env or manifest needed.
+
+**Against a deployed endpoint:**
+
+```bash
+# API-only (safe for production)
+FPC_CHAOS_ATTESTATION_URL=https://<host> \
+FPC_CHAOS_MANIFEST=./deployments/devnet-manifest-v2.json \
+  bun run chaos:api
+
+# Full suite (requires operator key)
+FPC_CHAOS_MODE=full \
+FPC_CHAOS_ATTESTATION_URL=https://<host> \
+FPC_CHAOS_OPERATOR_SECRET_KEY=0x<hex> \
+FPC_CHAOS_MANIFEST=./deployments/devnet-manifest-v2.json \
+  bun run chaos:full
+```
+
+**Docker Compose:**
+
+```bash
+bun run smoke:chaos:compose
+```
+
+See [scripts/chaos/README.md](scripts/chaos/README.md) for the full environment variable reference and advanced usage.
+
+### 8. Deploy contracts (recommended)
 
 Use the local deploy wrapper (deploys `Token` and `FPC`):
 
@@ -288,7 +331,7 @@ Pass through extra deploy args when needed (for example reuse mode):
 bun run deploy:fpc:local -- --reuse
 ```
 
-### 8. Run local deploy smoke (deploy output + relay claim validation)
+### 9. Run local deploy smoke (deploy output + relay claim validation)
 
 This smoke flow:
 1. runs `deploy:fpc:local`,
@@ -338,7 +381,7 @@ Manifest secret-handling warning:
 - Treat the manifest as secret material and do not commit it to public repos.
 - Prefer key reference inputs (`*_SECRET_KEY_REF`, `*_SECRET_REF`) where supported.
 
-### 9. Deploy contracts manually (alternative)
+### 10. Deploy contracts manually (alternative)
 
 ```bash
 # operator = your Aztec account (receives fees, signs quotes)
@@ -351,7 +394,7 @@ aztec deploy \
 
 Record the deployed address.
 
-### 10. Configure and start the attestation service
+### 11. Configure and start the attestation service
 
 ```bash
 cd services/attestation
@@ -374,7 +417,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 11. Configure and start the top-up service
+### 12. Configure and start the top-up service
 
 ```bash
 cd services/topup
@@ -397,7 +440,7 @@ cp config.example.yaml config.yaml
 bun install && bun run build && bun run start
 ```
 
-### 12. Docker
+### 13. Docker
 
 #### Building images
 
@@ -438,6 +481,7 @@ The compose stack (`docker-compose.yaml`) includes:
 | `attestation` | FPC attestation service | 3000 |
 | `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
 | `e2e-fpc` (profile `e2e-fpc`) | Compose-backed `FPC` full lifecycle runner | — |
+| `smoke-chaos` (profile `chaos`) | Chaos / adversarial test runner | — |
 
 Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
 
@@ -503,7 +547,7 @@ L1_OPERATOR_PRIVATE_KEY=0x... \
 docker compose up
 ```
 
-### 13. Verify
+### 14. Verify
 
 ```bash
 curl http://localhost:3000/health

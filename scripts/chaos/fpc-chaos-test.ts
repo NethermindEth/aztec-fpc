@@ -59,13 +59,19 @@ import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
+import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { SPONSORED_FPC_SALT } from "@aztec/constants";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
+import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
+import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
+import { Gas } from "@aztec/stdlib/gas";
+import { GasFees } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
@@ -86,6 +92,7 @@ type ChaosConfig = {
   nodeUrl: string | null;
   fpcAddress: string | null;
   acceptedAsset: string | null;
+  faucetAddress: string | null;
   operatorAddress: string | null;
   operatorSecretKey: string | null;
   rateLimitBurst: number;
@@ -151,6 +158,8 @@ type OnchainContext = {
   operatorSecretHex: string;
   token: Contract;
   fpc: Contract;
+  faucet: Contract | null;
+  sponsoredFeePayment: SponsoredFeePaymentMethod;
   fpcAddress: AztecAddress;
   acceptedAsset: AztecAddress;
   feePerDaGas: bigint;
@@ -268,6 +277,24 @@ class ChaosRunner {
       }
     }
     pinoLogger.info("─".repeat(60));
+
+    // Plain-text summary for easy reading in docker logs / CI output
+    const sep = "═".repeat(60);
+    const status = failed > 0 ? `${RED}${BOLD}FAIL${RESET}` : `${GREEN}${BOLD}PASS${RESET}`;
+    const failedNames = this.results
+      .filter((r) => r.status === "fail")
+      .map((r) => `  ${RED}✗ [${r.category}] ${r.name}${RESET}`);
+    process.stderr.write(
+      [
+        "",
+        sep,
+        `  Chaos Test Result: ${status}  (${(totalMs / 1000).toFixed(1)}s)`,
+        `  ${passed} passed, ${failed} failed, ${skipped} skipped, ${total} total`,
+        ...failedNames,
+        sep,
+        "",
+      ].join("\n") + "\n",
+    );
   }
 
   buildReport(config: ChaosConfig, totalMs: number): ChaosReport {
@@ -305,7 +332,7 @@ type Manifest = {
   fpc_address?: string;
   accepted_asset?: string;
   operator_address?: string;
-  contracts?: { accepted_asset?: string; fpc?: string };
+  contracts?: { accepted_asset?: string; fpc?: string; faucet?: string };
   operator?: { address?: string };
   network?: { node_url?: string };
 };
@@ -415,6 +442,8 @@ function getConfig(): ChaosConfig {
     nodeUrl,
     fpcAddress,
     acceptedAsset,
+    faucetAddress:
+      readEnvStr("FPC_CHAOS_FAUCET_ADDRESS") ?? manifest?.contracts?.faucet ?? null,
     operatorAddress,
     operatorSecretKey: readEnvStr("FPC_CHAOS_OPERATOR_SECRET_KEY"),
     rateLimitBurst: readEnvInt("FPC_CHAOS_RATE_LIMIT_BURST", 70),
@@ -497,7 +526,7 @@ const SENTINEL_USER = "0x0000000000000000000000000000000000000000000000000000000
 const SENTINEL_FJ_AMOUNT = "1000000";
 
 async function fetchQuoteForSentinel(config: ChaosConfig): Promise<QuoteResponse> {
-  const url = `${config.attestationUrl}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+  const url = `${config.attestationUrl}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
   const { status, body } = await httpGet(url, config);
   assertOk(status, body, "fetchQuoteForSentinel");
   return parseQuote(body);
@@ -560,20 +589,20 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
   const node = createAztecNodeClient(config.nodeUrl);
   const wallet = await EmbeddedWallet.create(node);
 
+  // Derive operator from the same secret key used during deployment so that
+  // the resulting address matches the token contract's configured minter.
+  const operatorSecret = Fr.fromHexString(config.operatorSecretKey);
+  const operatorSigningKey = deriveSigningKey(operatorSecret);
+  const operatorAcct = await wallet.createSchnorrAccount(operatorSecret, Fr.ZERO, operatorSigningKey);
+  const operator = operatorAcct.address;
+
+  // User and otherUser can be any valid accounts; derive from test data.
   const testAccounts = await getInitialTestAccountsData();
-  const [opData, userDat, otherUserData] = [
-    testAccounts.at(0),
-    testAccounts.at(1),
-    testAccounts.at(2),
-  ];
-  if (!opData || !userDat || !otherUserData) {
+  const [userDat, otherUserData] = [testAccounts.at(1), testAccounts.at(2)];
+  if (!userDat || !otherUserData) {
     throw new Error("Need at least 3 initial test accounts for chaos tests");
   }
-
-  const [operator, user, otherUser] = await Promise.all([
-    wallet
-      .createSchnorrAccount(opData.secret, opData.salt, opData.signingKey)
-      .then((a) => a.address),
+  const [user, otherUser] = await Promise.all([
     wallet
       .createSchnorrAccount(userDat.secret, userDat.salt, userDat.signingKey)
       .then((a) => a.address),
@@ -607,14 +636,48 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
   const maxGasCostNoTeardown =
     BigInt(config.daGasLimit) * feePerDaGas + BigInt(config.l2GasLimit) * feePerL2Gas;
 
-  // Verify the FPC has enough Fee Juice for tests
-  const feeJuiceBalance = await getFeeJuiceBalance(fpcAddress, node);
+  // Wait for the FPC to be funded (the topup service may still be bridging)
   const requiredFeeJuice = maxGasCostNoTeardown * 10n;
+  const fundingTimeoutMs = 120_000;
+  const fundingPollMs = 5_000;
+  const fundingStart = Date.now();
+  let feeJuiceBalance = 0n;
+  while (Date.now() - fundingStart < fundingTimeoutMs) {
+    feeJuiceBalance = await getFeeJuiceBalance(fpcAddress, node);
+    if (feeJuiceBalance >= requiredFeeJuice) break;
+    pinoLogger.info(
+      `Waiting for FPC funding: balance=${feeJuiceBalance}, required=${requiredFeeJuice} (${Math.round((Date.now() - fundingStart) / 1000)}s elapsed)`,
+    );
+    await new Promise((r) => setTimeout(r, fundingPollMs));
+  }
   if (feeJuiceBalance < requiredFeeJuice) {
     throw new Error(
-      `FPC Fee Juice balance ${feeJuiceBalance} is below required ${requiredFeeJuice} for onchain chaos tests. ` +
+      `FPC Fee Juice balance ${feeJuiceBalance} is below required ${requiredFeeJuice} after ${fundingTimeoutMs / 1000}s. ` +
         "Ensure the topup service has funded the FPC before running onchain tests.",
     );
+  }
+
+  // Register canonical SponsoredFPC (enables gas sponsoring for setup txs
+  // when payer has no FeeJuice, e.g. shielding tokens via faucet flow).
+  const sponsoredFpcInstance = await getContractInstanceFromInstantiationParams(
+    SponsoredFPCContractArtifact,
+    { salt: new Fr(SPONSORED_FPC_SALT) },
+  );
+  await wallet.registerContract(sponsoredFpcInstance, SponsoredFPCContractArtifact);
+  const sponsoredFeePayment = new SponsoredFeePaymentMethod(sponsoredFpcInstance.address);
+
+  // Register faucet if available (devnet deployments where bridge is the
+  // minter and the operator cannot mint directly).
+  let faucet: Contract | null = null;
+  if (config.faucetAddress) {
+    const faucetArtifactPath = path.join(config.repoRoot, "target", "faucet-Faucet.json");
+    const faucetArtifact = loadArtifact(faucetArtifactPath);
+    const faucetAddr = AztecAddress.fromString(config.faucetAddress);
+    const faucetInstance = await node.getContract(faucetAddr);
+    if (!faucetInstance) throw new Error(`Faucet contract not found on-chain: ${config.faucetAddress}`);
+    await wallet.registerContract(faucetInstance, faucetArtifact);
+    faucet = Contract.at(faucetAddr, faucetArtifact, wallet);
+    pinoLogger.info(`Faucet registered: ${config.faucetAddress}`);
   }
 
   return {
@@ -626,6 +689,8 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
     operatorSecretHex: config.operatorSecretKey,
     token,
     fpc,
+    faucet,
+    sponsoredFeePayment,
     fpcAddress,
     acceptedAsset,
     feePerDaGas,
@@ -640,6 +705,42 @@ async function getLatestL2Timestamp(ctx: OnchainContext): Promise<bigint> {
   return block.timestamp;
 }
 
+/**
+ * Fund a payer with tokens before a fee-paid tx.
+ *
+ * - Faucet path (devnet): admin_drip gives public tokens, then shield to
+ *   private via SponsoredFPC so payer never needs FeeJuice.
+ * - Direct mint path (chaos-local where operator IS the token minter).
+ */
+async function fundPayerTokens(
+  ctx: OnchainContext,
+  payer: AztecAddress,
+  privateAmount: bigint,
+  publicAmount: bigint,
+): Promise<void> {
+  if (ctx.faucet) {
+    const totalPublic = privateAmount + publicAmount;
+    await ctx.faucet.methods.admin_drip(payer, totalPublic).send({ from: ctx.operator });
+
+    if (privateAmount > 0n) {
+      await ctx.token.methods
+        .transfer_public_to_private(payer, payer, privateAmount, Fr.random())
+        .send({
+          from: payer,
+          fee: { paymentMethod: ctx.sponsoredFeePayment },
+        });
+    }
+  } else {
+    // Direct mint path (operator is the token minter, e.g. chaos-local)
+    if (privateAmount > 0n) {
+      await ctx.token.methods.mint_to_private(payer, privateAmount).send({ from: ctx.operator });
+    }
+    if (publicAmount > 0n) {
+      await ctx.token.methods.mint_to_public(payer, publicAmount).send({ from: ctx.operator });
+    }
+  }
+}
+
 // Mint tokens to user and submit a fee-paid tx.
 // Returns the actual operator credit (aa_payment_amount).
 async function submitFeePaidTx(
@@ -651,26 +752,17 @@ async function submitFeePaidTx(
   aaPaymentAmount: bigint,
   validUntil: bigint,
 ): Promise<{ expectedCharge: bigint }> {
-  // Mint private tokens to payer (used for the FPC fee payment).
-  await ctx.token.methods
-    .mint_to_private(payer, aaPaymentAmount + 1_000_000n)
-    .send({ from: ctx.operator });
-
-  // Mint 1 public token so payer can do transfer_public_to_public as the
-  // actual fee-paid action. Only the operator/admin can mint, so this must
-  // be sent from ctx.operator (not payer).
-  await ctx.token.methods.mint_to_public(payer, 1n).send({ from: ctx.operator });
+  // Fund payer: private tokens for FPC fee payment + 1 public token for the
+  // transfer_public_to_public action.
+  await fundPayerTokens(ctx, payer, aaPaymentAmount + 1_000_000n, 1n);
 
   const nonce = Fr.random();
-  const transferCall = ctx.token.methods.transfer_private_to_private(
-    payer,
-    ctx.operator,
-    aaPaymentAmount,
-    nonce,
-  );
+  const transferCall = await ctx.token.methods
+    .transfer_private_to_private(payer, ctx.operator, aaPaymentAmount, nonce)
+    .getFunctionCall();
   const authwit = await ctx.wallet.createAuthWit(payer, {
     caller: ctx.fpcAddress,
-    action: transferCall,
+    call: transferCall,
   });
 
   const feeEntrypointCall = await ctx.fpc.methods
@@ -692,15 +784,9 @@ async function submitFeePaidTx(
     fee: {
       paymentMethod,
       gasSettings: {
-        gasLimits: {
-          daGas: config.daGasLimit,
-          l2Gas: config.l2GasLimit,
-        },
-        teardownGasLimits: { daGas: 0, l2Gas: 0 },
-        maxFeesPerGas: {
-          feePerDaGas: ctx.feePerDaGas,
-          feePerL2Gas: ctx.feePerL2Gas,
-        },
+        gasLimits: new Gas(config.daGasLimit, config.l2GasLimit),
+        teardownGasLimits: new Gas(0, 0),
+        maxFeesPerGas: new GasFees(ctx.feePerDaGas, ctx.feePerL2Gas),
       },
     },
     wait: { timeout: 180 },
@@ -735,23 +821,15 @@ async function submitFeePaidTxWithOptions(
   const teardownDaGas = options?.teardownDaGas ?? 0;
   const teardownL2Gas = options?.teardownL2Gas ?? 0;
 
-  await ctx.token.methods
-    .mint_to_private(
-      payer,
-      (authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount) + 1_000_000n,
-    )
-    .send({ from: ctx.operator });
-  await ctx.token.methods.mint_to_public(payer, 1n).send({ from: ctx.operator });
+  const maxAmount = authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount;
+  await fundPayerTokens(ctx, payer, maxAmount + 1_000_000n, 1n);
 
-  const transferCall = ctx.token.methods.transfer_private_to_private(
-    payer,
-    ctx.operator,
-    authwitAmount,
-    authwitNonce,
-  );
+  const transferCall = await ctx.token.methods
+    .transfer_private_to_private(payer, ctx.operator, authwitAmount, authwitNonce)
+    .getFunctionCall();
   const authwit = await ctx.wallet.createAuthWit(payer, {
     caller: ctx.fpcAddress,
-    action: transferCall,
+    call: transferCall,
   });
 
   const feeEntrypointCall = await ctx.fpc.methods
@@ -778,15 +856,9 @@ async function submitFeePaidTxWithOptions(
     fee: {
       paymentMethod,
       gasSettings: {
-        gasLimits: {
-          daGas: config.daGasLimit,
-          l2Gas: config.l2GasLimit,
-        },
-        teardownGasLimits: { daGas: teardownDaGas, l2Gas: teardownL2Gas },
-        maxFeesPerGas: {
-          feePerDaGas: ctx.feePerDaGas,
-          feePerL2Gas: ctx.feePerL2Gas,
-        },
+        gasLimits: new Gas(config.daGasLimit, config.l2GasLimit),
+        teardownGasLimits: new Gas(teardownDaGas, teardownL2Gas),
+        maxFeesPerGas: new GasFees(ctx.feePerDaGas, ctx.feePerL2Gas),
       },
     },
     wait: { timeout: 180 },
@@ -819,6 +891,23 @@ function ceilDiv(a: bigint, b: bigint): bigint {
 async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<void> {
   const base = config.attestationUrl;
 
+  // Discover the accepted_asset from the running attestation service so API
+  // tests always use the value the service actually accepts.  The manifest
+  // value (config.acceptedAsset) may be stale if containers were recycled.
+  // We preserve the manifest value for the mismatch check below.
+  const manifestAcceptedAsset = config.acceptedAsset;
+  try {
+    const { status, body } = await httpGet(`${base}/asset`, config);
+    if (status >= 200 && status < 300) {
+      const parsed = JSON.parse(body) as { address?: string };
+      if (parsed.address) {
+        config.acceptedAsset = parsed.address;
+      }
+    }
+  } catch {
+    // Will be caught by individual tests
+  }
+
   await runner.run("health-ok", "api", "GET /health returns 200 + {status:ok}", async () => {
     const { status, body } = await httpGet(`${base}/health`, config);
     assertOk(status, body, "/health");
@@ -844,12 +933,15 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /asset address matches configured accepted_asset",
     async () => {
-      if (!config.acceptedAsset) return { skipped: "no accepted_asset configured" };
+      if (!manifestAcceptedAsset) return { skipped: "no accepted_asset configured" };
+      if (!process.env.FPC_CHAOS_MANIFEST) {
+        return { skipped: "no manifest file loaded (address came from env var, not manifest)" };
+      }
       const { status, body } = await httpGet(`${base}/asset`, config);
       assertOk(status, body, "/asset");
       const parsed = JSON.parse(body) as { address?: string };
       const got = (parsed.address ?? "").toLowerCase();
-      const expected = config.acceptedAsset.toLowerCase();
+      const expected = manifestAcceptedAsset.toLowerCase();
       if (got !== expected) {
         throw new Error(`/asset address mismatch. expected=${expected} got=${got}`);
       }
@@ -862,7 +954,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /quote with valid params returns complete quote",
     async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertOk(status, body, "/quote");
       const q = parseQuote(body);
@@ -936,7 +1028,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "Quote fj_amount matches requested fj_amount",
     async () => {
       const requested = "2000000";
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${requested}`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${requested}&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertOk(status, body, "/quote fj echo");
       const q = parseQuote(body);
@@ -959,7 +1051,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "GET /quote without user param returns 4xx",
     async () => {
       const { status, body } = await httpGet(
-        `${base}/quote?fj_amount=${SENTINEL_FJ_AMOUNT}`,
+        `${base}/quote?fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`,
         config,
       );
       assertClientError(status, body, "/quote (missing user)");
@@ -972,7 +1064,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /quote without fj_amount param returns 4xx",
     async () => {
-      const { status, body } = await httpGet(`${base}/quote?user=${SENTINEL_USER}`, config);
+      const { status, body } = await httpGet(`${base}/quote?user=${SENTINEL_USER}&accepted_asset=${config.acceptedAsset}`, config);
       assertClientError(status, body, "/quote (missing fj_amount)");
       return { status };
     },
@@ -983,7 +1075,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /quote with fj_amount=0 returns 4xx",
     async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=0`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=0&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertClientError(status, body, "/quote fj_amount=0");
       return { status };
@@ -995,7 +1087,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /quote with fj_amount=-1 returns 4xx",
     async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=-1`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=-1&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertClientError(status, body, "/quote fj_amount=-1");
       return { status };
@@ -1007,7 +1099,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /quote with fj_amount=notanumber returns 4xx",
     async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=notanumber`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=notanumber&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertClientError(status, body, "/quote fj_amount=notanumber");
       return { status };
@@ -1020,7 +1112,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "GET /quote with fj_amount > u128 max returns 4xx",
     async () => {
       const overflow = (U128_MAX + 1n).toString();
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${overflow}`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${overflow}&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertClientError(status, body, "/quote fj_amount overflow");
       return { status };
@@ -1032,7 +1124,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /quote with malformed user address returns 4xx",
     async () => {
-      const url = `${base}/quote?user=not_an_address&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+      const url = `${base}/quote?user=not_an_address&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertClientError(status, body, "/quote invalid user");
       return { status };
@@ -1045,7 +1137,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "GET /quote with SQL injection in user param returns 4xx",
     async () => {
       const injected = encodeURIComponent("' OR '1'='1");
-      const url = `${base}/quote?user=${injected}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+      const url = `${base}/quote?user=${injected}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertClientError(status, body, "/quote sql injection");
       return { status };
@@ -1059,7 +1151,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     async () => {
       // u128 max is technically valid at the type level but likely too large to be useful
       // Attestation service may reject it as unreasonable – either 4xx or 200 is acceptable.
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${U128_MAX.toString()}`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${U128_MAX.toString()}&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       // We accept both success (service allows it) and client error (service rejects as too large)
       if (status >= 500) {
@@ -1075,7 +1167,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api",
     "GET /quote with user=0x0 returns 4xx (spec: user never zero)",
     async () => {
-      const url = `${base}/quote?user=${ZERO_USER}&fj_amount=1`;
+      const url = `${base}/quote?user=${ZERO_USER}&fj_amount=1&accepted_asset=${config.acceptedAsset}`;
       const { status, body } = await httpGet(url, config);
       assertClientError(status, body, "/quote user=0x0");
       return { status };
@@ -1105,7 +1197,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
       "api-auth",
       "GET /quote without auth header returns 401",
       async () => {
-        const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+        const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
         // Send with no auth headers
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), config.httpTimeoutMs);
@@ -1127,7 +1219,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
       "api-auth",
       "GET /quote with wrong auth key returns 401",
       async () => {
-        const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+        const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
         const wrongHeaders: Record<string, string> = {};
         if (config.quoteAuthApiKey) {
           wrongHeaders[config.quoteAuthHeader ?? "x-api-key"] = "WRONG_KEY_FOR_CHAOS_TEST";
@@ -1147,7 +1239,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
       "api-auth",
       "GET /quote with correct auth key returns 200",
       async () => {
-        const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+        const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
         const { status, body } = await httpGet(url, config);
         assertOk(status, body, "/quote auth correct key");
         return { status };
@@ -1167,7 +1259,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api-ratelimit",
     `Rate limiting: ${config.rateLimitBurst} rapid requests triggers 429s`,
     async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
       const promises = Array.from({ length: config.rateLimitBurst }, () =>
         httpGet(url, config).catch((e) => ({ status: -1, body: String(e) })),
       );
@@ -1224,7 +1316,7 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     "api-concurrent",
     "10 concurrent quote requests return consistent structure",
     async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
       const results = await Promise.all(
         Array.from({ length: 10 }, () =>
           httpGet(url, config).then(({ status, body }) => ({
@@ -1302,7 +1394,9 @@ async function runOnchainTests(
     "Replaying a consumed quote is rejected (nullifier collision)",
     async () => {
       const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
+      // Use the maximum allowed TTL so the quote does not expire between the
+      // first submission and the replay attempt (block timestamps advance).
+      const validUntil = latestTs + MAX_QUOTE_TTL_SECONDS;
       // Get a fresh quote for user (unique per-submission by signing key)
       const sigBytes = await signQuote(
         ctx.operatorSecretHex,
@@ -1342,9 +1436,15 @@ async function runOnchainTests(
       );
 
       // Advance a block to push anchor_block_timestamp past valid_until
-      await ctx.token.methods
-        .mint_to_private(ctx.operator, 1n)
-        .send({ from: ctx.operator, wait: { timeout: 60 } });
+      if (ctx.faucet) {
+        await ctx.faucet.methods
+          .admin_drip(ctx.operator, 1n)
+          .send({ from: ctx.operator, wait: { timeout: 60 } });
+      } else {
+        await ctx.token.methods
+          .mint_to_private(ctx.operator, 1n)
+          .send({ from: ctx.operator, wait: { timeout: 60 } });
+      }
 
       await expectOnchainFailure("expired quote", ["quote expired", "expired"], () =>
         submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, latestTs),
@@ -1407,7 +1507,7 @@ async function runOnchainTests(
 
       // Submit as ctx.user (user B) – sig verification fails because
       // quote_hash includes user_address = otherUser but msg_sender = user.
-      await expectOnchainFailure("sender binding", ["invalid quote signature", "signature"], () =>
+      await expectOnchainFailure("sender binding", ["signature"], () =>
         submitFeePaidTx(
           config,
           ctx,
@@ -1446,7 +1546,8 @@ async function runOnchainTests(
         "tampered signature",
         // A flipped byte in the R-point can create an off-curve point, which
         // the Grumpkin circuit rejects before the FPC sig check is reached.
-        ["invalid quote signature", "signature", "invalid", "grumpkin", "not a valid"],
+        // schnorr::assert_valid_signature uses bare assert() – no message string.
+        ["signature", "invalid", "grumpkin", "not a valid"],
         () =>
           submitFeePaidTx(config, ctx, ctx.user, tampered, fjAmount, aaPaymentAmount, validUntil),
       );
@@ -1473,7 +1574,7 @@ async function runOnchainTests(
       // Pass fjAmount+1 but keep original signature – sig covers original fjAmount
       await expectOnchainFailure(
         "tampered fj_amount",
-        ["invalid quote signature", "signature", "mismatch"],
+        ["signature", "mismatch"],
         () =>
           submitFeePaidTx(
             config,
@@ -1510,7 +1611,7 @@ async function runOnchainTests(
 
       await expectOnchainFailure(
         "tampered aa_payment_amount",
-        ["invalid quote signature", "signature"],
+        ["signature"],
         () =>
           submitFeePaidTx(
             config,
@@ -1550,7 +1651,7 @@ async function runOnchainTests(
 
       await expectOnchainFailure(
         "fj_amount != max_gas_cost_no_teardown",
-        ["quoted-fee mismatch", "fee mismatch", "mismatch"],
+        ["quoted fee amount mismatch", "mismatch"],
         () =>
           submitFeePaidTx(
             config,
@@ -1584,15 +1685,12 @@ async function runOnchainTests(
 
       // otherUser has NO tokens – don't mint before submitting
       const nonce = Fr.random();
-      const transferCall = ctx.token.methods.transfer_private_to_private(
-        ctx.otherUser,
-        ctx.operator,
-        aaPaymentAmount,
-        nonce,
-      );
+      const transferCall = await ctx.token.methods
+        .transfer_private_to_private(ctx.otherUser, ctx.operator, aaPaymentAmount, nonce)
+        .getFunctionCall();
       const authwit = await ctx.wallet.createAuthWit(ctx.otherUser, {
         caller: ctx.fpcAddress,
-        action: transferCall,
+        call: transferCall,
       });
       const feeEntrypointCall = await ctx.fpc.methods
         .fee_entrypoint(ctx.acceptedAsset, nonce, fjAmount, aaPaymentAmount, validUntil, sigBytes)
@@ -1606,9 +1704,9 @@ async function runOnchainTests(
         getGasSettings: () => undefined,
       };
 
-      // Mint 1 public token so the tx action is authorized (only operator can mint).
+      // Give 1 public token so the tx action is authorized.
       // The fee payment fails regardless because otherUser has no PRIVATE tokens.
-      await ctx.token.methods.mint_to_public(ctx.otherUser, 1n).send({ from: ctx.operator });
+      await fundPayerTokens(ctx, ctx.otherUser, 0n, 1n);
 
       await expectOnchainFailure(
         "insufficient user balance",
@@ -1623,15 +1721,9 @@ async function runOnchainTests(
               fee: {
                 paymentMethod,
                 gasSettings: {
-                  gasLimits: {
-                    daGas: config.daGasLimit,
-                    l2Gas: config.l2GasLimit,
-                  },
-                  teardownGasLimits: { daGas: 0, l2Gas: 0 },
-                  maxFeesPerGas: {
-                    feePerDaGas: ctx.feePerDaGas,
-                    feePerL2Gas: ctx.feePerL2Gas,
-                  },
+                  gasLimits: new Gas(config.daGasLimit, config.l2GasLimit),
+                  teardownGasLimits: new Gas(0, 0),
+                  maxFeesPerGas: new GasFees(ctx.feePerDaGas, ctx.feePerL2Gas),
                 },
               },
               wait: { timeout: 120 },
@@ -1661,39 +1753,10 @@ async function runOnchainTests(
     },
   );
 
-  await runner.run(
-    "onchain-teardown-gas-rejected",
-    "onchain",
-    "Fee-paid tx with non-zero teardown gas is rejected by FPC",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-      // Use teardownL2Gas rather than teardownDaGas: in local devnet feePerDaGas
-      // is 0 so the FPC's DA-gas assertion is conditionally skipped.  L2 gas is
-      // always priced, so the L2-teardown assertion reliably fires.
-      await expectOnchainFailure("non-zero teardown l2 gas", ["teardown", "l2 gas", "zero"], () =>
-        submitFeePaidTxWithOptions(
-          config,
-          ctx,
-          ctx.user,
-          sigBytes,
-          fjAmount,
-          aaPaymentAmount,
-          validUntil,
-          { teardownDaGas: 0, teardownL2Gas: 1 },
-        ),
-      );
-    },
-  );
+  // NOTE: onchain-teardown-gas-rejected was removed because the FPC contract
+  // (FPCMultiAsset) does not enforce zero teardown gas -- there is no teardown
+  // assertion in fee_entrypoint.  Non-zero teardown gas is accepted by the
+  // protocol and the contract, so there is nothing to reject.
 
   await runner.run(
     "onchain-authwit-nonce-mismatch",
@@ -1791,7 +1854,7 @@ async function runOnchainTests(
       );
       await expectOnchainFailure(
         "quote signed for wrong FPC address",
-        ["invalid quote signature", "signature"],
+        ["signature"],
         () =>
           submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
       );
@@ -1817,7 +1880,7 @@ async function runOnchainTests(
       );
       await expectOnchainFailure(
         "quote signed for wrong accepted_asset",
-        ["invalid quote signature", "signature"],
+        ["signature"],
         () =>
           submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
       );
@@ -1905,8 +1968,8 @@ async function runStressTests(
         .then((a) => a.address);
 
       // Each tx fetches the current L2 timestamp right before signing.
-      // This is required because each iteration waits for 3 tx confirmations
-      // (mint_to_private, mint_to_public, fee-paid tx), each of which advances
+      // This is required because each iteration waits for multiple tx confirmations
+      // (fund payer tokens + fee-paid tx), each of which advances
       // the L2 block timestamp. Using a single latestTs captured before the
       // loop means later iterations produce an already-expired valid_until,
       // causing "Invalid expiration timestamp" at the protocol level.
@@ -1959,7 +2022,7 @@ async function runStressTests(
     "20 rapid quote requests (same user, same fj_amount) return identical fj_amount",
     async () => {
       const base = config.attestationUrl;
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}`;
+      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
 
       const results = await Promise.all(
         Array.from({ length: 20 }, () =>
