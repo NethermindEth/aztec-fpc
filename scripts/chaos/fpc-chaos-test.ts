@@ -1373,27 +1373,41 @@ async function runOnchainTests(
   const aaPaymentAmount = computeAaPayment(TEST_RATE);
 
   await runner.run("onchain-happy-path", "onchain", "Valid fee-paid tx succeeds", async () => {
-    const latestTs = await getLatestL2Timestamp(ctx);
-    const validUntil = latestTs + 600n;
-    const sigBytes = await signQuote(
-      ctx.operatorSecretHex,
-      ctx.fpcAddress,
-      ctx.acceptedAsset,
-      fjAmount,
-      aaPaymentAmount,
-      validUntil,
-      ctx.user,
-    );
-    const { expectedCharge } = await submitFeePaidTx(
-      config,
-      ctx,
-      ctx.user,
-      sigBytes,
-      fjAmount,
-      aaPaymentAmount,
-      validUntil,
-    );
-    return { expectedCharge: expectedCharge.toString() };
+    // Retry up to 3 times on transient P2P drops (busy node under CI load).
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const latestTs = await getLatestL2Timestamp(ctx);
+        const validUntil = latestTs + 600n;
+        const sigBytes = await signQuote(
+          ctx.operatorSecretHex,
+          ctx.fpcAddress,
+          ctx.acceptedAsset,
+          fjAmount,
+          aaPaymentAmount,
+          validUntil,
+          ctx.user,
+        );
+        const { expectedCharge } = await submitFeePaidTx(
+          config,
+          ctx,
+          ctx.user,
+          sigBytes,
+          fjAmount,
+          aaPaymentAmount,
+          validUntil,
+        );
+        return { expectedCharge: expectedCharge.toString() };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isTransient = /dropped by P2P|Tx dropped/i.test(msg);
+        if (isTransient && attempt < maxAttempts) {
+          pinoLogger.warn(`Happy-path tx dropped (attempt ${attempt}/${maxAttempts}), retrying...`);
+          continue;
+        }
+        throw err;
+      }
+    }
   });
 
   await runner.run(
