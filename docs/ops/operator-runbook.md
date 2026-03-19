@@ -35,10 +35,10 @@ bun install
 This single flow compiles contracts, deploys contracts, starts services, and validates the FPC fee flow:
 
 ```bash
-bun run smoke:services:local
+bun run smoke:services:compose
 ```
 
-Expected success signal: script exits `0` and prints service-smoke completion logs without errors.
+Expected success signal: all compose services exit `0` and print service-smoke completion logs without errors.
 
 ## Manual Operator Path
 
@@ -136,4 +136,4 @@ Then run separate attestation/top-up instances per stack with:
 
 - `deploy-fpc-local` output file exists and has non-zero addresses.
 - attestation and top-up processes are healthy.
-- `bun run smoke:services:local` passes.
+- `bun run smoke:services:compose` passes.

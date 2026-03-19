@@ -72,7 +72,6 @@
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-smoke-local.sh",
     "smoke:cold-start:local": "bash scripts/cold-start/cold-start-smoke.sh",
     "smoke:fee-entrypoint:local": "bash scripts/contract/fee-entrypoint-local-smoke.sh",
-    "smoke:services:local": "bash scripts/services/fpc-services-smoke.sh",
     "smoke:services:compose": "docker compose --profile full up wait --wait",
     "e2e:full-lifecycle:fpc:local": "bash scripts/services/fpc-full-lifecycle-e2e.sh",
     "e2e:full-lifecycle:fpc:compose": "bash scripts/services/full-lifecycle-compose.sh",
