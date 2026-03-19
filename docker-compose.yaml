@@ -151,13 +151,21 @@ services:
     image: nethermind/aztec-fpc-smoke:local
     profiles: ["smoke", "full"]
     command:
-      - "services/attestation/test/fee-entrypoint-local-smoke.ts"
+      - "scripts/services/fee-entrypoint-smoke.ts"
+    volumes:
+      - ./deployments/local:/app/data:ro
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       L1_RPC_URL: "http://anvil:8545"
+      FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_ATTESTATION_URL: "http://attestation:3000"
     depends_on:
       block-producer:
         condition: service_started
+      deploy:
+        condition: service_completed_successfully
+      attestation:
+        condition: service_healthy
 
   smoke-services:
     image: nethermind/aztec-fpc-smoke:local
