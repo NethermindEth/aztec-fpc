@@ -405,8 +405,8 @@ Run the post-deploy smoke test to confirm the full flow works end-to-end.
 > These commands require a local repo checkout with dependencies installed (`bun install` from the repo root).
 
 ```bash
-# Fee-entrypoint smoke (requires running attestation + node)
-bun run smoke:fee-entrypoint:local
+# Fee-entrypoint negative-path smoke (requires pre-deployed contracts + node)
+FPC_COLD_START_MANIFEST=path/to/manifest.json FPC_ATTESTATION_URL=http://localhost:3000 bun run smoke:fee-entrypoint
 
 # Services smoke (attestation + topup + contract, via docker compose)
 bun run smoke:services:compose
@@ -838,7 +838,7 @@ docker run -v ./deployments:/app/deployments \
 [ ] quote_base_url set if behind a reverse proxy
 [ ] Top-up service running and /ready returns 200
 [ ] Auto-claim configured (TOPUP_AUTOCLAIM_SECRET_KEY set)
-[ ] Smoke test passing (bun run smoke:fee-entrypoint:local or chaos:api)
+[ ] Smoke test passing (docker compose smoke profile or chaos:api)
 [ ] Publish to users:
     [ ] ATTESTATION_URL: <ATTESTATION_URL>
     [ ] FPC_ADDRESS: <FPC_ADDRESS>

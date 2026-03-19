@@ -192,52 +192,30 @@ bun run ci
 
 - `build-contract.yml`: noir format + compile + `aztec test --package fpc`
 - `ts-packages.yml`: biome + typecheck + TS build/tests
-- `spec-fee-entrypoint-smoke.yml`: local-devnet smoke for `FPC.fee_entrypoint`
+
 - `spec-deploy-smoke.yml`: local deploy smoke for `deploy-fpc-local` output validation
 - `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suite for `FPC`, with uploaded diagnostics artifacts
 - `spec-chaos-smoke.yml`: chaos / adversarial test suite (API + on-chain + stress)
 
-### 5. Run local-devnet FPC fee-entrypoint smoke test
+### 5. Run fee-entrypoint negative-path smoke test
 
-This runs a full payment flow outside TXE tests:
-
-1. compile artifacts,
-2. deploy `Token` + `FPC`,
-3. mint user private balance,
-4. execute `fee_entrypoint` with quote signature + token transfer authwit,
-5. assert operator private balance increased by the expected charge.
+Negative-path smoke test that verifies `fee_entrypoint` cannot be called as a root-level transaction outside the setup phase. Uses pre-deployed contracts from a deployment manifest and fetches a real quote from the attestation service via the SDK. Run via docker compose (`smoke` or `full` profile) or directly:
 
 ```bash
-aztec start --local-network
+FPC_COLD_START_MANIFEST=path/to/manifest.json \
+FPC_ATTESTATION_URL=http://localhost:3000 \
+  bun run smoke:fee-entrypoint
 ```
 
-Default local-network endpoints:
-- Aztec node / PXE RPC: `http://localhost:8080`
-- Anvil L1 RPC (spawned by `aztec start --local-network`): `http://127.0.0.1:8545`
+Required:
 
-For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; do not add a manual custom L1 FeeJuice deployment step for local E2E.
-
-```bash
-bun run smoke:fee-entrypoint:local
-# or:
-bash scripts/contract/fee-entrypoint-local-smoke.sh
-```
-
-Smoke implementation file:
-`services/attestation/test/fee-entrypoint-local-smoke.ts`
+- `FPC_COLD_START_MANIFEST` — path to deployment manifest
+- `FPC_ATTESTATION_URL` — attestation service base URL
 
 Optional overrides:
 
 - `AZTEC_NODE_URL` (default `http://localhost:8080`)
 - `L1_RPC_URL` (default `http://127.0.0.1:8545`)
-- `FPC_SMOKE_START_LOCAL_NETWORK` (default `1`; auto-starts `aztec start --local-network` when `8080/8545` are unavailable)
-- `FPC_SMOKE_NODE_TIMEOUT_MS` (default `30000`)
-- `FPC_SMOKE_RATE_NUM`, `FPC_SMOKE_RATE_DEN` (defaults: `10200` / `10000000`)
-- `FPC_SMOKE_DA_GAS_LIMIT`, `FPC_SMOKE_L2_GAS_LIMIT`
-- `FPC_SMOKE_FEE_PER_DA_GAS`, `FPC_SMOKE_FEE_PER_L2_GAS` (default: current node min fees)
-- `FPC_SMOKE_FEE_JUICE_TOPUP_WEI` (default: conservative auto-top-up from configured gas settings)
-- `FPC_SMOKE_QUOTE_TTL_SECONDS`
-- `FPC_SMOKE_RESET_LOCAL_STATE` (default `1`; set `0` to reuse existing `wallet_data_*`/`pxe_data_*`)
 
 ### 6. Run local-devnet services smoke test (attestation + topup + contract flows)
 
