@@ -194,7 +194,6 @@ bun run ci
 - `ts-packages.yml`: biome + typecheck + TS build/tests
 - `spec-fee-entrypoint-smoke.yml`: local-devnet smoke for `FPC.fee_entrypoint`
 - `spec-deploy-smoke.yml`: local deploy smoke for `deploy-fpc-local` output validation
-- `spec-services-smoke.yml`: service-integrated local-network smoke covering quote + topup + contract fee flow
 - `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suite for `FPC`, with uploaded diagnostics artifacts
 - `spec-chaos-smoke.yml`: chaos / adversarial test suite (API + on-chain + stress)
 
@@ -252,14 +251,8 @@ This script implements Step 8 from the services plan:
 6. confirms topup behavior and successful fee flows.
 
 ```bash
-bun run smoke:services:local
-# or:
-bash scripts/services/fpc-services-smoke.sh
+bun run smoke:services:compose
 ```
-
-Useful overrides:
-
-- `FPC_SERVICES_SMOKE_START_LOCAL_NETWORK` (default `1`; auto-starts `aztec start --local-network` if 8080/8545 are unavailable)
 - `FPC_SERVICES_SMOKE_RESET_LOCAL_STATE` (default `1`)
 - `FPC_SERVICES_SMOKE_L1_PRIVATE_KEY` (default local anvil key)
 - `FPC_SERVICES_SMOKE_TOPUP_WEI`, `FPC_SERVICES_SMOKE_THRESHOLD_WEI`

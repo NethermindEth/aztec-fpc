@@ -408,8 +408,8 @@ Run the post-deploy smoke test to confirm the full flow works end-to-end.
 # Fee-entrypoint smoke (requires running attestation + node)
 bun run smoke:fee-entrypoint:local
 
-# Services smoke (attestation + topup + contract)
-bun run smoke:services:local
+# Services smoke (attestation + topup + contract, via docker compose)
+bun run smoke:services:compose
 
 # Cold-start smoke
 bun run smoke:cold-start:local
