@@ -40,12 +40,6 @@ fi
 echo "[full-lifecycle-e2e] Compiling contracts workspace"
 aztec compile --workspace --force
 
-echo "[full-lifecycle-e2e] Building attestation service"
-bun run --filter @aztec-fpc/attestation build
-
-echo "[full-lifecycle-e2e] Building topup service"
-bun run --filter @aztec-fpc/topup build
-
 echo "[full-lifecycle-e2e] Running full lifecycle E2E runner"
 (
   cd "$REPO_ROOT/scripts"
