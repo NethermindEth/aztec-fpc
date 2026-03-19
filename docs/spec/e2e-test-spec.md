@@ -1,13 +1,22 @@
 # Full E2E Test Definition
 
 ## Scope
-This document defines a single end-to-end test for the FPC lifecycle only.
-1. FPC lifecycle:
-   - topup service funds FPC,
-   - user executes a fee-paid transaction through `fee_entrypoint`,
-   - target contract call executes,
-   - topup service funds FPC again after fee spend,
-   - user executes a second fee-paid target call.
+This document defines the end-to-end negative-scenario test for the FPC lifecycle.
+
+Scenarios 1-5 run against a pre-deployed FPC from a deployment manifest,
+already funded by the running topup service. No contract deployment or service
+startup is performed for these scenarios.
+
+Scenario 6 (insufficient Fee Juice) deploys its own isolated Token + FPC,
+bridges Fee Juice directly via `L1FeeJuicePortalManager` + `FeeJuice.claim()`,
+and then runs the two-tx insufficient balance test.
+
+Happy-path FPC transaction coverage (fee-paid transfers, balance-delta
+assertions, multi-cycle bridge re-funding) is provided by the
+same-token-transfer integration test
+(`scripts/same-token-transfer/test-same-token-transfer.ts`), which exercises
+more transfer types (private-to-private, public-to-public, batched
+cross-domain) against a running attestation service and top-up-funded FPC.
 
 No other smoke/deploy/test flows are part of this definition.
 
@@ -21,12 +30,17 @@ No other smoke/deploy/test flows are part of this definition.
 - Aztec local network endpoints:
   - L2 node: `http://127.0.0.1:8080`
   - L1 RPC: `http://127.0.0.1:8545`
-- Local network started (or reused) via:
-  - `aztec start --local-network`
+- Pre-deployed FPC and Token contracts (via deployment manifest)
+- Running topup service funding the FPC with Fee Juice
 - Contracts compiled (`aztec compile --workspace --force`) including:
   - `target/token_contract-Token.json`
   - `target/fpc-FPCMultiAsset.json`
-- Attestation and topup services buildable/runnable from this repo
+
+## Required Env Vars
+- `FPC_COLD_START_MANIFEST` — deployment manifest path
+- `FPC_OPERATOR_SECRET_KEY` — operator 0x-prefixed 32-byte hex secret
+- `AZTEC_NODE_URL` (default: `http://localhost:8080`)
+- `L1_RPC_URL` (default: `http://localhost:8545`) — only needed for scenario 6
 
 ## Asset Model And Wiring
 Two different assets are involved and must not be conflated:
@@ -34,75 +48,42 @@ Two different assets are involved and must not be conflated:
 1. `accepted_asset` (L2 token used to charge the user)
 - This is a test token deployed on Aztec L2 (`token_contract-Token`).
 - It is chosen per quote (`accepted_asset`) at runtime for `fee_entrypoint`.
-- Attestation must return this exact address in `/quote.accepted_asset`.
 - No L1 token wiring is required for this asset in this E2E.
 
 2. Fee Juice (protocol fee asset for gas payment)
-- L2 Fee Juice contract address is provided by node info:
-  - `protocolContractAddresses.feeJuice`
-- L1 Fee Juice ERC20 + portal addresses are provided by node info:
-  - `l1ContractAddresses.feeJuiceAddress`
-  - `l1ContractAddresses.feeJuicePortalAddress`
-- Topup bridges L1 Fee Juice to FPC using `L1FeeJuicePortalManager.bridgeTokensPublic(...)`.
-
-Address source of truth is always `node_getNodeInfo`; nothing is hardcoded.
-For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; no manual custom L1 FeeJuice deployment step is required.
+- For scenarios 1-5: the FPC is pre-funded by the running topup service.
+- For scenario 6: Fee Juice is bridged directly via `L1FeeJuicePortalManager.bridgeTokensPublic()`
+  and claimed on L2 via `FeeJuice.claim()`.
+- L1/L2 Fee Juice addresses are discovered from `node_getNodeInfo`.
 
 ## Local-Network Troubleshooting
 Use this runbook when local E2E fails with address or wiring symptoms.
 
 1. Stale hardcoded addresses
-- Symptom: startup/config errors, attestation quote mismatches, or topup failures after node restart/redeploy.
+- Symptom: startup/config errors or bridge failures after node restart/redeploy.
 - Check: verify any configured FeeJuice L1/L2 addresses against fresh `node_getNodeInfo` output.
 - Fix: remove stale hardcoded values; regenerate deploy/config artifacts and use node-reported addresses.
 
 2. L1 chain-id mismatch (`l1_rpc_url` vs node-reported chain)
-- Symptom: topup validation rejects config or bridge submit fails with chain/network mismatch errors.
+- Symptom: bridge submit fails with chain/network mismatch errors.
 - Check: compare node-reported `l1ChainId` from `node_getNodeInfo` with the chain id served by `l1_rpc_url`.
-- Fix: point services to the correct L1 RPC for the active local-network instance.
+- Fix: point to the correct L1 RPC for the active local-network instance.
 
 3. FeeJuice portal/address mismatch
-- Symptom: bridge submission/confirmation fails or FeeJuice balance never increases after a bridge tx.
+- Symptom: bridge submission fails or FeeJuice balance never increases after a bridge + claim.
 - Check: compare configured/derived FeeJuice token + portal addresses with node-reported `l1ContractAddresses`.
-- Fix: do not override local-network FeeJuice addresses manually; use node-derived values and rerun deploy/config generation.
+- Fix: do not override local-network FeeJuice addresses manually; use node-derived values.
 
 ## Full Lifecycle Phases
-1. Start or reuse local devnet via `aztec start --local-network`.
-2. Deploy L2 accepted-asset token (`token_contract-Token`).
-3. Derive operator Schnorr signing public key `(operator_pubkey_x, operator_pubkey_y)`.
-4. Deploy FPC with:
-   - `operator = operator Aztec address`
-   - `operator_pubkey_x = operator Schnorr pubkey x`
-   - `operator_pubkey_y = operator Schnorr pubkey y`
-5. Run FPC scenario:
-   - start attestation + topup with generated runtime config:
-     - attestation config uses `fpc_address=<FPC>` + `accepted_asset_address`
-     - topup config uses `fpc_address=<FPC>` + `l1_rpc_url`; Fee Juice L1/L2 addresses are discovered from node info
-6. Wait for FPC bridge cycle #1:
-   - topup logs `Bridge submitted.`
-   - relay block advancement
-   - topup logs `Bridge confirmation outcome=confirmed`
-   - FPC Fee Juice balance becomes positive
-7. Execute FPC user tx #1:
-   - fetch quote from attestation `/quote`
-   - call target contract method using FPC payment method (`fee_entrypoint`)
-   - assert fee debit/credit invariants
-   - assert target contract state change
-8. Wait for FPC bridge cycle #2 after fee spend:
-   - second `Bridge submitted.` and `Bridge confirmation outcome=confirmed`
-   - FPC Fee Juice balance increases from post-tx#1 baseline
-9. Execute FPC user tx #2 with same invariant checks.
-
-## Coverage Findings And Test Tiering
-Current script coverage in this repository is intentionally split:
-- `scripts/contract/deploy-fpc-local.ts` and `scripts/contract/deploy-fpc-local-smoke.ts` are deployment/relay usability checks, not quote-security or negative-behavior tests.
-- `scripts/services/fee-entrypoint-smoke.ts` is a negative-path smoke check verifying that `fee_entrypoint` cannot be called as a root-level transaction outside the setup phase.
-- `scripts/services/fpc-services-smoke.ts` tests deployed service HTTP endpoints (attestation quotes, topup health, metrics).
-
-This document is the source of truth for full FPC e2e behavior requirements, including negative scenarios that are not required in lightweight smoke scripts.
+1. Read pre-deployed FPC and Token addresses from deployment manifest.
+2. Connect to Aztec node, derive operator account from secret, create fresh test users.
+3. Register pre-deployed contracts in local wallet.
+4. Wait for FPC to have positive Fee Juice balance (funded by topup service).
+5. Run negative scenarios 1-5 against pre-deployed FPC.
+6. For scenario 6: deploy isolated Token + FPC, bridge + claim Fee Juice directly, run insufficient balance test.
+7. Persist diagnostics and artifacts.
 
 ## Required Negative Scenarios (FPC E2E)
-In addition to lifecycle happy-path checks, the full FPC e2e suite must include:
 1. Quote replay rejection:
    - reuse the same `(rate_num, rate_den, valid_until, signature)` after one successful use;
    - second use must be rejected due to quote replay protection.
@@ -115,39 +96,49 @@ In addition to lifecycle happy-path checks, the full FPC e2e suite must include:
 4. Quote sender-binding rejection:
    - quote issued for user A is submitted by user B;
    - tx must be rejected (invalid signature binding to `msg_sender`).
-5. Insufficient Fee Juice under concurrent quote issuance:
-   - issue two valid quotes while FPC has Fee Juice budget for only one transaction;
+5. Direct fee_entrypoint call rejection:
+   - call `fee_entrypoint` as a root-level transaction outside the setup phase;
+   - tx must be rejected.
+6. Insufficient Fee Juice under concurrent quote issuance:
+   - deploy an isolated FPC with a controlled Fee Juice budget (via direct bridge + claim);
    - first tx succeeds, second tx is rejected for insufficient fee-payer balance.
 
+## Coverage Findings And Test Tiering
+Current script coverage in this repository is intentionally split:
+- `scripts/contract/deploy-fpc-local.ts` and `scripts/contract/deploy-fpc-local-smoke.ts` are deployment/relay usability checks, not quote-security or negative-behavior tests.
+- `scripts/services/fee-entrypoint-smoke.ts` is a negative-path smoke check verifying that `fee_entrypoint` cannot be called as a root-level transaction outside the setup phase (against pre-deployed services).
+- `scripts/services/fpc-services-smoke.ts` tests deployed service HTTP endpoints (attestation quotes, topup health, metrics).
+- `scripts/same-token-transfer/test-same-token-transfer.ts` is the happy-path integration test covering FPC-paid transactions across multiple transfer types.
+
+This document is the source of truth for full FPC e2e negative-scenario requirements. Happy-path coverage is defined by the same-token-transfer test.
+
 ## Non-Goals For This E2E
+- Happy-path FPC transaction assertions are covered by the same-token-transfer integration test and are not duplicated here.
+- Multi-cycle bridge re-funding is covered by the same-token-transfer test (which runs against a continuously-funded FPC) and is not required in this E2E.
 - Arithmetic hardening for internal gas-cost multiplication (`max_fees_per_gas * gas_limits`) is a contract-level concern and must be validated in contract tests; it is not a required assertion in this e2e flow.
 - Operator key rotation is currently a design non-goal (constructor-time key configuration only) and is not part of this e2e.
 - Quote-note reclaim/forced-destination scenarios are out of scope for this e2e until a dedicated reclaim API/flow exists in the FPC contract.
 
 ## Mandatory Assertions
 For the test to pass, all must hold:
-- Attestation `/health` and `/asset` are reachable and consistent with deployed token.
-- Quote payload is valid and bound to expected asset/rate window.
+- FPC has positive Fee Juice balance (topup service funded it).
 - Quote signature verification constraints are enforced:
   - quote is bound to `msg_sender`,
   - expired quotes are rejected,
   - quote replay is rejected,
-  - for FPC `fee_entrypoint`, `rate_num > 0` and quote TTL is capped to 3600 seconds.
-- Bridge confirmation succeeds for required FPC cycles.
-- Each fee-paid tx is accepted on-chain.
-- FPC `fee_entrypoint` txs:
-  - `user_debited == expected_charge`
-  - `operator_credited == expected_charge`
-- Target contract call is actually executed for each fee-paid tx (state delta asserted).
+  - for FPC `fee_entrypoint`, quote TTL is capped to 3600 seconds.
+- Direct `fee_entrypoint` calls outside setup phase are rejected.
+- Insufficient Fee Juice correctly rejects a second transaction when budget allows only one.
 
 ## Config Knobs
-- `FPC_FULL_E2E_START_LOCAL_NETWORK` (`1|0`)
-- `FPC_FULL_E2E_RESET_LOCAL_STATE` (`1|0`)
+- `FPC_COLD_START_MANIFEST` — deployment manifest path (required)
+- `FPC_OPERATOR_SECRET_KEY` — operator secret key (required)
 - `FPC_FULL_E2E_MODE` (`fpc`, default `fpc`)
-- `FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES` (allowed `1` or `2`, default `2`)
-- `FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS`
-- `FPC_FULL_E2E_TOPUP_WEI`, `FPC_FULL_E2E_THRESHOLD_WEI`
+- `FPC_FULL_E2E_FEE_JUICE_TIMEOUT_MS` (default: 240000)
+- `FPC_FULL_E2E_FEE_JUICE_POLL_MS` (default: 2000)
+- `FPC_FULL_E2E_DA_GAS_LIMIT` (default: 200000)
+- `FPC_FULL_E2E_L2_GAS_LIMIT` (default: 1000000)
 
 ## Pass/Fail Definition
-- PASS: all lifecycle phases complete and all mandatory assertions pass.
-- FAIL: any missing bridge confirmation, quote-validation mismatch, fee invariant mismatch, missing target-call state change, or rejected transaction.
+- PASS: setup from manifest completes, FPC is funded, and all negative scenario assertions pass.
+- FAIL: manifest not found, FPC has no Fee Juice, negative scenario unexpectedly succeeds, or negative scenario fails with an unexpected error.

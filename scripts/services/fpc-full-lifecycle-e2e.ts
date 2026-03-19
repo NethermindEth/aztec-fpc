@@ -1,38 +1,31 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import pino from "pino";
 
 const pinoLogger = pino();
 
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
-import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract } from "@aztec/aztec.js/contracts";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { BatchCall, Contract, type TxSendResultMined } from "@aztec/aztec.js/contracts";
+import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { SPONSORED_FPC_SALT } from "@aztec/constants";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
+import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
-import { Gas } from "@aztec/stdlib/gas";
+import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
+import { Gas, GasFees } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
-import { ExecutionPayload } from "@aztec/stdlib/tx";
+import { ExecutionPayload, type TxReceipt } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { deployContract } from "@aztec-fpc/contract-deployment/src/deploy-utils.ts";
-import { FpcClient } from "@aztec-fpc/sdk";
-import {
-  installManagedProcessSignalHandlers,
-  type ManagedProcess,
-  sleep,
-  startManagedProcess,
-  stopManagedProcess,
-  waitForHealth,
-  waitForLog,
-  waitForNodeReady,
-} from "../common/managed-process.ts";
-import { resolveScriptAccounts } from "../common/script-credentials.ts";
+import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import { sleep } from "../common/managed-process.ts";
+import { deriveAccount } from "../common/script-credentials.ts";
 
 type FullE2EMode = "fpc";
 
@@ -40,67 +33,32 @@ type FullE2EConfig = {
   mode: FullE2EMode;
   nodeUrl: string;
   l1RpcUrl: string;
-  l1PrivateKey: string;
-  requiredTopupCycles: 1 | 2;
-  topupCheckIntervalMs: number;
-  topupWei: bigint | null;
-  thresholdWei: bigint | null;
+  manifestPath: string;
+  operatorSecretKey: string;
   nodeTimeoutMs: number;
-  httpTimeoutMs: number;
-  topupWaitTimeoutMs: number;
-  topupPollMs: number;
-  attestationPort: number;
-  topupOpsPort: number;
-  quoteValiditySeconds: number;
+  feeJuiceTimeoutMs: number;
+  feeJuicePollMs: number;
   marketRateNum: number;
   marketRateDen: number;
   feeBips: number;
   daGasLimit: number;
   l2GasLimit: number;
-  feeJuiceTopupSafetyMultiplier: bigint;
-  topupConfirmTimeoutMs: number;
-  topupConfirmPollInitialMs: number;
-  topupConfirmPollMaxMs: number;
 };
 
 type DeploymentRuntimeResult = {
   repoRoot: string;
-  runDir: string;
   operator: AztecAddress;
   operatorSecretHex: string;
   user: AztecAddress;
   otherUser: AztecAddress;
   wallet: EmbeddedWallet;
+  node: AztecNode;
   token: Contract;
   fpc: Contract;
-  attestationConfigPath: string;
-  topupConfigPath: string;
-  summaryPath: string;
-  topupAmountWei: bigint;
-  topupThresholdWei: bigint;
-  feePerDaGas: bigint;
-  feePerL2Gas: bigint;
-  maxGasCostNoTeardown: bigint;
-};
-
-type TopupBridgeSubmission = {
-  messageHash: string;
-  leafIndex: bigint;
-};
-
-type TopupLogCounters = {
-  submissionCount: number;
-  confirmedCount: number;
-  timeoutCount: number;
-  failedCount: number;
-};
-
-type QuoteResponse = {
-  accepted_asset: string;
-  fj_amount: string;
-  aa_payment_amount: string;
-  valid_until: string;
-  signature: string;
+  faucet: Contract;
+  sponsoredFeePayment: SponsoredFeePaymentMethod;
+  gasLimits: Gas;
+  maxFeesPerGas: GasFees;
 };
 
 type QuoteInput = {
@@ -110,74 +68,35 @@ type QuoteInput = {
   quoteSigBytes: number[];
 };
 
-type NegativeScenarioResult = {
-  quoteReplayRejected: boolean;
-  expiredQuoteRejected: boolean;
-  overlongTtlRejected: boolean;
-  senderBindingRejected: boolean;
-  insufficientFeeJuiceRejected: boolean;
-  insufficientFeeJuiceBudgetWei: bigint;
-};
-
-type OrchestrationResult = {
-  attestationBaseUrl: string;
-  topupOpsBaseUrl: string;
-  observedBridgeSubmissions: number;
-  observedBridgeConfirmed: number;
-  feeJuiceAfterCycle1: bigint;
-  feeJuiceAfterTx1: bigint;
-  feeJuiceAfterCycle2: bigint | null;
-  feeJuiceAfterTx2: bigint;
-  tx1ExpectedCharge: bigint;
-  tx2ExpectedCharge: bigint;
-  step7: NegativeScenarioResult;
-};
-
-type PersistedDiagnostics = {
-  diagnosticsPath: string;
-  logTailPaths: Record<string, string>;
-};
-
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
-const UINT_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const MAX_QUOTE_VALIDITY_SECONDS = 3600;
-const MAX_PORT = 65535;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
-const DIAGNOSTIC_TAIL_LINES = 200;
-// Keep the legacy FPC artifact only as a non-default compatibility fallback.
-const FPC_ARTIFACT_FILE_CANDIDATES = ["fpc-FPCMultiAsset.json", "fpc-FPC.json"] as const;
+
+const tokenArtifactPath = "token_contract-Token.json";
+const fpcArtifactPath = "fpc-FPCMultiAsset.json";
+const faucetArtifactPath = "faucet-Faucet.json";
+
 function printHelp(): void {
   pinoLogger.info(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
 
-Config env vars:
+Required env vars:
+- FPC_COLD_START_MANIFEST — deployment manifest path
+- FPC_OPERATOR_SECRET_KEY — operator 0x-prefixed 32-byte hex secret
+
+Optional env vars:
+- AZTEC_NODE_URL (default: http://localhost:8080)
+- L1_RPC_URL (default: http://localhost:8545) — only needed for insufficient Fee Juice scenario
 - FPC_FULL_E2E_MODE=fpc
-- FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES (default: 2, allowed: 1|2)
-- FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS (default: 2000)
-- FPC_FULL_E2E_TOPUP_WEI (optional bigint > 0)
-- FPC_FULL_E2E_THRESHOLD_WEI (optional bigint > 0)
 - FPC_FULL_E2E_NODE_TIMEOUT_MS (default: 45000)
-- FPC_FULL_E2E_HTTP_TIMEOUT_MS (default: 30000)
-- FPC_FULL_E2E_TOPUP_WAIT_TIMEOUT_MS (default: 240000)
-- FPC_FULL_E2E_TOPUP_POLL_MS (default: 2000)
-- FPC_FULL_E2E_ATTESTATION_PORT (default: 3300)
-- FPC_FULL_E2E_TOPUP_OPS_PORT (default: 3401)
+- FPC_FULL_E2E_FEE_JUICE_TIMEOUT_MS (default: 240000)
+- FPC_FULL_E2E_FEE_JUICE_POLL_MS (default: 2000)
 - FPC_FULL_E2E_DA_GAS_LIMIT (default: 200000)
 - FPC_FULL_E2E_L2_GAS_LIMIT (default: 1000000)
-- FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER (default: 2)
-- FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS (default: 3600, max: 3600)
 - FPC_FULL_E2E_MARKET_RATE_NUM (default: 1)
 - FPC_FULL_E2E_MARKET_RATE_DEN (default: 1000)
 - FPC_FULL_E2E_FEE_BIPS (default: 200)
-- FPC_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS (default: 180000)
-- FPC_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS (default: 1000)
-- FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS (default: 15000)
-- FPC_FULL_E2E_NODE_HOST/FPC_FULL_E2E_NODE_PORT (default: 127.0.0.1:8080)
-- FPC_FULL_E2E_L1_HOST/FPC_FULL_E2E_L1_PORT (default: 127.0.0.1:8545)
-- FPC_FULL_E2E_L1_PRIVATE_KEY (default: local anvil key)
 - FPC_FULL_E2E_ARTIFACTS_DIR (default: <repo>/tmp)
-- AZTEC_NODE_URL or FPC_FULL_E2E_NODE_URL overrides node host/port
-- FPC_FULL_E2E_L1_RPC_URL overrides l1 host/port
 `);
 }
 
@@ -203,83 +122,6 @@ function readEnvPositiveInteger(name: string, fallback: number): number {
   const parsed = Number(normalized);
   if (!Number.isSafeInteger(parsed)) {
     throw new Error(`Invalid integer env var ${name}=${value} (out of safe integer range)`);
-  }
-  return parsed;
-}
-
-function readEnvPort(name: string, fallback: number): number {
-  const parsed = readEnvPositiveInteger(name, fallback);
-  if (parsed > MAX_PORT) {
-    throw new Error(`Invalid port env var ${name}=${parsed} (max ${MAX_PORT})`);
-  }
-  return parsed;
-}
-
-function readEnvString(name: string, fallback: string): string {
-  const value = process.env[name];
-  if (value === undefined) return fallback;
-  const normalized = value.trim();
-  if (normalized.length === 0) {
-    throw new Error(`Invalid env var ${name}: value cannot be empty`);
-  }
-  return normalized;
-}
-
-function readOptionalEnvString(name: string): string | null {
-  const value = process.env[name];
-  if (value === undefined) return null;
-  const normalized = value.trim();
-  if (normalized.length === 0) {
-    throw new Error(`Invalid env var ${name}: value cannot be empty`);
-  }
-  return normalized;
-}
-
-function readOptionalEnvUrl(name: string): string | null {
-  const value = readOptionalEnvString(name);
-  if (value === null) return null;
-  try {
-    new URL(value);
-  } catch {
-    throw new Error(`Invalid URL env var ${name}=${value}`);
-  }
-  return value;
-}
-
-function readEnvBigInt(name: string, fallback: bigint): bigint {
-  const value = process.env[name];
-  if (value === undefined) return fallback;
-
-  const normalized = value.trim();
-  if (normalized.length === 0) {
-    throw new Error(`Invalid bigint env var ${name}: value cannot be empty`);
-  }
-  if (!UINT_DECIMAL_PATTERN.test(normalized)) {
-    throw new Error(`Invalid bigint env var ${name}=${value}`);
-  }
-
-  const parsed = BigInt(normalized);
-  if (parsed <= 0n) {
-    throw new Error(`Invalid bigint env var ${name}=${value}`);
-  }
-  return parsed;
-}
-
-function readOptionalEnvBigInt(name: string): bigint | null {
-  const value = process.env[name];
-  if (value === undefined) return null;
-
-  const normalized = value.trim();
-  if (normalized.length === 0) {
-    throw new Error(`Invalid bigint env var ${name}: value cannot be empty`);
-  }
-  if (!UINT_DECIMAL_PATTERN.test(normalized)) {
-    throw new Error(`Invalid bigint env var ${name}=${value}`);
-  }
-
-  const parsed = BigInt(normalized);
-  if (parsed <= 0n) {
-    throw new Error(`Invalid bigint env var ${name}=${value}`);
   }
   return parsed;
 }
@@ -310,167 +152,22 @@ function loadArtifact(artifactPath: string): ContractArtifact {
   }
 }
 
-function resolveFpcArtifactPath(repoRoot: string): string {
-  const explicitPath = process.env.FPC_FULL_E2E_FPC_ARTIFACT ?? process.env.FPC_FPC_ARTIFACT;
-  if (explicitPath && explicitPath.trim().length > 0) {
-    return path.resolve(explicitPath);
+async function registerAndGet(
+  node: AztecNode,
+  wallet: EmbeddedWallet,
+  address: AztecAddress,
+  artifact: ContractArtifact,
+) {
+  const instance = await node.getContract(address);
+  if (!instance) {
+    throw new Error(`Contract not found on node: ${address.toString()}`);
   }
-
-  for (const artifactFile of FPC_ARTIFACT_FILE_CANDIDATES) {
-    const candidatePath = path.join(repoRoot, "target", artifactFile);
-    if (existsSync(candidatePath)) {
-      return candidatePath;
-    }
-  }
-
-  const searched = FPC_ARTIFACT_FILE_CANDIDATES.map((entry) =>
-    path.join(repoRoot, "target", entry),
-  ).join(", ");
-  throw new Error(
-    `FPC artifact not found. Looked for ${searched}. Set FPC_FULL_E2E_FPC_ARTIFACT or FPC_FPC_ARTIFACT to override.`,
-  );
-}
-
-function parseTopupBridgeSubmissions(logs: string): TopupBridgeSubmission[] {
-  const submissions: TopupBridgeSubmission[] = [];
-  const pattern = /Bridge submitted\. l1_to_l2_message_hash=(0x[0-9a-fA-F]+) leaf_index=(\d+)/g;
-  let match: RegExpExecArray | null = pattern.exec(logs);
-  while (match) {
-    submissions.push({
-      messageHash: match[1],
-      leafIndex: BigInt(match[2]),
-    });
-    match = pattern.exec(logs);
-  }
-  return submissions;
-}
-
-function countTopupOutcome(logs: string, outcome: "confirmed" | "timeout" | "failed"): number {
-  const pattern = new RegExp(`Bridge confirmation outcome=${outcome}\\b`, "g");
-  let count = 0;
-  let match: RegExpExecArray | null = pattern.exec(logs);
-  while (match) {
-    count += 1;
-    match = pattern.exec(logs);
-  }
-  return count;
-}
-
-function getTopupLogCounters(logs: string): TopupLogCounters {
-  return {
-    submissionCount: parseTopupBridgeSubmissions(logs).length,
-    confirmedCount: countTopupOutcome(logs, "confirmed"),
-    timeoutCount: countTopupOutcome(logs, "timeout"),
-    failedCount: countTopupOutcome(logs, "failed"),
-  };
-}
-
-function getTopupLogCountersFromProcess(proc: ManagedProcess): TopupLogCounters {
-  return getTopupLogCounters(proc.getLogs());
-}
-
-async function waitForNextBridgeSubmission(
-  proc: ManagedProcess,
-  timeoutMs: number,
-  previousSubmissionCount: number,
-): Promise<{ submission: TopupBridgeSubmission; submissionCount: number }> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    const logs = proc.getLogs();
-    const submissions = parseTopupBridgeSubmissions(logs);
-    if (submissions.length > previousSubmissionCount) {
-      const submission =
-        submissions[previousSubmissionCount] ?? submissions[submissions.length - 1];
-      return {
-        submission,
-        submissionCount: submissions.length,
-      };
-    }
-
-    if (proc.process.exitCode !== null) {
-      throw new Error(
-        `Process ${proc.name} exited before next bridge submission (exit=${proc.process.exitCode})`,
-      );
-    }
-    await sleep(250);
-  }
-
-  throw new Error(
-    `Timed out waiting for next bridge submission from ${proc.name}. Recent logs:\n${proc
-      .getLogs()
-      .slice(-4000)}`,
-  );
-}
-
-async function waitForNextBridgeConfirmedOutcome(
-  proc: ManagedProcess,
-  timeoutMs: number,
-  previousConfirmedCount: number,
-  previousTimeoutCount: number,
-  previousFailedCount: number,
-): Promise<{
-  confirmedCount: number;
-  timeoutCount: number;
-  failedCount: number;
-}> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    const logs = proc.getLogs();
-    const confirmedCount = countTopupOutcome(logs, "confirmed");
-    const timeoutCount = countTopupOutcome(logs, "timeout");
-    const failedCount = countTopupOutcome(logs, "failed");
-
-    if (timeoutCount > previousTimeoutCount) {
-      throw new Error(
-        `Top-up service reported timeout bridge outcome while waiting for confirmed cycle. Recent logs:\n${logs.slice(-4000)}`,
-      );
-    }
-    if (failedCount > previousFailedCount) {
-      throw new Error(
-        `Top-up service reported failed bridge outcome while waiting for confirmed cycle. Recent logs:\n${logs.slice(-4000)}`,
-      );
-    }
-    if (confirmedCount > previousConfirmedCount) {
-      return { confirmedCount, timeoutCount, failedCount };
-    }
-
-    if (proc.process.exitCode !== null) {
-      throw new Error(
-        `Process ${proc.name} exited before confirmed bridge outcome (exit=${proc.process.exitCode})`,
-      );
-    }
-    await sleep(250);
-  }
-
-  throw new Error(
-    `Timed out waiting for confirmed bridge outcome from ${proc.name}. Recent logs:\n${proc
-      .getLogs()
-      .slice(-4000)}`,
-  );
-}
-
-async function waitForNextBlock(
-  node: ReturnType<typeof createAztecNodeClient>,
-  timeoutMs: number,
-): Promise<void> {
-  const startBlock = await node.getBlock("latest");
-  if (!startBlock) {
-    throw new Error("Could not read latest L2 block for waitForNextBlock");
-  }
-  const startNumber = startBlock.number;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await sleep(500);
-    const current = await node.getBlock("latest");
-    if (current && current.number > startNumber) return;
-  }
-  throw new Error(
-    `Timed out waiting for next L2 block (stuck at #${startNumber}) after ${timeoutMs}ms`,
-  );
+  await wallet.registerContract(instance, artifact);
+  return Contract.at(address, artifact, wallet);
 }
 
 async function waitForPositiveFeeJuiceBalance(
-  node: ReturnType<typeof createAztecNodeClient>,
+  node: AztecNode,
   feePayerAddress: AztecAddress,
   timeoutMs: number,
   pollMs: number,
@@ -488,58 +185,6 @@ async function waitForPositiveFeeJuiceBalance(
   );
 }
 
-async function waitForFeeJuiceBalanceAboveBaseline(
-  node: ReturnType<typeof createAztecNodeClient>,
-  feePayerAddress: AztecAddress,
-  baseline: bigint,
-  timeoutMs: number,
-  pollMs: number,
-): Promise<bigint> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    const balance = await getFeeJuiceBalance(feePayerAddress, node);
-    if (balance > baseline) {
-      return balance;
-    }
-    await sleep(pollMs);
-  }
-  throw new Error(
-    `Timed out waiting for Fee Juice balance above baseline=${baseline} on ${feePayerAddress.toString()}`,
-  );
-}
-
-async function fetchQuote(quoteUrl: string, timeoutMs: number): Promise<QuoteResponse> {
-  const deadline = Date.now() + timeoutMs;
-  let lastError: string | undefined;
-
-  while (Date.now() <= deadline) {
-    try {
-      const response = await fetch(quoteUrl);
-      const bodyText = await response.text();
-      if (!response.ok) {
-        lastError = `HTTP ${response.status}: ${bodyText}`;
-      } else {
-        const parsed = JSON.parse(bodyText) as QuoteResponse;
-        if (
-          typeof parsed.accepted_asset === "string" &&
-          typeof parsed.fj_amount === "string" &&
-          typeof parsed.aa_payment_amount === "string" &&
-          typeof parsed.valid_until === "string" &&
-          typeof parsed.signature === "string"
-        ) {
-          return parsed;
-        }
-        lastError = `Invalid quote payload: ${bodyText}`;
-      }
-    } catch (error) {
-      lastError = (error as Error).message;
-    }
-    await sleep(500);
-  }
-
-  throw new Error(`Timed out requesting quote. Last error: ${lastError}`);
-}
-
 function getFinalRate(config: FullE2EConfig): {
   rateNum: bigint;
   rateDen: bigint;
@@ -550,50 +195,14 @@ function getFinalRate(config: FullE2EConfig): {
   };
 }
 
-function computeAaPaymentFromFj(config: FullE2EConfig, fjAmount: bigint): bigint {
-  const { rateNum, rateDen } = getFinalRate(config);
-  return ceilDiv(fjAmount * rateNum, rateDen);
+function computeMaxGasCost(gasLimits: Gas, maxFeesPerGas: GasFees): bigint {
+  return (
+    BigInt(gasLimits.daGas) * maxFeesPerGas.feePerDaGas +
+    BigInt(gasLimits.l2Gas) * maxFeesPerGas.feePerL2Gas
+  );
 }
 
-function parseQuoteResponse(
-  quote: QuoteResponse,
-  expectedAsset: AztecAddress,
-  config: FullE2EConfig,
-): QuoteInput {
-  const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace(/^0x/, ""), "hex"));
-  const parsed: QuoteInput = {
-    fjAmount: BigInt(quote.fj_amount),
-    aaPaymentAmount: BigInt(quote.aa_payment_amount),
-    validUntil: BigInt(quote.valid_until),
-    quoteSigBytes,
-  };
-
-  if (parsed.quoteSigBytes.length !== 64) {
-    throw new Error(`Quote signature length must be 64 bytes, got ${parsed.quoteSigBytes.length}`);
-  }
-  if (parsed.fjAmount <= 0n) {
-    throw new Error("Attestation quote returned non-positive fj_amount");
-  }
-  if (parsed.aaPaymentAmount <= 0n) {
-    throw new Error("Attestation quote returned non-positive aa_payment_amount");
-  }
-  const expectedAaPaymentAmount = computeAaPaymentFromFj(config, parsed.fjAmount);
-  if (parsed.aaPaymentAmount !== expectedAaPaymentAmount) {
-    throw new Error(
-      `Attestation quote aa_payment_amount mismatch. expected=${expectedAaPaymentAmount} got=${parsed.aaPaymentAmount}`,
-    );
-  }
-  if (quote.accepted_asset.toLowerCase() !== expectedAsset.toString().toLowerCase()) {
-    throw new Error(
-      `Quote accepted_asset mismatch. expected=${expectedAsset.toString()} got=${quote.accepted_asset}`,
-    );
-  }
-  return parsed;
-}
-
-async function getLatestL2Timestamp(
-  node: ReturnType<typeof createAztecNodeClient>,
-): Promise<bigint> {
+async function getLatestL2Timestamp(node: AztecNode): Promise<bigint> {
   const latest = await node.getBlock("latest");
   if (!latest) {
     throw new Error("Could not read latest L2 block");
@@ -601,133 +210,67 @@ async function getLatestL2Timestamp(
   return latest.timestamp;
 }
 
-async function signQuoteForUser(
-  result: DeploymentRuntimeResult,
-  fpcAddress: AztecAddress,
-  acceptedAsset: AztecAddress,
-  fjAmount: bigint,
-  rateNum: bigint,
-  rateDen: bigint,
-  validUntil: bigint,
-  userAddress: AztecAddress,
-): Promise<QuoteInput> {
-  const aaPaymentAmount = ceilDiv(fjAmount * rateNum, rateDen);
-  const secret = Fr.fromHexString(result.operatorSecretHex);
-  const signingKey = deriveSigningKey(secret);
-  const schnorr = new Schnorr();
-  const quoteHash = await computeInnerAuthWitHash([
-    QUOTE_DOMAIN_SEPARATOR,
-    fpcAddress.toField(),
-    acceptedAsset.toField(),
-    new Fr(fjAmount),
-    new Fr(aaPaymentAmount),
-    new Fr(validUntil),
-    userAddress.toField(),
-  ]);
-  const signature = await schnorr.constructSignature(quoteHash.toBuffer(), signingKey);
-  return {
-    fjAmount,
-    aaPaymentAmount,
-    validUntil,
-    quoteSigBytes: Array.from(signature.toBuffer()),
-  };
-}
-
-type FeePaidTxParams = {
-  token: Contract;
-  fpc: Contract;
-  payer: AztecAddress;
-  recipient: AztecAddress;
-  transferAmount: bigint;
-  quote: QuoteInput;
-  teardownGasLimits?: { daGas: number; l2Gas: number };
+type FeeEntrypointOverrides = {
+  payer?: AztecAddress;
+  validUntil?: bigint;
+  maxFeesPerGas?: GasFees;
+  fpcAddress?: AztecAddress;
+  tokenAddress?: AztecAddress;
 };
 
 async function executeFeePaidTx(
-  config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  params: FeePaidTxParams,
-): Promise<{ expectedCharge: bigint; receipt: { transactionFee: unknown } }> {
-  if (params.quote.fjAmount <= 0n) {
-    throw new Error("fj_amount must be positive");
-  }
-  if (params.quote.aaPaymentAmount <= 0n) {
-    throw new Error("aa_payment_amount must be positive");
-  }
-  if (params.quote.quoteSigBytes.length !== 64) {
-    throw new Error(
-      `Quote signature length must be 64 bytes, got ${params.quote.quoteSigBytes.length}`,
-    );
-  }
-
-  if (params.quote.fjAmount !== result.maxGasCostNoTeardown) {
-    throw new Error(
-      `quoted fj_amount mismatch. expected=${result.maxGasCostNoTeardown} got=${params.quote.fjAmount}`,
-    );
-  }
-  const expectedCharge = params.quote.aaPaymentAmount;
-  const mintAmount = expectedCharge + 1_000_000n;
-
-  await params.token.methods
-    .mint_to_private(params.payer, mintAmount)
-    .send({ from: result.operator });
-  await params.token.methods
-    .mint_to_public(params.payer, params.transferAmount)
-    .send({ from: result.operator });
-
+  quote: QuoteInput,
+  maxFeesPerGas?: GasFees,
+): Promise<TxSendResultMined<TxReceipt>> {
   const transferAuthwitNonce = Fr.random();
-  const transferCall = params.token.methods.transfer_private_to_private(
-    params.payer,
-    result.operator,
-    params.quote.aaPaymentAmount,
-    transferAuthwitNonce,
-  );
-  const transferAuthwit = await result.wallet.createAuthWit(params.payer, {
-    caller: params.fpc.address,
-    action: transferCall,
+  const transferCall = await result.token.methods
+    .transfer_private_to_private(
+      result.user,
+      result.operator,
+      quote.aaPaymentAmount,
+      transferAuthwitNonce,
+    )
+    .getFunctionCall();
+  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
+    caller: result.fpc.address,
+    call: transferCall,
   });
 
-  const feeEntrypointCall = await params.fpc.methods
+  const feeEntrypointCall = await result.fpc.methods
     .fee_entrypoint(
-      params.token.address,
+      result.token.address,
       transferAuthwitNonce,
-      params.quote.fjAmount,
-      params.quote.aaPaymentAmount,
-      params.quote.validUntil,
-      params.quote.quoteSigBytes,
+      quote.fjAmount,
+      quote.aaPaymentAmount,
+      quote.validUntil,
+      quote.quoteSigBytes,
     )
     .getFunctionCall();
 
   const paymentMethod = {
     getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], params.fpc.address),
-    getFeePayer: async () => params.fpc.address,
+      new ExecutionPayload([feeEntrypointCall], [transferAuthwit], [], [], result.fpc.address),
+    getFeePayer: async () => result.fpc.address,
     getGasSettings: () => undefined,
   };
 
-  const receipt = await params.token.methods
-    .transfer_public_to_public(params.payer, params.recipient, params.transferAmount, Fr.random())
+  // Target call: self-transfer (no balance change, just exercises the fee_entrypoint path).
+  return await result.token.methods
+    .transfer_private_to_private(result.user, result.user, 1n, Fr.random())
     .send({
-      from: params.payer,
+      from: result.user,
       fee: {
         paymentMethod,
         gasSettings: {
-          gasLimits: { daGas: config.daGasLimit, l2Gas: config.l2GasLimit },
-          teardownGasLimits: params.teardownGasLimits ?? {
-            daGas: 0,
-            l2Gas: 0,
-          },
-          maxFeesPerGas: {
-            feePerDaGas: result.feePerDaGas,
-            feePerL2Gas: result.feePerL2Gas,
-          },
+          gasLimits: result.gasLimits,
+          teardownGasLimits: new Gas(0, 0),
+          maxFeesPerGas: maxFeesPerGas ?? result.maxFeesPerGas,
         },
       },
       wait: { timeout: 180 },
     });
-
-  return { expectedCharge, receipt };
 }
 
 function errorMessage(error: unknown): string {
@@ -735,108 +278,6 @@ function errorMessage(error: unknown): string {
     return error.stack ?? error.message;
   }
   return String(error);
-}
-
-function readSummary(summaryPath: string): Record<string, unknown> {
-  try {
-    return JSON.parse(readFileSync(summaryPath, "utf8")) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
-function writeSummary(summaryPath: string, summary: Record<string, unknown>): void {
-  writeFileSync(summaryPath, JSON.stringify(summary, null, 2), "utf8");
-}
-
-function updateSummary(
-  summaryPath: string,
-  updater: (summary: Record<string, unknown>) => void,
-): void {
-  const summary = readSummary(summaryPath);
-  updater(summary);
-  writeSummary(summaryPath, summary);
-}
-
-function recordPhaseResult(
-  summaryPath: string,
-  phase: string,
-  status: "PASS" | "FAIL",
-  details: Record<string, unknown> = {},
-): void {
-  updateSummary(summaryPath, (summary) => {
-    const phaseResultsRaw = summary.phaseResults;
-    const phaseResults =
-      typeof phaseResultsRaw === "object" && phaseResultsRaw !== null
-        ? (phaseResultsRaw as Record<string, unknown>)
-        : {};
-    phaseResults[phase] = {
-      status,
-      completedAt: new Date().toISOString(),
-      ...details,
-    };
-    summary.phaseResults = phaseResults;
-  });
-}
-
-function getLogTail(logs: string, maxLines: number): string {
-  const lines = logs.split(/\r?\n/);
-  const trimmed = lines.filter((line, index) => {
-    if (index < lines.length - 1) return true;
-    return line.length > 0;
-  });
-  const tail = trimmed.slice(Math.max(0, trimmed.length - maxLines));
-  return tail.join("\n");
-}
-
-function sanitizeLogName(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "-");
-}
-
-function getArtifactsRootDir(repoRoot: string): string {
-  const configured = readOptionalEnvString("FPC_FULL_E2E_ARTIFACTS_DIR");
-  const resolved = configured === null ? path.join(repoRoot, "tmp") : path.resolve(configured);
-  mkdirSync(resolved, { recursive: true });
-  return resolved;
-}
-
-function persistFailureDiagnostics(
-  runDir: string,
-  summaryPath: string,
-  phase: string,
-  error: unknown,
-  processes: ManagedProcess[],
-): PersistedDiagnostics {
-  const diagnosticsDir = path.join(runDir, "diagnostics");
-  mkdirSync(diagnosticsDir, { recursive: true });
-
-  const logTailPaths: Record<string, string> = {};
-  for (const proc of processes) {
-    const safeName = sanitizeLogName(proc.name);
-    const tailPath = path.join(diagnosticsDir, `${safeName}.tail.log`);
-    writeFileSync(tailPath, `${getLogTail(proc.getLogs(), DIAGNOSTIC_TAIL_LINES)}\n`, "utf8");
-    logTailPaths[proc.name] = tailPath;
-  }
-
-  const diagnosticsPath = path.join(diagnosticsDir, `failure-${Date.now()}.json`);
-  const details = {
-    generatedAt: new Date().toISOString(),
-    phase,
-    error: errorMessage(error),
-    tailLines: DIAGNOSTIC_TAIL_LINES,
-    logTailPaths,
-  };
-  writeFileSync(diagnosticsPath, JSON.stringify(details, null, 2), "utf8");
-
-  recordPhaseResult(summaryPath, phase, "FAIL", {
-    diagnosticsPath,
-    tailLines: DIAGNOSTIC_TAIL_LINES,
-  });
-  updateSummary(summaryPath, (summary) => {
-    summary.failure = details;
-  });
-
-  return { diagnosticsPath, logTailPaths };
 }
 
 async function expectFailure(
@@ -859,554 +300,298 @@ async function expectFailure(
   throw new Error(`[full-lifecycle-e2e] ${scenario} unexpectedly succeeded`);
 }
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim().length === 0) {
+    throw new Error(`Required environment variable ${name} is not set`);
+  }
+  return value.trim();
+}
+
 function getConfig(): FullE2EConfig {
   const mode = parseMode(process.env.FPC_FULL_E2E_MODE);
-  const requiredTopupCyclesRaw = readEnvPositiveInteger("FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES", 2);
-  const quoteValiditySeconds = readEnvPositiveInteger("FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS", 3600);
-  const nodeHost = readEnvString("FPC_FULL_E2E_NODE_HOST", "127.0.0.1");
-  const nodePort = readEnvPort("FPC_FULL_E2E_NODE_PORT", 8080);
-  const l1Host = readEnvString("FPC_FULL_E2E_L1_HOST", "127.0.0.1");
-  const l1Port = readEnvPort("FPC_FULL_E2E_L1_PORT", 8545);
-  const nodeUrlFromAztecEnv = readOptionalEnvUrl("AZTEC_NODE_URL");
-  const nodeUrlFromFpcEnv = readOptionalEnvUrl("FPC_FULL_E2E_NODE_URL");
-  const l1RpcUrlOverride = readOptionalEnvUrl("FPC_FULL_E2E_L1_RPC_URL");
-  const topupConfirmTimeoutMs = readEnvPositiveInteger(
-    "FPC_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS",
-    180_000,
-  );
-  const topupConfirmPollInitialMs = readEnvPositiveInteger(
-    "FPC_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS",
-    1_000,
-  );
-  const topupConfirmPollMaxMs = readEnvPositiveInteger(
-    "FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS",
-    15_000,
-  );
-  const attestationPort = readEnvPort("FPC_FULL_E2E_ATTESTATION_PORT", 3300);
-  const topupOpsPort = readEnvPort("FPC_FULL_E2E_TOPUP_OPS_PORT", 3401);
+  const manifestPath = requireEnv("FPC_COLD_START_MANIFEST");
+  const operatorSecretKey = requireEnv("FPC_OPERATOR_SECRET_KEY");
+  assertPrivateKeyHex(operatorSecretKey, "FPC_OPERATOR_SECRET_KEY");
   const feeBips = readEnvPositiveInteger("FPC_FULL_E2E_FEE_BIPS", 200);
   if (feeBips > 10_000) {
     throw new Error(`FPC_FULL_E2E_FEE_BIPS must be <= 10000, got ${feeBips}`);
   }
 
-  if (requiredTopupCyclesRaw !== 1 && requiredTopupCyclesRaw !== 2) {
-    throw new Error(
-      `FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES must be 1 or 2, got ${requiredTopupCyclesRaw}`,
-    );
-  }
-  if (quoteValiditySeconds > MAX_QUOTE_VALIDITY_SECONDS) {
-    throw new Error(
-      `FPC_FULL_E2E_QUOTE_VALIDITY_SECONDS must be <= ${MAX_QUOTE_VALIDITY_SECONDS}, got ${quoteValiditySeconds}`,
-    );
-  }
-  if (topupConfirmPollInitialMs > topupConfirmPollMaxMs) {
-    throw new Error(
-      "FPC_FULL_E2E_TOPUP_CONFIRM_POLL_INITIAL_MS must be <= FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS",
-    );
-  }
-  if (topupConfirmPollMaxMs > topupConfirmTimeoutMs) {
-    throw new Error(
-      "FPC_FULL_E2E_TOPUP_CONFIRM_POLL_MAX_MS must be <= FPC_FULL_E2E_TOPUP_CONFIRM_TIMEOUT_MS",
-    );
-  }
-  if (attestationPort === topupOpsPort) {
-    throw new Error("FPC_FULL_E2E_ATTESTATION_PORT must differ from FPC_FULL_E2E_TOPUP_OPS_PORT");
-  }
-
   return {
     mode,
-    nodeUrl: nodeUrlFromAztecEnv ?? nodeUrlFromFpcEnv ?? `http://${nodeHost}:${nodePort}`,
-    l1RpcUrl: l1RpcUrlOverride ?? `http://${l1Host}:${l1Port}`,
-    l1PrivateKey: "", // Set by resolveScriptAccounts
-    requiredTopupCycles: requiredTopupCyclesRaw,
-    topupCheckIntervalMs: readEnvPositiveInteger("FPC_FULL_E2E_TOPUP_CHECK_INTERVAL_MS", 2_000),
-    topupWei: readOptionalEnvBigInt("FPC_FULL_E2E_TOPUP_WEI"),
-    thresholdWei: readOptionalEnvBigInt("FPC_FULL_E2E_THRESHOLD_WEI"),
+    nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
+    l1RpcUrl: process.env.L1_RPC_URL ?? "http://localhost:8545",
+    manifestPath,
+    operatorSecretKey,
     nodeTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_NODE_TIMEOUT_MS", 45_000),
-    httpTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_HTTP_TIMEOUT_MS", 30_000),
-    topupWaitTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_TOPUP_WAIT_TIMEOUT_MS", 240_000),
-    topupPollMs: readEnvPositiveInteger("FPC_FULL_E2E_TOPUP_POLL_MS", 2_000),
-    attestationPort,
-    topupOpsPort,
-    quoteValiditySeconds,
+    feeJuiceTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_FEE_JUICE_TIMEOUT_MS", 240_000),
+    feeJuicePollMs: readEnvPositiveInteger("FPC_FULL_E2E_FEE_JUICE_POLL_MS", 2_000),
     marketRateNum: readEnvPositiveInteger("FPC_FULL_E2E_MARKET_RATE_NUM", 1),
     marketRateDen: readEnvPositiveInteger("FPC_FULL_E2E_MARKET_RATE_DEN", 1000),
     feeBips,
     daGasLimit: readEnvPositiveInteger("FPC_FULL_E2E_DA_GAS_LIMIT", 200_000),
     l2GasLimit: readEnvPositiveInteger("FPC_FULL_E2E_L2_GAS_LIMIT", 1_000_000),
-    feeJuiceTopupSafetyMultiplier: readEnvBigInt("FPC_FULL_E2E_TOPUP_SAFETY_MULTIPLIER", 2n),
-    topupConfirmTimeoutMs,
-    topupConfirmPollInitialMs,
-    topupConfirmPollMaxMs,
   };
 }
 
-function printConfigSummary(config: FullE2EConfig): void {
-  pinoLogger.info(
-    `[full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, l1RpcUrl=${config.l1RpcUrl}, requiredTopupCycles=${config.requiredTopupCycles}`,
-  );
-}
+async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRuntimeResult> {
+  const repoRoot = path.resolve(import.meta.dirname, "../..");
 
-async function deployContractsAndWriteRuntimeConfig(
-  config: FullE2EConfig,
-): Promise<DeploymentRuntimeResult> {
-  const scriptDir =
-    typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
-  const repoRoot = path.resolve(scriptDir, "..", "..");
-  const artifactsRootDir = getArtifactsRootDir(repoRoot);
-  const runDir = mkdtempSync(path.join(artifactsRootDir, "fpc-full-lifecycle-e2e-"));
-  const tokenArtifactPath = path.join(repoRoot, "target", "token_contract-Token.json");
-  const fpcArtifactPath = resolveFpcArtifactPath(repoRoot);
-
-  const tokenArtifact = loadArtifact(tokenArtifactPath);
-  const fpcArtifact = loadArtifact(fpcArtifactPath);
-
-  const node = createAztecNodeClient(config.nodeUrl);
-  await waitForNodeReady(node, config.nodeTimeoutMs);
-  const wallet = await EmbeddedWallet.create(node);
-
-  const { accounts: testAccounts, l1PrivateKey } = await resolveScriptAccounts(
-    config.nodeUrl,
-    config.l1RpcUrl,
-    wallet,
-    3,
-  );
-  config.l1PrivateKey = l1PrivateKey;
-
-  const operatorData = testAccounts.at(0);
-  const userData = testAccounts.at(1);
-  const otherUserData = testAccounts.at(2);
-  if (!operatorData || !userData || !otherUserData) {
-    throw new Error("Expected at least 3 initial test accounts");
+  // Read pre-deployed contract addresses from manifest.
+  if (!existsSync(config.manifestPath)) {
+    throw new Error(`Manifest not found: ${config.manifestPath}`);
+  }
+  const manifest = JSON.parse(readFileSync(config.manifestPath, "utf8")) as DevnetDeployManifest;
+  if (!manifest.contracts.faucet) {
+    throw new Error(`Faucet contract not found in manifest: ${config.manifestPath}`);
   }
 
+  const fpcAddress = AztecAddress.fromString(manifest.contracts.fpc);
+  const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
+  const faucetAddress = AztecAddress.fromString(manifest.contracts.faucet);
+
+  pinoLogger.info(
+    `[full-lifecycle-e2e] manifest loaded: fpc=${manifest.contracts.fpc}, token=${manifest.contracts.accepted_asset}`,
+  );
+
+  // Connect to node and create wallet.
+  const node = createAztecNodeClient(config.nodeUrl);
+  await waitForNode(node);
+  const wallet = await EmbeddedWallet.create(node);
+
+  // Derive operator account and ensure it is deployed on-chain.
+  const operatorSecretFr = Fr.fromHexString(config.operatorSecretKey);
+  const operatorData = await deriveAccount(operatorSecretFr, wallet);
   const operator = operatorData.address;
+  const operatorSecretHex = config.operatorSecretKey;
+
+  // Derive fresh user and otherUser for negative scenarios.
+  const userData = await deriveAccount(Fr.random(), wallet);
+  const otherUserData = await deriveAccount(Fr.random(), wallet);
   const user = userData.address;
   const otherUser = otherUserData.address;
 
-  const operatorSecretHex = operatorData.secret.toString();
-  assertPrivateKeyHex(operatorSecretHex, "operator secret");
+  const tokenArtifact = loadArtifact(path.join(repoRoot, "target", tokenArtifactPath));
+  const fpcArtifact = loadArtifact(path.join(repoRoot, "target", fpcArtifactPath));
+  const faucetArtifact = loadArtifact(path.join(repoRoot, "target", faucetArtifactPath));
 
-  const tokenDeploy = Contract.deploy(
-    wallet,
-    tokenArtifact,
-    ["SmokeToken", "SMK", 18, operator, operator],
-    "constructor_with_minter",
+  const token = await registerAndGet(node, wallet, tokenAddress, tokenArtifact);
+  const fpc = await registerAndGet(node, wallet, fpcAddress, fpcArtifact);
+  const faucet = await registerAndGet(node, wallet, faucetAddress, faucetArtifact);
+
+  // Register the canonical SponsoredFPC contract.
+  const sponsoredFpcInstance = await getContractInstanceFromInstantiationParams(
+    SponsoredFPCContractArtifact,
+    { salt: new Fr(SPONSORED_FPC_SALT) },
   );
-  const tokenAddress = (await tokenDeploy.getInstance()).address;
-  await deployContract(wallet, tokenArtifact, tokenDeploy, { from: operator });
-  const token = Contract.at(tokenAddress, tokenArtifact, wallet);
+  await wallet.registerContract(sponsoredFpcInstance, SponsoredFPCContractArtifact);
+  const sponsoredFeePayment = new SponsoredFeePaymentMethod(sponsoredFpcInstance.address);
 
-  const schnorr = new Schnorr();
-  const operatorSigningKey = operatorData.signingKey ?? deriveSigningKey(operatorData.secret);
-  const operatorPubKey = await schnorr.computePublicKey(operatorSigningKey);
-
-  const fpcDeploy = Contract.deploy(wallet, fpcArtifact, [
-    operator,
-    operatorPubKey.x,
-    operatorPubKey.y,
-    tokenAddress,
+  // Deploy user and otherUser accounts via SponsoredFPC (batched).
+  const deployBatch = new BatchCall(wallet, [
+    await userData.accountManager.getDeployMethod(),
+    await otherUserData.accountManager.getDeployMethod(),
   ]);
-  const fpcAddress = (await fpcDeploy.getInstance()).address;
-  await deployContract(wallet, fpcArtifact, fpcDeploy, { from: operator });
-  const fpc = Contract.at(fpcAddress, fpcArtifact, wallet);
+  await deployBatch.send({
+    from: AztecAddress.ZERO,
+    fee: { paymentMethod: sponsoredFeePayment },
+  });
+  pinoLogger.info("[full-lifecycle-e2e] user + otherUser accounts deployed via SponsoredFPC");
+
+  // Fund user via faucet drip + shield (batched via SponsoredFPC).
+  const { result: faucetConfig } = await faucet.methods.get_config().simulate({ from: user });
+  const dripAmount = BigInt(faucetConfig.drip_amount.toString());
+  const shieldAmount = dripAmount;
+  const dripBatch = new BatchCall(wallet, [
+    faucet.methods.drip(user),
+    token.methods.transfer_public_to_private(user, user, shieldAmount, Fr.random()),
+  ]);
+  await dripBatch.send({
+    from: user,
+    fee: { paymentMethod: sponsoredFeePayment },
+  });
+  pinoLogger.info(
+    `[full-lifecycle-e2e] user funded via faucet (drip=${dripAmount}, shielded=${shieldAmount})`,
+  );
 
   const minFees = await node.getCurrentMinFees();
-  const feePerDaGas = minFees.feePerDaGas;
-  const feePerL2Gas = minFees.feePerL2Gas;
-  const maxGasCostNoTeardown =
-    BigInt(config.daGasLimit) * feePerDaGas + BigInt(config.l2GasLimit) * feePerL2Gas;
-
-  const minimumTopupWei =
-    maxGasCostNoTeardown *
-      config.feeJuiceTopupSafetyMultiplier *
-      BigInt(config.requiredTopupCycles) +
-    1_000_000n;
-  const topupAmountWei = config.topupWei ?? minimumTopupWei;
-  if (topupAmountWei < minimumTopupWei) {
-    throw new Error(
-      `FPC_FULL_E2E_TOPUP_WEI=${topupAmountWei} is below required minimum ${minimumTopupWei}`,
-    );
-  }
-  const topupThresholdWei = config.thresholdWei ?? topupAmountWei;
-  if (topupThresholdWei <= 0n) {
-    throw new Error("Top-up threshold must be greater than zero");
-  }
-  if (topupThresholdWei > topupAmountWei) {
-    throw new Error(
-      `Top-up threshold (${topupThresholdWei}) must be <= top-up amount (${topupAmountWei}) for deterministic bridge cycles`,
-    );
-  }
-
-  const attestationConfigPath = path.join(runDir, "attestation.fpc.config.yaml");
-  const topupConfigPath = path.join(runDir, "topup.fpc.config.yaml");
-  const topupBridgeStatePath = path.join(runDir, "topup.bridge-state.json");
-  const summaryPath = path.join(runDir, "run-summary.json");
-
-  writeFileSync(
-    attestationConfigPath,
-    `${[
-      `fpc_address: "${fpc.address.toString()}"`,
-      `aztec_node_url: "${config.nodeUrl}"`,
-      `quote_validity_seconds: ${config.quoteValiditySeconds}`,
-      `port: ${config.attestationPort}`,
-      `accepted_asset_name: "SmokeToken"`,
-      `accepted_asset_address: "${token.address.toString()}"`,
-      `operator_address: "${operator.toString()}"`,
-      `market_rate_num: ${config.marketRateNum}`,
-      `market_rate_den: ${config.marketRateDen}`,
-      `fee_bips: ${config.feeBips}`,
-      `quote_format: "amount_quote"`,
-    ].join("\n")}\n`,
-    "utf8",
-  );
-
-  writeFileSync(
-    topupConfigPath,
-    `${[
-      `fpc_address: "${fpc.address.toString()}"`,
-      `aztec_node_url: "${config.nodeUrl}"`,
-      `l1_rpc_url: "${config.l1RpcUrl}"`,
-      `threshold: "${topupThresholdWei}"`,
-      `top_up_amount: "${topupAmountWei}"`,
-      `bridge_state_path: "${topupBridgeStatePath}"`,
-      `ops_port: ${config.topupOpsPort}`,
-      `check_interval_ms: ${config.topupCheckIntervalMs}`,
-      `confirmation_timeout_ms: ${config.topupConfirmTimeoutMs}`,
-      `confirmation_poll_initial_ms: ${config.topupConfirmPollInitialMs}`,
-      `confirmation_poll_max_ms: ${config.topupConfirmPollMaxMs}`,
-    ].join("\n")}\n`,
-    "utf8",
-  );
-
-  writeFileSync(
-    summaryPath,
-    JSON.stringify(
-      {
-        generatedAt: new Date().toISOString(),
-        repoRoot,
-        runDir,
-        nodeUrl: config.nodeUrl,
-        l1RpcUrl: config.l1RpcUrl,
-        operator: operator.toString(),
-        user: user.toString(),
-        otherUser: otherUser.toString(),
-        tokenAddress: token.address.toString(),
-        fpcAddress: fpc.address.toString(),
-        attestationConfigPath,
-        topupConfigPath,
-        topupBridgeStatePath,
-        topupThresholdWei: topupThresholdWei.toString(),
-        topupAmountWei: topupAmountWei.toString(),
-      },
-      null,
-      2,
-    ),
-    "utf8",
-  );
+  const gasLimits = new Gas(config.daGasLimit, config.l2GasLimit);
+  const maxFeesPerGas = new GasFees(minFees.feePerDaGas, minFees.feePerL2Gas);
 
   return {
     repoRoot,
-    runDir,
     operator,
     operatorSecretHex,
     user,
     otherUser,
     wallet,
+    node,
     token,
     fpc,
-    attestationConfigPath,
-    topupConfigPath,
-    summaryPath,
-    topupAmountWei,
-    topupThresholdWei,
-    feePerDaGas,
-    feePerL2Gas,
-    maxGasCostNoTeardown,
+    faucet,
+    sponsoredFeePayment,
+    gasLimits,
+    maxFeesPerGas,
   };
 }
 
-async function runFeePaidTargetTxAndAssert(
+async function signQuote(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  fpcClient: FpcClient,
-  txLabel: "tx1" | "tx2",
-  targetTransferAmount: bigint,
-): Promise<bigint> {
-  const { fee, quote } = await fpcClient.createPaymentMethod({
-    wallet: result.wallet,
-    user: result.user,
-    tokenAddress: result.token.address,
-    estimatedGas: {
-      gasLimits: new Gas(config.daGasLimit, config.l2GasLimit),
-      teardownGasLimits: new Gas(0, 0),
-    },
-  });
+  node: AztecNode,
+  overrides?: FeeEntrypointOverrides,
+): Promise<QuoteInput> {
+  const fjAmount = computeMaxGasCost(
+    result.gasLimits,
+    overrides?.maxFeesPerGas ?? result.maxFeesPerGas,
+  );
+  const { rateNum, rateDen } = getFinalRate(config);
+  const latestTimestamp = await getLatestL2Timestamp(node);
+  const validUntil = overrides?.validUntil ?? latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS);
+  const user = overrides?.payer ?? result.user;
+  const fpcAddress = overrides?.fpcAddress ?? result.fpc.address;
+  const tokenAddress = overrides?.tokenAddress ?? result.token.address;
 
-  const expectedCharge = BigInt(quote.aa_payment_amount);
-  const mintAmount = expectedCharge + 1_000_000n;
-  await result.token.methods
-    .mint_to_private(result.user, mintAmount)
-    .send({ from: result.operator });
-
-  const userPrivateBefore = BigInt(
-    (
-      await result.token.methods.balance_of_private(result.user).simulate({ from: result.user })
-    ).result.toString(),
-  );
-  const operatorPrivateBefore = BigInt(
-    (
-      await result.token.methods
-        .balance_of_private(result.operator)
-        .simulate({ from: result.operator })
-    ).result.toString(),
-  );
-  const userPublicBefore = BigInt(
-    (
-      await result.token.methods.balance_of_public(result.user).simulate({ from: result.user })
-    ).result.toString(),
-  );
-  const operatorPublicBefore = BigInt(
-    (
-      await result.token.methods
-        .balance_of_public(result.operator)
-        .simulate({ from: result.operator })
-    ).result.toString(),
-  );
-
-  const receipt = await result.token.methods
-    .transfer_public_to_public(result.user, result.operator, targetTransferAmount, Fr.random())
-    .send({
-      from: result.user,
-      fee,
-      wait: { timeout: 180 },
-    });
-
-  const userPrivateAfter = BigInt(
-    (
-      await result.token.methods.balance_of_private(result.user).simulate({ from: result.user })
-    ).result.toString(),
-  );
-  const operatorPrivateAfter = BigInt(
-    (
-      await result.token.methods
-        .balance_of_private(result.operator)
-        .simulate({ from: result.operator })
-    ).result.toString(),
-  );
-  const userPublicAfter = BigInt(
-    (
-      await result.token.methods.balance_of_public(result.user).simulate({ from: result.user })
-    ).result.toString(),
-  );
-  const operatorPublicAfter = BigInt(
-    (
-      await result.token.methods
-        .balance_of_public(result.operator)
-        .simulate({ from: result.operator })
-    ).result.toString(),
-  );
-
-  const userDebited = userPrivateBefore - userPrivateAfter;
-  const operatorCredited = operatorPrivateAfter - operatorPrivateBefore;
-  if (userDebited !== expectedCharge) {
-    throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} user debit mismatch. expected=${expectedCharge} got=${userDebited}`,
-    );
-  }
-  if (operatorCredited !== expectedCharge) {
-    throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} operator credit mismatch. expected=${expectedCharge} got=${operatorCredited}`,
-    );
-  }
-
-  const userPublicDelta = userPublicAfter - userPublicBefore;
-  const operatorPublicDelta = operatorPublicAfter - operatorPublicBefore;
-  if (userPublicDelta !== -targetTransferAmount) {
-    throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} target call user public delta mismatch. expected=${-targetTransferAmount} got=${userPublicDelta}`,
-    );
-  }
-  if (operatorPublicDelta !== targetTransferAmount) {
-    throw new Error(
-      `[full-lifecycle-e2e] ${txLabel} target call operator public delta mismatch. expected=${targetTransferAmount} got=${operatorPublicDelta}`,
-    );
-  }
-
-  pinoLogger.info(
-    `[full-lifecycle-e2e] PASS: ${txLabel} accepted (expected_charge=${expectedCharge}, tx_fee_juice=${receipt.transactionFee}, user_debited=${userDebited}, operator_credited=${operatorCredited}, user_public_delta=${userPublicDelta}, operator_public_delta=${operatorPublicDelta})`,
-  );
-  return expectedCharge;
+  const aaPaymentAmount = ceilDiv(fjAmount * rateNum, rateDen);
+  const secret = Fr.fromHexString(result.operatorSecretHex);
+  const signingKey = deriveSigningKey(secret);
+  const schnorr = new Schnorr();
+  const quoteHash = await computeInnerAuthWitHash([
+    QUOTE_DOMAIN_SEPARATOR,
+    fpcAddress.toField(),
+    tokenAddress.toField(),
+    new Fr(fjAmount),
+    new Fr(aaPaymentAmount),
+    new Fr(validUntil),
+    user.toField(),
+  ]);
+  const signature = await schnorr.constructSignature(quoteHash.toBuffer(), signingKey);
+  return {
+    fjAmount,
+    aaPaymentAmount,
+    validUntil,
+    quoteSigBytes: Array.from(signature.toBuffer()),
+  };
 }
 
 async function negativeQuoteReplayRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  attestationBaseUrl: string,
+  node: AztecNode,
 ): Promise<void> {
-  const requestedFjAmount = result.maxGasCostNoTeardown;
-  const quote = parseQuoteResponse(
-    await fetchQuote(
-      `${attestationBaseUrl}/quote?user=${result.user.toString()}&accepted_asset=${result.token.address.toString()}&fj_amount=${requestedFjAmount.toString()}`,
-      config.httpTimeoutMs,
-    ),
-    result.token.address,
-    config,
-  );
+  const quote = await signQuote(config, result, node);
 
-  await executeFeePaidTx(config, result, {
-    token: result.token,
-    fpc: result.fpc,
-    payer: result.user,
-    recipient: result.operator,
-    transferAmount: 1n,
-    quote,
-  });
+  await executeFeePaidTx(result, quote);
 
   await expectFailure(
     "negative quote replay rejected",
     ["nullifier", "already exists", "duplicate"],
-    () =>
-      executeFeePaidTx(config, result, {
-        token: result.token,
-        fpc: result.fpc,
-        payer: result.user,
-        recipient: result.operator,
-        transferAmount: 1n,
-        quote,
-      }),
+    () => executeFeePaidTx(result, quote),
   );
 }
 
 async function negativeExpiredQuoteRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
+  node: AztecNode,
 ): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
-  const { rateNum, rateDen } = getFinalRate(config);
   const latestTimestamp = await getLatestL2Timestamp(node);
-  const expiredQuote = await signQuoteForUser(
-    result,
-    result.fpc.address,
-    result.token.address,
-    fjAmount,
-    rateNum,
-    rateDen,
-    latestTimestamp,
-    result.user,
-  );
-
-  await waitForNextBlock(node, 120_000);
+  const quote = await signQuote(config, result, node, {
+    validUntil: latestTimestamp - 1n,
+  });
 
   await expectFailure("negative expired quote rejected", ["quote expired"], () =>
-    executeFeePaidTx(config, result, {
-      token: result.token,
-      fpc: result.fpc,
-      payer: result.user,
-      recipient: result.operator,
-      transferAmount: 1n,
-      quote: expiredQuote,
-    }),
+    executeFeePaidTx(result, quote),
   );
 }
 
 async function negativeOverlongTtlRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
+  node: AztecNode,
 ): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
-  const { rateNum, rateDen } = getFinalRate(config);
   const latestTimestamp = await getLatestL2Timestamp(node);
-  const ttlSafetyBufferSeconds = 600n;
-  const ttlTooLargeQuote = await signQuoteForUser(
-    result,
-    result.fpc.address,
-    result.token.address,
-    fjAmount,
-    rateNum,
-    rateDen,
-    latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS) + ttlSafetyBufferSeconds,
-    result.user,
-  );
+  const quote = await signQuote(config, result, node, {
+    validUntil: latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS * 2),
+  });
 
   await expectFailure("negative overlong quote ttl rejected", ["quote ttl too large"], () =>
-    executeFeePaidTx(config, result, {
-      token: result.token,
-      fpc: result.fpc,
-      payer: result.user,
-      recipient: result.operator,
-      transferAmount: 1n,
-      quote: ttlTooLargeQuote,
-    }),
+    executeFeePaidTx(result, quote),
   );
 }
 
 async function negativeSenderBindingRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
+  node: AztecNode,
 ): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
-  const { rateNum, rateDen } = getFinalRate(config);
-  const latestTimestamp = await getLatestL2Timestamp(node);
-  const quoteSignedForUser = await signQuoteForUser(
-    result,
-    result.fpc.address,
-    result.token.address,
-    fjAmount,
-    rateNum,
-    rateDen,
-    latestTimestamp + 600n,
-    result.user,
-  );
+  const quote = await signQuote(config, result, node, {
+    payer: result.otherUser,
+  });
 
   await expectFailure(
     "negative quote sender binding rejected",
     ["invalid quote signature", "Cannot satisfy constraint"],
-    () =>
-      executeFeePaidTx(config, result, {
-        token: result.token,
-        fpc: result.fpc,
-        payer: result.otherUser,
-        recipient: result.operator,
-        transferAmount: 1n,
-        quote: quoteSignedForUser,
-      }),
+    () => executeFeePaidTx(result, quote),
+  );
+}
+
+async function negativeWrongFpcRejected(
+  config: FullE2EConfig,
+  result: DeploymentRuntimeResult,
+  node: AztecNode,
+): Promise<void> {
+  // Sign a quote bound to the faucet address instead of the real FPC.
+  // The FPC contract verifies the signature against its own address, so it should reject.
+  const quote = await signQuote(config, result, node, {
+    fpcAddress: result.faucet.address,
+  });
+
+  await expectFailure(
+    "negative wrong FPC address rejected",
+    ["invalid quote signature", "Cannot satisfy constraint"],
+    () => executeFeePaidTx(result, quote),
+  );
+}
+
+async function negativeWrongTokenRejected(
+  config: FullE2EConfig,
+  result: DeploymentRuntimeResult,
+  node: AztecNode,
+): Promise<void> {
+  // Sign a quote bound to the faucet address instead of the real token.
+  // The FPC contract verifies the signature against the actual accepted_asset, so it should reject.
+  const quote = await signQuote(config, result, node, {
+    tokenAddress: result.faucet.address,
+  });
+
+  await expectFailure(
+    "negative wrong token address rejected",
+    ["invalid quote signature", "Cannot satisfy constraint"],
+    () => executeFeePaidTx(result, quote),
   );
 }
 
 async function negativeDirectEntrypointCallRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
+  node: AztecNode,
 ): Promise<void> {
-  const fjAmount = result.maxGasCostNoTeardown;
-  const aaPaymentAmount = computeAaPaymentFromFj(config, fjAmount);
-  const { rateNum, rateDen } = getFinalRate(config);
-  const latestTimestamp = await getLatestL2Timestamp(node);
-  const quote = await signQuoteForUser(
-    result,
-    result.fpc.address,
-    result.token.address,
-    fjAmount,
-    rateNum,
-    rateDen,
-    latestTimestamp + 600n,
-    result.user,
-  );
+  const quote = await signQuote(config, result, node);
 
   const transferAuthwitNonce = Fr.random();
-  const transferCall = result.token.methods.transfer_private_to_private(
-    result.user,
-    result.operator,
-    aaPaymentAmount,
-    transferAuthwitNonce,
-  );
+  const transferCall = await result.token.methods
+    .transfer_private_to_private(
+      result.user,
+      result.operator,
+      quote.aaPaymentAmount,
+      transferAuthwitNonce,
+    )
+    .getFunctionCall();
   const transferAuthwit = await result.wallet.createAuthWit(result.user, {
     caller: result.fpc.address,
-    action: transferCall,
+    call: transferCall,
   });
 
   await expectFailure(
@@ -1430,594 +615,88 @@ async function negativeDirectEntrypointCallRejected(
   );
 }
 
-function buildTopupConfigYaml(
-  config: FullE2EConfig,
-  fpcAddress: AztecAddress,
-  bridgeStatePath: string,
-  thresholdWei: bigint,
-  topupAmountWei: bigint,
-): string {
-  return `${[
-    `fpc_address: "${fpcAddress.toString()}"`,
-    `aztec_node_url: "${config.nodeUrl}"`,
-    `l1_rpc_url: "${config.l1RpcUrl}"`,
-    `threshold: "${thresholdWei}"`,
-    `top_up_amount: "${topupAmountWei}"`,
-    `bridge_state_path: "${bridgeStatePath}"`,
-    `ops_port: ${config.topupOpsPort}`,
-    `check_interval_ms: ${config.topupCheckIntervalMs}`,
-    `confirmation_timeout_ms: ${config.topupConfirmTimeoutMs}`,
-    `confirmation_poll_initial_ms: ${config.topupConfirmPollInitialMs}`,
-    `confirmation_poll_max_ms: ${config.topupConfirmPollMaxMs}`,
-  ].join("\n")}\n`;
-}
-
-async function negativeInsufficientFeeJuiceSecondTxRejected(
+async function negativeInsufficientFeeJuiceRejected(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
-  estimatedSingleTxFeeJuice: bigint,
-): Promise<bigint> {
-  const tokenArtifactPath = path.join(result.repoRoot, "target", "token_contract-Token.json");
-  const fpcArtifactPath = resolveFpcArtifactPath(result.repoRoot);
-  const tokenArtifact = loadArtifact(tokenArtifactPath);
-  const fpcArtifact = loadArtifact(fpcArtifactPath);
+  node: AztecNode,
+): Promise<void> {
+  // Use extremely high gas limits so the fee exceeds the FPC's Fee Juice balance.
+  const maxFeesPerGas = new GasFees(result.maxFeesPerGas.feePerDaGas, 2_000_000_000_000n);
+  const quote = await signQuote(config, result, node, { maxFeesPerGas });
 
-  const isolatedTokenDeploy = Contract.deploy(
-    result.wallet,
-    tokenArtifact,
-    ["InsufficientToken", "INS", 18, result.operator, result.operator],
-    "constructor_with_minter",
-  );
-  const isolatedTokenAddress = (await isolatedTokenDeploy.getInstance()).address;
-  await deployContract(result.wallet, tokenArtifact, isolatedTokenDeploy, {
-    from: result.operator,
-  });
-  const isolatedToken = Contract.at(isolatedTokenAddress, tokenArtifact, result.wallet);
-
-  const secret = Fr.fromHexString(result.operatorSecretHex);
-  const signingKey = deriveSigningKey(secret);
-  const schnorr = new Schnorr();
-  const operatorPubKey = await schnorr.computePublicKey(signingKey);
-  const isolatedFpcDeploy = Contract.deploy(result.wallet, fpcArtifact, [
-    result.operator,
-    operatorPubKey.x,
-    operatorPubKey.y,
-    isolatedTokenAddress,
-  ]);
-  const isolatedFpcAddress = (await isolatedFpcDeploy.getInstance()).address;
-  await deployContract(result.wallet, fpcArtifact, isolatedFpcDeploy, { from: result.operator });
-  const isolatedFpc = Contract.at(isolatedFpcAddress, fpcArtifact, result.wallet);
-
-  const isolatedCasesRoot = path.join(result.runDir, "insufficient");
-  mkdirSync(isolatedCasesRoot, { recursive: true });
-  const isolatedRunDir = mkdtempSync(
-    path.join(isolatedCasesRoot, "fpc-full-lifecycle-e2e-insufficient-"),
-  );
-  const bridgeStatePath = path.join(isolatedRunDir, "topup.bridge-state.json");
-  const topupConfigPath = path.join(isolatedRunDir, "topup.config.yaml");
-
-  const minimumBudget = 1_000_000n;
-  const txHeadroom =
-    estimatedSingleTxFeeJuice <= 0n ? 1_000_000_000n : ceilDiv(estimatedSingleTxFeeJuice, 2n);
-  const budgetWei = result.maxGasCostNoTeardown + txHeadroom + 1_000_000n;
-  const effectiveBudgetWei = budgetWei > minimumBudget ? budgetWei : minimumBudget;
-
-  writeFileSync(
-    topupConfigPath,
-    buildTopupConfigYaml(
-      config,
-      isolatedFpc.address,
-      bridgeStatePath,
-      effectiveBudgetWei,
-      effectiveBudgetWei,
-    ),
-    "utf8",
-  );
-
-  const isolatedTopup = startManagedProcess(
-    "full-e2e-topup-insufficient",
-    "bun",
-    [
-      "run",
-      path.join(result.repoRoot, "services", "topup", "dist", "index.js"),
-      "--config",
-      topupConfigPath,
-    ],
-    {
-      cwd: result.repoRoot,
-      env: {
-        ...process.env,
-        L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
-        // Prevent host env from redirecting isolated scenario top-ups.
-        TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: isolatedFpc.address.toString(),
-        TOPUP_AUTOCLAIM_SECRET_KEY: result.operatorSecretHex,
-        TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "0",
-      },
-    },
-  );
-
-  try {
-    await waitForHealth(`http://127.0.0.1:${config.topupOpsPort}/health`, config.httpTimeoutMs);
-    await waitForHealth(`http://127.0.0.1:${config.topupOpsPort}/ready`, config.topupWaitTimeoutMs);
-    const submission = await waitForNextBridgeSubmission(
-      isolatedTopup,
-      config.topupWaitTimeoutMs,
-      0,
+  const fpcBalance = await getFeeJuiceBalance(result.fpc.address, node);
+  if (quote.fjAmount <= fpcBalance) {
+    throw new Error(
+      `Cannot test insufficient Fee Juice: excessive fee ${quote.fjAmount} does not exceed FPC balance ${fpcBalance}`,
     );
-    await waitForNextBridgeConfirmedOutcome(isolatedTopup, config.topupWaitTimeoutMs, 0, 0, 0);
-
-    let isolatedBalance = await getFeeJuiceBalance(isolatedFpc.address, node);
-    if (isolatedBalance === 0n) {
-      isolatedBalance = await waitForPositiveFeeJuiceBalance(
-        node,
-        isolatedFpc.address,
-        config.topupWaitTimeoutMs,
-        config.topupPollMs,
-      );
-    }
-    if (isolatedBalance <= 0n) {
-      throw new Error(
-        `isolated insufficient-fee scenario funding did not produce Fee Juice (submission=${submission.submission.messageHash})`,
-      );
-    }
-  } finally {
-    await stopManagedProcess(isolatedTopup);
   }
 
-  const fjAmount = result.maxGasCostNoTeardown;
-  const { rateNum, rateDen } = getFinalRate(config);
-  const quoteAnchor = await getLatestL2Timestamp(node);
-  const quote1 = await signQuoteForUser(
-    result,
-    isolatedFpc.address,
-    isolatedToken.address,
-    fjAmount,
-    rateNum,
-    rateDen,
-    quoteAnchor + 3000n,
-    result.user,
-  );
-  const quote2 = await signQuoteForUser(
-    result,
-    isolatedFpc.address,
-    isolatedToken.address,
-    fjAmount,
-    rateNum,
-    rateDen,
-    quoteAnchor + 3001n,
-    result.user,
-  );
-
-  await executeFeePaidTx(config, result, {
-    token: isolatedToken,
-    fpc: isolatedFpc,
-    payer: result.user,
-    recipient: result.operator,
-    transferAmount: 1n,
-    quote: quote1,
-  });
-
   await expectFailure(
-    "negative insufficient fee juice rejected second tx",
+    "negative insufficient fee juice rejected",
     [
       "insufficient fee payer balance",
       "fee payer balance",
       "insufficient fee payer",
       "not enough fee",
     ],
-    () =>
-      executeFeePaidTx(config, result, {
-        token: isolatedToken,
-        fpc: isolatedFpc,
-        payer: result.user,
-        recipient: result.operator,
-        transferAmount: 1n,
-        quote: quote2,
-      }),
+    () => executeFeePaidTx(result, quote, maxFeesPerGas),
   );
-
-  return effectiveBudgetWei;
 }
 
-async function runStep7NegativeScenarios(
+async function runNegativeScenarios(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-  node: ReturnType<typeof createAztecNodeClient>,
-  attestationBaseUrl: string,
-  topup: ManagedProcess,
-  estimatedSingleTxFeeJuice: bigint,
-): Promise<NegativeScenarioResult> {
-  await negativeQuoteReplayRejected(config, result, attestationBaseUrl);
+  node: AztecNode,
+): Promise<void> {
+  await negativeInsufficientFeeJuiceRejected(config, result, node);
+  await negativeQuoteReplayRejected(config, result, node);
   await negativeExpiredQuoteRejected(config, result, node);
   await negativeOverlongTtlRejected(config, result, node);
   await negativeSenderBindingRejected(config, result, node);
+  await negativeWrongFpcRejected(config, result, node);
+  await negativeWrongTokenRejected(config, result, node);
   await negativeDirectEntrypointCallRejected(config, result, node);
-
-  await stopManagedProcess(topup);
-  pinoLogger.info(
-    "[full-lifecycle-e2e] topup stopped before insufficient Fee Juice negative scenario",
-  );
-
-  const insufficientFeeJuiceBudgetWei = await negativeInsufficientFeeJuiceSecondTxRejected(
-    config,
-    result,
-    node,
-    estimatedSingleTxFeeJuice,
-  );
-
-  return {
-    quoteReplayRejected: true,
-    expiredQuoteRejected: true,
-    overlongTtlRejected: true,
-    senderBindingRejected: true,
-    insufficientFeeJuiceRejected: true,
-    insufficientFeeJuiceBudgetWei,
-  };
 }
 
-async function orchestrateServicesAndAssertBridgeCycles(
+async function runOrchestration(
   config: FullE2EConfig,
   result: DeploymentRuntimeResult,
-): Promise<OrchestrationResult> {
-  const managed: ManagedProcess[] = [];
-  const node = createAztecNodeClient(config.nodeUrl);
-  await waitForNodeReady(node, config.nodeTimeoutMs);
+): Promise<void> {
+  const node = result.node;
 
-  const attestationBaseUrl = `http://127.0.0.1:${config.attestationPort}`;
-  const topupOpsBaseUrl = `http://127.0.0.1:${config.topupOpsPort}`;
-  let phase = "step5.start_services";
-  let topup: ManagedProcess | null = null;
+  pinoLogger.info("[full-lifecycle-e2e] waiting for FPC Fee Juice balance > 0 (via topup service)");
+  const feeJuiceBalance = await waitForPositiveFeeJuiceBalance(
+    node,
+    result.fpc.address,
+    config.feeJuiceTimeoutMs,
+    config.feeJuicePollMs,
+  );
+  pinoLogger.info(`[full-lifecycle-e2e] PASS: FPC has Fee Juice (fee_juice=${feeJuiceBalance})`);
 
-  try {
-    const attestation = startManagedProcess(
-      "full-e2e-attestation",
-      "bun",
-      [
-        "run",
-        path.join(result.repoRoot, "services", "attestation", "dist", "index.js"),
-        "--config",
-        result.attestationConfigPath,
-      ],
-      {
-        cwd: result.repoRoot,
-        env: {
-          ...process.env,
-          OPERATOR_SECRET_KEY: result.operatorSecretHex,
-        },
-      },
-    );
-    managed.push(attestation);
-
-    phase = "step5.attestation_health";
-    await waitForHealth(`${attestationBaseUrl}/health`, config.httpTimeoutMs);
-    pinoLogger.info("[full-lifecycle-e2e] PASS: attestation /health");
-
-    const fpcClient = new FpcClient({
-      fpcAddress: result.fpc.address,
-      operator: result.operator,
-      node,
-      attestationBaseUrl,
-    });
-
-    topup = startManagedProcess(
-      "full-e2e-topup",
-      "bun",
-      [
-        "run",
-        path.join(result.repoRoot, "services", "topup", "dist", "index.js"),
-        "--config",
-        result.topupConfigPath,
-      ],
-      {
-        cwd: result.repoRoot,
-        env: {
-          ...process.env,
-          L1_OPERATOR_PRIVATE_KEY: config.l1PrivateKey,
-          // Keep this harness deterministic even when host env sets a recipient.
-          TOPUP_FEE_JUICE_RECIPIENT_ADDRESS: result.fpc.address.toString(),
-          TOPUP_AUTOCLAIM_SECRET_KEY: result.operatorSecretHex,
-          TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "0",
-        },
-      },
-    );
-    managed.push(topup);
-
-    phase = "step5.topup_health_ready";
-    await waitForHealth(`${topupOpsBaseUrl}/health`, config.httpTimeoutMs);
-    await waitForLog(topup, "Top-up service started", config.httpTimeoutMs);
-    await waitForHealth(`${topupOpsBaseUrl}/ready`, config.topupWaitTimeoutMs);
-    pinoLogger.info("[full-lifecycle-e2e] PASS: topup /health and /ready");
-
-    phase = "step5.bridge_cycle_1";
-    let topupCounters = getTopupLogCountersFromProcess(topup);
-    let cycle1Submission: {
-      submission: TopupBridgeSubmission;
-      submissionCount: number;
-    };
-    if (topupCounters.submissionCount > 0) {
-      const existingSubmissions = parseTopupBridgeSubmissions(topup.getLogs());
-      const latestSubmission = existingSubmissions[existingSubmissions.length - 1];
-      if (!latestSubmission) {
-        throw new Error("Top-up submission counter was non-zero but no submission could be parsed");
-      }
-      cycle1Submission = {
-        submission: latestSubmission,
-        submissionCount: existingSubmissions.length,
-      };
-      pinoLogger.info(
-        `[full-lifecycle-e2e] using existing bridge submission for cycle #1 (message_hash=${latestSubmission.messageHash})`,
-      );
-    } else {
-      cycle1Submission = await waitForNextBridgeSubmission(topup, config.topupWaitTimeoutMs, 0);
-    }
-    topupCounters.submissionCount = cycle1Submission.submissionCount;
-    const cycle1Outcome = await waitForNextBridgeConfirmedOutcome(
-      topup,
-      config.topupWaitTimeoutMs,
-      topupCounters.confirmedCount,
-      topupCounters.timeoutCount,
-      topupCounters.failedCount,
-    );
-    topupCounters.confirmedCount = cycle1Outcome.confirmedCount;
-    topupCounters.timeoutCount = cycle1Outcome.timeoutCount;
-    topupCounters.failedCount = cycle1Outcome.failedCount;
-
-    let feeJuiceAfterCycle1 = await getFeeJuiceBalance(result.fpc.address, node);
-    if (feeJuiceAfterCycle1 === 0n) {
-      pinoLogger.info(
-        `[full-lifecycle-e2e] bridge cycle #1 confirmed but Fee Juice is still zero; waiting for auto-claim settlement (message_hash=${cycle1Submission.submission.messageHash})`,
-      );
-      feeJuiceAfterCycle1 = await waitForPositiveFeeJuiceBalance(
-        node,
-        result.fpc.address,
-        config.topupWaitTimeoutMs,
-        config.topupPollMs,
-      );
-    }
-    topupCounters = getTopupLogCountersFromProcess(topup);
-    pinoLogger.info(
-      `[full-lifecycle-e2e] PASS: bridge cycle #1 confirmed before tx1 (message_hash=${cycle1Submission.submission.messageHash}, leaf_index=${cycle1Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle1})`,
-    );
-
-    await result.token.methods.mint_to_public(result.user, 2n).send({ from: result.operator });
-
-    phase = "step6.tx1";
-    const cycle2Baseline: TopupLogCounters = { ...topupCounters };
-    const tx1ExpectedCharge = await runFeePaidTargetTxAndAssert(
-      config,
-      result,
-      fpcClient,
-      "tx1",
-      1n,
-    );
-    const feeJuiceAfterTx1 = await getFeeJuiceBalance(result.fpc.address, node);
-    pinoLogger.info(`[full-lifecycle-e2e] fee_juice_after_tx1=${feeJuiceAfterTx1}`);
-
-    let feeJuiceAfterCycle2: bigint | null = null;
-    if (config.requiredTopupCycles === 2) {
-      phase = "step5.bridge_cycle_2";
-      const cycle2Submission = await waitForNextBridgeSubmission(
-        topup,
-        config.topupWaitTimeoutMs,
-        cycle2Baseline.submissionCount,
-      );
-      topupCounters.submissionCount = cycle2Submission.submissionCount;
-      const cycle2Outcome = await waitForNextBridgeConfirmedOutcome(
-        topup,
-        config.topupWaitTimeoutMs,
-        cycle2Baseline.confirmedCount,
-        cycle2Baseline.timeoutCount,
-        cycle2Baseline.failedCount,
-      );
-      topupCounters.confirmedCount = cycle2Outcome.confirmedCount;
-      topupCounters.timeoutCount = cycle2Outcome.timeoutCount;
-      topupCounters.failedCount = cycle2Outcome.failedCount;
-
-      feeJuiceAfterCycle2 = await getFeeJuiceBalance(result.fpc.address, node);
-      if (feeJuiceAfterCycle2 <= feeJuiceAfterTx1) {
-        pinoLogger.info(
-          `[full-lifecycle-e2e] bridge cycle #2 confirmed but Fee Juice did not increase; waiting for auto-claim settlement (message_hash=${cycle2Submission.submission.messageHash})`,
-        );
-        feeJuiceAfterCycle2 = await waitForFeeJuiceBalanceAboveBaseline(
-          node,
-          result.fpc.address,
-          feeJuiceAfterTx1,
-          config.topupWaitTimeoutMs,
-          config.topupPollMs,
-        );
-      }
-      topupCounters = getTopupLogCountersFromProcess(topup);
-      pinoLogger.info(
-        `[full-lifecycle-e2e] PASS: bridge cycle #2 confirmed after tx1 and before tx2 (message_hash=${cycle2Submission.submission.messageHash}, leaf_index=${cycle2Submission.submission.leafIndex}, fee_juice=${feeJuiceAfterCycle2})`,
-      );
-    } else {
-      pinoLogger.info(
-        "[full-lifecycle-e2e] PASS: second bridge cycle requirement skipped (FPC_FULL_E2E_REQUIRED_TOPUP_CYCLES=1)",
-      );
-    }
-
-    phase = "step6.tx2";
-    const tx2ExpectedCharge = await runFeePaidTargetTxAndAssert(
-      config,
-      result,
-      fpcClient,
-      "tx2",
-      1n,
-    );
-    const feeJuiceAfterTx2 = await getFeeJuiceBalance(result.fpc.address, node);
-    pinoLogger.info(`[full-lifecycle-e2e] fee_juice_after_tx2=${feeJuiceAfterTx2}`);
-
-    const estimatedSingleTxFeeJuice =
-      feeJuiceAfterTx1 > feeJuiceAfterTx2 ? feeJuiceAfterTx1 - feeJuiceAfterTx2 : 0n;
-    if (!topup) {
-      throw new Error("Top-up process handle was lost before step7");
-    }
-    phase = "step7.negative_scenarios";
-    const step7 = await runStep7NegativeScenarios(
-      config,
-      result,
-      node,
-      attestationBaseUrl,
-      topup,
-      estimatedSingleTxFeeJuice,
-    );
-
-    const finalTopupCounters = getTopupLogCountersFromProcess(topup);
-    return {
-      attestationBaseUrl,
-      topupOpsBaseUrl,
-      observedBridgeSubmissions: finalTopupCounters.submissionCount,
-      observedBridgeConfirmed: finalTopupCounters.confirmedCount,
-      feeJuiceAfterCycle1,
-      feeJuiceAfterTx1,
-      feeJuiceAfterCycle2,
-      feeJuiceAfterTx2,
-      tx1ExpectedCharge,
-      tx2ExpectedCharge,
-      step7,
-    };
-  } catch (error) {
-    const diagnostics = persistFailureDiagnostics(
-      result.runDir,
-      result.summaryPath,
-      phase,
-      error,
-      managed,
-    );
-    throw new Error(
-      `[phase=${phase}] ${errorMessage(error)} (diagnostics=${diagnostics.diagnosticsPath})`,
-    );
-  } finally {
-    for (const proc of managed.reverse()) {
-      await stopManagedProcess(proc);
-    }
-  }
-}
-
-function writeStep5Summary(summaryPath: string, orchestration: OrchestrationResult): void {
-  const summary = readSummary(summaryPath);
-
-  summary.step5 = {
-    completedAt: new Date().toISOString(),
-    attestationBaseUrl: orchestration.attestationBaseUrl,
-    topupOpsBaseUrl: orchestration.topupOpsBaseUrl,
-    observedBridgeSubmissions: orchestration.observedBridgeSubmissions,
-    observedBridgeConfirmed: orchestration.observedBridgeConfirmed,
-    feeJuiceAfterCycle1: orchestration.feeJuiceAfterCycle1.toString(),
-    feeJuiceAfterTx1: orchestration.feeJuiceAfterTx1.toString(),
-    feeJuiceAfterCycle2:
-      orchestration.feeJuiceAfterCycle2 === null
-        ? null
-        : orchestration.feeJuiceAfterCycle2.toString(),
-  };
-  summary.step6 = {
-    completedAt: new Date().toISOString(),
-    tx1ExpectedCharge: orchestration.tx1ExpectedCharge.toString(),
-    tx2ExpectedCharge: orchestration.tx2ExpectedCharge.toString(),
-    feeJuiceAfterTx2: orchestration.feeJuiceAfterTx2.toString(),
-  };
-  summary.step7 = {
-    completedAt: new Date().toISOString(),
-    quoteReplayRejected: orchestration.step7.quoteReplayRejected,
-    expiredQuoteRejected: orchestration.step7.expiredQuoteRejected,
-    overlongTtlRejected: orchestration.step7.overlongTtlRejected,
-    senderBindingRejected: orchestration.step7.senderBindingRejected,
-    insufficientFeeJuiceRejected: orchestration.step7.insufficientFeeJuiceRejected,
-    insufficientFeeJuiceBudgetWei: orchestration.step7.insufficientFeeJuiceBudgetWei.toString(),
-  };
-
-  writeSummary(summaryPath, summary);
-  recordPhaseResult(summaryPath, "step5", "PASS");
-  recordPhaseResult(summaryPath, "step6", "PASS");
-  recordPhaseResult(summaryPath, "step7", "PASS");
-}
-
-function writeStep8Summary(summaryPath: string, runDir: string): void {
-  const diagnosticsDir = path.join(runDir, "diagnostics");
-  mkdirSync(diagnosticsDir, { recursive: true });
-
-  updateSummary(summaryPath, (summary) => {
-    summary.step8 = {
-      completedAt: new Date().toISOString(),
-      diagnosticsDir,
-      tailLinesOnFailure: DIAGNOSTIC_TAIL_LINES,
-    };
-  });
-  recordPhaseResult(summaryPath, "step8", "PASS", {
-    diagnosticsDir,
-    tailLinesOnFailure: DIAGNOSTIC_TAIL_LINES,
-  });
+  await runNegativeScenarios(config, result, node);
 }
 
 async function main(): Promise<void> {
-  installManagedProcessSignalHandlers("full-lifecycle-e2e");
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     printHelp();
     return;
   }
 
   const config = getConfig();
-  printConfigSummary(config);
-  let phase = "step4.deploy_runtime_wiring";
-  let result: DeploymentRuntimeResult | null = null;
+  pinoLogger.info(
+    `[full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, manifest=${config.manifestPath}`,
+  );
 
-  try {
-    result = await deployContractsAndWriteRuntimeConfig(config);
-    pinoLogger.info(`[full-lifecycle-e2e] operator=${result.operator.toString()}`);
-    pinoLogger.info(`[full-lifecycle-e2e] user=${result.user.toString()}`);
-    pinoLogger.info(`[full-lifecycle-e2e] other_user=${result.otherUser.toString()}`);
-    pinoLogger.info(`[full-lifecycle-e2e] token=${result.token.address.toString()}`);
-    pinoLogger.info(`[full-lifecycle-e2e] fpc=${result.fpc.address.toString()}`);
-    pinoLogger.info(`[full-lifecycle-e2e] topup_threshold_wei=${result.topupThresholdWei}`);
-    pinoLogger.info(`[full-lifecycle-e2e] topup_amount_wei=${result.topupAmountWei}`);
-    pinoLogger.info(`[full-lifecycle-e2e] attestation_config=${result.attestationConfigPath}`);
-    pinoLogger.info(`[full-lifecycle-e2e] topup_config=${result.topupConfigPath}`);
-    pinoLogger.info(`[full-lifecycle-e2e] run_summary=${result.summaryPath}`);
+  const result = await setupFromManifest(config);
+  pinoLogger.info(`[full-lifecycle-e2e] operator=${result.operator.toString()}`);
+  pinoLogger.info(`[full-lifecycle-e2e] user=${result.user.toString()}`);
+  pinoLogger.info(`[full-lifecycle-e2e] other_user=${result.otherUser.toString()}`);
+  pinoLogger.info(`[full-lifecycle-e2e] token=${result.token.address.toString()}`);
+  pinoLogger.info(`[full-lifecycle-e2e] fpc=${result.fpc.address.toString()}`);
+  pinoLogger.info("[full-lifecycle-e2e] PASS: setup from manifest complete");
 
-    recordPhaseResult(result.summaryPath, "step4", "PASS", {
-      runDir: result.runDir,
-      attestationConfigPath: result.attestationConfigPath,
-      topupConfigPath: result.topupConfigPath,
-    });
-    pinoLogger.info("[full-lifecycle-e2e] PASS: step4 deployment and runtime wiring complete");
-
-    phase = "step5_to_step7.orchestration";
-    const orchestration = await orchestrateServicesAndAssertBridgeCycles(config, result);
-    writeStep5Summary(result.summaryPath, orchestration);
-
-    pinoLogger.info(
-      `[full-lifecycle-e2e] PASS: step5 service orchestration and bridge-cycle assertions passed (confirmed_cycles=${orchestration.observedBridgeConfirmed})`,
-    );
-    pinoLogger.info(
-      `[full-lifecycle-e2e] PASS: step6 tx invariants and target state deltas passed (tx1_expected_charge=${orchestration.tx1ExpectedCharge}, tx2_expected_charge=${orchestration.tx2ExpectedCharge})`,
-    );
-    pinoLogger.info(
-      `[full-lifecycle-e2e] PASS: step7 negative scenarios passed (insufficient_fee_juice_budget_wei=${orchestration.step7.insufficientFeeJuiceBudgetWei})`,
-    );
-
-    phase = "step8.diagnostics_and_artifacts";
-    writeStep8Summary(result.summaryPath, result.runDir);
-    pinoLogger.info("[full-lifecycle-e2e] PASS: step8 diagnostics and artifacts are persisted");
-    pinoLogger.info("[full-lifecycle-e2e] PASS: full lifecycle e2e succeeded");
-  } catch (error) {
-    if (result !== null) {
-      const summary = readSummary(result.summaryPath);
-      if (summary.failure === undefined) {
-        const diagnostics = persistFailureDiagnostics(
-          result.runDir,
-          result.summaryPath,
-          phase,
-          error,
-          [],
-        );
-        throw new Error(
-          `[phase=${phase}] ${errorMessage(error)} (diagnostics=${diagnostics.diagnosticsPath})`,
-        );
-      }
-    }
-    throw error;
-  }
+  await runOrchestration(config, result);
+  pinoLogger.info("[full-lifecycle-e2e] PASS: all negative scenarios passed");
 }
 
 main().catch((error: unknown) => {
