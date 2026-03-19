@@ -82,7 +82,8 @@
     "chaos:api": "FPC_CHAOS_MODE=api bun scripts/chaos/fpc-chaos-test.ts",
     "chaos:onchain": "FPC_CHAOS_MODE=onchain bun scripts/chaos/fpc-chaos-test.ts",
     "chaos:full": "FPC_CHAOS_MODE=full bun scripts/chaos/fpc-chaos-test.ts",
-    "chaos:local": "bash scripts/chaos/fpc-chaos-local.sh"
+    "chaos:local": "bash scripts/chaos/fpc-chaos-local.sh",
+    "smoke:chaos:compose": "docker compose --profile chaos up smoke-chaos --wait"
   },
   "workspaces": [
     "examples",
