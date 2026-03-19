@@ -38,6 +38,12 @@ const BRIDGE_RETRY_ATTEMPTS = 3;
 /** Delay between retry attempts in milliseconds. */
 const BRIDGE_RETRY_DELAY_MS = 2_000;
 
+/** Maximum number of retry attempts for deployWithClaim. */
+const DEPLOY_RETRY_ATTEMPTS = 3;
+
+/** Delay between deploy retry attempts in milliseconds. */
+const DEPLOY_RETRY_DELAY_MS = 5_000;
+
 // ---------------------------------------------------------------------------
 // L2 account derivation
 // ---------------------------------------------------------------------------
@@ -212,18 +218,33 @@ async function deployWithClaim(
   node: ReturnType<typeof createAztecNodeClient>,
   pending: PendingClaim,
 ): Promise<void> {
-  await waitForL1ToL2MessageReady(node, pending.messageHash, {
-    timeoutSeconds: L1_TO_L2_MESSAGE_TIMEOUT_SECONDS,
-  });
-  pinoLogger.info(`L1→L2 message ready for account[${index}]`);
+  for (let attempt = 1; ; attempt++) {
+    await waitForL1ToL2MessageReady(node, pending.messageHash, {
+      timeoutSeconds: L1_TO_L2_MESSAGE_TIMEOUT_SECONDS,
+    });
+    pinoLogger.info(`L1→L2 message ready for account[${index}]`);
 
-  const feePayment = new FeeJuicePaymentMethodWithClaim(account.address, pending.claim);
-  const deployMethod = await account.accountManager.getDeployMethod();
-  await deployMethod.send({
-    from: AztecAddress.ZERO,
-    fee: { paymentMethod: feePayment },
-    skipClassPublication: true,
-    skipInstancePublication: false,
-  });
-  pinoLogger.info(`deployed L2 account[${index}]=${account.address.toString()}`);
+    try {
+      const feePayment = new FeeJuicePaymentMethodWithClaim(account.address, pending.claim);
+      const deployMethod = await account.accountManager.getDeployMethod();
+      await deployMethod.send({
+        from: AztecAddress.ZERO,
+        fee: { paymentMethod: feePayment },
+        skipClassPublication: true,
+        skipInstancePublication: false,
+      });
+      pinoLogger.info(`deployed L2 account[${index}]=${account.address.toString()}`);
+      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const isMessageNotReady = msg.includes("Message not in state");
+      if (!isMessageNotReady || attempt >= DEPLOY_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      pinoLogger.warn(
+        `deployWithClaim account[${index}] attempt ${attempt}/${DEPLOY_RETRY_ATTEMPTS} failed: ${msg.slice(0, 120)}. Retrying in ${DEPLOY_RETRY_DELAY_MS / 1000}s…`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, DEPLOY_RETRY_DELAY_MS));
+    }
+  }
 }
