@@ -106,7 +106,6 @@ Use this runbook when local E2E fails with address or wiring symptoms.
 ## Coverage Findings And Test Tiering
 Current script coverage in this repository is intentionally split:
 - `scripts/contract/deploy-fpc-local.ts` and `scripts/contract/deploy-fpc-local-smoke.ts` are deployment/relay usability checks, not quote-security or negative-behavior tests.
-- `scripts/services/fee-entrypoint-smoke.ts` is a negative-path smoke check verifying that `fee_entrypoint` cannot be called as a root-level transaction outside the setup phase (against pre-deployed services).
 - `scripts/services/fpc-services-smoke.ts` tests deployed service HTTP endpoints (attestation quotes, topup health, metrics).
 - `scripts/same-token-transfer/test-same-token-transfer.ts` is the happy-path integration test covering FPC-paid transactions across multiple transfer types.
 
