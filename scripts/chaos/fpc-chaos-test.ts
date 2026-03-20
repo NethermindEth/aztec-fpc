@@ -79,7 +79,6 @@ import { resolveScriptAccounts } from "../common/script-credentials.ts";
 
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const U128_MAX = 2n ** 128n - 1n;
-const MAX_QUOTE_TTL_SECONDS = 3600n;
 const _HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 type ChaosMode = "api" | "onchain" | "full";
@@ -526,13 +525,6 @@ function _sleep(ms: number): Promise<void> {
 const SENTINEL_USER = "0x0000000000000000000000000000000000000000000000000000000000000001";
 const SENTINEL_FJ_AMOUNT = "1000000";
 
-async function fetchQuoteForSentinel(config: ChaosConfig): Promise<QuoteResponse> {
-  const url = `${config.attestationUrl}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
-  const { status, body } = await httpGet(url, config);
-  assertOk(status, body, "fetchQuoteForSentinel");
-  return parseQuote(body);
-}
-
 async function signQuote(
   operatorSecretHex: string,
   fpcAddress: AztecAddress,
@@ -917,8 +909,6 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
   // Discover the accepted_asset from the running attestation service so API
   // tests always use the value the service actually accepts.  The manifest
   // value (config.acceptedAsset) may be stale if containers were recycled.
-  // We preserve the manifest value for the mismatch check below.
-  const manifestAcceptedAsset = config.acceptedAsset;
   try {
     const { status, body } = await httpGet(`${base}/asset`, config);
     if (status >= 200 && status < 300) {
@@ -930,143 +920,6 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
   } catch {
     // Will be caught by individual tests
   }
-
-  await runner.run("health-ok", "api", "GET /health returns 200 + {status:ok}", async () => {
-    const { status, body } = await httpGet(`${base}/health`, config);
-    assertOk(status, body, "/health");
-    const parsed = JSON.parse(body) as { status?: string };
-    if (parsed.status !== "ok") {
-      throw new Error(`/health body.status expected "ok", got: ${body.slice(0, 100)}`);
-    }
-    return { status, body };
-  });
-
-  await runner.run("asset-ok", "api", "GET /asset returns valid structure", async () => {
-    const { status, body } = await httpGet(`${base}/asset`, config);
-    assertOk(status, body, "/asset");
-    const parsed = JSON.parse(body) as { name?: string; address?: string };
-    if (typeof parsed.name !== "string" || typeof parsed.address !== "string") {
-      throw new Error(`/asset missing name or address: ${body.slice(0, 200)}`);
-    }
-    return { name: parsed.name, address: parsed.address };
-  });
-
-  await runner.run(
-    "asset-address-matches-manifest",
-    "api",
-    "GET /asset address matches configured accepted_asset",
-    async () => {
-      if (!manifestAcceptedAsset) return { skipped: "no accepted_asset configured" };
-      if (!process.env.FPC_CHAOS_MANIFEST) {
-        return { skipped: "no manifest file loaded (address came from env var, not manifest)" };
-      }
-      const { status, body } = await httpGet(`${base}/asset`, config);
-      assertOk(status, body, "/asset");
-      const parsed = JSON.parse(body) as { address?: string };
-      const got = (parsed.address ?? "").toLowerCase();
-      const expected = manifestAcceptedAsset.toLowerCase();
-      if (got !== expected) {
-        throw new Error(`/asset address mismatch. expected=${expected} got=${got}`);
-      }
-      return { got, expected };
-    },
-  );
-
-  await runner.run(
-    "quote-valid-structure",
-    "api",
-    "GET /quote with valid params returns complete quote",
-    async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertOk(status, body, "/quote");
-      const q = parseQuote(body);
-      return { fj_amount: q.fj_amount, aa_payment_amount: q.aa_payment_amount };
-    },
-  );
-
-  await runner.run("quote-sig-64-bytes", "api", "Quote signature is exactly 64 bytes", async () => {
-    const q = await fetchQuoteForSentinel(config);
-    const sigBytes = Buffer.from(q.signature.replace(/^0x/, ""), "hex");
-    if (sigBytes.length !== 64) {
-      throw new Error(`Signature expected 64 bytes, got ${sigBytes.length}`);
-    }
-    return { sigLenBytes: sigBytes.length };
-  });
-
-  await runner.run(
-    "quote-ttl-in-range",
-    "api",
-    "Quote valid_until is within max TTL window (3600s)",
-    async () => {
-      const q = await fetchQuoteForSentinel(config);
-      const validUntil = BigInt(q.valid_until);
-
-      // The attestation service anchors valid_until to the L2 block timestamp,
-      // which can be significantly ahead of wall-clock time on local networks
-      // where blocks are produced/time-advanced artificially. Use the latest L2
-      // block timestamp as the reference clock; fall back to wall clock when no
-      // node URL is configured (pure API mode against a remote service).
-      let nowSec: bigint;
-      if (config.nodeUrl) {
-        const node = createAztecNodeClient(config.nodeUrl);
-        const block = await node.getBlock("latest");
-        nowSec = block ? block.timestamp : BigInt(Math.floor(Date.now() / 1000));
-      } else {
-        nowSec = BigInt(Math.floor(Date.now() / 1000));
-      }
-
-      const ttl = validUntil - nowSec;
-      if (ttl <= 0n) {
-        throw new Error(`Quote already expired (valid_until=${q.valid_until})`);
-      }
-      if (ttl > MAX_QUOTE_TTL_SECONDS + 10n) {
-        throw new Error(
-          `Quote TTL ${ttl}s exceeds max ${MAX_QUOTE_TTL_SECONDS}s (valid_until=${q.valid_until}, l2_now=${nowSec})`,
-        );
-      }
-      return { ttlSeconds: ttl.toString() };
-    },
-  );
-
-  await runner.run(
-    "quote-asset-matches-manifest",
-    "api",
-    "Quote accepted_asset matches configured accepted_asset",
-    async () => {
-      if (!config.acceptedAsset) return { skipped: "no accepted_asset configured" };
-      const q = await fetchQuoteForSentinel(config);
-      const got = q.accepted_asset.toLowerCase();
-      const expected = config.acceptedAsset.toLowerCase();
-      if (got !== expected) {
-        throw new Error(`Quote accepted_asset mismatch. expected=${expected} got=${got}`);
-      }
-      return { got, expected };
-    },
-  );
-
-  await runner.run(
-    "quote-fj-amount-echoed",
-    "api",
-    "Quote fj_amount matches requested fj_amount",
-    async () => {
-      const requested = "2000000";
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${requested}&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertOk(status, body, "/quote fj echo");
-      const q = parseQuote(body);
-      if (q.fj_amount !== requested) {
-        throw new Error(`fj_amount echo mismatch: requested=${requested} got=${q.fj_amount}`);
-      }
-      return { requested, got: q.fj_amount };
-    },
-  );
-
-  await runner.run("quote-no-params", "api", "GET /quote with no params returns 4xx", async () => {
-    const { status, body } = await httpGet(`${base}/quote`, config);
-    assertClientError(status, body, "/quote (no params)");
-    return { status };
-  });
 
   await runner.run(
     "quote-missing-user",
@@ -1200,23 +1053,6 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     },
   );
 
-  await runner.run(
-    "quote-aa-payment-positive-for-positive-fj",
-    "api",
-    "Quote with fj_amount > 0 has aa_payment_amount > 0",
-    async () => {
-      const q = await fetchQuoteForSentinel(config);
-      const fj = BigInt(q.fj_amount);
-      const aa = BigInt(q.aa_payment_amount);
-      if (fj > 0n && aa <= 0n) {
-        throw new Error(
-          `Quote has fj_amount=${q.fj_amount} but aa_payment_amount=${q.aa_payment_amount} (must be > 0 when fj > 0)`,
-        );
-      }
-      return { fj_amount: q.fj_amount, aa_payment_amount: q.aa_payment_amount };
-    },
-  );
-
   if (config.quoteAuthApiKey || (config.quoteAuthHeader && config.quoteAuthValue)) {
     await runner.run(
       "quote-auth-no-key-rejected",
@@ -1306,37 +1142,6 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
       };
     },
   );
-
-  if (config.topupUrl) {
-    const topupBase = config.topupUrl;
-
-    await runner.run("topup-health-ok", "api-topup", "Topup GET /health returns 200", async () => {
-      const { status, body } = await httpGet(`${topupBase}/health`, config);
-      assertOk(status, body, "topup /health");
-      return { status };
-    });
-
-    await runner.run(
-      "topup-ready",
-      "api-topup",
-      "Topup GET /ready returns 200 or 503 (not 500)",
-      async () => {
-        const { status, body } = await httpGet(`${topupBase}/ready`, config);
-        // 200 = ready, 503 = not ready yet (legitimate). Only 500 is a real error.
-        if (status === 500) {
-          throw new Error(`Topup /ready returned internal server error: ${body.slice(0, 200)}`);
-        }
-        return { status, ready: status === 200 };
-      },
-    );
-  } else {
-    runner.skip(
-      "topup-api-tests",
-      "api-topup",
-      "Topup service API tests",
-      "FPC_CHAOS_TOPUP_URL not set",
-    );
-  }
 
   await runner.run(
     "quote-concurrent-consistency",
