@@ -197,8 +197,9 @@ services:
   e2e-fpc:
     image: nethermind/aztec-fpc-smoke:local
     profiles: ["e2e", "full"]
+    entrypoint: ["bun", "test"]
     command:
-      - "scripts/services/fpc-full-lifecycle-e2e.ts"
+      - "./scripts/services/fpc-full-lifecycle-e2e.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:

@@ -1,8 +1,6 @@
+import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import pino from "pino";
-
-const pinoLogger = pino();
 
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -71,25 +69,6 @@ const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 const tokenArtifactPath = "token_contract-Token.json";
 const fpcArtifactPath = "fpc-FPCMultiAsset.json";
 const faucetArtifactPath = "faucet-Faucet.json";
-
-function printHelp(): void {
-  pinoLogger.info(`Usage: bun run e2e:full-lifecycle:fpc:local [--help]
-
-Required env vars:
-- FPC_COLD_START_MANIFEST — deployment manifest path
-- FPC_OPERATOR_SECRET_KEY — operator 0x-prefixed 32-byte hex secret
-
-Optional env vars:
-- AZTEC_NODE_URL (default: http://localhost:8080)
-- FPC_FULL_E2E_FEE_JUICE_TIMEOUT_MS (default: 240000)
-- FPC_FULL_E2E_FEE_JUICE_POLL_MS (default: 2000)
-- FPC_FULL_E2E_DA_GAS_LIMIT (default: 200000)
-- FPC_FULL_E2E_L2_GAS_LIMIT (default: 1000000)
-- FPC_FULL_E2E_MARKET_RATE_NUM (default: 1)
-- FPC_FULL_E2E_MARKET_RATE_DEN (default: 1000)
-- FPC_FULL_E2E_FEE_BIPS (default: 200)
-`);
-}
 
 function readEnvPositiveInteger(name: string, fallback: number): number {
   const value = process.env[name];
@@ -256,31 +235,9 @@ async function executeFeePaidTx(
     });
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.stack ?? error.message;
-  }
-  return String(error);
-}
-
-async function expectFailure(
-  scenario: string,
-  expectedSubstrings: string[],
-  action: () => Promise<unknown>,
-): Promise<void> {
-  try {
-    await action();
-  } catch (error) {
-    const message = errorMessage(error).toLowerCase();
-    if (expectedSubstrings.some((fragment) => message.includes(fragment.toLowerCase()))) {
-      pinoLogger.info(`[full-lifecycle-e2e] PASS: ${scenario}`);
-      return;
-    }
-    throw new Error(
-      `[full-lifecycle-e2e] ${scenario} failed with unexpected error: ${errorMessage(error)}`,
-    );
-  }
-  throw new Error(`[full-lifecycle-e2e] ${scenario} unexpectedly succeeded`);
+function anyOf(substrings: string[]): RegExp {
+  const escaped = substrings.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(escaped.join("|"), "i");
 }
 
 function requireEnv(name: string): string {
@@ -330,10 +287,6 @@ async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRunti
   const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
   const faucetAddress = AztecAddress.fromString(manifest.contracts.faucet);
 
-  pinoLogger.info(
-    `[full-lifecycle-e2e] manifest loaded: fpc=${manifest.contracts.fpc}, token=${manifest.contracts.accepted_asset}`,
-  );
-
   // Connect to node and create wallet.
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNode(node);
@@ -376,8 +329,6 @@ async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRunti
     from: AztecAddress.ZERO,
     fee: { paymentMethod: sponsoredFeePayment },
   });
-  pinoLogger.info("[full-lifecycle-e2e] user + otherUser accounts deployed via SponsoredFPC");
-
   // Fund user via faucet drip + shield (batched via SponsoredFPC).
   const { result: faucetConfig } = await faucet.methods.get_config().simulate({ from: user });
   const dripAmount = BigInt(faucetConfig.drip_amount.toString());
@@ -390,10 +341,6 @@ async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRunti
     from: user,
     fee: { paymentMethod: sponsoredFeePayment },
   });
-  pinoLogger.info(
-    `[full-lifecycle-e2e] user funded via faucet (drip=${dripAmount}, shielded=${shieldAmount})`,
-  );
-
   const minFees = await node.getCurrentMinFees();
   const gasLimits = new Gas(config.daGasLimit, config.l2GasLimit);
   const maxFeesPerGas = new GasFees(minFees.feePerDaGas, minFees.feePerL2Gas);
@@ -454,129 +401,119 @@ async function signQuote(
   };
 }
 
-async function negativeQuoteReplayRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  const quote = await signQuote(config, result, node);
+const E2E_TIMEOUT_MS = 600_000;
+setDefaultTimeout(E2E_TIMEOUT_MS);
 
-  await executeFeePaidTx(result, quote);
+let config: FullE2EConfig;
+let result: DeploymentRuntimeResult;
+let node: AztecNode;
 
-  await expectFailure(
-    "negative quote replay rejected",
-    ["nullifier", "already exists", "duplicate"],
-    () => executeFeePaidTx(result, quote),
-  );
-}
+describe("fpc full lifecycle e2e", () => {
+  beforeAll(async () => {
+    config = getConfig();
+    result = await setupFromManifest(config);
+    node = result.node;
 
-async function negativeExpiredQuoteRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  const latestTimestamp = await getLatestL2Timestamp(node);
-  const quote = await signQuote(config, result, node, {
-    validUntil: latestTimestamp - 1n,
+    await waitForPositiveFeeJuiceBalance(
+      node,
+      result.fpc.address,
+      config.feeJuiceTimeoutMs,
+      config.feeJuicePollMs,
+    );
   });
 
-  await expectFailure("negative expired quote rejected", ["quote expired"], () =>
-    executeFeePaidTx(result, quote),
-  );
-}
+  it("rejects insufficient fee juice", async () => {
+    const maxFeesPerGas = new GasFees(result.maxFeesPerGas.feePerDaGas, 2_000_000_000_000n);
+    const quote = await signQuote(config, result, node, { maxFeesPerGas });
 
-async function negativeOverlongTtlRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  const latestTimestamp = await getLatestL2Timestamp(node);
-  const quote = await signQuote(config, result, node, {
-    validUntil: latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS * 2),
+    const fpcBalance = await getFeeJuiceBalance(result.fpc.address, node);
+    expect(quote.fjAmount).toBeGreaterThan(fpcBalance);
+
+    await expect(() => executeFeePaidTx(result, quote, maxFeesPerGas)).toThrow(
+      anyOf([
+        "insufficient fee payer balance",
+        "fee payer balance",
+        "insufficient fee payer",
+        "not enough fee",
+      ]),
+    );
   });
 
-  await expectFailure("negative overlong quote ttl rejected", ["quote ttl too large"], () =>
-    executeFeePaidTx(result, quote),
-  );
-}
+  it("rejects replayed quote", async () => {
+    const quote = await signQuote(config, result, node);
+    await executeFeePaidTx(result, quote);
 
-async function negativeSenderBindingRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  const quote = await signQuote(config, result, node, {
-    payer: result.otherUser,
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      anyOf(["nullifier", "already exists", "duplicate"]),
+    );
   });
 
-  await expectFailure(
-    "negative quote sender binding rejected",
-    ["invalid quote signature", "Cannot satisfy constraint"],
-    () => executeFeePaidTx(result, quote),
-  );
-}
+  it("rejects expired quote", async () => {
+    const latestTimestamp = await getLatestL2Timestamp(node);
+    const quote = await signQuote(config, result, node, {
+      validUntil: latestTimestamp - 1n,
+    });
 
-async function negativeWrongFpcRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  // Sign a quote bound to the faucet address instead of the real FPC.
-  // The FPC contract verifies the signature against its own address, so it should reject.
-  const quote = await signQuote(config, result, node, {
-    fpcAddress: result.faucet.address,
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(/quote expired/i);
   });
 
-  await expectFailure(
-    "negative wrong FPC address rejected",
-    ["invalid quote signature", "Cannot satisfy constraint"],
-    () => executeFeePaidTx(result, quote),
-  );
-}
+  it("rejects overlong quote ttl", async () => {
+    const latestTimestamp = await getLatestL2Timestamp(node);
+    const quote = await signQuote(config, result, node, {
+      validUntil: latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS * 2),
+    });
 
-async function negativeWrongTokenRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  // Sign a quote bound to the faucet address instead of the real token.
-  // The FPC contract verifies the signature against the actual accepted_asset, so it should reject.
-  const quote = await signQuote(config, result, node, {
-    tokenAddress: result.faucet.address,
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(/quote ttl too large/i);
   });
 
-  await expectFailure(
-    "negative wrong token address rejected",
-    ["invalid quote signature", "Cannot satisfy constraint"],
-    () => executeFeePaidTx(result, quote),
-  );
-}
+  it("rejects quote signed for different sender", async () => {
+    const quote = await signQuote(config, result, node, {
+      payer: result.otherUser,
+    });
 
-async function negativeDirectEntrypointCallRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  const quote = await signQuote(config, result, node);
-
-  const transferAuthwitNonce = Fr.random();
-  const transferCall = await result.token.methods
-    .transfer_private_to_private(
-      result.user,
-      result.operator,
-      quote.aaPaymentAmount,
-      transferAuthwitNonce,
-    )
-    .getFunctionCall();
-  const transferAuthwit = await result.wallet.createAuthWit(result.user, {
-    caller: result.fpc.address,
-    call: transferCall,
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      anyOf(["invalid quote signature", "Cannot satisfy constraint"]),
+    );
   });
 
-  await expectFailure(
-    "negative direct fee_entrypoint call rejected outside setup phase",
-    ["must run in setup phase"],
-    () =>
+  it("rejects quote signed for wrong FPC address", async () => {
+    const quote = await signQuote(config, result, node, {
+      fpcAddress: result.faucet.address,
+    });
+
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      anyOf(["invalid quote signature", "Cannot satisfy constraint"]),
+    );
+  });
+
+  it("rejects quote signed for wrong token address", async () => {
+    const quote = await signQuote(config, result, node, {
+      tokenAddress: result.faucet.address,
+    });
+
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      anyOf(["invalid quote signature", "Cannot satisfy constraint"]),
+    );
+  });
+
+  it("rejects direct fee_entrypoint call outside setup phase", async () => {
+    const quote = await signQuote(config, result, node);
+
+    const transferAuthwitNonce = Fr.random();
+    const transferCall = await result.token.methods
+      .transfer_private_to_private(
+        result.user,
+        result.operator,
+        quote.aaPaymentAmount,
+        transferAuthwitNonce,
+      )
+      .getFunctionCall();
+    const transferAuthwit = await result.wallet.createAuthWit(result.user, {
+      caller: result.fpc.address,
+      call: transferCall,
+    });
+
+    await expect(() =>
       result.fpc.methods
         .fee_entrypoint(
           result.token.address,
@@ -591,95 +528,6 @@ async function negativeDirectEntrypointCallRejected(
           authWitnesses: [transferAuthwit],
           wait: { timeout: 180 },
         }),
-  );
-}
-
-async function negativeInsufficientFeeJuiceRejected(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  // Use extremely high gas limits so the fee exceeds the FPC's Fee Juice balance.
-  const maxFeesPerGas = new GasFees(result.maxFeesPerGas.feePerDaGas, 2_000_000_000_000n);
-  const quote = await signQuote(config, result, node, { maxFeesPerGas });
-
-  const fpcBalance = await getFeeJuiceBalance(result.fpc.address, node);
-  if (quote.fjAmount <= fpcBalance) {
-    throw new Error(
-      `Cannot test insufficient Fee Juice: excessive fee ${quote.fjAmount} does not exceed FPC balance ${fpcBalance}`,
-    );
-  }
-
-  await expectFailure(
-    "negative insufficient fee juice rejected",
-    [
-      "insufficient fee payer balance",
-      "fee payer balance",
-      "insufficient fee payer",
-      "not enough fee",
-    ],
-    () => executeFeePaidTx(result, quote, maxFeesPerGas),
-  );
-}
-
-async function runNegativeScenarios(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-  node: AztecNode,
-): Promise<void> {
-  await negativeInsufficientFeeJuiceRejected(config, result, node);
-  await negativeQuoteReplayRejected(config, result, node);
-  await negativeExpiredQuoteRejected(config, result, node);
-  await negativeOverlongTtlRejected(config, result, node);
-  await negativeSenderBindingRejected(config, result, node);
-  await negativeWrongFpcRejected(config, result, node);
-  await negativeWrongTokenRejected(config, result, node);
-  await negativeDirectEntrypointCallRejected(config, result, node);
-}
-
-async function runOrchestration(
-  config: FullE2EConfig,
-  result: DeploymentRuntimeResult,
-): Promise<void> {
-  const node = result.node;
-
-  pinoLogger.info("[full-lifecycle-e2e] waiting for FPC Fee Juice balance > 0 (via topup service)");
-  const feeJuiceBalance = await waitForPositiveFeeJuiceBalance(
-    node,
-    result.fpc.address,
-    config.feeJuiceTimeoutMs,
-    config.feeJuicePollMs,
-  );
-  pinoLogger.info(`[full-lifecycle-e2e] PASS: FPC has Fee Juice (fee_juice=${feeJuiceBalance})`);
-
-  await runNegativeScenarios(config, result, node);
-}
-
-async function main(): Promise<void> {
-  if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    printHelp();
-    return;
-  }
-
-  const config = getConfig();
-  pinoLogger.info(
-    `[full-lifecycle-e2e] Config loaded: nodeUrl=${config.nodeUrl}, manifest=${config.manifestPath}`,
-  );
-
-  const result = await setupFromManifest(config);
-  pinoLogger.info(`[full-lifecycle-e2e] operator=${result.operator.toString()}`);
-  pinoLogger.info(`[full-lifecycle-e2e] user=${result.user.toString()}`);
-  pinoLogger.info(`[full-lifecycle-e2e] other_user=${result.otherUser.toString()}`);
-  pinoLogger.info(`[full-lifecycle-e2e] token=${result.token.address.toString()}`);
-  pinoLogger.info(`[full-lifecycle-e2e] fpc=${result.fpc.address.toString()}`);
-  pinoLogger.info("[full-lifecycle-e2e] PASS: setup from manifest complete");
-
-  await runOrchestration(config, result);
-  pinoLogger.info("[full-lifecycle-e2e] PASS: all negative scenarios passed");
-}
-
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  pinoLogger.error(`[full-lifecycle-e2e] FAIL: ${message}`);
-  process.exitCode = 1;
+    ).toThrow(/must run in setup phase/i);
+  });
 });

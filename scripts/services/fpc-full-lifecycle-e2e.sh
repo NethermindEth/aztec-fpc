@@ -43,5 +43,5 @@ aztec compile --workspace --force
 echo "[full-lifecycle-e2e] Running full lifecycle E2E runner"
 (
   cd "$REPO_ROOT/scripts"
-  bun run "./services/fpc-full-lifecycle-e2e.ts" "$@"
+  NODE_ENV=development bun test "./services/fpc-full-lifecycle-e2e.ts"
 )
