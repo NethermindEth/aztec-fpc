@@ -14,8 +14,6 @@ const pinoLogger = pino();
 
 const DEFAULT_ACCOUNT_INDEX = 0;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
-const TRUE_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
-const FALSE_ENV_VALUES = new Set(["0", "false", "no", "off"]);
 
 export interface AutoClaimRequest {
   recipient: AztecAddress;
@@ -63,34 +61,7 @@ function parseOptionalSecretKey(value: string | undefined): string | null {
 }
 
 export function resolveAutoClaimSecretKeyFromEnv(env: NodeJS.ProcessEnv): string | null {
-  const explicitSecretKey = parseOptionalSecretKey(env.TOPUP_AUTOCLAIM_SECRET_KEY);
-  if (explicitSecretKey) {
-    return explicitSecretKey;
-  }
-  if (env.TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY === "1") {
-    return parseOptionalSecretKey(env.OPERATOR_SECRET_KEY);
-  }
-  return null;
-}
-
-export function resolveAutoClaimRequirePublishedAccountFromEnv(env: NodeJS.ProcessEnv): boolean {
-  const rawValue = env.TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT;
-  if (rawValue === undefined) {
-    return true;
-  }
-  const normalized = rawValue.trim().toLowerCase();
-  if (normalized.length === 0) {
-    return true;
-  }
-  if (TRUE_ENV_VALUES.has(normalized)) {
-    return true;
-  }
-  if (FALSE_ENV_VALUES.has(normalized)) {
-    return false;
-  }
-  throw new Error(
-    "Invalid TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT. Expected one of: 1/0, true/false, yes/no, on/off",
-  );
+  return parseOptionalSecretKey(env.TOPUP_AUTOCLAIM_SECRET_KEY);
 }
 
 function parseOptionalAztecAddress(value: string | undefined): AztecAddress | null {
@@ -111,22 +82,7 @@ function parseOptionalAztecAddress(value: string | undefined): AztecAddress | nu
 }
 
 export function resolveAutoClaimSponsoredFpcFromEnv(env: NodeJS.ProcessEnv): AztecAddress | null {
-  return (
-    parseOptionalAztecAddress(env.TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS) ??
-    parseOptionalAztecAddress(env.FPC_DEVNET_SPONSORED_FPC_ADDRESS) ??
-    parseOptionalAztecAddress(env.SPONSORED_FPC_ADDRESS)
-  );
-}
-
-function parseAccountIndex(value: string | undefined): number {
-  if (value === undefined) {
-    return DEFAULT_ACCOUNT_INDEX;
-  }
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error("Invalid TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX. Expected integer >= 0");
-  }
-  return parsed;
+  return parseOptionalAztecAddress(env.TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS);
 }
 
 async function registerSponsoredFpcContract(
@@ -148,15 +104,20 @@ async function assertPublishedClaimerAccount(
   node: AztecNode,
   claimerAddress: AztecAddress,
   claimerSource: "secret_key" | "test_account",
+  runtimeProfile: string,
 ): Promise<void> {
   const publishedAccount = await node.getContract(claimerAddress);
   if (publishedAccount) {
     return;
   }
 
-  throw new Error(
-    `Auto-claim claimer ${claimerAddress.toString()} (source=${claimerSource}) is not publicly deployed on the connected Aztec node. Configure TOPUP_AUTOCLAIM_SECRET_KEY to a publicly deployed account (or deploy this account first).`,
-  );
+  const message = `Auto-claim claimer ${claimerAddress.toString()} (source=${claimerSource}) is not publicly deployed on the connected Aztec node. Configure TOPUP_AUTOCLAIM_SECRET_KEY to a publicly deployed account (or deploy this account first).`;
+
+  if (runtimeProfile === "production") {
+    throw new Error(message);
+  }
+
+  pinoLogger.warn(message);
 }
 
 async function sendClaim(
@@ -243,13 +204,15 @@ function buildAutoClaimFailureMessage(params: {
   return `Auto-claim failed for message_hash=${params.request.messageHash}.${insufficientBalanceHint}`;
 }
 
-export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAutoClaimer> {
+export async function createTopupAutoClaimer(
+  node: AztecNode,
+  runtimeProfile?: string,
+): Promise<TopupAutoClaimer> {
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: true,
     pxeConfig: { proverEnabled: true },
   });
   const explicitSecretKey = resolveAutoClaimSecretKeyFromEnv(process.env);
-  const requirePublishedClaimer = resolveAutoClaimRequirePublishedAccountFromEnv(process.env);
   const sponsoredFpcAddress = resolveAutoClaimSponsoredFpcFromEnv(process.env);
   if (sponsoredFpcAddress) {
     try {
@@ -275,16 +238,21 @@ export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAuto
     claimerAddress = account.address;
     claimerSource = "secret_key";
   } else {
-    const testAccounts = await getInitialTestAccountsData();
-    const accountIndex = parseAccountIndex(process.env.TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX);
-
-    if (accountIndex >= testAccounts.length) {
+    if (runtimeProfile === "production") {
       throw new Error(
-        `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX out of range. Available test accounts=${testAccounts.length}`,
+        "Auto-claim test account fallback is not allowed when runtime_profile=production. " +
+          "Set TOPUP_AUTOCLAIM_SECRET_KEY.",
+      );
+    }
+    const testAccounts = await getInitialTestAccountsData();
+
+    if (DEFAULT_ACCOUNT_INDEX >= testAccounts.length) {
+      throw new Error(
+        `No test accounts available (need index ${DEFAULT_ACCOUNT_INDEX}, have ${testAccounts.length})`,
       );
     }
 
-    const account = testAccounts[accountIndex];
+    const account = testAccounts[DEFAULT_ACCOUNT_INDEX];
     const created = await wallet.createSchnorrAccount(
       account.secret,
       account.salt,
@@ -294,9 +262,12 @@ export async function createTopupAutoClaimer(node: AztecNode): Promise<TopupAuto
     claimerSource = "test_account";
   }
 
-  if (requirePublishedClaimer) {
-    await assertPublishedClaimerAccount(node, claimerAddress, claimerSource);
-  }
+  await assertPublishedClaimerAccount(
+    node,
+    claimerAddress,
+    claimerSource,
+    runtimeProfile ?? "development",
+  );
 
   const feeJuice = FeeJuiceContract.at(wallet);
   let sponsoredModeDisabled = false;

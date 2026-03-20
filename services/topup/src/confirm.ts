@@ -195,7 +195,12 @@ async function maybeRunMessageReadyAction(
   options: BridgeConfirmationOptions,
   state: BridgeConfirmationState,
 ): Promise<void> {
-  if (!state.messageReady || !options.onMessageReady || state.messageReadyActionSucceeded) {
+  if (
+    !state.messageReady ||
+    !options.onMessageReady ||
+    state.messageReadyActionSucceeded ||
+    state.messageReadyActionAttempted
+  ) {
     return;
   }
 

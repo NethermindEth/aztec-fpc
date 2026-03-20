@@ -229,6 +229,9 @@ export function createTopupOpsServer(state: TopupOpsState): TopupOpsServer {
   const server = createServer((request, response) => {
     routeRequest(request, response, state);
   });
+  server.requestTimeout = 5_000;
+  server.headersTimeout = 5_000;
+  server.keepAliveTimeout = 5_000;
 
   return {
     listen(host: string, port: number): Promise<void> {

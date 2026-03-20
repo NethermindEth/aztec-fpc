@@ -133,12 +133,13 @@ async function resolveAutoClaimerState(
   autoClaimEnabled: boolean,
   pxe: TopupNodeClient,
   balanceReader: FeeJuiceBalanceReader,
+  runtimeProfile: string,
 ): Promise<AutoClaimerState> {
   if (!autoClaimEnabled) {
     return { autoClaimer: null, autoClaimerFeeJuiceBalance: null };
   }
 
-  const autoClaimer = await createTopupAutoClaimer(pxe);
+  const autoClaimer = await createTopupAutoClaimer(pxe, runtimeProfile);
   let autoClaimerFeeJuiceBalance: bigint | null = null;
   try {
     autoClaimerFeeJuiceBalance = await balanceReader.getBalance(autoClaimer.claimerAddress);
@@ -205,7 +206,7 @@ function logStartupDetails(context: StartupLogContext): void {
   pinoLogger.info(`  Ops endpoint:  http://0.0.0.0:${context.config.ops_port}`);
   if (context.logClaimSecret) {
     pinoLogger.warn(
-      "TOPUP_LOG_CLAIM_SECRET=1 enabled: bridge claim secrets will be printed to logs (for local smoke/debug only)",
+      "Claim secret logging enabled (runtime_profile=development): bridge claim secrets will be printed to logs",
     );
   }
   logAutoClaimStartup(context.autoClaimer, context.autoClaimerFeeJuiceBalance);
@@ -512,7 +513,7 @@ async function main(): Promise<void> {
 
   const threshold = BigInt(config.threshold);
   const topUpAmount = BigInt(config.top_up_amount);
-  const logClaimSecret = process.env.TOPUP_LOG_CLAIM_SECRET === "1";
+  const logClaimSecret = config.runtime_profile === "development";
   const autoClaimEnabled = process.env.TOPUP_AUTOCLAIM_ENABLED !== "0";
   const bridgeStateStore = createBridgeStateStore(config.bridge_state_path);
   const balanceReader = await createFeeJuiceBalanceReader(pxe);
@@ -520,6 +521,7 @@ async function main(): Promise<void> {
     autoClaimEnabled,
     pxe,
     balanceReader,
+    config.runtime_profile,
   );
 
   const shutdownController = new AbortController();

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BridgeResult } from "./bridge.js";
 
@@ -121,9 +121,19 @@ async function writeJsonAtomically(filePath: string, contents: string) {
   }
 }
 
+const MAX_STATE_FILE_SIZE = 1_048_576; // 1 MiB
+
 async function readBridgeStateFile(filePath: string): Promise<string | null> {
+  let fd: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    return await readFile(filePath, "utf8");
+    fd = await open(filePath, "r");
+    const fileStat = await fd.stat();
+    if (fileStat.size > MAX_STATE_FILE_SIZE) {
+      throw new Error(
+        `Bridge state file at ${filePath} is ${fileStat.size} bytes, exceeding maximum ${MAX_STATE_FILE_SIZE}`,
+      );
+    }
+    return await fd.readFile("utf8");
   } catch (error) {
     const maybeNodeError = error as NodeJS.ErrnoException;
     if (maybeNodeError.code === "ENOENT") {
@@ -132,6 +142,8 @@ async function readBridgeStateFile(filePath: string): Promise<string | null> {
     throw new Error(`Failed reading bridge state file at ${filePath}`, {
       cause: error,
     });
+  } finally {
+    await fd?.close();
   }
 }
 

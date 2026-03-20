@@ -51,9 +51,12 @@ export async function resolveFeeJuiceAddress(node: AztecNode): Promise<{
   };
 }
 
+const SDK_RE_ENABLE_AFTER_SUCCESSES = 10;
+
 export async function createFeeJuiceBalanceReader(node: AztecNode): Promise<FeeJuiceBalanceReader> {
   const resolution = await resolveFeeJuiceAddress(node);
   let sdkPathEnabled = true;
+  let sdkFallbackSuccessCount = 0;
 
   return {
     feeJuiceAddress: resolution.address,
@@ -64,6 +67,7 @@ export async function createFeeJuiceBalanceReader(node: AztecNode): Promise<FeeJ
           return await getSdkFeeJuiceBalance(owner, node);
         } catch (error) {
           sdkPathEnabled = false;
+          sdkFallbackSuccessCount = 0;
           const nodeInfoSummary = `nodeVersion=${resolution.nodeInfo.nodeVersion}, rollupVersion=${resolution.nodeInfo.rollupVersion}`;
           pinoLogger.warn(
             { err: error },
@@ -73,7 +77,16 @@ export async function createFeeJuiceBalanceReader(node: AztecNode): Promise<FeeJ
       }
 
       try {
-        return await readFeeJuiceBalanceFromStorage(owner, node, resolution.address);
+        const balance = await readFeeJuiceBalanceFromStorage(owner, node, resolution.address);
+        if (!sdkPathEnabled) {
+          sdkFallbackSuccessCount += 1;
+          if (sdkFallbackSuccessCount >= SDK_RE_ENABLE_AFTER_SUCCESSES) {
+            sdkPathEnabled = true;
+            sdkFallbackSuccessCount = 0;
+            pinoLogger.info("Re-enabling SDK balance reader after successful fallback reads");
+          }
+        }
+        return balance;
       } catch (error) {
         throw new Error(
           `Unable to read Fee Juice balance from L2 storage at ${resolution.address.toString()}`,
