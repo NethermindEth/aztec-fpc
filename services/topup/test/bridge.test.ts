@@ -7,7 +7,7 @@ import type { createExtendedL1Client } from "@aztec/ethereum/client";
 import { createLogger } from "@aztec/foundation/log";
 import type { Chain } from "viem";
 import type { BridgeDeps } from "../src/bridge.js";
-import { bridgeFeeJuice } from "../src/bridge.js";
+import { bridgeFeeJuice, isNonceTooLowError, isRetryableNonceError } from "../src/bridge.js";
 
 const MESSAGE_HASH = `0x${"ab".repeat(32)}` as `0x${string}`;
 const PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -120,7 +120,7 @@ describe("bridge", () => {
     );
   });
 
-  it("retries bridge submission on nonce conflicts", async () => {
+  it("retries bridge submission on retryable nonce conflicts", async () => {
     let attempts = 0;
     const deps = makeDeps({
       createPortalManager: async () =>
@@ -128,7 +128,7 @@ describe("bridge", () => {
           bridgeTokensPublic: (_to: AztecAddress, amount: bigint) => {
             attempts += 1;
             if (attempts === 1) {
-              return Promise.reject(new Error("nonce too low"));
+              return Promise.reject(new Error("already known"));
             }
             return Promise.resolve({
               claimAmount: amount,
@@ -156,7 +156,7 @@ describe("bridge", () => {
     assert.equal(result.messageLeafIndex, 99n);
   });
 
-  it("fails after exhausting nonce conflict retries", async () => {
+  it("fails immediately on nonce-too-low without retry", async () => {
     let attempts = 0;
     const deps = makeDeps({
       createPortalManager: async () =>
@@ -170,8 +170,36 @@ describe("bridge", () => {
 
     await assert.rejects(
       () => bridgeFeeJuice(makeNode(), "http://localhost:8545", 31337, PRIVATE_KEY, FPC, 1n, deps),
-      /nonce too low/,
+      /nonce-too-low.*Not retrying/,
+    );
+    assert.equal(attempts, 1);
+  });
+
+  it("fails after exhausting retryable nonce conflict retries", async () => {
+    let attempts = 0;
+    const deps = makeDeps({
+      createPortalManager: async () =>
+        ({
+          bridgeTokensPublic: () => {
+            attempts += 1;
+            return Promise.reject(new Error("already known"));
+          },
+        }) as never,
+    });
+
+    await assert.rejects(
+      () => bridgeFeeJuice(makeNode(), "http://localhost:8545", 31337, PRIVATE_KEY, FPC, 1n, deps),
+      /already known/,
     );
     assert.equal(attempts, 3);
+  });
+
+  it("classifies nonce errors correctly", () => {
+    assert.equal(isNonceTooLowError(new Error("nonce too low")), true);
+    assert.equal(isNonceTooLowError(new Error("already known")), false);
+    assert.equal(isRetryableNonceError(new Error("already known")), true);
+    assert.equal(isRetryableNonceError(new Error("replacement not allowed")), true);
+    assert.equal(isRetryableNonceError(new Error("nonce too low")), false);
+    assert.equal(isRetryableNonceError(new Error("some other error")), false);
   });
 });

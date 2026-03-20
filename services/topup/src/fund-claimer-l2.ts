@@ -213,10 +213,16 @@ function parseCliArgs(argv: string[]): CliArgs {
         break;
       case "--l1-private-key":
         l1PrivateKey = parseHex32(arg, nextArg(argv, i, arg));
+        pinoLogger.warn(
+          `${LOG_PREFIX} Passing secret keys via CLI arguments exposes them in process listings. Prefer L1_OPERATOR_PRIVATE_KEY env var.`,
+        );
         i += 1;
         break;
       case "--claimer-secret-key":
         claimerSecretKey = parseHex32(arg, nextArg(argv, i, arg));
+        pinoLogger.warn(
+          `${LOG_PREFIX} Passing secret keys via CLI arguments exposes them in process listings. Prefer TOPUP_AUTOCLAIM_SECRET_KEY env var.`,
+        );
         i += 1;
         break;
       case "--claimer-address":
@@ -225,6 +231,9 @@ function parseCliArgs(argv: string[]): CliArgs {
         break;
       case "--fee-payer-secret-key":
         feePayerSecretKey = parseHex32(arg, nextArg(argv, i, arg));
+        pinoLogger.warn(
+          `${LOG_PREFIX} Passing secret keys via CLI arguments exposes them in process listings. Prefer TOPUP_AUTOCLAIM_FEE_PAYER_SECRET_KEY env var.`,
+        );
         i += 1;
         break;
       case "--skip-claim":

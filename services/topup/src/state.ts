@@ -1,6 +1,44 @@
-import { mkdir, open, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BridgeResult } from "./bridge.js";
+
+// PID-based singleton lock
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0); // Signal 0 doesn't kill — it checks if the process exists (POSIX convention)
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function acquireProcessLock(lockPath: string): Promise<void> {
+  try {
+    const existing = await readFile(lockPath, "utf8");
+    const existingPid = Number.parseInt(existing.trim(), 10);
+    if (!Number.isNaN(existingPid) && isProcessAlive(existingPid)) {
+      throw new Error(
+        `Another topup service instance is running (pid=${existingPid}, lock=${lockPath}). ` +
+          "Stop the other instance or remove the stale lock file.",
+      );
+    }
+  } catch (error) {
+    const maybeNodeError = error as NodeJS.ErrnoException;
+    if (maybeNodeError.code !== "ENOENT") {
+      // Re-throw unless the lock file simply doesn't exist
+      if (maybeNodeError.message?.includes("Another topup service")) {
+        throw error;
+      }
+    }
+  }
+  await mkdir(path.dirname(lockPath), { recursive: true });
+  await writeFile(lockPath, `${process.pid}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+export async function releaseProcessLock(lockPath: string): Promise<void> {
+  await rm(lockPath, { force: true });
+}
 
 interface PersistedBridgeStateFile {
   version: 1;
@@ -10,6 +48,7 @@ interface PersistedBridgeStateFile {
 export interface PersistedBridgeSubmission {
   baselineBalance: string;
   amount: string;
+  claimSecret: string;
   claimSecretHash: string;
   messageHash: `0x${string}`;
   messageLeafIndex: string;
@@ -23,7 +62,12 @@ export interface BridgeStateStore {
     baselineBalance: bigint,
     bridgeResult: Pick<
       BridgeResult,
-      "amount" | "claimSecretHash" | "messageHash" | "messageLeafIndex" | "submittedAtMs"
+      | "amount"
+      | "claimSecret"
+      | "claimSecretHash"
+      | "messageHash"
+      | "messageLeafIndex"
+      | "submittedAtMs"
     >,
   ): Promise<void>;
   clear(): Promise<void>;
@@ -61,6 +105,7 @@ function assertPersistedBridgeSubmission(
   const candidate = value as {
     baselineBalance?: unknown;
     amount?: unknown;
+    claimSecret?: unknown;
     claimSecretHash?: unknown;
     messageHash?: unknown;
     messageLeafIndex?: unknown;
@@ -82,6 +127,7 @@ function assertPersistedBridgeSubmission(
       `Bridge state file is malformed at ${filePath}: amount must be greater than zero`,
     );
   }
+  const claimSecret = assertFieldHexString(filePath, "claimSecret", candidate.claimSecret);
   const claimSecretHash = assertFieldHexString(
     filePath,
     "claimSecretHash",
@@ -97,6 +143,7 @@ function assertPersistedBridgeSubmission(
   return {
     baselineBalance,
     amount,
+    claimSecret,
     claimSecretHash,
     messageHash: messageHash as `0x${string}`,
     messageLeafIndex,
@@ -194,14 +241,33 @@ export function createBridgeStateStore(filePath: string): BridgeStateStore {
       baselineBalance: bigint,
       bridgeResult: Pick<
         BridgeResult,
-        "amount" | "claimSecretHash" | "messageHash" | "messageLeafIndex" | "submittedAtMs"
+        | "amount"
+        | "claimSecret"
+        | "claimSecretHash"
+        | "messageHash"
+        | "messageLeafIndex"
+        | "submittedAtMs"
       >,
     ): Promise<void> {
+      // claimSecret is stored in plaintext. This is acceptable because:
+      // 1. The operator's L1 private key (which controls the entire bridge wallet)
+      //    is held in-process memory at the same privilege level — any attacker
+      //    who can read this file can also read the operator key from
+      //    /proc/<pid>/environ or process memory, which is strictly more valuable.
+      // 2. Encrypting with a key derived from the operator key is circular: if the
+      //    attacker has one, they have both.
+      // 3. The file is short-lived (cleared after confirmation), written with
+      //    restrictive permissions (0o600), and protected by a PID-based singleton
+      //    lock — the exposure window is bounded by the confirmation timeout.
+      // 4. If the state file is exposed through a different vector (e.g. backup
+      //    leak, misconfigured volume mount), the claim secret only allows
+      //    front-running a single in-flight L2 claim, not draining the wallet.
       const payload: PersistedBridgeStateFile = {
         version: 1,
         bridge: {
           baselineBalance: baselineBalance.toString(),
           amount: bridgeResult.amount.toString(),
+          claimSecret: bridgeResult.claimSecret,
           claimSecretHash: bridgeResult.claimSecretHash,
           messageHash: bridgeResult.messageHash,
           messageLeafIndex: bridgeResult.messageLeafIndex.toString(),

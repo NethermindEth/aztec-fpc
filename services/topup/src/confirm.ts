@@ -265,10 +265,18 @@ async function pollUntilConfirmed(
     await settleMessageCheckNonBlocking(messageWaitPromise);
     await maybeRunMessageReadyAction(options, state);
 
-    const confirmed = await pollBalanceOnce(options, state);
-    if (confirmed) {
+    const balanceDeltaPositive = await pollBalanceOnce(options, state);
+    if (balanceDeltaPositive) {
       await settleMessageCheckNonBlocking(messageWaitPromise);
-      return "confirmed";
+      // When messageContext is provided we require both balance growth AND
+      // message readiness to avoid false confirmation from external deposits.
+      // Exception: if the message check itself failed we fall back to
+      // balance-delta only (the message check cannot provide a signal).
+      if (!options.messageContext || state.messageReady || state.messageCheckFailed) {
+        return "confirmed";
+      }
+      // Balance grew but message not yet ready — may be an external deposit.
+      // Continue polling; the bridge amount will still arrive later.
     }
 
     const pollStep = await waitForNextPoll(state, options.maxPollMs, options.abortSignal);

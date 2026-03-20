@@ -1,7 +1,3 @@
-import pino from "pino";
-
-const pinoLogger = pino();
-
 /**
  * Top-up Service — entry point
  *
@@ -16,6 +12,7 @@ const pinoLogger = pino();
 
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import pino from "pino";
 import { createTopupAutoClaimer, type TopupAutoClaimer } from "./autoclaim.js";
 import { bridgeFeeJuice } from "./bridge.js";
 import { createTopupChecker, type TopupChecker, type TopupCheckerDependencies } from "./checker.js";
@@ -25,7 +22,14 @@ import { assertL1RpcChainIdMatches } from "./l1.js";
 import { createFeeJuiceBalanceReader, type FeeJuiceBalanceReader } from "./monitor.js";
 import { createTopupOpsServer, type TopupOpsServer, TopupOpsState } from "./ops.js";
 import { reconcilePersistedBridgeState } from "./reconcile.js";
-import { type BridgeStateStore, createBridgeStateStore } from "./state.js";
+import {
+  acquireProcessLock,
+  type BridgeStateStore,
+  createBridgeStateStore,
+  releaseProcessLock,
+} from "./state.js";
+
+const pinoLogger = pino();
 
 type TopupConfig = Config;
 type TopupNodeClient = ReturnType<typeof createAztecNodeClient>;
@@ -289,17 +293,13 @@ function createOnBridgeSubmittedDependency(
 ): NonNullable<TopupCheckerDependencies["onBridgeSubmitted"]> {
   return async (baselineBalance, bridgeResult) => {
     opsState.recordBridgeEvent("submitted");
-    try {
-      await bridgeStateStore.write(baselineBalance, bridgeResult);
-      pinoLogger.info(
-        `Persisted in-flight bridge metadata message_hash=${bridgeResult.messageHash} leaf_index=${bridgeResult.messageLeafIndex}`,
-      );
-    } catch (error) {
-      pinoLogger.warn(
-        { err: error },
-        `Failed to persist in-flight bridge metadata message_hash=${bridgeResult.messageHash}; continuing with in-memory confirmation only`,
-      );
-    }
+    // Fail-closed: if we cannot persist the bridge record, let the error propagate.
+    // The L1 tx is already submitted, but failing here triggers onBridgeFailed in the
+    // checker, and crashing forces reconciliation on restart — safer than losing the record.
+    await bridgeStateStore.write(baselineBalance, bridgeResult);
+    pinoLogger.info(
+      `Persisted in-flight bridge metadata message_hash=${bridgeResult.messageHash} leaf_index=${bridgeResult.messageLeafIndex}`,
+    );
   };
 }
 
@@ -388,6 +388,7 @@ function registerShutdownHandlers(args: {
   checker: TopupChecker;
   loopState: TopupLoopState;
   opsServer: TopupOpsServer;
+  lockPath: string;
 }): void {
   const requestShutdown = (signal: NodeJS.Signals) => {
     if (args.shutdownController.signal.aborted) {
@@ -408,6 +409,7 @@ function registerShutdownHandlers(args: {
       } catch (error) {
         pinoLogger.error({ err: error }, "Failed to stop top-up ops server cleanly:");
       } finally {
+        await releaseProcessLock(args.lockPath).catch(() => {});
         pinoLogger.info("Top-up service stopped");
         args.loopState.shutdownResolve?.();
       }
@@ -418,6 +420,8 @@ function registerShutdownHandlers(args: {
   process.once("SIGINT", () => requestShutdown("SIGINT"));
 }
 
+const RECONCILIATION_MAX_AGE_MS = 24 * 60 * 60 * 1_000; // 24 hours
+
 function createReconciliationRunner(args: {
   bridgeStateStore: TopupBridgeStateStore;
   balanceReader: FeeJuiceBalanceReader;
@@ -425,6 +429,7 @@ function createReconciliationRunner(args: {
   topupTargetAddress: AztecAddress;
   config: TopupConfig;
   shutdownController: AbortController;
+  autoClaimer: TopupAutoClaimerInstance | null;
 }): () => Promise<boolean> {
   return async () => {
     const outcome = await reconcilePersistedBridgeState({
@@ -436,6 +441,28 @@ function createReconciliationRunner(args: {
       initialPollMs: args.config.confirmation_poll_initial_ms,
       maxPollMs: args.config.confirmation_poll_max_ms,
       abortSignal: args.shutdownController.signal,
+      maxAgeMs: RECONCILIATION_MAX_AGE_MS,
+      buildOnMessageReady: args.autoClaimer
+        ? (persisted) => {
+            if (!persisted.claimSecret) return undefined;
+            return async () => {
+              const txHash = await args.autoClaimer?.claim({
+                recipient: args.topupTargetAddress,
+                amount: BigInt(persisted.amount),
+                claimSecret: persisted.claimSecret,
+                messageLeafIndex: BigInt(persisted.messageLeafIndex),
+                messageHash: persisted.messageHash as `0x${string}`,
+                waitTimeoutSeconds: Math.max(
+                  30,
+                  Math.floor(args.config.confirmation_timeout_ms / 1000),
+                ),
+              });
+              pinoLogger.info(
+                `Reconciliation auto-claim submitted message_hash=${persisted.messageHash} tx_hash=${txHash}`,
+              );
+            };
+          }
+        : undefined,
     });
 
     if (outcome === "timeout") {
@@ -516,59 +543,82 @@ async function main(): Promise<void> {
   const logClaimSecret = config.runtime_profile === "development";
   const autoClaimEnabled = process.env.TOPUP_AUTOCLAIM_ENABLED !== "0";
   const bridgeStateStore = createBridgeStateStore(config.bridge_state_path);
-  const balanceReader = await createFeeJuiceBalanceReader(pxe);
-  const { autoClaimer, autoClaimerFeeJuiceBalance } = await resolveAutoClaimerState(
-    autoClaimEnabled,
-    pxe,
-    balanceReader,
-    config.runtime_profile,
-  );
+  const lockPath = `${config.bridge_state_path}.lock`;
+  await acquireProcessLock(lockPath);
 
-  const shutdownController = new AbortController();
-  const opsState = new TopupOpsState({
-    checkIntervalMs: config.check_interval_ms,
-  });
-  const opsServer = createTopupOpsServer(opsState);
-  await opsServer.listen("0.0.0.0", config.ops_port);
-
-  logStartupDetails({
-    config,
-    fpcAddress,
-    topupTargetAddress,
-    l1ChainId,
-    feeJuicePortalAddress,
-    feeJuiceAddress,
-    threshold,
-    topUpAmount,
-    logClaimSecret,
-    bridgeStateStore,
-    balanceReader,
-    autoClaimer,
-    autoClaimerFeeJuiceBalance,
-  });
-
-  const checker = createTopupChecker(
-    { threshold, topUpAmount, logClaimSecret },
-    buildCheckerDependencies({
+  // Everything between lock acquisition and shutdown handler registration
+  // must be wrapped so the lock is released if startup fails. Without this,
+  // a crash during initialization (e.g. node connection, balance reader)
+  // leaves a stale lock file that blocks the next restart.
+  let balanceReader: FeeJuiceBalanceReader;
+  let autoClaimer: TopupAutoClaimerInstance | null;
+  let shutdownController: AbortController;
+  let opsState: TopupOpsState;
+  let opsServer: TopupOpsServer;
+  let checker: TopupChecker;
+  let loopState: TopupLoopState;
+  try {
+    balanceReader = await createFeeJuiceBalanceReader(pxe);
+    const autoClaimerState = await resolveAutoClaimerState(
+      autoClaimEnabled,
       pxe,
-      config,
-      l1ChainId,
-      topupTargetAddress,
       balanceReader,
-      bridgeStateStore,
-      shutdownController,
-      autoClaimer,
-      opsState,
-    }),
-  );
+      config.runtime_profile,
+    );
+    autoClaimer = autoClaimerState.autoClaimer;
+    const autoClaimerFeeJuiceBalance = autoClaimerState.autoClaimerFeeJuiceBalance;
 
-  const loopState = createLoopState();
+    shutdownController = new AbortController();
+    opsState = new TopupOpsState({
+      checkIntervalMs: config.check_interval_ms,
+    });
+    opsServer = createTopupOpsServer(opsState);
+    await opsServer.listen("0.0.0.0", config.ops_port);
+
+    logStartupDetails({
+      config,
+      fpcAddress,
+      topupTargetAddress,
+      l1ChainId,
+      feeJuicePortalAddress,
+      feeJuiceAddress,
+      threshold,
+      topUpAmount,
+      logClaimSecret,
+      bridgeStateStore,
+      balanceReader,
+      autoClaimer,
+      autoClaimerFeeJuiceBalance,
+    });
+
+    checker = createTopupChecker(
+      { threshold, topUpAmount, logClaimSecret },
+      buildCheckerDependencies({
+        pxe,
+        config,
+        l1ChainId,
+        topupTargetAddress,
+        balanceReader,
+        bridgeStateStore,
+        shutdownController,
+        autoClaimer,
+        opsState,
+      }),
+    );
+
+    loopState = createLoopState();
+  } catch (error) {
+    await releaseProcessLock(lockPath).catch(() => {});
+    throw error;
+  }
+
   registerShutdownHandlers({
     shutdownController,
     opsState,
     checker,
     loopState,
     opsServer,
+    lockPath,
   });
 
   const runReconciliation = createReconciliationRunner({
@@ -578,6 +628,7 @@ async function main(): Promise<void> {
     topupTargetAddress,
     config,
     shutdownController,
+    autoClaimer,
   });
   const runCycle = createCycleRunner({
     shutdownController,

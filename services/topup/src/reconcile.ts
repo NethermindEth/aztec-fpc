@@ -17,6 +17,10 @@ export interface ReconcileBridgeStateOptions {
   maxPollMs: number;
   abortSignal?: AbortSignal;
   logger?: Pick<Console, "log" | "warn">;
+  /** Evict persisted bridge older than this (ms). Breaks reconciliation deadlock. */
+  maxAgeMs?: number;
+  /** Factory that builds an onMessageReady callback from the persisted bridge (e.g., to trigger auto-claim). */
+  buildOnMessageReady?: (persisted: PersistedBridgeSubmission) => (() => Promise<void>) | undefined;
 }
 
 export interface ReconcileBridgeDeps {
@@ -60,6 +64,17 @@ export async function reconcilePersistedBridgeState(
     return "none";
   }
 
+  if (options.maxAgeMs !== undefined) {
+    const ageMs = Date.now() - persistedBridge.submittedAtMs;
+    if (ageMs > options.maxAgeMs) {
+      logger.warn(
+        `CRITICAL: Evicting stale persisted bridge message_hash=${persistedBridge.messageHash} age_ms=${ageMs} max_age_ms=${options.maxAgeMs}. Bridge funds may require manual recovery.`,
+      );
+      await options.stateStore.clear();
+      return "none";
+    }
+  }
+
   const baselineBalance = BigInt(persistedBridge.baselineBalance);
   logger.log(
     `Reconciling persisted bridge operation message_hash=${persistedBridge.messageHash} submitted_at_ms=${persistedBridge.submittedAtMs} baseline=${baselineBalance} amount=${persistedBridge.amount}`,
@@ -77,6 +92,7 @@ export async function reconcilePersistedBridgeState(
       node: options.node,
       messageHash: persistedBridge.messageHash,
     },
+    onMessageReady: options.buildOnMessageReady?.(persistedBridge),
   });
 
   if (result.status === "aborted") {
