@@ -11,7 +11,7 @@ const FPC = AztecAddress.fromString(
 const MESSAGE_HASH = "0x0000000000000000000000000000000000000000000000000000000000000123";
 
 describe("confirm", () => {
-  it("confirms on balance delta when message check is still pending", async () => {
+  it("waits for message readiness even after balance delta when messageContext provided", async () => {
     let reads = 0;
     const result = await waitForFeeJuiceBridgeConfirmation(
       {
@@ -35,20 +35,74 @@ describe("confirm", () => {
       },
       {
         waitForL1ToL2MessageReady: async (_node, _hash: Fr) => {
-          await new Promise((resolve) => setTimeout(resolve, 250));
+          // Message never resolves within the timeout
+          await new Promise((resolve) => setTimeout(resolve, 500));
           return true;
         },
       },
     );
 
-    assert.equal(result.status, "confirmed");
-    assert.equal(result.observedDelta, 1n);
+    // Balance grew but message not ready — should timeout, not confirm
+    assert.equal(result.status, "timeout");
+    assert.ok(result.observedDelta > 0n);
     assert.equal(result.messageCheckAttempted, true);
     assert.equal(result.messageReady, false);
     assert.equal(result.messageCheckFailed, false);
-    assert.equal(result.messageReadyActionAttempted, false);
-    assert.equal(result.messageReadyActionSucceeded, false);
-    assert.equal(result.messageReadyActionFailed, false);
+  });
+
+  it("confirms on balance delta alone when no messageContext", async () => {
+    let reads = 0;
+    const result = await waitForFeeJuiceBridgeConfirmation({
+      balanceReader: {
+        feeJuiceAddress: AztecAddress.zero(),
+        addressSource: "node_info",
+        getBalance: () => {
+          reads += 1;
+          return Promise.resolve(reads < 2 ? 10n : 11n);
+        },
+      },
+      fpcAddress: FPC,
+      baselineBalance: 10n,
+      timeoutMs: 200,
+      initialPollMs: 1,
+      maxPollMs: 5,
+    });
+
+    assert.equal(result.status, "confirmed");
+    assert.equal(result.observedDelta, 1n);
+  });
+
+  it("confirms when both balance delta and message readiness are present", async () => {
+    let reads = 0;
+    const result = await waitForFeeJuiceBridgeConfirmation(
+      {
+        balanceReader: {
+          feeJuiceAddress: AztecAddress.zero(),
+          addressSource: "node_info",
+          getBalance: () => {
+            reads += 1;
+            return Promise.resolve(reads < 3 ? 10n : 11n);
+          },
+        },
+        fpcAddress: FPC,
+        baselineBalance: 10n,
+        timeoutMs: 400,
+        initialPollMs: 1,
+        maxPollMs: 5,
+        messageContext: {
+          node: {} as Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">,
+          messageHash: MESSAGE_HASH,
+        },
+      },
+      {
+        // Message resolves quickly before balance grows
+        waitForL1ToL2MessageReady: async () => true,
+      },
+    );
+
+    assert.equal(result.status, "confirmed");
+    assert.equal(result.observedDelta, 1n);
+    assert.equal(result.messageReady, true);
   });
 
   it("falls back to balance polling when message check fails", async () => {

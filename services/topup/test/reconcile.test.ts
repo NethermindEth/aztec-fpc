@@ -52,6 +52,7 @@ describe("reconcile", () => {
     const store = makeStore({
       baselineBalance: "10",
       amount: "3",
+      claimSecret: `0x${"33".repeat(32)}`,
       claimSecretHash: `0x${"11".repeat(32)}`,
       messageHash: `0x${"ab".repeat(32)}`,
       messageLeafIndex: "2",
@@ -97,6 +98,7 @@ describe("reconcile", () => {
     const store = makeStore({
       baselineBalance: "10",
       amount: "3",
+      claimSecret: `0x${"33".repeat(32)}`,
       claimSecretHash: `0x${"11".repeat(32)}`,
       messageHash: `0x${"ab".repeat(32)}`,
       messageLeafIndex: "2",
@@ -138,10 +140,91 @@ describe("reconcile", () => {
     assert.equal(store.clearCalls, 0);
   });
 
+  it("evicts persisted bridge older than maxAgeMs", async () => {
+    const store = makeStore({
+      baselineBalance: "10",
+      amount: "3",
+      claimSecret: `0x${"33".repeat(32)}`,
+      claimSecretHash: `0x${"11".repeat(32)}`,
+      messageHash: `0x${"ab".repeat(32)}`,
+      messageLeafIndex: "2",
+      submittedAtMs: Date.now() - 100_000,
+    });
+
+    const result = await reconcilePersistedBridgeState(
+      {
+        stateStore: store,
+        balanceReader: {
+          feeJuiceAddress: AztecAddress.zero(),
+          addressSource: "node_info",
+          getBalance: async () => 0n,
+        },
+        node: {} as never,
+        fpcAddress: FPC,
+        timeoutMs: 1,
+        initialPollMs: 1,
+        maxPollMs: 1,
+        maxAgeMs: 1_000,
+      },
+      {
+        confirmBridge: () => Promise.reject(new Error("should not be called")),
+      },
+    );
+    assert.equal(result, "none");
+    assert.equal(store.clearCalls, 1);
+  });
+
+  it("does not evict persisted bridge within maxAgeMs", async () => {
+    const store = makeStore({
+      baselineBalance: "10",
+      amount: "3",
+      claimSecret: `0x${"33".repeat(32)}`,
+      claimSecretHash: `0x${"11".repeat(32)}`,
+      messageHash: `0x${"ab".repeat(32)}`,
+      messageLeafIndex: "2",
+      submittedAtMs: Date.now(),
+    });
+
+    const result = await reconcilePersistedBridgeState(
+      {
+        stateStore: store,
+        balanceReader: {
+          feeJuiceAddress: AztecAddress.zero(),
+          addressSource: "node_info",
+          getBalance: async () => 11n,
+        },
+        node: {} as never,
+        fpcAddress: FPC,
+        timeoutMs: 1,
+        initialPollMs: 1,
+        maxPollMs: 1,
+        maxAgeMs: 60_000,
+      },
+      {
+        confirmBridge: async () => ({
+          status: "confirmed",
+          baselineBalance: 10n,
+          maxObservedBalance: 11n,
+          lastObservedBalance: 11n,
+          observedDelta: 1n,
+          elapsedMs: 1,
+          attempts: 1,
+          pollErrors: 0,
+          messageCheckAttempted: true,
+          messageReady: true,
+          messageCheckFailed: false,
+        }),
+      },
+    );
+    assert.equal(result, "confirmed");
+    assert.equal(store.clearCalls, 1);
+  });
+
   it("keeps persisted state when reconciliation times out", async () => {
     const store = makeStore({
       baselineBalance: "10",
       amount: "3",
+      claimSecret: `0x${"33".repeat(32)}`,
       claimSecretHash: `0x${"11".repeat(32)}`,
       messageHash: `0x${"ab".repeat(32)}`,
       messageLeafIndex: "2",

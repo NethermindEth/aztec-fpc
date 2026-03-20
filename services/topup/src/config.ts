@@ -126,6 +126,13 @@ function parseIntegerOverride(
   return parsed;
 }
 
+function resolveBridgeStatePath(raw: string): string {
+  if (raw.includes("..")) {
+    throw new Error(`Invalid bridge_state_path: path traversal ("..") is not allowed: ${raw}`);
+  }
+  return nodePath.resolve(raw);
+}
+
 export function loadConfig(path: string, options: LoadConfigOptions = {}): Config {
   const raw = readFileSync(path, "utf8");
   const parsed = parse(raw);
@@ -157,7 +164,7 @@ export function loadConfig(path: string, options: LoadConfigOptions = {}): Confi
     runtime_profile: runtimeProfile,
     aztec_node_url: aztecNodeUrl,
     l1_rpc_url: l1RpcUrl,
-    bridge_state_path: nodePath.resolve(
+    bridge_state_path: resolveBridgeStatePath(
       process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
     ),
     ops_port: parseIntegerOverride(

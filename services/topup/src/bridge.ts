@@ -43,13 +43,24 @@ function makeBridgeLogger(): Logger {
 }
 
 const MAX_NONCE_RETRY_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 2_000;
 
-function isNonceConflictError(error: unknown): boolean {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Original tx was mined — retrying would create a duplicate bridge. */
+export function isNonceTooLowError(error: unknown): boolean {
+  const normalized = String(error).toLowerCase();
+  return normalized.includes("nonce too low");
+}
+
+/** Tx is in mempool or rejected for replacement — safe to retry with backoff. */
+export function isRetryableNonceError(error: unknown): boolean {
   const normalized = String(error).toLowerCase();
   return (
     normalized.includes("replacementnotallowed") ||
     normalized.includes("replacement not allowed") ||
-    normalized.includes("nonce too low") ||
     normalized.includes("already known")
   );
 }
@@ -105,13 +116,21 @@ export async function bridgeFeeJuice(
       break;
     } catch (error) {
       lastError = error;
-      if (!isNonceConflictError(error) || attempt >= MAX_NONCE_RETRY_ATTEMPTS) {
+      if (isNonceTooLowError(error)) {
+        throw new Error(
+          "Bridge nonce-too-low: original transaction was likely mined. Not retrying to avoid duplicate bridge.",
+          { cause: error },
+        );
+      }
+      if (!isRetryableNonceError(error) || attempt >= MAX_NONCE_RETRY_ATTEMPTS) {
         throw error;
       }
+      const delayMs = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
       pinoLogger.warn(
         { err: error },
-        `Bridge nonce conflict detected; retrying bridge submission attempt=${attempt + 1}/${MAX_NONCE_RETRY_ATTEMPTS}`,
+        `Bridge nonce conflict detected; retrying bridge submission attempt=${attempt + 1}/${MAX_NONCE_RETRY_ATTEMPTS} after ${delayMs}ms`,
       );
+      await sleep(delayMs);
     }
   }
   if (!claim) {

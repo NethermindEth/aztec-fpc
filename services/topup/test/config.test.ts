@@ -257,4 +257,30 @@ describe("topup config secret providers", () => {
 
     cleanupConfig(configPath);
   });
+
+  it("rejects bridge_state_path with path traversal", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(
+        [
+          "runtime_profile: development",
+          "l1_operator_secret_provider: auto",
+          `l1_operator_private_key: "${VALID_PRIVATE_KEY}"`,
+        ].join("\n"),
+      ),
+    );
+
+    withEnv(
+      {
+        L1_OPERATOR_PRIVATE_KEY: undefined,
+        L1_OPERATOR_SECRET_PROVIDER: undefined,
+        TOPUP_BRIDGE_STATE_PATH: "../../../etc/shadow",
+        TOPUP_OPS_PORT: undefined,
+      },
+      () => {
+        assert.throws(() => loadConfig(configPath), /path traversal/);
+      },
+    );
+
+    cleanupConfig(configPath);
+  });
 });
