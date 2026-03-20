@@ -13,6 +13,9 @@ import { readManifest, waitForFpcFeeJuice } from "../common/setup-helpers.ts";
 // ---------------------------------------------------------------------------
 
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
+const U128_MAX = 2n ** 128n - 1n;
+const SENTINEL_USER = "0x0000000000000000000000000000000000000000000000000000000000000001";
+const SENTINEL_FJ_AMOUNT = "1000000";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -449,6 +452,117 @@ describe("fpc services smoke", () => {
         { outcome: "success" },
       );
       expect(latencyCount ?? 0).toBeGreaterThanOrEqual(1);
+    });
+
+    describe("quote input validation", () => {
+      function quoteUrl(params: Record<string, string>): string {
+        const qs = new URLSearchParams(params).toString();
+        return `${ctx.config.attestationBaseUrl}/quote?${qs}`;
+      }
+
+      function baseParams(): Record<string, string> {
+        return {
+          user: SENTINEL_USER,
+          fj_amount: SENTINEL_FJ_AMOUNT,
+          accepted_asset: ctx.tokenAddress.toString(),
+        };
+      }
+
+      it("rejects missing user param", async () => {
+        const params = baseParams();
+        delete params.user;
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+
+      it("rejects missing fj_amount param", async () => {
+        const params = baseParams();
+        delete params.fj_amount;
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+
+      it("rejects fj_amount=0", async () => {
+        const params = baseParams();
+        params.fj_amount = "0";
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+
+      it("rejects negative fj_amount", async () => {
+        const params = baseParams();
+        params.fj_amount = "-1";
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+
+      it("rejects non-numeric fj_amount", async () => {
+        const params = baseParams();
+        params.fj_amount = "notanumber";
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+
+      it("rejects fj_amount exceeding u128 max", async () => {
+        const params = baseParams();
+        params.fj_amount = (U128_MAX + 1n).toString();
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+
+      it("rejects malformed user address", async () => {
+        const params = baseParams();
+        params.user = "not_an_address";
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+
+      it("rejects SQL injection in user param", async () => {
+        const params = baseParams();
+        params.user = "' OR '1'='1";
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+
+      it("does not return 5xx for u128_max fj_amount", async () => {
+        const params = baseParams();
+        params.fj_amount = U128_MAX.toString();
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects zero user address", async () => {
+        const params = baseParams();
+        params.user = "0x0000000000000000000000000000000000000000000000000000000000000000";
+        const response = await fetch(quoteUrl(params));
+        expect(response.status).toBeWithin(400, 500);
+      });
+    });
+
+    describe("quote concurrency", () => {
+      it("20 concurrent requests return no 5xx and consistent quotes", async () => {
+        const url = `${ctx.config.attestationBaseUrl}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${ctx.tokenAddress.toString()}`;
+        const requests = Array.from({ length: 20 }, () =>
+          fetch(url).then(async (r) => ({
+            status: r.status,
+            body: await r.text(),
+          })),
+        );
+        const results = await Promise.all(requests);
+
+        for (const r of results) {
+          expect(r.status).toBeLessThan(500);
+        }
+
+        const successes = results.filter((r) => r.status >= 200 && r.status < 400);
+        if (successes.length > 1) {
+          const parsed = successes.map((r) => JSON.parse(r.body) as QuoteResponse);
+          const fjAmounts = new Set(parsed.map((q) => q.fj_amount));
+          const assets = new Set(parsed.map((q) => q.accepted_asset));
+          expect(fjAmounts.size).toBe(1);
+          expect(assets.size).toBe(1);
+        }
+      });
     });
   });
 
