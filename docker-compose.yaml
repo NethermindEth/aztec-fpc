@@ -201,13 +201,10 @@ services:
       - "scripts/services/fpc-full-lifecycle-e2e.ts"
     volumes:
       - ./deployments/local:/app/data:ro
-      - ./artifacts/compose-e2e/fpc:/artifacts/fpc
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
-      L1_RPC_URL: "http://anvil:8545"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
-      FPC_FULL_E2E_ARTIFACTS_DIR: "/artifacts/fpc"
     depends_on:
       block-producer:
         condition: service_started
