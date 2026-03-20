@@ -95,13 +95,13 @@ function getConfig(): SmokeConfig {
 // Utility helpers
 // ---------------------------------------------------------------------------
 
-async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
+async function waitForHealth(url: string, timeoutMs: number): Promise<Response> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
   while (Date.now() <= deadline) {
     try {
       const response = await fetch(url);
-      if (response.ok) return;
+      if (response.ok) return response;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
       lastError = (error as Error).message;
@@ -391,7 +391,12 @@ describe("fpc services smoke", () => {
 
   describe("attestation service", () => {
     it("health endpoint is reachable", async () => {
-      await waitForHealth(`${ctx.config.attestationBaseUrl}/health`, ctx.config.httpTimeoutMs);
+      const response = await waitForHealth(
+        `${ctx.config.attestationBaseUrl}/health`,
+        ctx.config.httpTimeoutMs,
+      );
+      const body = (await response.json()) as { status?: string };
+      expect(body.status).toBe("ok");
     });
 
     it("rejects bad quote request with 400", async () => {
@@ -440,11 +445,10 @@ describe("fpc services smoke", () => {
       );
       expect(isValid).toBe(true);
 
-      // Verify valid_until is in the future and not unreasonably far out (< 24h).
+      // Verify valid_until is in the future and within the contract's max TTL (3600s).
       const chainNowMax = chainNowBefore > chainNowAfter ? chainNowBefore : chainNowAfter;
-      const maxReasonableValidUntil = chainNowMax + 86_400n;
       expect(validUntil).toBeGreaterThan(chainNowMax);
-      expect(validUntil).toBeLessThanOrEqual(maxReasonableValidUntil);
+      expect(validUntil).toBeLessThanOrEqual(chainNowMax + 3_610n);
     });
 
     it("exposes correct prometheus metrics", async () => {
