@@ -1391,213 +1391,16 @@ async function runOnchainTests(
   const TEST_RATE = { num: 1n, den: 1000n };
   const aaPaymentAmount = computeAaPayment(TEST_RATE);
 
-  await runner.run("onchain-happy-path", "onchain", "Valid fee-paid tx succeeds", async () => {
-    const maxAttempts = 5;
-    const baseDelayMs = 15_000;
-    let lastErr: unknown;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const latestTs = await getLatestL2Timestamp(ctx);
-        const validUntil = latestTs + 600n;
-        const sigBytes = await signQuote(
-          ctx.operatorSecretHex,
-          ctx.fpcAddress,
-          ctx.acceptedAsset,
-          fjAmount,
-          aaPaymentAmount,
-          validUntil,
-          ctx.user,
-        );
-        const { expectedCharge } = await submitFeePaidTx(
-          config,
-          ctx,
-          ctx.user,
-          sigBytes,
-          fjAmount,
-          aaPaymentAmount,
-          validUntil,
-        );
-        return { expectedCharge: expectedCharge.toString() };
-      } catch (err: unknown) {
-        lastErr = err;
-        if (attempt < maxAttempts) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const delayMs = baseDelayMs * attempt;
-          pinoLogger.warn(
-            `Happy-path attempt ${attempt}/${maxAttempts} failed: ${msg.slice(0, 120)}. Waiting ${delayMs / 1000}s before retry...`,
-          );
-          await new Promise((r) => setTimeout(r, delayMs));
-        }
-      }
-    }
-    throw lastErr;
-  });
-
-  await runner.run(
-    "onchain-quote-replay",
-    "onchain",
-    "Replaying a consumed quote is rejected (nullifier collision)",
-    async () => {
-      // The first submit must succeed before we can test the replay.
-      const maxAttempts = 5;
-      const baseDelayMs = 15_000;
-      let lastErr: unknown;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        const latestTs = await getLatestL2Timestamp(ctx);
-        // Use the maximum allowed TTL so the quote does not expire between the
-        // first submission and the replay attempt (block timestamps advance).
-        const validUntil = latestTs + MAX_QUOTE_TTL_SECONDS;
-        // Get a fresh quote for user (unique per-submission by signing key)
-        const sigBytes = await signQuote(
-          ctx.operatorSecretHex,
-          ctx.fpcAddress,
-          ctx.acceptedAsset,
-          fjAmount,
-          aaPaymentAmount,
-          validUntil,
-          ctx.user,
-        );
-
-        try {
-          // First use – should succeed
-          await submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-          );
-        } catch (err: unknown) {
-          lastErr = err;
-          if (attempt < maxAttempts) {
-            const msg = err instanceof Error ? err.message : String(err);
-            const delayMs = baseDelayMs * attempt;
-            pinoLogger.warn(
-              `Quote-replay first submit attempt ${attempt}/${maxAttempts} failed: ${msg.slice(0, 120)}. Waiting ${delayMs / 1000}s...`,
-            );
-            await new Promise((r) => setTimeout(r, delayMs));
-            continue;
-          }
-          throw err;
-        }
-
-        // First use succeeded — second use must fail due to nullifier
-        await expectOnchainFailure(
-          "quote replay",
-          ["nullifier", "already exists", "duplicate"],
-          () =>
-            submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
-        );
-        return;
-      }
-      throw lastErr;
-    },
-  );
-
-  await runner.run(
-    "onchain-expired-quote",
-    "onchain",
-    "Expired quote (valid_until = current block ts) is rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      // Set valid_until to current timestamp (will be expired when block is produced)
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        latestTs, // expired: anchor_block_timestamp > valid_until after block advance
-        ctx.user,
-      );
-
-      // Advance a block to push anchor_block_timestamp past valid_until
-      if (ctx.faucet) {
-        await ctx.faucet.methods
-          .admin_drip(ctx.operator, 1n)
-          .send({ from: ctx.operator, wait: { timeout: 60 } });
-      } else {
-        await ctx.token.methods
-          .mint_to_private(ctx.operator, 1n)
-          .send({ from: ctx.operator, wait: { timeout: 60 } });
-      }
-
-      await expectOnchainFailure("expired quote", ["quote expired", "expired"], () =>
-        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, latestTs),
-      );
-    },
-  );
-
-  await runner.run(
-    "onchain-overlong-ttl",
-    "onchain",
-    "Quote with TTL > 3600s is rejected by FPC",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const overlongValidUntil = latestTs + MAX_QUOTE_TTL_SECONDS + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        overlongValidUntil,
-        ctx.user,
-      );
-
-      await expectOnchainFailure("overlong TTL", ["quote ttl too large", "ttl"], () =>
-        submitFeePaidTx(
-          config,
-          ctx,
-          ctx.user,
-          sigBytes,
-          fjAmount,
-          aaPaymentAmount,
-          overlongValidUntil,
-        ),
-      );
-    },
-  );
-
-  await runner.run(
-    "onchain-sender-binding",
-    "onchain",
-    "Quote signed for user A is rejected when submitted by user B",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      // Sign quote binding it to ctx.otherUser (user A).
-      // NOTE: We sign for otherUser and submit from user (not the other way
-      // around) so that submitFeePaidTx never mints private tokens to otherUser.
-      // The insufficient-balance test later relies on otherUser having no
-      // private tokens; minting to otherUser here would silently break it.
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.otherUser, // signed for otherUser (user A)
-      );
-
-      // Submit as ctx.user (user B) – sig verification fails because
-      // quote_hash includes user_address = otherUser but msg_sender = user.
-      await expectOnchainFailure("sender binding", ["signature"], () =>
-        submitFeePaidTx(
-          config,
-          ctx,
-          ctx.user, // wrong sender (user B)
-          sigBytes,
-          fjAmount,
-          aaPaymentAmount,
-          validUntil,
-        ),
-      );
-    },
-  );
+  // NOTE: onchain-happy-path was removed — fully covered by
+  // same-token-transfer (3 successful fee_entrypoint txs with balance checks),
+  // cold-start (3 successful fee_entrypoint txs), and always-revert
+  // (fee_entrypoint succeeds even when app logic reverts).
+  //
+  // onchain-quote-replay, onchain-expired-quote, onchain-overlong-ttl,
+  // and onchain-sender-binding were removed — they are fully covered by
+  // negativeQuoteReplayRejected, negativeExpiredQuoteRejected,
+  // negativeOverlongTtlRejected, and negativeSenderBindingRejected in
+  // scripts/services/fpc-full-lifecycle-e2e.ts.
 
   await runner.run(
     "onchain-tampered-signature",
@@ -1804,26 +1607,9 @@ async function runOnchainTests(
     },
   );
 
-  await runner.run(
-    "onchain-valid-until-past",
-    "onchain",
-    "Quote with valid_until in the past is rejected",
-    async () => {
-      const validUntilPast = 1n; // Far in the past; anchor_ts will be > 1
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntilPast,
-        ctx.user,
-      );
-      await expectOnchainFailure("valid_until in the past", ["quote expired", "expired"], () =>
-        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntilPast),
-      );
-    },
-  );
+  // NOTE: onchain-valid-until-past was removed — same contract assertion
+  // (valid_until < anchor_block_ts) already covered by negativeExpiredQuoteRejected
+  // in scripts/services/fpc-full-lifecycle-e2e.ts.
 
   // NOTE: onchain-teardown-gas-rejected was removed because the FPC contract
   // (FPCMultiAsset) does not enforce zero teardown gas -- there is no teardown
@@ -1907,51 +1693,9 @@ async function runOnchainTests(
     },
   );
 
-  await runner.run(
-    "onchain-quote-wrong-fpc-address",
-    "onchain",
-    "Quote signed with different FPC address is rejected (signature binding)",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const wrongFpcAddress = ctx.otherUser; // Any address != real FPC
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        wrongFpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-      await expectOnchainFailure("quote signed for wrong FPC address", ["signature"], () =>
-        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
-      );
-    },
-  );
-
-  await runner.run(
-    "onchain-quote-wrong-accepted-asset",
-    "onchain",
-    "Quote signed with different accepted_asset is rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const wrongAsset = ctx.otherUser; // Any address != real accepted_asset
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        wrongAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-      await expectOnchainFailure("quote signed for wrong accepted_asset", ["signature"], () =>
-        submitFeePaidTx(config, ctx, ctx.user, sigBytes, fjAmount, aaPaymentAmount, validUntil),
-      );
-    },
-  );
+  // NOTE: onchain-quote-wrong-fpc-address and onchain-quote-wrong-accepted-asset
+  // were removed — fully covered by negativeWrongFpcRejected and
+  // negativeWrongTokenRejected in scripts/services/fpc-full-lifecycle-e2e.ts.
 
   await runner.run(
     "onchain-signature-wrong-length",
