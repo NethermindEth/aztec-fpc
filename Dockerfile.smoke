@@ -30,4 +30,7 @@ RUN bun run --filter @aztec-fpc/sdk --if-present build && \
     bun run --filter @aztec-fpc/attestation --if-present build && \
     bun run --filter @aztec-fpc/topup --if-present build
 
+ENV NODE_ENV=development
+ENV FORCE_COLOR=1
+
 ENTRYPOINT ["bun", "run", "--sequential"]
