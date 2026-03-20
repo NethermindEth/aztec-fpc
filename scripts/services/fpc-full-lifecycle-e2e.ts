@@ -27,15 +27,10 @@ import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/de
 import { sleep } from "../common/managed-process.ts";
 import { deriveAccount } from "../common/script-credentials.ts";
 
-type FullE2EMode = "fpc";
-
 type FullE2EConfig = {
-  mode: FullE2EMode;
   nodeUrl: string;
-  l1RpcUrl: string;
   manifestPath: string;
   operatorSecretKey: string;
-  nodeTimeoutMs: number;
   feeJuiceTimeoutMs: number;
   feeJuicePollMs: number;
   marketRateNum: number;
@@ -86,9 +81,6 @@ Required env vars:
 
 Optional env vars:
 - AZTEC_NODE_URL (default: http://localhost:8080)
-- L1_RPC_URL (default: http://localhost:8545) — only needed for insufficient Fee Juice scenario
-- FPC_FULL_E2E_MODE=fpc
-- FPC_FULL_E2E_NODE_TIMEOUT_MS (default: 45000)
 - FPC_FULL_E2E_FEE_JUICE_TIMEOUT_MS (default: 240000)
 - FPC_FULL_E2E_FEE_JUICE_POLL_MS (default: 2000)
 - FPC_FULL_E2E_DA_GAS_LIMIT (default: 200000)
@@ -96,16 +88,7 @@ Optional env vars:
 - FPC_FULL_E2E_MARKET_RATE_NUM (default: 1)
 - FPC_FULL_E2E_MARKET_RATE_DEN (default: 1000)
 - FPC_FULL_E2E_FEE_BIPS (default: 200)
-- FPC_FULL_E2E_ARTIFACTS_DIR (default: <repo>/tmp)
 `);
-}
-
-function parseMode(value: string | undefined): FullE2EMode {
-  const normalized = (value ?? "fpc").trim().toLowerCase();
-  if (normalized === "fpc") {
-    return "fpc";
-  }
-  throw new Error(`Invalid FPC_FULL_E2E_MODE=${value}. This runner is FPC-only and accepts: fpc`);
 }
 
 function readEnvPositiveInteger(name: string, fallback: number): number {
@@ -309,7 +292,6 @@ function requireEnv(name: string): string {
 }
 
 function getConfig(): FullE2EConfig {
-  const mode = parseMode(process.env.FPC_FULL_E2E_MODE);
   const manifestPath = requireEnv("FPC_COLD_START_MANIFEST");
   const operatorSecretKey = requireEnv("FPC_OPERATOR_SECRET_KEY");
   assertPrivateKeyHex(operatorSecretKey, "FPC_OPERATOR_SECRET_KEY");
@@ -319,12 +301,9 @@ function getConfig(): FullE2EConfig {
   }
 
   return {
-    mode,
     nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
-    l1RpcUrl: process.env.L1_RPC_URL ?? "http://localhost:8545",
     manifestPath,
     operatorSecretKey,
-    nodeTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_NODE_TIMEOUT_MS", 45_000),
     feeJuiceTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_FEE_JUICE_TIMEOUT_MS", 240_000),
     feeJuicePollMs: readEnvPositiveInteger("FPC_FULL_E2E_FEE_JUICE_POLL_MS", 2_000),
     marketRateNum: readEnvPositiveInteger("FPC_FULL_E2E_MARKET_RATE_NUM", 1),
@@ -684,7 +663,7 @@ async function main(): Promise<void> {
 
   const config = getConfig();
   pinoLogger.info(
-    `[full-lifecycle-e2e] Config loaded: mode=${config.mode}, nodeUrl=${config.nodeUrl}, manifest=${config.manifestPath}`,
+    `[full-lifecycle-e2e] Config loaded: nodeUrl=${config.nodeUrl}, manifest=${config.manifestPath}`,
   );
 
   const result = await setupFromManifest(config);

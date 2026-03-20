@@ -133,7 +133,6 @@ For the test to pass, all must hold:
 ## Config Knobs
 - `FPC_COLD_START_MANIFEST` — deployment manifest path (required)
 - `FPC_OPERATOR_SECRET_KEY` — operator secret key (required)
-- `FPC_FULL_E2E_MODE` (`fpc`, default `fpc`)
 - `FPC_FULL_E2E_FEE_JUICE_TIMEOUT_MS` (default: 240000)
 - `FPC_FULL_E2E_FEE_JUICE_POLL_MS` (default: 2000)
 - `FPC_FULL_E2E_DA_GAS_LIMIT` (default: 200000)
