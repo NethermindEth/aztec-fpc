@@ -1,10 +1,10 @@
-import { validateDevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import { validateDevnetDeployManifest } from "@nethermindeth/aztec-fpc-contract-deployment/src/devnet-manifest.ts";
 import pino from "pino";
 
 export {
   type DevnetDeployManifest,
   validateDevnetDeployManifest,
-} from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+} from "@nethermindeth/aztec-fpc-contract-deployment/src/devnet-manifest.ts";
 
 const pinoLogger = pino();
 
@@ -95,7 +95,7 @@ function usage(): string {
     "Usage:",
     "  bunx tsx scripts/contract/devnet-manifest.ts --self-check",
     "",
-    "Exports (re-exported from @aztec-fpc/contract-deployment):",
+    "Exports (re-exported from @nethermindeth/aztec-fpc-contract-deployment):",
     "  - validateDevnetDeployManifest(input)",
     "  - DevnetDeployManifest (type)",
   ].join("\n");

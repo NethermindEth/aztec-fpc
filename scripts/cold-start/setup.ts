@@ -26,7 +26,7 @@ import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdl
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import type { DevnetDeployManifest } from "@nethermindeth/aztec-fpc-contract-deployment/src/devnet-manifest.ts";
 import pino from "pino";
 import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
 import * as viemChains from "viem/chains";

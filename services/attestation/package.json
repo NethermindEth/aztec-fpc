@@ -1,5 +1,5 @@
 {
-  "name": "@aztec-fpc/attestation",
+  "name": "@nethermindeth/aztec-fpc-attestation",
   "version": "0.1.0",
   "type": "module",
   "description": "Quote-signing attestation service for the MultiAssetFPC",
@@ -12,7 +12,7 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@aztec-fpc/contract-deployment": "workspace:*",
+    "@nethermindeth/aztec-fpc-contract-deployment": "workspace:*",
     "@aztec/accounts": "4.1.0-nightly.20260312.2",
     "@aztec/aztec.js": "4.1.0-nightly.20260312.2",
     "@aztec/bb.js": "4.1.0-nightly.20260312.2",

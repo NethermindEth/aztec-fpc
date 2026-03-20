@@ -8,7 +8,7 @@ import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { Point } from "@aztec/foundation/curves/grumpkin";
-import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import type { DevnetDeployManifest } from "@nethermindeth/aztec-fpc-contract-deployment/src/devnet-manifest.ts";
 import { sleep } from "../common/managed-process.ts";
 
 // ---------------------------------------------------------------------------

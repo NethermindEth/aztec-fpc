@@ -53,7 +53,7 @@ The FPC lets users pay Aztec transaction fees in an accepted token (e.g. USDC) i
 | **FPC Contract** (`FPCMultiAsset`) | On-chain fee payer; verifies operator-signed quotes, transfers tokens, pays Fee Juice to the protocol |
 | **Attestation Service** | REST API that signs per-user fee quotes with the operator's Schnorr key |
 | **Top-up Service** | Monitors the FPC's Fee Juice balance on L2 and bridges more from L1 when it drops below a threshold |
-| **SDK** (`@aztec-fpc/sdk`) | TypeScript client that handles quote fetching, auth-witness construction, and tx submission for app developers |
+| **SDK** (`@nethermindeth/aztec-fpc-sdk`) | TypeScript client that handles quote fetching, auth-witness construction, and tx submission for app developers |
 
 ---
 
@@ -488,7 +488,7 @@ Use `createPaymentMethod` when the user already has L2 tokens and wants to pay f
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 
 // 1. Connect to the Aztec node and create a wallet
 const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
@@ -557,7 +557,7 @@ import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { EthAddress } from "@aztec/foundation/eth-address";
 import { createLogger } from "@aztec/foundation/log";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 
 // 1. Connect to the Aztec node and create a wallet
 const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");

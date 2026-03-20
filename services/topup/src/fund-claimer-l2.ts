@@ -60,7 +60,7 @@ type BridgeClaim = L2AmountClaim;
 function usage(): string {
   return [
     "Usage:",
-    "  bun run --filter @aztec-fpc/topup fund:claimer:l2 -- \\",
+    "  bun run --filter @nethermindeth/aztec-fpc-topup fund:claimer:l2 -- \\",
     "    --amount-wei <uint> \\",
     "    [--manifest <path.json>] \\",
     "    [--node-url <http(s)://...>] \\",

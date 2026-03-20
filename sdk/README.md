@@ -1,4 +1,4 @@
-# `@aztec-fpc/sdk`
+# `@nethermindeth/aztec-fpc-sdk`
 
 SDK helper for constructing FPC payment methods.
 
@@ -20,7 +20,7 @@ This package currently exposes:
 
 ## Install
 
-`@aztec-fpc/sdk` is not published to npm yet.
+`@nethermindeth/aztec-fpc-sdk` is not published to npm yet.
 
 Until the package is published, install it from a local checkout of this GitHub repo after building the SDK.
 
@@ -43,13 +43,13 @@ bun add /absolute/path/to/aztec-fpc/sdk
 git clone https://github.com/NethermindEth/aztec-fpc.git
 cd aztec-fpc
 npm install
-npm run build --workspace @aztec-fpc/sdk
+npm run build --workspace @nethermindeth/aztec-fpc-sdk
 
 cd /path/to/your-app
 npm install /absolute/path/to/aztec-fpc/sdk
 ```
 
-Direct GitHub installation of the repo root is not the same thing as installing the SDK package, because `@aztec-fpc/sdk` is a workspace package under `sdk/`, not the repository root package.
+Direct GitHub installation of the repo root is not the same thing as installing the SDK package, because `@nethermindeth/aztec-fpc-sdk` is a workspace package under `sdk/`, not the repository root package.
 
 ## Exports
 
@@ -65,7 +65,7 @@ import {
   type FpcClientConfig,
   type FpcPaymentMethodResult,
   type QuoteResponse,
-} from "@aztec-fpc/sdk";
+} from "@nethermindeth/aztec-fpc-sdk";
 ```
 
 ## Payment method
@@ -78,7 +78,7 @@ Use `createPaymentMethod` when the user already has an L2 token balance and need
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import type { Wallet } from "@aztec/aztec.js/wallet";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 
 export async function createFeeOptions(input: {
   attestationBaseUrl: string;
@@ -150,7 +150,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import type { Wallet } from "@aztec/aztec.js/wallet";
 import type { L2AmountClaim } from "@aztec/aztec.js/ethereum";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 
 export async function coldStart(input: {
   attestationBaseUrl: string;

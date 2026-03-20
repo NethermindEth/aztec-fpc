@@ -26,9 +26,9 @@ COPY --from=deploy /app/target/ target/
 COPY scripts/ scripts/
 
 # ── Build SDK & services ──
-RUN bun run --filter @aztec-fpc/sdk --if-present build && \
-    bun run --filter @aztec-fpc/attestation --if-present build && \
-    bun run --filter @aztec-fpc/topup --if-present build
+RUN bun run --filter @nethermindeth/aztec-fpc-sdk --if-present build && \
+    bun run --filter @nethermindeth/aztec-fpc-attestation --if-present build && \
+    bun run --filter @nethermindeth/aztec-fpc-topup --if-present build
 
 ENV NODE_ENV=development
 ENV FORCE_COLOR=1

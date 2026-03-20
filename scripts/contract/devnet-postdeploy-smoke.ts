@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type DevnetDeployManifest,
   validateDevnetDeployManifest,
-} from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+} from "@nethermindeth/aztec-fpc-contract-deployment/src/devnet-manifest.ts";
 import pino from "pino";
 
 const pinoLogger = pino();

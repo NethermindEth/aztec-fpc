@@ -12,7 +12,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import pino from "pino";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
