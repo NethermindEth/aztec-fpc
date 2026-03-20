@@ -47,8 +47,20 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
   const user = userData.address;
 
   // Balance trackers — accumulate expected private balances across phases
-  const userBalance = new PrivateBalanceTracker(token, user, "User", 0n);
-  const operatorBalance = new PrivateBalanceTracker(token, operator, "Operator", 0n, "atLeast");
+  const userBalance = await PrivateBalanceTracker.create(
+    token,
+    ctx.wallet,
+    userData.secret,
+    "User",
+  );
+  const operatorBalance = await PrivateBalanceTracker.create(
+    token,
+    ctx.wallet,
+    args.operatorSecretKey,
+    "Operator",
+    0n,
+    "atLeast",
+  );
 
   // Shared FpcClient for all FPC-sponsored phases
   const fpcClient = new FpcClient({
@@ -181,14 +193,14 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
 
   pinoLogger.info("[cold-start-smoke] transferring tokens to recipient via sponsored FPC");
 
-  const sponsoredRecipient = (await deriveAccount(Fr.random(), ctx.wallet)).address;
   const sponsoredTransferAmount = args.aaPaymentAmount;
-  const sponsoredRecipientBalance = new PrivateBalanceTracker(
+  const sponsoredRecipientBalance = await PrivateBalanceTracker.create(
     token,
-    sponsoredRecipient,
+    ctx.wallet,
+    Fr.random(),
     "Sponsored recipient",
-    0n,
   );
+  const sponsoredRecipient = sponsoredRecipientBalance.address;
 
   await token.methods
     .transfer_private_to_private(user, sponsoredRecipient, sponsoredTransferAmount, 0)
@@ -213,9 +225,14 @@ export async function testHappyPath(ctx: TestContext): Promise<void> {
 
   pinoLogger.info("[cold-start-smoke] transferring tokens to recipient via FPC");
 
-  const recipient = (await deriveAccount(Fr.random(), ctx.wallet)).address;
   const transferAmount = args.aaPaymentAmount;
-  const recipientBalance = new PrivateBalanceTracker(token, recipient, "Recipient", 0n);
+  const recipientBalance = await PrivateBalanceTracker.create(
+    token,
+    ctx.wallet,
+    Fr.random(),
+    "Recipient",
+  );
+  const recipient = recipientBalance.address;
 
   const transferMethod = token.methods.transfer_private_to_private(
     user,

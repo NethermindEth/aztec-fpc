@@ -7,28 +7,15 @@
  * is needed.
  */
 
-import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { ContractArtifact } from "@aztec/aztec.js/abi";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract } from "@aztec/aztec.js/contracts";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { Contract } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
-import { Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
-import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
-import { SPONSORED_FPC_SALT } from "@aztec/constants";
-import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
-import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
-import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
-import type { NoirCompiledContract } from "@aztec/stdlib/noir";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import type { AztecNode } from "@aztec/aztec.js/node";
+import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@aztec-fpc/sdk";
-import pino from "pino";
-import { deriveAccount } from "../common/script-credentials.ts";
-import { type CliArgs, CliError } from "./cli.ts";
-
-const pinoLogger = pino();
+import { setup as commonSetup } from "../common/setup-helpers.ts";
+import type { CliArgs } from "./cli.ts";
 
 // ---------------------------------------------------------------------------
 // TestContext — everything tests need
@@ -36,7 +23,7 @@ const pinoLogger = pino();
 
 export type TestContext = {
   args: CliArgs;
-  node: ReturnType<typeof createAztecNodeClient>;
+  node: AztecNode;
   wallet: EmbeddedWallet;
   operator: AztecAddress;
   fpcClient: FpcClient;
@@ -49,138 +36,32 @@ export type TestContext = {
 };
 
 // ---------------------------------------------------------------------------
-// Private helpers
-// ---------------------------------------------------------------------------
-
-function loadArtifact(artifactPath: string): ContractArtifact {
-  const raw = readFileSync(artifactPath, "utf8");
-  const parsed = JSON.parse(raw) as NoirCompiledContract;
-  try {
-    return loadContractArtifact(parsed);
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      err.message.includes("Contract's public bytecode has not been transpiled")
-    ) {
-      return loadContractArtifactForPublic(parsed);
-    }
-    throw err;
-  }
-}
-
-function resolveFpcArtifactPath(repoRoot: string): string {
-  for (const name of ["fpc-FPCMultiAsset.json", "fpc-FPC.json"]) {
-    const p = path.join(repoRoot, "target", name);
-    if (existsSync(p)) return p;
-  }
-  throw new Error("FPC artifact not found in target/");
-}
-
-async function registerAndGet(
-  node: ReturnType<typeof createAztecNodeClient>,
-  wallet: EmbeddedWallet,
-  address: AztecAddress,
-  artifact: ContractArtifact,
-) {
-  const instance = await node.getContract(address);
-  if (!instance) {
-    throw new Error(`Contract not found on node: ${address.toString()}`);
-  }
-  await wallet.registerContract(instance, artifact);
-  return Contract.at(address, artifact, wallet);
-}
-
-// ---------------------------------------------------------------------------
 // setup()
 // ---------------------------------------------------------------------------
 
 export async function setup(args: CliArgs): Promise<TestContext> {
   const repoRoot = path.resolve(import.meta.dirname, "../..");
+  const { node, wallet, operator, contracts, sponsoredFpcAddress } = await commonSetup(
+    args,
+    repoRoot,
+    "always-revert",
+  );
 
-  pinoLogger.info("[always-revert] starting");
-  pinoLogger.info(`[always-revert] node_url=${args.nodeUrl}`);
-  pinoLogger.info(`[always-revert] manifest=${args.manifestPath}`);
+  const { token, fpc, counter, faucet } = contracts;
 
-  // 1. Read manifest
-  if (!existsSync(args.manifestPath)) {
-    throw new CliError(`Manifest not found: ${args.manifestPath}`);
-  }
-  const manifest = JSON.parse(readFileSync(args.manifestPath, "utf8")) as DevnetDeployManifest;
-
-  if (!manifest.contracts.faucet) {
-    throw new Error("Manifest missing contracts.faucet (required for always-revert)");
-  }
-  if (!manifest.contracts.counter) {
+  if (!counter) {
     throw new Error("Manifest missing contracts.counter (required for always-revert)");
   }
-  const fpcAddress = AztecAddress.fromString(manifest.contracts.fpc);
-  const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
-  const faucetAddress = AztecAddress.fromString(manifest.contracts.faucet);
-  const counterAddress = AztecAddress.fromString(manifest.contracts.counter);
+  if (!faucet) {
+    throw new Error("Manifest missing contracts.faucet (required for always-revert)");
+  }
 
-  pinoLogger.info(
-    `[always-revert] manifest loaded. fpc=${manifest.contracts.fpc} token=${manifest.contracts.accepted_asset} faucet=${manifest.contracts.faucet}`,
-  );
-
-  // 2. Connect to node
-  const node = createAztecNodeClient(args.nodeUrl);
-  await waitForNode(node);
-  const wallet = await EmbeddedWallet.create(node, {
-    ephemeral: true,
-    pxeConfig: { proverEnabled: args.proverEnabled },
-  });
-
-  // 3. Setup operator account
-  const operatorSecretFr = Fr.fromHexString(args.operatorSecretKey);
-  const operatorAccount = await deriveAccount(operatorSecretFr, wallet);
-  const operator = operatorAccount.address;
-
-  pinoLogger.info(`[always-revert] operator=${operator.toString()}`);
-
-  // 4. Register deployed contracts (faucet + counter for non-FPC operations)
-  const tokenArtifact = loadArtifact(path.join(repoRoot, "target", "token_contract-Token.json"));
-  const fpcArtifact = loadArtifact(resolveFpcArtifactPath(repoRoot));
-  const faucetArtifact = loadArtifact(path.join(repoRoot, "target", "faucet-Faucet.json"));
-  const counterArtifact = loadArtifact(path.join(repoRoot, "target", "mock_counter-Counter.json"));
-
-  const token = await registerAndGet(node, wallet, tokenAddress, tokenArtifact);
-  await registerAndGet(node, wallet, fpcAddress, fpcArtifact);
-  const faucet = await registerAndGet(node, wallet, faucetAddress, faucetArtifact);
-  const counter = await registerAndGet(node, wallet, counterAddress, counterArtifact);
-
-  // Register the canonical SponsoredFPC contract (address derived from artifact + salt)
-  const sponsoredFpcInstance = await getContractInstanceFromInstantiationParams(
-    SponsoredFPCContractArtifact,
-    { salt: new Fr(SPONSORED_FPC_SALT) },
-  );
-  await wallet.registerContract(sponsoredFpcInstance, SponsoredFPCContractArtifact);
-  const sponsoredFeePayment = new SponsoredFeePaymentMethod(sponsoredFpcInstance.address);
-
-  // 5. Create FpcClient
   const fpcClient = new FpcClient({
-    fpcAddress,
+    fpcAddress: fpc.address,
     operator,
     node,
     attestationBaseUrl: args.attestationUrl,
   });
-
-  // 6. Wait for topup service to fund FPC with FeeJuice
-  pinoLogger.info("[always-revert] waiting for FPC FeeJuice balance > 0 (via topup service)");
-
-  const FJ_POLL_MS = 2_000;
-  const FJ_TIMEOUT_MS = args.messageTimeoutSeconds * 1_000;
-  const fjDeadline = Date.now() + FJ_TIMEOUT_MS;
-  let fjBalance = 0n;
-  while (Date.now() <= fjDeadline) {
-    fjBalance = await getFeeJuiceBalance(fpcAddress, node);
-    if (fjBalance > 0n) break;
-    await new Promise((resolve) => setTimeout(resolve, FJ_POLL_MS));
-  }
-  if (fjBalance === 0n) {
-    throw new Error(`Timed out waiting for FPC FeeJuice balance on ${fpcAddress.toString()}`);
-  }
-
-  pinoLogger.info(`[always-revert] FPC FeeJuice balance=${fjBalance}`);
 
   return {
     args,
@@ -188,11 +69,11 @@ export async function setup(args: CliArgs): Promise<TestContext> {
     wallet,
     operator,
     fpcClient,
-    fpcAddress,
-    tokenAddress,
+    fpcAddress: fpc.address,
+    tokenAddress: token.address,
     token,
     faucet,
     counter,
-    sponsoredFeePayment,
+    sponsoredFeePayment: new SponsoredFeePaymentMethod(sponsoredFpcAddress),
   };
 }

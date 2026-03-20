@@ -10,6 +10,7 @@
  */
 
 import path from "node:path";
+import { Fr } from "@aztec/aztec.js/fields";
 import pino from "pino";
 
 const pinoLogger = pino();
@@ -23,7 +24,7 @@ export type CliArgs = {
   l1RpcUrl: string;
   attestationUrl: string;
   manifestPath: string;
-  operatorSecretKey: string;
+  operatorSecretKey: Fr;
   l1DeployerKey: string | null;
   userL1PrivateKey: string | null;
   claimAmount: bigint;
@@ -247,7 +248,7 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       l1RpcUrl: parseHttpUrl(l1RpcUrl, "--l1-rpc-url"),
       attestationUrl: parseHttpUrl(attestationUrl, "--attestation-url"),
       manifestPath: path.resolve(manifestPath),
-      operatorSecretKey: parseHex32(operatorSecretKey, "--operator-secret-key"),
+      operatorSecretKey: Fr.fromHexString(parseHex32(operatorSecretKey, "--operator-secret-key")),
       l1DeployerKey: l1DeployerKey ? parseHex32(l1DeployerKey, "--l1-deployer-key") : null,
       userL1PrivateKey: userL1PrivateKey
         ? parseHex32(userL1PrivateKey, "--user-l1-private-key")

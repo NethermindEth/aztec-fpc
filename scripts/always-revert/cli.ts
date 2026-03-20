@@ -10,6 +10,7 @@
  */
 
 import path from "node:path";
+import { Fr } from "@aztec/aztec.js/fields";
 import pino from "pino";
 
 const pinoLogger = pino();
@@ -22,7 +23,7 @@ export type CliArgs = {
   nodeUrl: string;
   attestationUrl: string;
   manifestPath: string;
-  operatorSecretKey: string;
+  operatorSecretKey: Fr;
   proverEnabled: boolean;
   messageTimeoutSeconds: number;
   iterations: number;
@@ -214,7 +215,7 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       nodeUrl: parseHttpUrl(nodeUrl, "--node-url"),
       attestationUrl: parseHttpUrl(attestationUrl, "--attestation-url"),
       manifestPath: path.resolve(manifestPath),
-      operatorSecretKey: parseHex32(operatorSecretKey, "--operator-secret-key"),
+      operatorSecretKey: Fr.fromHexString(parseHex32(operatorSecretKey, "--operator-secret-key")),
       proverEnabled,
       messageTimeoutSeconds: parseNonNegativeInt(messageTimeoutSeconds, "--message-timeout"),
       iterations: parsePositiveInt(iterations, "--iterations"),

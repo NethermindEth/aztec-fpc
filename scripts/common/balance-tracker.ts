@@ -1,5 +1,7 @@
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Contract } from "@aztec/aztec.js/contracts";
+import { Fr } from "@aztec/aztec.js/fields";
+import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
 
 const pinoLogger = pino();
@@ -9,7 +11,7 @@ abstract class BalanceTracker {
     protected readonly token: Contract,
     readonly address: AztecAddress,
     protected readonly label: string,
-    protected expected: bigint,
+    protected expected = 0n,
     protected readonly mode: "exact" | "atLeast" = "exact",
   ) {}
 
@@ -37,6 +39,28 @@ abstract class BalanceTracker {
 
 export class PrivateBalanceTracker extends BalanceTracker {
   protected balanceKind = "private_balance";
+
+  private constructor(
+    token: Contract,
+    address: AztecAddress,
+    label: string,
+    expected = 0n,
+    mode: "exact" | "atLeast" = "exact",
+  ) {
+    super(token, address, label, expected, mode);
+  }
+
+  static async create(
+    token: Contract,
+    wallet: EmbeddedWallet,
+    secretKey: Fr,
+    label: string,
+    expected = 0n,
+    mode: "exact" | "atLeast" = "exact",
+  ): Promise<PrivateBalanceTracker> {
+    const account = await wallet.createSchnorrAccount(secretKey, Fr.ZERO);
+    return new PrivateBalanceTracker(token, account.address, label, expected, mode);
+  }
 
   protected async fetchBalance(): Promise<bigint> {
     const { result } = await this.token.methods

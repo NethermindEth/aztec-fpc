@@ -1,29 +1,21 @@
 import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { BatchCall, Contract, type TxSendResultMined } from "@aztec/aztec.js/contracts";
+import { BatchCall, type Contract, type TxSendResultMined } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
-import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import type { AztecNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
-import { SPONSORED_FPC_SALT } from "@aztec/constants";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
-import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { computeInnerAuthWitHash } from "@aztec/stdlib/auth-witness";
-import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
 import { Gas, GasFees } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
-import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload, type TxReceipt } from "@aztec/stdlib/tx";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
-import { sleep } from "../common/managed-process.ts";
+import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { deriveAccount } from "../common/script-credentials.ts";
+import { setup as commonSetup } from "../common/setup-helpers.ts";
 
 type FullE2EConfig = {
   nodeUrl: string;
@@ -67,10 +59,6 @@ const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const MAX_QUOTE_VALIDITY_SECONDS = 3600;
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
 
-const tokenArtifactPath = "token_contract-Token.json";
-const fpcArtifactPath = "fpc-FPCMultiAsset.json";
-const faucetArtifactPath = "faucet-Faucet.json";
-
 function readEnvPositiveInteger(name: string, fallback: number): number {
   const value = process.env[name];
   if (value === undefined) return fallback;
@@ -97,55 +85,6 @@ function assertPrivateKeyHex(value: string, fieldName: string): void {
 
 function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
-}
-
-function loadArtifact(artifactPath: string): ContractArtifact {
-  const raw = readFileSync(artifactPath, "utf8");
-  const parsed = JSON.parse(raw) as NoirCompiledContract;
-  try {
-    return loadContractArtifact(parsed);
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("Contract's public bytecode has not been transpiled")
-    ) {
-      return loadContractArtifactForPublic(parsed);
-    }
-    throw error;
-  }
-}
-
-async function registerAndGet(
-  node: AztecNode,
-  wallet: EmbeddedWallet,
-  address: AztecAddress,
-  artifact: ContractArtifact,
-) {
-  const instance = await node.getContract(address);
-  if (!instance) {
-    throw new Error(`Contract not found on node: ${address.toString()}`);
-  }
-  await wallet.registerContract(instance, artifact);
-  return Contract.at(address, artifact, wallet);
-}
-
-async function waitForPositiveFeeJuiceBalance(
-  node: AztecNode,
-  feePayerAddress: AztecAddress,
-  timeoutMs: number,
-  pollMs: number,
-): Promise<bigint> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    const balance = await getFeeJuiceBalance(feePayerAddress, node);
-    if (balance > 0n) {
-      return balance;
-    }
-    await sleep(pollMs);
-  }
-  throw new Error(
-    `Timed out waiting for positive Fee Juice balance on ${feePayerAddress.toString()}`,
-  );
 }
 
 function getFinalRate(config: FullE2EConfig): {
@@ -279,54 +218,29 @@ function getConfig(): FullE2EConfig {
 async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRuntimeResult> {
   const repoRoot = path.resolve(import.meta.dirname, "../..");
 
-  // Read pre-deployed contract addresses from manifest.
-  if (!existsSync(config.manifestPath)) {
-    throw new Error(`Manifest not found: ${config.manifestPath}`);
+  const { node, wallet, operator, contracts, sponsoredFpcAddress } = await commonSetup(
+    {
+      nodeUrl: config.nodeUrl,
+      manifestPath: config.manifestPath,
+      proverEnabled: config.pxeProverEnabled,
+      messageTimeoutSeconds: Math.ceil(config.feeJuiceTimeoutMs / 1_000),
+    },
+    repoRoot,
+    "fpc-full-lifecycle-e2e",
+  );
+
+  const { token, fpc, faucet } = contracts;
+  if (!faucet) {
+    throw new Error("Manifest missing contracts.faucet (required for fpc-full-lifecycle-e2e)");
   }
-  const manifest = JSON.parse(readFileSync(config.manifestPath, "utf8")) as DevnetDeployManifest;
-  if (!manifest.contracts.faucet) {
-    throw new Error(`Faucet contract not found in manifest: ${config.manifestPath}`);
-  }
 
-  const fpcAddress = AztecAddress.fromString(manifest.contracts.fpc);
-  const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
-  const faucetAddress = AztecAddress.fromString(manifest.contracts.faucet);
-
-  // Connect to node and create wallet.
-  const node = createAztecNodeClient(config.nodeUrl);
-  await waitForNode(node);
-  const wallet = await EmbeddedWallet.create(node, {
-    ephemeral: true,
-    pxeConfig: { proverEnabled: config.pxeProverEnabled },
-  });
-
-  // Derive operator account and ensure it is deployed on-chain.
-  const operatorSecretFr = Fr.fromHexString(config.operatorSecretKey);
-  const operatorData = await deriveAccount(operatorSecretFr, wallet);
-  const operator = operatorData.address;
-  const operatorSecretHex = config.operatorSecretKey;
+  const sponsoredFeePayment = new SponsoredFeePaymentMethod(sponsoredFpcAddress);
 
   // Derive fresh user and otherUser for negative scenarios.
   const userData = await deriveAccount(Fr.random(), wallet);
   const otherUserData = await deriveAccount(Fr.random(), wallet);
   const user = userData.address;
   const otherUser = otherUserData.address;
-
-  const tokenArtifact = loadArtifact(path.join(repoRoot, "target", tokenArtifactPath));
-  const fpcArtifact = loadArtifact(path.join(repoRoot, "target", fpcArtifactPath));
-  const faucetArtifact = loadArtifact(path.join(repoRoot, "target", faucetArtifactPath));
-
-  const token = await registerAndGet(node, wallet, tokenAddress, tokenArtifact);
-  const fpc = await registerAndGet(node, wallet, fpcAddress, fpcArtifact);
-  const faucet = await registerAndGet(node, wallet, faucetAddress, faucetArtifact);
-
-  // Register the canonical SponsoredFPC contract.
-  const sponsoredFpcInstance = await getContractInstanceFromInstantiationParams(
-    SponsoredFPCContractArtifact,
-    { salt: new Fr(SPONSORED_FPC_SALT) },
-  );
-  await wallet.registerContract(sponsoredFpcInstance, SponsoredFPCContractArtifact);
-  const sponsoredFeePayment = new SponsoredFeePaymentMethod(sponsoredFpcInstance.address);
 
   // Deploy user and otherUser accounts via SponsoredFPC (batched).
   const deployBatch = new BatchCall(wallet, [
@@ -337,18 +251,19 @@ async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRunti
     from: AztecAddress.ZERO,
     fee: { paymentMethod: sponsoredFeePayment },
   });
+
   // Fund user via faucet drip + shield (batched via SponsoredFPC).
   const { result: faucetConfig } = await faucet.methods.get_config().simulate({ from: user });
   const dripAmount = BigInt(faucetConfig.drip_amount.toString());
-  const shieldAmount = dripAmount;
   const dripBatch = new BatchCall(wallet, [
     faucet.methods.drip(user),
-    token.methods.transfer_public_to_private(user, user, shieldAmount, Fr.random()),
+    token.methods.transfer_public_to_private(user, user, dripAmount, Fr.random()),
   ]);
   await dripBatch.send({
     from: user,
     fee: { paymentMethod: sponsoredFeePayment },
   });
+
   const minFees = await node.getCurrentMinFees();
   const gasLimits = new Gas(config.daGasLimit, config.l2GasLimit);
   const maxFeesPerGas = new GasFees(minFees.feePerDaGas, minFees.feePerL2Gas);
@@ -356,7 +271,7 @@ async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRunti
   return {
     repoRoot,
     operator,
-    operatorSecretHex,
+    operatorSecretHex: config.operatorSecretKey,
     user,
     otherUser,
     wallet,
@@ -425,13 +340,6 @@ describe("fpc full lifecycle e2e", () => {
     config = getConfig();
     result = await setupFromManifest(config);
     node = result.node;
-
-    await waitForPositiveFeeJuiceBalance(
-      node,
-      result.fpc.address,
-      config.feeJuiceTimeoutMs,
-      config.feeJuicePollMs,
-    );
   });
 
   it("rejects insufficient fee juice", async () => {

@@ -96,7 +96,7 @@ export async function testAlwaysRevert(ctx: TestContext): Promise<void> {
   const operatorStartBalance = BigInt(operatorStartBalanceRaw.toString());
 
   // Assert: drip landed in public, then shield moved it all to private
-  const userBal = new PrivateBalanceTracker(token, user, "User", 0n);
+  const userBal = await PrivateBalanceTracker.create(token, ctx.wallet, userData.secret, "User");
   await userBal.change(shieldAmount);
 
   pinoLogger.info(`${LOG_PREFIX} PASS: faucet drip + shield succeeded`);
@@ -107,9 +107,10 @@ export async function testAlwaysRevert(ctx: TestContext): Promise<void> {
 
   pinoLogger.info(`${LOG_PREFIX} starting ${iterations} always_revert iteration(s)`);
 
-  const operatorBal = new PrivateBalanceTracker(
+  const operatorBal = await PrivateBalanceTracker.create(
     token,
-    operator,
+    ctx.wallet,
+    args.operatorSecretKey,
     "Operator",
     operatorStartBalance,
     "atLeast",
