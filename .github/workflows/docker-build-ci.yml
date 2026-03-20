@@ -71,6 +71,12 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
+      # Pull + start anvil & aztec-node in the background while images build.
+      # The two use external images unaffected by bake, so they can start early
+      # and save ~2 min of pull + node-init wait time.
+      - name: Start infrastructure (background)
+        run: docker compose up -d anvil aztec-node &
+
       - name: Build all images
         uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6.10.0
         with:
@@ -79,6 +85,10 @@ jobs:
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
+
+      # Ensure background infra is healthy before starting the rest
+      - name: Wait for infrastructure
+        run: docker compose up -d --wait anvil aztec-node
 
       - name: Run services and tests
         run: docker compose --profile full up wait --wait
