@@ -1,16 +1,15 @@
+import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import pino from "pino";
-
-const pinoLogger = pino();
 
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
 import { Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { Point } from "@aztec/foundation/curves/grumpkin";
 import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import { sleep } from "../common/managed-process.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -44,6 +43,17 @@ type QuoteResponse = {
 type AssetResponse = {
   name: string;
   address: string;
+};
+
+type SmokeRuntimeResult = {
+  config: SmokeConfig;
+  node: AztecNode;
+  fpcAddress: AztecAddress;
+  tokenAddress: AztecAddress;
+  operator: AztecAddress;
+  operatorPubKey: Point;
+  schnorr: Schnorr;
+  quoteFjAmount: bigint;
 };
 
 // ---------------------------------------------------------------------------
@@ -85,10 +95,6 @@ function getConfig(): SmokeConfig {
 // Utility helpers
 // ---------------------------------------------------------------------------
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
@@ -106,7 +112,7 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 }
 
 async function waitForPositiveFeeJuiceBalance(
-  node: ReturnType<typeof createAztecNodeClient>,
+  node: AztecNode,
   fpcAddress: AztecAddress,
   timeoutMs: number,
   pollMs: number,
@@ -122,9 +128,7 @@ async function waitForPositiveFeeJuiceBalance(
   throw new Error(`Timed out waiting for Fee Juice balance on ${fpcAddress}`);
 }
 
-async function getCurrentChainUnixSeconds(
-  node: ReturnType<typeof createAztecNodeClient>,
-): Promise<bigint> {
+async function getCurrentChainUnixSeconds(node: AztecNode): Promise<bigint> {
   const latest = await node.getBlock("latest");
   if (latest) {
     return latest.timestamp;
@@ -301,7 +305,7 @@ function getPrometheusMetricValue(
 // Schnorr signature verification
 // ---------------------------------------------------------------------------
 
-async function verifyAttestationAmountQuoteSignature(
+async function verifyQuoteSignature(
   schnorr: Schnorr,
   operatorPubKey: Point,
   feePayerAddress: AztecAddress,
@@ -311,8 +315,7 @@ async function verifyAttestationAmountQuoteSignature(
   aaPaymentAmount: bigint,
   validUntil: bigint,
   quoteSigBytes: number[],
-  scenarioPrefix: string,
-): Promise<void> {
+): Promise<boolean> {
   const quoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     feePayerAddress.toField(),
@@ -323,187 +326,14 @@ async function verifyAttestationAmountQuoteSignature(
     user.toField(),
   ]);
   const signature = SchnorrSignature.fromBuffer(Buffer.from(quoteSigBytes));
-  const isValid = await schnorr.verifySignature(quoteHash.toBuffer(), operatorPubKey, signature);
-  if (!isValid) {
-    throw new Error(
-      `${scenarioPrefix} quote signature failed Schnorr verification for quoted amount preimage`,
-    );
-  }
+  return schnorr.verifySignature(quoteHash.toBuffer(), operatorPubKey, signature);
 }
 
 // ---------------------------------------------------------------------------
-// Service scenario: attestation + topup HTTP endpoint tests
+// Setup
 // ---------------------------------------------------------------------------
 
-async function runServiceScenario(
-  config: SmokeConfig,
-  node: ReturnType<typeof createAztecNodeClient>,
-  tokenAddress: AztecAddress,
-  fpcAddress: AztecAddress,
-  schnorr: Schnorr,
-  operatorPubKey: Point,
-  user: AztecAddress,
-  quoteFjAmount: bigint,
-): Promise<void> {
-  const scenarioPrefix = "[services-smoke:fpc]";
-  const { attestationBaseUrl, topupOpsBaseUrl, httpTimeoutMs } = config;
-
-  // -- Attestation: health --
-  await waitForHealth(`${attestationBaseUrl}/health`, httpTimeoutMs);
-  pinoLogger.info(`${scenarioPrefix} PASS: attestation service health endpoint`);
-
-  // -- Attestation: bad quote request → 400 --
-  const badQuoteResponse = await fetch(`${attestationBaseUrl}/quote`);
-  if (badQuoteResponse.status !== 400) {
-    throw new Error(
-      `${scenarioPrefix} expected bad quote request to return 400, got ${badQuoteResponse.status}`,
-    );
-  }
-  pinoLogger.info(`${scenarioPrefix} PASS: attestation bad quote request`);
-
-  // -- Attestation: asset endpoint --
-  const asset = await fetchAsset(`${attestationBaseUrl}/asset`, httpTimeoutMs);
-  if (!asset.name || asset.name.trim().length === 0) {
-    throw new Error(`${scenarioPrefix} asset name is empty`);
-  }
-  if (asset.address.toLowerCase() !== tokenAddress.toString().toLowerCase()) {
-    throw new Error(
-      `${scenarioPrefix} asset address mismatch. expected=${tokenAddress.toString()} got=${asset.address}`,
-    );
-  }
-  pinoLogger.info(
-    `${scenarioPrefix} PASS: asset endpoint matches deployed token (name=${asset.name})`,
-  );
-
-  // -- Attestation: valid quote with signature verification --
-  const chainNowBeforeQuote = await getCurrentChainUnixSeconds(node);
-  const quote = await fetchQuote(
-    `${attestationBaseUrl}/quote?user=${user.toString()}&accepted_asset=${tokenAddress.toString()}&fj_amount=${quoteFjAmount.toString()}`,
-    httpTimeoutMs,
-  );
-  const chainNowAfterQuote = await getCurrentChainUnixSeconds(node);
-  const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace("0x", ""), "hex"));
-  const fjAmount = BigInt(quote.fj_amount);
-  const aaPaymentAmount = BigInt(quote.aa_payment_amount);
-  const validUntil = BigInt(quote.valid_until);
-
-  if (quoteSigBytes.length !== 64) {
-    throw new Error(
-      `${scenarioPrefix} quote signature length must be 64 bytes, got ${quoteSigBytes.length}`,
-    );
-  }
-  if (fjAmount <= 0n) {
-    throw new Error(`${scenarioPrefix} attestation quote returned non-positive fj_amount`);
-  }
-  if (aaPaymentAmount <= 0n) {
-    throw new Error(`${scenarioPrefix} attestation quote returned non-positive aa_payment_amount`);
-  }
-  if (quote.accepted_asset.toLowerCase() !== tokenAddress.toString().toLowerCase()) {
-    throw new Error(
-      `${scenarioPrefix} quote accepted_asset mismatch. expected=${tokenAddress.toString()} got=${quote.accepted_asset}`,
-    );
-  }
-  if (fjAmount !== quoteFjAmount) {
-    throw new Error(
-      `${scenarioPrefix} quote fj amount mismatch. expected=${quoteFjAmount} got=${fjAmount}`,
-    );
-  }
-
-  await verifyAttestationAmountQuoteSignature(
-    schnorr,
-    operatorPubKey,
-    fpcAddress,
-    tokenAddress,
-    user,
-    fjAmount,
-    aaPaymentAmount,
-    validUntil,
-    quoteSigBytes,
-    scenarioPrefix,
-  );
-  pinoLogger.info(`${scenarioPrefix} PASS: quote signature verification`);
-
-  // -- Attestation: validity window --
-  // Verify valid_until is in the future and not unreasonably far out (< 24h).
-  // We no longer control the attestation config, so we cannot assert the exact
-  // quote_validity_seconds — the Schnorr signature already covers valid_until.
-  const chainNowMax =
-    chainNowBeforeQuote > chainNowAfterQuote ? chainNowBeforeQuote : chainNowAfterQuote;
-  const maxReasonableValidUntil = chainNowMax + 86_400n;
-  if (validUntil <= chainNowMax) {
-    throw new Error(
-      `${scenarioPrefix} quote valid_until is not in the future. chain_now=${chainNowMax} valid_until=${validUntil}`,
-    );
-  }
-  if (validUntil > maxReasonableValidUntil) {
-    throw new Error(
-      `${scenarioPrefix} quote valid_until is unreasonably far in the future. chain_now=${chainNowMax} valid_until=${validUntil} max=${maxReasonableValidUntil}`,
-    );
-  }
-
-  // -- Attestation: metrics --
-  const attestationMetrics = await fetchMetrics(`${attestationBaseUrl}/metrics`, httpTimeoutMs);
-  const attestationSuccessCount = getPrometheusMetricValue(
-    attestationMetrics,
-    "attestation_quote_requests_total",
-    { outcome: "success" },
-  );
-  if ((attestationSuccessCount ?? 0) < 1) {
-    throw new Error(`${scenarioPrefix} attestation metrics missing non-zero success quote count`);
-  }
-  const attestationErrorCount = getPrometheusMetricValue(
-    attestationMetrics,
-    "attestation_quote_errors_total",
-    { error_type: "bad_request" },
-  );
-  if ((attestationErrorCount ?? 0) < 1) {
-    throw new Error(
-      `${scenarioPrefix} attestation metrics missing non-zero bad_request error count`,
-    );
-  }
-  const attestationLatencyCount = getPrometheusMetricValue(
-    attestationMetrics,
-    "attestation_quote_latency_seconds_count",
-    { outcome: "success" },
-  );
-  if ((attestationLatencyCount ?? 0) < 1) {
-    throw new Error(`${scenarioPrefix} attestation metrics missing non-zero success latency count`);
-  }
-  pinoLogger.info(`${scenarioPrefix} PASS: attestation metrics`);
-
-  // -- Topup: health --
-  await waitForHealth(`${topupOpsBaseUrl}/health`, httpTimeoutMs);
-  pinoLogger.info(`${scenarioPrefix} PASS: topup service health endpoint`);
-
-  // -- Topup: ready --
-  await waitForHealth(`${topupOpsBaseUrl}/ready`, httpTimeoutMs);
-  pinoLogger.info(`${scenarioPrefix} PASS: topup service readiness endpoint`);
-
-  // -- Topup: metrics --
-  const topupMetrics = await fetchMetrics(`${topupOpsBaseUrl}/metrics`, httpTimeoutMs);
-  const topupSubmittedCount = getPrometheusMetricValue(topupMetrics, "topup_bridge_events_total", {
-    event: "submitted",
-  });
-  if ((topupSubmittedCount ?? 0) < 1) {
-    throw new Error(`${scenarioPrefix} topup metrics missing non-zero submitted bridge count`);
-  }
-  pinoLogger.info(`${scenarioPrefix} PASS: topup service metrics`);
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
-async function main() {
-  const config = getConfig();
-
-  pinoLogger.info("[services-smoke] starting");
-  pinoLogger.info(`[services-smoke] node_url=${config.nodeUrl}`);
-  pinoLogger.info(`[services-smoke] attestation_url=${config.attestationBaseUrl}`);
-  pinoLogger.info(`[services-smoke] topup_ops_url=${config.topupOpsBaseUrl}`);
-  pinoLogger.info(`[services-smoke] manifest=${config.manifestPath}`);
-
-  // 1. Read manifest
+async function setupFromConfig(config: SmokeConfig): Promise<SmokeRuntimeResult> {
   if (!existsSync(config.manifestPath)) {
     throw new Error(`Manifest not found: ${config.manifestPath}`);
   }
@@ -512,55 +342,155 @@ async function main() {
   const fpcAddress = AztecAddress.fromString(manifest.contracts.fpc);
   const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
 
-  pinoLogger.info(
-    `[services-smoke] manifest loaded. fpc=${manifest.contracts.fpc} token=${manifest.contracts.accepted_asset}`,
-  );
-
-  // 2. Connect to node
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNode(node);
 
-  // 3. Read operator address and pubkey from manifest
   const operator = AztecAddress.fromString(manifest.operator.address);
   const operatorPubKey = new Point(
     Fr.fromHexString(manifest.operator.pubkey_x),
     Fr.fromHexString(manifest.operator.pubkey_y),
     false,
   );
-  pinoLogger.info(`[services-smoke] operator=${operator.toString()}`);
 
-  // 4. Wait for FPC FeeJuice balance > 0 (proves topup service has bridged)
-  pinoLogger.info("[services-smoke] waiting for FPC FeeJuice balance > 0 (via topup service)");
   const fjTimeoutMs = config.messageTimeoutSeconds * 1_000;
-  const fjBalance = await waitForPositiveFeeJuiceBalance(node, fpcAddress, fjTimeoutMs, 2_000);
-  pinoLogger.info(`[services-smoke] FPC FeeJuice balance=${fjBalance}`);
+  await waitForPositiveFeeJuiceBalance(node, fpcAddress, fjTimeoutMs, 2_000);
 
-  // 5. Compute gas cost for quote request
   const minFees = await node.getCurrentMinFees();
-  const maxGasCostNoTeardown =
+  const quoteFjAmount =
     BigInt(config.daGasLimit) * minFees.feePerDaGas +
     BigInt(config.l2GasLimit) * minFees.feePerL2Gas;
 
-  // 6. Run service HTTP endpoint tests
   const schnorr = new Schnorr();
-  await runServiceScenario(
+
+  return {
     config,
     node,
-    tokenAddress,
     fpcAddress,
-    schnorr,
-    operatorPubKey,
+    tokenAddress,
     operator,
-    maxGasCostNoTeardown,
-  );
+    operatorPubKey,
+    schnorr,
+    quoteFjAmount,
+  };
 }
 
-void (async () => {
-  try {
-    await main();
-    pinoLogger.info("[services-smoke] PASS: full services smoke flow succeeded");
-  } catch (error) {
-    pinoLogger.error(`[services-smoke] FAIL: ${(error as Error).message}`);
-    process.exit(1);
-  }
-})();
+// ---------------------------------------------------------------------------
+// Test suite
+// ---------------------------------------------------------------------------
+
+const E2E_TIMEOUT_MS = 300_000;
+setDefaultTimeout(E2E_TIMEOUT_MS);
+
+let ctx: SmokeRuntimeResult;
+
+describe("fpc services smoke", () => {
+  beforeAll(async () => {
+    const config = getConfig();
+    ctx = await setupFromConfig(config);
+  });
+
+  describe("attestation service", () => {
+    it("health endpoint is reachable", async () => {
+      await waitForHealth(`${ctx.config.attestationBaseUrl}/health`, ctx.config.httpTimeoutMs);
+    });
+
+    it("rejects bad quote request with 400", async () => {
+      const response = await fetch(`${ctx.config.attestationBaseUrl}/quote`);
+      expect(response.status).toBe(400);
+    });
+
+    it("asset endpoint returns matching token address", async () => {
+      const asset = await fetchAsset(
+        `${ctx.config.attestationBaseUrl}/asset`,
+        ctx.config.httpTimeoutMs,
+      );
+      expect(asset.name.trim().length).toBeGreaterThan(0);
+      expect(asset.address.toLowerCase()).toBe(ctx.tokenAddress.toString().toLowerCase());
+    });
+
+    it("returns valid quote with correct signature", async () => {
+      const chainNowBefore = await getCurrentChainUnixSeconds(ctx.node);
+      const quote = await fetchQuote(
+        `${ctx.config.attestationBaseUrl}/quote?user=${ctx.operator.toString()}&accepted_asset=${ctx.tokenAddress.toString()}&fj_amount=${ctx.quoteFjAmount.toString()}`,
+        ctx.config.httpTimeoutMs,
+      );
+      const chainNowAfter = await getCurrentChainUnixSeconds(ctx.node);
+
+      const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace("0x", ""), "hex"));
+      const fjAmount = BigInt(quote.fj_amount);
+      const aaPaymentAmount = BigInt(quote.aa_payment_amount);
+      const validUntil = BigInt(quote.valid_until);
+
+      expect(quoteSigBytes).toHaveLength(64);
+      expect(fjAmount).toBeGreaterThan(0n);
+      expect(aaPaymentAmount).toBeGreaterThan(0n);
+      expect(quote.accepted_asset.toLowerCase()).toBe(ctx.tokenAddress.toString().toLowerCase());
+      expect(fjAmount).toBe(ctx.quoteFjAmount);
+
+      const isValid = await verifyQuoteSignature(
+        ctx.schnorr,
+        ctx.operatorPubKey,
+        ctx.fpcAddress,
+        ctx.tokenAddress,
+        ctx.operator,
+        fjAmount,
+        aaPaymentAmount,
+        validUntil,
+        quoteSigBytes,
+      );
+      expect(isValid).toBe(true);
+
+      // Verify valid_until is in the future and not unreasonably far out (< 24h).
+      const chainNowMax = chainNowBefore > chainNowAfter ? chainNowBefore : chainNowAfter;
+      const maxReasonableValidUntil = chainNowMax + 86_400n;
+      expect(validUntil).toBeGreaterThan(chainNowMax);
+      expect(validUntil).toBeLessThanOrEqual(maxReasonableValidUntil);
+    });
+
+    it("exposes correct prometheus metrics", async () => {
+      const metrics = await fetchMetrics(
+        `${ctx.config.attestationBaseUrl}/metrics`,
+        ctx.config.httpTimeoutMs,
+      );
+
+      const successCount = getPrometheusMetricValue(metrics, "attestation_quote_requests_total", {
+        outcome: "success",
+      });
+      expect(successCount ?? 0).toBeGreaterThanOrEqual(1);
+
+      const errorCount = getPrometheusMetricValue(metrics, "attestation_quote_errors_total", {
+        error_type: "bad_request",
+      });
+      expect(errorCount ?? 0).toBeGreaterThanOrEqual(1);
+
+      const latencyCount = getPrometheusMetricValue(
+        metrics,
+        "attestation_quote_latency_seconds_count",
+        { outcome: "success" },
+      );
+      expect(latencyCount ?? 0).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe("topup service", () => {
+    it("health endpoint is reachable", async () => {
+      await waitForHealth(`${ctx.config.topupOpsBaseUrl}/health`, ctx.config.httpTimeoutMs);
+    });
+
+    it("readiness endpoint is reachable", async () => {
+      await waitForHealth(`${ctx.config.topupOpsBaseUrl}/ready`, ctx.config.httpTimeoutMs);
+    });
+
+    it("exposes correct prometheus metrics", async () => {
+      const metrics = await fetchMetrics(
+        `${ctx.config.topupOpsBaseUrl}/metrics`,
+        ctx.config.httpTimeoutMs,
+      );
+
+      const submittedCount = getPrometheusMetricValue(metrics, "topup_bridge_events_total", {
+        event: "submitted",
+      });
+      expect(submittedCount ?? 0).toBeGreaterThanOrEqual(1);
+    });
+  });
+});

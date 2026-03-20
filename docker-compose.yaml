@@ -150,8 +150,9 @@ services:
   smoke-services:
     image: nethermind/aztec-fpc-smoke:local
     profiles: ["smoke", "full"]
+    entrypoint: ["bun", "test"]
     command:
-      - "scripts/services/fpc-services-smoke.ts"
+      - "./scripts/services/fpc-services-smoke.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:
