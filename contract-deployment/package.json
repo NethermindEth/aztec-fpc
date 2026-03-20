@@ -1,5 +1,5 @@
 {
-  "name": "@aztec-fpc/contract-deployment",
+  "name": "@nethermindeth/aztec-fpc-contract-deployment",
   "version": "0.1.0",
   "description": "Bundleable FPC contract deployment CLI for devnet",
   "type": "module",

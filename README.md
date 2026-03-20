@@ -33,10 +33,10 @@ DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
 
 ## Integrate with the SDK
 
-Use [`@aztec-fpc/sdk`](sdk/) to construct FPC payment methods and execute cold-start flows from your application.
+Use [`@nethermindeth/aztec-fpc-sdk`](sdk/) to construct FPC payment methods and execute cold-start flows from your application.
 
 ```ts
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 
 const client = new FpcClient({
   fpcAddress,

@@ -7,7 +7,7 @@
 
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import pino from "pino";
 import { deriveAccount } from "../common/script-credentials.ts";
 import type { TestContext } from "./setup.ts";

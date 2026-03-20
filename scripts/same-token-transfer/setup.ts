@@ -22,8 +22,8 @@ import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdl
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
-import { FpcClient } from "@aztec-fpc/sdk";
+import type { DevnetDeployManifest } from "@nethermindeth/aztec-fpc-contract-deployment/src/devnet-manifest.ts";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import pino from "pino";
 import { deriveAccount } from "../common/script-credentials.ts";
 import { type CliArgs, CliError } from "./cli.ts";

@@ -221,10 +221,10 @@ echo "[chaos-local] Compiling contracts workspace..."
 aztec compile --workspace --force
 
 echo "[chaos-local] Building attestation service..."
-bun run --filter @aztec-fpc/attestation build
+bun run --filter @nethermindeth/aztec-fpc-attestation build
 
 echo "[chaos-local] Building topup service..."
-bun run --filter @aztec-fpc/topup build
+bun run --filter @nethermindeth/aztec-fpc-topup build
 
 # ── Run orchestrator ───────────────────────────────────────────────────────────
 echo "[chaos-local] Handing off to TypeScript orchestrator..."

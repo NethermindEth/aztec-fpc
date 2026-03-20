@@ -21,7 +21,7 @@ import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload, type TxReceipt } from "@aztec/stdlib/tx";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import type { DevnetDeployManifest } from "@nethermindeth/aztec-fpc-contract-deployment/src/devnet-manifest.ts";
 import { sleep } from "../common/managed-process.ts";
 import { deriveAccount } from "../common/script-credentials.ts";
 
