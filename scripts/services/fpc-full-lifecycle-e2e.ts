@@ -36,6 +36,7 @@ type FullE2EConfig = {
   feeBips: number;
   daGasLimit: number;
   l2GasLimit: number;
+  pxeProverEnabled: boolean;
 };
 
 type DeploymentRuntimeResult = {
@@ -178,21 +179,28 @@ type FeeEntrypointOverrides = {
   maxFeesPerGas?: GasFees;
   fpcAddress?: AztecAddress;
   tokenAddress?: AztecAddress;
+  fjAmount?: bigint;
+  aaPaymentAmount?: bigint;
+  rateNum?: bigint;
+  rateDen?: bigint;
+};
+
+type ExecuteFeePaidTxOverrides = {
+  maxFeesPerGas?: GasFees;
+  authwitNonce?: Fr;
+  authwitAmount?: bigint;
 };
 
 async function executeFeePaidTx(
   result: DeploymentRuntimeResult,
   quote: QuoteInput,
-  maxFeesPerGas?: GasFees,
+  overrides?: ExecuteFeePaidTxOverrides,
 ): Promise<TxSendResultMined<TxReceipt>> {
-  const transferAuthwitNonce = Fr.random();
+  const entrypointNonce = Fr.random();
+  const authwitNonce = overrides?.authwitNonce ?? entrypointNonce;
+  const authwitAmount = overrides?.authwitAmount ?? quote.aaPaymentAmount;
   const transferCall = await result.token.methods
-    .transfer_private_to_private(
-      result.user,
-      result.operator,
-      quote.aaPaymentAmount,
-      transferAuthwitNonce,
-    )
+    .transfer_private_to_private(result.user, result.operator, authwitAmount, authwitNonce)
     .getFunctionCall();
   const transferAuthwit = await result.wallet.createAuthWit(result.user, {
     caller: result.fpc.address,
@@ -202,7 +210,7 @@ async function executeFeePaidTx(
   const feeEntrypointCall = await result.fpc.methods
     .fee_entrypoint(
       result.token.address,
-      transferAuthwitNonce,
+      entrypointNonce,
       quote.fjAmount,
       quote.aaPaymentAmount,
       quote.validUntil,
@@ -228,16 +236,11 @@ async function executeFeePaidTx(
         gasSettings: {
           gasLimits: result.gasLimits,
           teardownGasLimits: new Gas(0, 0),
-          maxFeesPerGas: maxFeesPerGas ?? result.maxFeesPerGas,
+          maxFeesPerGas: overrides?.maxFeesPerGas ?? result.maxFeesPerGas,
         },
       },
       wait: { timeout: 180 },
     });
-}
-
-function anyOf(substrings: string[]): RegExp {
-  const escaped = substrings.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  return new RegExp(escaped.join("|"), "i");
 }
 
 function requireEnv(name: string): string {
@@ -268,6 +271,8 @@ function getConfig(): FullE2EConfig {
     feeBips,
     daGasLimit: readEnvPositiveInteger("FPC_FULL_E2E_DA_GAS_LIMIT", 200_000),
     l2GasLimit: readEnvPositiveInteger("FPC_FULL_E2E_L2_GAS_LIMIT", 1_000_000),
+    pxeProverEnabled:
+      process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
   };
 }
 
@@ -290,7 +295,10 @@ async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRunti
   // Connect to node and create wallet.
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNode(node);
-  const wallet = await EmbeddedWallet.create(node);
+  const wallet = await EmbeddedWallet.create(node, {
+    ephemeral: true,
+    pxeConfig: { proverEnabled: config.pxeProverEnabled },
+  });
 
   // Derive operator account and ensure it is deployed on-chain.
   const operatorSecretFr = Fr.fromHexString(config.operatorSecretKey);
@@ -368,18 +376,22 @@ async function signQuote(
   node: AztecNode,
   overrides?: FeeEntrypointOverrides,
 ): Promise<QuoteInput> {
-  const fjAmount = computeMaxGasCost(
+  const computedFjAmount = computeMaxGasCost(
     result.gasLimits,
     overrides?.maxFeesPerGas ?? result.maxFeesPerGas,
   );
-  const { rateNum, rateDen } = getFinalRate(config);
+  const { rateNum: configRateNum, rateDen: configRateDen } = getFinalRate(config);
+  const rateNum = overrides?.rateNum ?? configRateNum;
+  const rateDen = overrides?.rateDen ?? configRateDen;
   const latestTimestamp = await getLatestL2Timestamp(node);
   const validUntil = overrides?.validUntil ?? latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS);
   const user = overrides?.payer ?? result.user;
   const fpcAddress = overrides?.fpcAddress ?? result.fpc.address;
   const tokenAddress = overrides?.tokenAddress ?? result.token.address;
 
-  const aaPaymentAmount = ceilDiv(fjAmount * rateNum, rateDen);
+  const computedAaPayment = ceilDiv(computedFjAmount * rateNum, rateDen);
+  const signedFjAmount = overrides?.fjAmount ?? computedFjAmount;
+  const signedAaPayment = overrides?.aaPaymentAmount ?? computedAaPayment;
   const secret = Fr.fromHexString(result.operatorSecretHex);
   const signingKey = deriveSigningKey(secret);
   const schnorr = new Schnorr();
@@ -387,15 +399,15 @@ async function signQuote(
     QUOTE_DOMAIN_SEPARATOR,
     fpcAddress.toField(),
     tokenAddress.toField(),
-    new Fr(fjAmount),
-    new Fr(aaPaymentAmount),
+    new Fr(signedFjAmount),
+    new Fr(signedAaPayment),
     new Fr(validUntil),
     user.toField(),
   ]);
   const signature = await schnorr.constructSignature(quoteHash.toBuffer(), signingKey);
   return {
-    fjAmount,
-    aaPaymentAmount,
+    fjAmount: computedFjAmount,
+    aaPaymentAmount: computedAaPayment,
     validUntil,
     quoteSigBytes: Array.from(signature.toBuffer()),
   };
@@ -429,13 +441,8 @@ describe("fpc full lifecycle e2e", () => {
     const fpcBalance = await getFeeJuiceBalance(result.fpc.address, node);
     expect(quote.fjAmount).toBeGreaterThan(fpcBalance);
 
-    await expect(() => executeFeePaidTx(result, quote, maxFeesPerGas)).toThrow(
-      anyOf([
-        "insufficient fee payer balance",
-        "fee payer balance",
-        "insufficient fee payer",
-        "not enough fee",
-      ]),
+    await expect(() => executeFeePaidTx(result, quote, { maxFeesPerGas })).toThrow(
+      /Invalid tx: Insufficient fee payer balance/,
     );
   });
 
@@ -443,9 +450,7 @@ describe("fpc full lifecycle e2e", () => {
     const quote = await signQuote(config, result, node);
     await executeFeePaidTx(result, quote);
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
-      anyOf(["nullifier", "already exists", "duplicate"]),
-    );
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(/Invalid tx: Existing nullifier/);
   });
 
   it("rejects expired quote", async () => {
@@ -454,7 +459,9 @@ describe("fpc full lifecycle e2e", () => {
       validUntil: latestTimestamp - 1n,
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(/quote expired/i);
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      /Assertion failed: quote expired 'anchor_ts <= valid_until'/,
+    );
   });
 
   it("rejects overlong quote ttl", async () => {
@@ -463,7 +470,9 @@ describe("fpc full lifecycle e2e", () => {
       validUntil: latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS * 2),
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(/quote ttl too large/i);
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      /Assertion failed: quote ttl too large 'quote_ttl <= MAX_QUOTE_TTL_SECONDS'/,
+    );
   });
 
   it("rejects quote signed for different sender", async () => {
@@ -472,7 +481,7 @@ describe("fpc full lifecycle e2e", () => {
     });
 
     await expect(() => executeFeePaidTx(result, quote)).toThrow(
-      anyOf(["invalid quote signature", "Cannot satisfy constraint"]),
+      /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
     );
   });
 
@@ -482,7 +491,7 @@ describe("fpc full lifecycle e2e", () => {
     });
 
     await expect(() => executeFeePaidTx(result, quote)).toThrow(
-      anyOf(["invalid quote signature", "Cannot satisfy constraint"]),
+      /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
     );
   });
 
@@ -492,7 +501,7 @@ describe("fpc full lifecycle e2e", () => {
     });
 
     await expect(() => executeFeePaidTx(result, quote)).toThrow(
-      anyOf(["invalid quote signature", "Cannot satisfy constraint"]),
+      /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
     );
   });
 
@@ -528,6 +537,93 @@ describe("fpc full lifecycle e2e", () => {
           authWitnesses: [transferAuthwit],
           wait: { timeout: 180 },
         }),
-    ).toThrow(/must run in setup phase/i);
+    ).toThrow(
+      /Assertion failed: fee_entrypoint must run in setup phase '!self\.context\.in_revertible_phase\(\)'/,
+    );
+  });
+
+  // --- On-chain chaos / adversarial tests ---
+
+  it("rejects tampered signature", async () => {
+    const quote = await signQuote(config, result, node);
+    const tampered = [...quote.quoteSigBytes];
+    tampered[0] = tampered[0] ^ 0xff;
+
+    await expect(() => executeFeePaidTx(result, { ...quote, quoteSigBytes: tampered })).toThrow(
+      /is not a valid grumpkin scalar/,
+    );
+  });
+
+  it("rejects tampered fj amount in quote", async () => {
+    const realFj = computeMaxGasCost(result.gasLimits, result.maxFeesPerGas);
+    const quote = await signQuote(config, result, node, {
+      fjAmount: realFj + 1n,
+    });
+
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
+    );
+  });
+
+  it("rejects tampered aa payment amount in quote", async () => {
+    const { rateNum, rateDen } = getFinalRate(config);
+    const realFj = computeMaxGasCost(result.gasLimits, result.maxFeesPerGas);
+    const realAa = ceilDiv(realFj * rateNum, rateDen);
+    const quote = await signQuote(config, result, node, {
+      aaPaymentAmount: realAa + 1n,
+    });
+
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
+    );
+  });
+
+  it("rejects fj amount that does not match gas cost", async () => {
+    const halved = new GasFees(
+      result.maxFeesPerGas.feePerDaGas / 2n,
+      result.maxFeesPerGas.feePerL2Gas / 2n,
+    );
+    const quote = await signQuote(config, result, node, { maxFeesPerGas: halved });
+
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      /Assertion failed: quoted fee amount mismatch 'fj_fee_amount == max_fee'/,
+    );
+  });
+
+  it("rejects fee payment when user has insufficient token balance", async () => {
+    const quote = await signQuote(config, result, node, {
+      rateNum: 1_000_000_000_000n,
+    });
+
+    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+      /Assertion failed: Balance too low 'subtracted > 0'/,
+    );
+  });
+
+  it("rejects authwit nonce mismatch", async () => {
+    const quote = await signQuote(config, result, node);
+
+    await expect(() => executeFeePaidTx(result, quote, { authwitNonce: Fr.random() })).toThrow(
+      /Unknown auth witness for message hash/,
+    );
+  });
+
+  it("rejects authwit amount mismatch", async () => {
+    const quote = await signQuote(config, result, node);
+
+    await expect(() =>
+      executeFeePaidTx(result, quote, {
+        authwitAmount: quote.aaPaymentAmount + 1n,
+      }),
+    ).toThrow(/Unknown auth witness for message hash/);
+  });
+
+  it("rejects signature with wrong length", async () => {
+    const quote = await signQuote(config, result, node);
+    const truncated = quote.quoteSigBytes.slice(0, 63);
+
+    await expect(() => executeFeePaidTx(result, { ...quote, quoteSigBytes: truncated })).toThrow(
+      /Undefined argument quote_sig\[63] of type integer/,
+    );
   });
 });
