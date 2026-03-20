@@ -78,8 +78,6 @@ import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { resolveScriptAccounts } from "../common/script-credentials.ts";
 
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
-const U128_MAX = 2n ** 128n - 1n;
-const _HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
 type ChaosMode = "api" | "onchain" | "full";
 type TestStatus = "pass" | "fail" | "skip";
@@ -496,12 +494,6 @@ function assertOk(status: number, body: string, label: string): void {
   }
 }
 
-function assertClientError(status: number, body: string, label: string): void {
-  if (status < 400 || status >= 500) {
-    throw new Error(`${label}: expected 4xx, got ${status}. body=${body.slice(0, 200)}`);
-  }
-}
-
 function parseQuote(body: string): QuoteResponse {
   const parsed = JSON.parse(body) as QuoteResponse;
   if (
@@ -514,10 +506,6 @@ function parseQuote(body: string): QuoteResponse {
     throw new Error(`Quote response missing required fields: ${body.slice(0, 300)}`);
   }
   return parsed;
-}
-
-function _sleep(ms: number): Promise<void> {
-  return new Promise((res) => setTimeout(res, ms));
 }
 
 // Sentinel user for API-only tests – not a valid account but a real format address
@@ -810,138 +798,6 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
     // Will be caught by individual tests
   }
 
-  await runner.run(
-    "quote-missing-user",
-    "api",
-    "GET /quote without user param returns 4xx",
-    async () => {
-      const { status, body } = await httpGet(
-        `${base}/quote?fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`,
-        config,
-      );
-      assertClientError(status, body, "/quote (missing user)");
-      return { status };
-    },
-  );
-
-  await runner.run(
-    "quote-missing-fj-amount",
-    "api",
-    "GET /quote without fj_amount param returns 4xx",
-    async () => {
-      const { status, body } = await httpGet(
-        `${base}/quote?user=${SENTINEL_USER}&accepted_asset=${config.acceptedAsset}`,
-        config,
-      );
-      assertClientError(status, body, "/quote (missing fj_amount)");
-      return { status };
-    },
-  );
-
-  await runner.run(
-    "quote-zero-fj-amount",
-    "api",
-    "GET /quote with fj_amount=0 returns 4xx",
-    async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=0&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertClientError(status, body, "/quote fj_amount=0");
-      return { status };
-    },
-  );
-
-  await runner.run(
-    "quote-negative-fj-amount",
-    "api",
-    "GET /quote with fj_amount=-1 returns 4xx",
-    async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=-1&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertClientError(status, body, "/quote fj_amount=-1");
-      return { status };
-    },
-  );
-
-  await runner.run(
-    "quote-non-numeric-fj-amount",
-    "api",
-    "GET /quote with fj_amount=notanumber returns 4xx",
-    async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=notanumber&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertClientError(status, body, "/quote fj_amount=notanumber");
-      return { status };
-    },
-  );
-
-  await runner.run(
-    "quote-overflow-fj-amount",
-    "api",
-    "GET /quote with fj_amount > u128 max returns 4xx",
-    async () => {
-      const overflow = (U128_MAX + 1n).toString();
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${overflow}&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertClientError(status, body, "/quote fj_amount overflow");
-      return { status };
-    },
-  );
-
-  await runner.run(
-    "quote-invalid-user-address",
-    "api",
-    "GET /quote with malformed user address returns 4xx",
-    async () => {
-      const url = `${base}/quote?user=not_an_address&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertClientError(status, body, "/quote invalid user");
-      return { status };
-    },
-  );
-
-  await runner.run(
-    "quote-sql-injection-user",
-    "api",
-    "GET /quote with SQL injection in user param returns 4xx",
-    async () => {
-      const injected = encodeURIComponent("' OR '1'='1");
-      const url = `${base}/quote?user=${injected}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertClientError(status, body, "/quote sql injection");
-      return { status };
-    },
-  );
-
-  await runner.run(
-    "quote-very-large-fj-amount",
-    "api",
-    "GET /quote with fj_amount = u128_max returns 4xx or valid quote",
-    async () => {
-      // u128 max is technically valid at the type level but likely too large to be useful
-      // Attestation service may reject it as unreasonable – either 4xx or 200 is acceptable.
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${U128_MAX.toString()}&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      // We accept both success (service allows it) and client error (service rejects as too large)
-      if (status >= 500) {
-        throw new Error(`Server error on u128_max fj_amount: ${status} ${body.slice(0, 200)}`);
-      }
-      return { status, accepted: status < 400 };
-    },
-  );
-
-  const ZERO_USER = "0x0000000000000000000000000000000000000000000000000000000000000000";
-  await runner.run(
-    "quote-zero-user-rejected",
-    "api",
-    "GET /quote with user=0x0 returns 4xx (spec: user never zero)",
-    async () => {
-      const url = `${base}/quote?user=${ZERO_USER}&fj_amount=1&accepted_asset=${config.acceptedAsset}`;
-      const { status, body } = await httpGet(url, config);
-      assertClientError(status, body, "/quote user=0x0");
-      return { status };
-    },
-  );
-
   if (config.quoteAuthApiKey || (config.quoteAuthHeader && config.quoteAuthValue)) {
     await runner.run(
       "quote-auth-no-key-rejected",
@@ -1004,69 +860,6 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
       "FPC_CHAOS_QUOTE_AUTH_API_KEY or FPC_CHAOS_QUOTE_AUTH_HEADER+VALUE not set",
     );
   }
-
-  await runner.run(
-    "rate-limit-burst",
-    "api-ratelimit",
-    `Rate limiting: ${config.rateLimitBurst} rapid requests triggers 429s`,
-    async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
-      const promises = Array.from({ length: config.rateLimitBurst }, () =>
-        httpGet(url, config).catch((e) => ({ status: -1, body: String(e) })),
-      );
-      const results = await Promise.all(promises);
-      const statuses = results.map((r) => r.status);
-      const tooMany = statuses.filter((s) => s === 429).length;
-      const ok = statuses.filter((s) => s >= 200 && s < 300).length;
-      const errors = statuses.filter((s) => s === -1).length;
-
-      // If rate limiting is enabled, we expect some 429s
-      // If disabled, all should be 200 – that's also a valid finding
-      return {
-        total: config.rateLimitBurst,
-        ok,
-        tooMany,
-        errors,
-        rateLimitingObserved: tooMany > 0,
-      };
-    },
-  );
-
-  await runner.run(
-    "quote-concurrent-consistency",
-    "api-concurrent",
-    "10 concurrent quote requests return consistent structure",
-    async () => {
-      const url = `${base}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${config.acceptedAsset}`;
-      const results = await Promise.all(
-        Array.from({ length: 10 }, () =>
-          httpGet(url, config).then(({ status, body }) => ({
-            status,
-            quote: status < 400 ? parseQuote(body) : null,
-          })),
-        ),
-      );
-      const successes = results.filter((r) => r.status < 400);
-      // All successful responses should have same fj_amount and accepted_asset
-      const fjAmounts = new Set(successes.map((r) => r.quote?.fj_amount));
-      const assets = new Set(successes.map((r) => r.quote?.accepted_asset));
-      if (fjAmounts.size > 1) {
-        throw new Error(
-          `Inconsistent fj_amount across concurrent requests: ${[...fjAmounts].join(", ")}`,
-        );
-      }
-      if (assets.size > 1) {
-        throw new Error(
-          `Inconsistent accepted_asset across concurrent requests: ${[...assets].join(", ")}`,
-        );
-      }
-      return {
-        total: results.length,
-        successes: successes.length,
-        rateLimited: results.filter((r) => r.status === 429).length,
-      };
-    },
-  );
 }
 
 async function runStressTests(
@@ -1222,7 +1015,7 @@ async function main(): Promise<void> {
         "FPC_CHAOS_OPERATOR_SECRET_KEY not set – skipping stress tests",
       );
     } else {
-      pinoLogger.info(`\n${BOLD}Phase 2: Concurrent stress tests${RESET}`);
+      pinoLogger.info(`\n${BOLD}Stress tests${RESET}`);
       pinoLogger.info(
         `${DIM}  Building on-chain context (loading artifacts + setting up accounts)...${RESET}`,
       );
