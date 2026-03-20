@@ -12,4 +12,4 @@ check_interval_ms: 60000
 confirmation_timeout_ms: 180000
 confirmation_poll_initial_ms: 1000
 confirmation_poll_max_ms: 15000
-l1_operator_private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+# l1_operator_private_key: set via L1_OPERATOR_PRIVATE_KEY env var (see config.example.yaml for format)

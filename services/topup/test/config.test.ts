@@ -223,7 +223,7 @@ describe("topup config secret providers", () => {
       },
       () => {
         const config = loadConfig(configPath);
-        assert.equal(config.bridge_state_path, "./state-from-env.json");
+        assert.equal(config.bridge_state_path, path.resolve("./state-from-env.json"));
       },
     );
 

@@ -115,16 +115,22 @@ Includes:
 - `bridge_state_path`: local durable JSON for in-flight bridge metadata.
 - `check_interval_ms`: polling/check cadence.
 - `confirmation_timeout_ms`, `confirmation_poll_initial_ms`, `confirmation_poll_max_ms`: bridge confirmation polling controls.
-- `l1_operator_secret_provider` + secret fields/env vars: L1 signer key source.
+- `l1_operator_secret_provider` + secret fields: L1 signer key source.
 
 Useful env overrides:
 
+- `FPC_RUNTIME_PROFILE` (override runtime profile: `development`, `test`, `production`)
 - `AZTEC_NODE_URL`
 - `L1_RPC_URL`
 - `L1_OPERATOR_PRIVATE_KEY`
 - `TOPUP_BRIDGE_STATE_PATH`
 - `TOPUP_OPS_PORT`
-- `TOPUP_LOG_CLAIM_SECRET=1` (debug only; logs claim secrets)
+- `TOPUP_FEE_JUICE_RECIPIENT_ADDRESS` (overrides bridge target; defaults to `fpc_address`)
+- `TOPUP_AUTOCLAIM_ENABLED` (`0` to disable auto-claim)
+- `TOPUP_AUTOCLAIM_SECRET_KEY` (claimer account secret key)
+- `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` (sponsored FPC for fee-less claims)
+
+Claim secrets are logged automatically in `development` profile and never in `test`/`production`.
 
 ## Minimal Local Run
 

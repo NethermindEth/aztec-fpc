@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import nodePath from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import {
@@ -67,6 +68,15 @@ const ConfigSchema = z
         path: ["confirmation_poll_max_ms"],
       });
     }
+
+    if (BigInt(config.top_up_amount) < BigInt(config.threshold)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "top_up_amount should be >= threshold to bring balance above threshold in a single bridge",
+        path: ["top_up_amount"],
+      });
+    }
   });
 
 type ParsedConfig = z.infer<typeof ConfigSchema>;
@@ -98,16 +108,6 @@ function parseRuntimeProfile(
   return RuntimeProfileSchema.parse(envOverride.trim());
 }
 
-function parseSecretProvider(
-  configValue: SecretProvider,
-  envOverride: string | undefined,
-): SecretProvider {
-  if (!envOverride) {
-    return configValue;
-  }
-  return SecretProviderSchema.parse(envOverride.trim());
-}
-
 function parseIntegerOverride(
   configValue: number,
   envOverride: string | undefined,
@@ -135,18 +135,14 @@ export function loadConfig(path: string, options: LoadConfigOptions = {}): Confi
     config.runtime_profile,
     process.env.FPC_RUNTIME_PROFILE,
   );
-  const secretProvider = parseSecretProvider(
-    config.l1_operator_secret_provider,
-    process.env.L1_OPERATOR_SECRET_PROVIDER,
-  );
   const resolvedSecret = resolveSecret({
     secretLabel: "L1 operator private key",
-    provider: secretProvider,
+    provider: config.l1_operator_secret_provider,
     runtimeProfile,
     envVarName: "L1_OPERATOR_PRIVATE_KEY",
     envValue: process.env.L1_OPERATOR_PRIVATE_KEY,
     configValue: config.l1_operator_private_key,
-    secretRef: process.env.L1_OPERATOR_SECRET_REF ?? config.l1_operator_secret_ref,
+    secretRef: config.l1_operator_secret_ref,
     adapters: options.secretAdapters,
   });
 
@@ -161,7 +157,9 @@ export function loadConfig(path: string, options: LoadConfigOptions = {}): Confi
     runtime_profile: runtimeProfile,
     aztec_node_url: aztecNodeUrl,
     l1_rpc_url: l1RpcUrl,
-    bridge_state_path: process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
+    bridge_state_path: nodePath.resolve(
+      process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
+    ),
     ops_port: parseIntegerOverride(
       config.ops_port,
       process.env.TOPUP_OPS_PORT,
