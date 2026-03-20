@@ -155,7 +155,6 @@ type OnchainContext = {
   wallet: EmbeddedWallet;
   operator: AztecAddress;
   user: AztecAddress;
-  otherUser: AztecAddress;
   operatorSecretHex: string;
   token: Contract;
   fpc: Contract;
@@ -422,15 +421,15 @@ function getConfig(): ChaosConfig {
 
   const attestationUrl = requireEnvStr("FPC_CHAOS_ATTESTATION_URL").replace(/\/$/, "");
 
-  if ((mode === "onchain" || mode === "full") && !nodeUrl) {
+  if (mode === "full" && !nodeUrl) {
     throw new Error(`FPC_CHAOS_NODE_URL (or manifest with node URL) is required for mode=${mode}`);
   }
-  if ((mode === "onchain" || mode === "full") && !fpcAddress) {
+  if (mode === "full" && !fpcAddress) {
     throw new Error(
       `FPC_CHAOS_FPC_ADDRESS (or manifest with fpc_address) is required for mode=${mode}`,
     );
   }
-  if ((mode === "onchain" || mode === "full") && !acceptedAsset) {
+  if (mode === "full" && !acceptedAsset) {
     throw new Error(
       `FPC_CHAOS_ACCEPTED_ASSET (or manifest with accepted_asset) is required for mode=${mode}`,
     );
@@ -602,17 +601,16 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
   );
   const operator = operatorAcct.address;
 
-  // User and otherUser: fresh accounts deployed with funded FeeJuice,
+  // User: fresh account deployed with funded FeeJuice,
   // isolated from the node's genesis accounts to avoid note conflicts.
   pinoLogger.info("Resolving test accounts (L1 fund + L2 deploy)...");
   const { accounts: scriptAccounts } = await resolveScriptAccounts(
     config.nodeUrl,
     config.l1RpcUrl,
     wallet,
-    2, // [0]=user, [1]=otherUser
+    1,
   );
   const user = scriptAccounts[0].address;
-  const otherUser = scriptAccounts[1].address;
 
   const fpcAddress = AztecAddress.fromString(config.fpcAddress);
   const acceptedAsset = AztecAddress.fromString(config.acceptedAsset);
@@ -689,7 +687,6 @@ async function buildOnchainContext(config: ChaosConfig): Promise<OnchainContext>
     wallet,
     operator,
     user,
-    otherUser,
     operatorSecretHex: config.operatorSecretKey,
     token,
     fpc,
@@ -797,114 +794,6 @@ async function submitFeePaidTx(
   });
 
   return { expectedCharge: aaPaymentAmount };
-}
-
-/** Build and send a fee-paid tx with optional overrides for chaos tests. */
-async function submitFeePaidTxWithOptions(
-  config: ChaosConfig,
-  ctx: OnchainContext,
-  payer: AztecAddress,
-  quoteSigBytes: number[],
-  fjAmount: bigint,
-  aaPaymentAmount: bigint,
-  validUntil: bigint,
-  options?: {
-    teardownDaGas?: number;
-    teardownL2Gas?: number;
-    /** Nonce used in the authwit (transfer action). Default: same as entrypointNonce. */
-    authwitNonce?: Fr;
-    /** Nonce passed to fee_entrypoint. Default: same as authwitNonce. */
-    entrypointNonce?: Fr;
-    /** Amount in the authwit (transfer). Default: aaPaymentAmount. */
-    authwitAmount?: bigint;
-  },
-): Promise<{ expectedCharge: bigint }> {
-  const entrypointNonce = options?.entrypointNonce ?? Fr.random();
-  const authwitNonce = options?.authwitNonce ?? entrypointNonce;
-  const authwitAmount = options?.authwitAmount ?? aaPaymentAmount;
-  const teardownDaGas = options?.teardownDaGas ?? 0;
-  const teardownL2Gas = options?.teardownL2Gas ?? 0;
-
-  const maxAmount = authwitAmount > aaPaymentAmount ? authwitAmount : aaPaymentAmount;
-  await fundPayerTokens(ctx, payer, maxAmount + 1_000_000n, 1n);
-
-  const transferCall = await ctx.token.methods
-    .transfer_private_to_private(payer, ctx.operator, authwitAmount, authwitNonce)
-    .getFunctionCall();
-  const authwit = await ctx.wallet.createAuthWit(payer, {
-    caller: ctx.fpcAddress,
-    call: transferCall,
-  });
-
-  const feeEntrypointCall = await ctx.fpc.methods
-    .fee_entrypoint(
-      ctx.acceptedAsset,
-      entrypointNonce,
-      fjAmount,
-      aaPaymentAmount,
-      validUntil,
-      quoteSigBytes,
-    )
-    .getFunctionCall();
-
-  const paymentMethod = {
-    getAsset: async () => ProtocolContractAddress.FeeJuice,
-    getExecutionPayload: async () =>
-      new ExecutionPayload([feeEntrypointCall], [authwit], [], [], ctx.fpcAddress),
-    getFeePayer: async () => ctx.fpcAddress,
-    getGasSettings: () => undefined,
-  };
-
-  await ctx.token.methods.transfer_public_to_public(payer, ctx.operator, 1n, Fr.random()).send({
-    from: payer,
-    fee: {
-      paymentMethod,
-      gasSettings: {
-        gasLimits: new Gas(config.daGasLimit, config.l2GasLimit),
-        teardownGasLimits: new Gas(teardownDaGas, teardownL2Gas),
-        maxFeesPerGas: new GasFees(ctx.feePerDaGas, ctx.feePerL2Gas),
-      },
-    },
-    wait: { timeout: 180 },
-  });
-
-  return { expectedCharge: aaPaymentAmount };
-}
-
-async function expectOnchainFailure(
-  scenario: string,
-  expectedFragments: string[],
-  action: () => Promise<unknown>,
-): Promise<void> {
-  const maxAttempts = 5;
-  const baseDelayMs = 10_000;
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await action();
-    } catch (err) {
-      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-      if (expectedFragments.some((f) => msg.includes(f.toLowerCase()))) {
-        return; // Expected rejection – test passes
-      }
-      lastErr = err;
-      if (attempt < maxAttempts) {
-        const delayMs = baseDelayMs * attempt;
-        pinoLogger.warn(
-          `[${scenario}] unexpected error (attempt ${attempt}/${maxAttempts}): ${msg.slice(0, 100)}. Waiting ${delayMs / 1000}s...`,
-        );
-        await new Promise((r) => setTimeout(r, delayMs));
-        continue;
-      }
-    }
-    if (!lastErr) {
-      // action() returned normally — the tx succeeded when it should have failed
-      throw new Error(`${scenario} unexpectedly SUCCEEDED (should have been rejected)`);
-    }
-  }
-  throw new Error(
-    `${scenario} failed with UNEXPECTED error after ${maxAttempts} attempts: ${(lastErr as Error).message}`,
-  );
 }
 
 function ceilDiv(a: bigint, b: bigint): bigint {
@@ -1375,378 +1264,6 @@ async function runApiTests(runner: ChaosRunner, config: ChaosConfig): Promise<vo
   );
 }
 
-async function runOnchainTests(
-  runner: ChaosRunner,
-  config: ChaosConfig,
-  ctx: OnchainContext,
-): Promise<void> {
-  const fjAmount = ctx.maxGasCostNoTeardown;
-
-  const computeAaPayment = (rate: { num: bigint; den: bigint }) =>
-    ceilDiv(fjAmount * rate.num, rate.den);
-
-  // We use a fixed rate for crafting quotes (1:1 ratio, 0 bips) –
-  // the on-chain contract only validates the signature, not the exchange rate.
-  // Any sig the operator would produce passes; we want to test tampered sigs.
-  const TEST_RATE = { num: 1n, den: 1000n };
-  const aaPaymentAmount = computeAaPayment(TEST_RATE);
-
-  // NOTE: onchain-happy-path was removed — fully covered by
-  // same-token-transfer (3 successful fee_entrypoint txs with balance checks),
-  // cold-start (3 successful fee_entrypoint txs), and always-revert
-  // (fee_entrypoint succeeds even when app logic reverts).
-  //
-  // onchain-quote-replay, onchain-expired-quote, onchain-overlong-ttl,
-  // and onchain-sender-binding were removed — they are fully covered by
-  // negativeQuoteReplayRejected, negativeExpiredQuoteRejected,
-  // negativeOverlongTtlRejected, and negativeSenderBindingRejected in
-  // scripts/services/fpc-full-lifecycle-e2e.ts.
-
-  await runner.run(
-    "onchain-tampered-signature",
-    "onchain",
-    "Quote with single flipped signature byte is rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-
-      // Flip byte 0 of the signature
-      const tampered = [...sigBytes];
-      tampered[0] = tampered[0] ^ 0xff;
-
-      await expectOnchainFailure(
-        "tampered signature",
-        // A flipped byte in the R-point can create an off-curve point, which
-        // the Grumpkin circuit rejects before the FPC sig check is reached.
-        // schnorr::assert_valid_signature uses bare assert() – no message string.
-        ["signature", "invalid", "grumpkin", "not a valid"],
-        () =>
-          submitFeePaidTx(config, ctx, ctx.user, tampered, fjAmount, aaPaymentAmount, validUntil),
-      );
-    },
-  );
-
-  await runner.run(
-    "onchain-tampered-fj-amount",
-    "onchain",
-    "Quote with fj_amount incremented by 1 (sig mismatch) is rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-
-      // Pass fjAmount+1 but keep original signature – sig covers original fjAmount
-      await expectOnchainFailure("tampered fj_amount", ["signature", "mismatch"], () =>
-        submitFeePaidTx(
-          config,
-          ctx,
-          ctx.user,
-          sigBytes,
-          fjAmount + 1n, // tampered
-          aaPaymentAmount,
-          validUntil,
-        ),
-      );
-    },
-  );
-
-  await runner.run(
-    "onchain-tampered-aa-amount",
-    "onchain",
-    "Quote with aa_payment_amount decremented by 1 (sig mismatch) is rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-
-      // Reduce aaPaymentAmount by 1 (would reduce operator revenue if accepted)
-      const cheaper = aaPaymentAmount - 1n;
-
-      await expectOnchainFailure("tampered aa_payment_amount", ["signature"], () =>
-        submitFeePaidTx(
-          config,
-          ctx,
-          ctx.user,
-          sigBytes,
-          fjAmount,
-          cheaper, // tampered – cheaper payment than signed
-          validUntil,
-        ),
-      );
-    },
-  );
-
-  await runner.run(
-    "onchain-fj-gas-mismatch",
-    "onchain",
-    "Quote with fj_amount != max_gas_cost_no_teardown is rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      // Use half the actual max gas cost – the contract enforces equality
-      const wrongFjAmount = fjAmount / 2n;
-      const wrongAaAmount = computeAaPayment({
-        num: TEST_RATE.num,
-        den: TEST_RATE.den * 2n,
-      });
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        wrongFjAmount,
-        wrongAaAmount,
-        validUntil,
-        ctx.user,
-      );
-
-      await expectOnchainFailure(
-        "fj_amount != max_gas_cost_no_teardown",
-        ["quoted fee amount mismatch", "mismatch"],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            wrongFjAmount,
-            wrongAaAmount,
-            validUntil,
-          ),
-      );
-    },
-  );
-
-  await runner.run(
-    "onchain-insufficient-balance",
-    "onchain",
-    "Fee-paid tx fails when user has no token balance for fee",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.otherUser,
-      );
-
-      // otherUser has NO tokens – don't mint before submitting
-      const nonce = Fr.random();
-      const transferCall = await ctx.token.methods
-        .transfer_private_to_private(ctx.otherUser, ctx.operator, aaPaymentAmount, nonce)
-        .getFunctionCall();
-      const authwit = await ctx.wallet.createAuthWit(ctx.otherUser, {
-        caller: ctx.fpcAddress,
-        call: transferCall,
-      });
-      const feeEntrypointCall = await ctx.fpc.methods
-        .fee_entrypoint(ctx.acceptedAsset, nonce, fjAmount, aaPaymentAmount, validUntil, sigBytes)
-        .getFunctionCall();
-
-      const paymentMethod = {
-        getAsset: async () => ProtocolContractAddress.FeeJuice,
-        getExecutionPayload: async () =>
-          new ExecutionPayload([feeEntrypointCall], [authwit], [], [], ctx.fpcAddress),
-        getFeePayer: async () => ctx.fpcAddress,
-        getGasSettings: () => undefined,
-      };
-
-      // Give 1 public token so the tx action is authorized.
-      // The fee payment fails regardless because otherUser has no PRIVATE tokens.
-      await fundPayerTokens(ctx, ctx.otherUser, 0n, 1n);
-
-      await expectOnchainFailure(
-        "insufficient user balance",
-        // Aztec reports private-execution failures as app_logic_reverted with no
-        // further reason string. Accept that alongside token-specific strings.
-        ["insufficient", "balance", "token", "underflow", "app_logic_reverted"],
-        () =>
-          ctx.token.methods
-            .transfer_public_to_public(ctx.otherUser, ctx.operator, 1n, Fr.random())
-            .send({
-              from: ctx.otherUser,
-              fee: {
-                paymentMethod,
-                gasSettings: {
-                  gasLimits: new Gas(config.daGasLimit, config.l2GasLimit),
-                  teardownGasLimits: new Gas(0, 0),
-                  maxFeesPerGas: new GasFees(ctx.feePerDaGas, ctx.feePerL2Gas),
-                },
-              },
-              wait: { timeout: 120 },
-            }),
-      );
-    },
-  );
-
-  // NOTE: onchain-valid-until-past was removed — same contract assertion
-  // (valid_until < anchor_block_ts) already covered by negativeExpiredQuoteRejected
-  // in scripts/services/fpc-full-lifecycle-e2e.ts.
-
-  // NOTE: onchain-teardown-gas-rejected was removed because the FPC contract
-  // (FPCMultiAsset) does not enforce zero teardown gas -- there is no teardown
-  // assertion in fee_entrypoint.  Non-zero teardown gas is accepted by the
-  // protocol and the contract, so there is nothing to reject.
-
-  await runner.run(
-    "onchain-authwit-nonce-mismatch",
-    "onchain",
-    "Authwit for nonce A with fee_entrypoint nonce B is rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-      const authwitNonce = Fr.random();
-      const entrypointNonce = Fr.random();
-      await expectOnchainFailure(
-        "authwit nonce mismatch",
-        // PXE rejects before submission when it cannot find an authwit for the
-        // computed message hash ("Unknown auth witness for message hash 0x…").
-        // If the tx does reach simulation, the contract reverts via app_logic_reverted.
-        ["unknown auth witness", "authwit", "invalid", "nonce", "app_logic_reverted", "match"],
-        () =>
-          submitFeePaidTxWithOptions(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-            { authwitNonce, entrypointNonce },
-          ),
-      );
-    },
-  );
-
-  await runner.run(
-    "onchain-authwit-amount-mismatch",
-    "onchain",
-    "Authwit for amount X with fee_entrypoint aa_payment_amount Y != X rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-      // Authwit authorises transfer of aaPaymentAmount + 1; entrypoint pays aaPaymentAmount.
-      await expectOnchainFailure(
-        "authwit amount mismatch",
-        // PXE rejects before submission when it cannot find an authwit for the
-        // computed message hash ("Unknown auth witness for message hash 0x…").
-        // If the tx does reach simulation, the contract reverts via app_logic_reverted.
-        ["unknown auth witness", "authwit", "invalid", "app_logic_reverted", "match", "action"],
-        () =>
-          submitFeePaidTxWithOptions(
-            config,
-            ctx,
-            ctx.user,
-            sigBytes,
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-            { authwitAmount: aaPaymentAmount + 1n },
-          ),
-      );
-    },
-  );
-
-  // NOTE: onchain-quote-wrong-fpc-address and onchain-quote-wrong-accepted-asset
-  // were removed — fully covered by negativeWrongFpcRejected and
-  // negativeWrongTokenRejected in scripts/services/fpc-full-lifecycle-e2e.ts.
-
-  await runner.run(
-    "onchain-signature-wrong-length",
-    "onchain",
-    "Quote with 63-byte signature is rejected",
-    async () => {
-      const latestTs = await getLatestL2Timestamp(ctx);
-      const validUntil = latestTs + 600n;
-      const sigBytes64 = await signQuote(
-        ctx.operatorSecretHex,
-        ctx.fpcAddress,
-        ctx.acceptedAsset,
-        fjAmount,
-        aaPaymentAmount,
-        validUntil,
-        ctx.user,
-      );
-      const sig63 = sigBytes64.slice(0, 63);
-      await expectOnchainFailure(
-        "63-byte signature",
-        // The Aztec ABI encoder validates fixed-size array lengths client-side
-        // before simulation.  Passing a 63-element array for a [u8; 64] param
-        // produces "Undefined argument quote_sig[63] of type integer".
-        // If a future SDK version passes it through, the contract reverts instead.
-        [
-          "undefined argument",
-          "signature",
-          "64",
-          "length",
-          "invalid",
-          "abi",
-          "decode",
-          "revert",
-          "expected",
-          "app_logic_reverted",
-        ],
-        () =>
-          submitFeePaidTx(
-            config,
-            ctx,
-            ctx.user,
-            sig63 as number[],
-            fjAmount,
-            aaPaymentAmount,
-            validUntil,
-          ),
-      );
-    },
-  );
-}
-
 async function runStressTests(
   runner: ChaosRunner,
   config: ChaosConfig,
@@ -1891,16 +1408,16 @@ async function main(): Promise<void> {
   pinoLogger.info(`${BOLD}Phase 1: API surface tests${RESET}`);
   await runApiTests(runner, config);
 
-  if (config.mode === "onchain" || config.mode === "full") {
+  if (config.mode === "full") {
     if (!config.operatorSecretKey) {
       runner.skip(
-        "onchain-tests",
-        "onchain",
-        "On-chain security tests",
-        "FPC_CHAOS_OPERATOR_SECRET_KEY not set – skipping all onchain tests",
+        "stress-tests",
+        "stress",
+        "Stress tests",
+        "FPC_CHAOS_OPERATOR_SECRET_KEY not set – skipping stress tests",
       );
     } else {
-      pinoLogger.info(`\n${BOLD}Phase 2: On-chain security tests${RESET}`);
+      pinoLogger.info(`\n${BOLD}Phase 2: Concurrent stress tests${RESET}`);
       pinoLogger.info(
         `${DIM}  Building on-chain context (loading artifacts + setting up accounts)...${RESET}`,
       );
@@ -1916,12 +1433,7 @@ async function main(): Promise<void> {
         );
         process.exit(1);
       }
-      await runOnchainTests(runner, config, ctx);
-
-      if (config.mode === "full") {
-        pinoLogger.info(`\n${BOLD}Phase 3: Concurrent stress tests${RESET}`);
-        await runStressTests(runner, config, ctx);
-      }
+      await runStressTests(runner, config, ctx);
     }
   }
 
