@@ -1,15 +1,12 @@
 import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
 import { Fr } from "@aztec/aztec.js/fields";
 import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
-import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { Point } from "@aztec/foundation/curves/grumpkin";
-import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
 import { sleep } from "../common/managed-process.ts";
+import { readManifest, waitForFpcFeeJuice } from "../common/setup-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -109,23 +106,6 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<Response> 
     await sleep(500);
   }
   throw new Error(`Timed out waiting for health at ${url}. Last error: ${lastError}`);
-}
-
-async function waitForPositiveFeeJuiceBalance(
-  node: AztecNode,
-  fpcAddress: AztecAddress,
-  timeoutMs: number,
-  pollMs: number,
-): Promise<bigint> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    const balance = await getFeeJuiceBalance(fpcAddress, node);
-    if (balance > 0n) {
-      return balance;
-    }
-    await sleep(pollMs);
-  }
-  throw new Error(`Timed out waiting for Fee Juice balance on ${fpcAddress}`);
 }
 
 async function getCurrentChainUnixSeconds(node: AztecNode): Promise<bigint> {
@@ -334,10 +314,7 @@ async function verifyQuoteSignature(
 // ---------------------------------------------------------------------------
 
 async function setupFromConfig(config: SmokeConfig): Promise<SmokeRuntimeResult> {
-  if (!existsSync(config.manifestPath)) {
-    throw new Error(`Manifest not found: ${config.manifestPath}`);
-  }
-  const manifest = JSON.parse(readFileSync(config.manifestPath, "utf8")) as DevnetDeployManifest;
+  const manifest = readManifest(config.manifestPath);
 
   const fpcAddress = AztecAddress.fromString(manifest.contracts.fpc);
   const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
@@ -352,8 +329,7 @@ async function setupFromConfig(config: SmokeConfig): Promise<SmokeRuntimeResult>
     false,
   );
 
-  const fjTimeoutMs = config.messageTimeoutSeconds * 1_000;
-  await waitForPositiveFeeJuiceBalance(node, fpcAddress, fjTimeoutMs, 2_000);
+  await waitForFpcFeeJuice(fpcAddress, node, config.messageTimeoutSeconds, "fpc-services-smoke");
 
   const minFees = await node.getCurrentMinFees();
   const quoteFjAmount =

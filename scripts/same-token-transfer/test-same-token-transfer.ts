@@ -81,17 +81,23 @@ export async function testSameTokenTransfer(ctx: TestContext): Promise<void> {
   const operatorStartBalance = BigInt(operatorStartBalanceRaw.toString());
 
   // Assert: drip landed in public, then shield moved half to private
-  const userPrivBal = new PrivateBalanceTracker(token, user, "User", 0n);
+  const userPrivBal = await PrivateBalanceTracker.create(
+    token,
+    ctx.wallet,
+    userData.secret,
+    "User",
+  );
   await userPrivBal.change(shieldAmount);
 
-  const userPubBal = new PublicBalanceTracker(token, user, "User", 0n);
+  const userPubBal = new PublicBalanceTracker(token, user, "User");
   await userPubBal.change(dripAmount - shieldAmount);
 
   pinoLogger.info(`${LOG_PREFIX} PASS: faucet drip + shield succeeded`);
 
-  const operatorPrivBal = new PrivateBalanceTracker(
+  const operatorPrivBal = await PrivateBalanceTracker.create(
     token,
-    operator,
+    ctx.wallet,
+    args.operatorSecretKey,
     "Operator",
     operatorStartBalance,
     "atLeast",
@@ -101,9 +107,14 @@ export async function testSameTokenTransfer(ctx: TestContext): Promise<void> {
   // Phase 3: Transfer tokens to a fresh recipient via FPC fee_entrypoint
   // =========================================================================
 
-  const recipient = (await deriveAccount(Fr.random(), ctx.wallet)).address;
-  const recipientPrivBal = new PrivateBalanceTracker(token, recipient, "Recipient", 0n);
-  const recipientPubBal = new PublicBalanceTracker(token, recipient, "Recipient", 0n);
+  const recipientPrivBal = await PrivateBalanceTracker.create(
+    token,
+    ctx.wallet,
+    Fr.random(),
+    "Recipient",
+  );
+  const recipient = recipientPrivBal.address;
+  const recipientPubBal = new PublicBalanceTracker(token, recipient, "Recipient");
 
   pinoLogger.info(`${LOG_PREFIX} transferring tokens to recipient via FPC`);
 
