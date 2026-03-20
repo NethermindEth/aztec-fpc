@@ -188,7 +188,7 @@ export async function coldStart(input: {
 `FpcClient#executeColdStart(...)`:
 
 1. Attaches the FPC contract through the provided Aztec node and wallet.
-2. Reads current minimum gas fees from the node and computes `fj_amount` using predefined cold-start gas limits.
+2. Reads current minimum gas fees from the node and computes `fj_amount` using predefined cold-start gas limits (see [Why gas limits are hardcoded](#why-cold-start-gas-limits-are-hardcoded)).
 3. Requests a cold-start quote from `GET {attestationBaseUrl}/cold-start-quote`, providing the user's claim details.
 4. Builds the FPC `cold_start_entrypoint` call payload, which claims the bridged tokens and pays the fee in one transaction.
 5. Proves and sends the transaction, then waits for confirmation.
@@ -212,6 +212,17 @@ type ColdStartResult = {
   quoteValidUntil: bigint;
 };
 ```
+
+### Why cold-start gas limits are hardcoded
+
+Unlike `createPaymentMethod` — which derives gas limits from a prior simulation of the user's app call — `executeColdStart` uses fixed gas limits (`5,000 DA / 1,000,000 L2`). Simulation is not possible for two reasons:
+
+1. **No deployed account.** The PXE simulates transactions through the user's account entrypoint. Cold-start users may not have a deployed account on L2 yet.
+2. **Chicken-and-egg with the quote.** The operator's quote signature is a required argument to `cold_start_entrypoint`. To simulate, you'd need the signature; to get the signature, you'd need the gas limits that simulation would produce.
+
+With `fee_entrypoint`, neither problem applies: the user's account is deployed, and the app call (e.g., a token swap) is separate from the fee call — so the app can be simulated independently, and gas limits from that simulation are used to fetch the quote afterward.
+
+The cold-start gas limits are empirically chosen upper bounds for the workload (bridge claim + two private token transfers). The user pays based on worst-case gas, not actual consumption. Since there is no teardown/refund phase, unused Fee Juice remains in the FPC's balance — reducing future topup frequency for the operator.
 
 ## Contract artifacts
 
