@@ -169,8 +169,9 @@ services:
   smoke-cold-start:
     image: nethermind/aztec-fpc-smoke:local
     profiles: ["smoke", "full"]
+    entrypoint: ["bun", "test"]
     command:
-      - "scripts/cold-start/cold-start-smoke.ts"
+      - "./scripts/cold-start/cold-start-smoke.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:
