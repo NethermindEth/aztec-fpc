@@ -12,10 +12,16 @@ import path from "node:path";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
+import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
 import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { SPONSORED_FPC_SALT } from "@aztec/constants";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
+import type { ExtendedViemWalletClient } from "@aztec/ethereum/types";
+import { EthAddress } from "@aztec/foundation/eth-address";
+import { createLogger } from "@aztec/foundation/log";
+import { TestERC20Abi } from "@aztec/l1-artifacts";
 import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
@@ -23,6 +29,8 @@ import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
 import pino from "pino";
+import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
+import * as viemChains from "viem/chains";
 
 const pinoLogger = pino();
 
@@ -191,6 +199,53 @@ export async function waitForFpcFeeJuice(
 
   pinoLogger.info(`[${label}] FPC FeeJuice balance=${balance}`);
   return balance;
+}
+
+// ---------------------------------------------------------------------------
+// L1 infrastructure
+// ---------------------------------------------------------------------------
+
+export type L1InfraArgs = {
+  l1RpcUrl: string;
+  l1PrivateKey: Hex;
+  l1DeployerKey: string;
+  l1PortalAddress: string;
+  l1Erc20Address: string;
+  node: AztecNode;
+  loggerName: string;
+};
+
+export type L1Infra = {
+  l1WalletClient: ExtendedViemWalletClient;
+  l1Erc20: GetContractReturnType;
+  portalManager: L1ToL2TokenPortalManager;
+};
+
+export async function setupL1Infrastructure(args: L1InfraArgs): Promise<L1Infra> {
+  const nodeInfo = await args.node.getNodeInfo();
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as readonly Chain[],
+    id: nodeInfo.l1ChainId,
+  });
+
+  const l1WalletClient = createExtendedL1Client([args.l1RpcUrl], args.l1PrivateKey, l1Chain);
+  const l1MintClient = createExtendedL1Client([args.l1RpcUrl], args.l1DeployerKey, l1Chain);
+
+  const l1Erc20 = getContract({
+    address: args.l1Erc20Address as Hex,
+    abi: TestERC20Abi,
+    client: l1MintClient,
+  });
+
+  const portalManager = new L1ToL2TokenPortalManager(
+    EthAddress.fromString(args.l1PortalAddress),
+    EthAddress.fromString(args.l1Erc20Address),
+    undefined,
+    l1WalletClient,
+    createLogger(args.loggerName),
+  );
+
+  return { l1WalletClient, l1Erc20, portalManager };
 }
 
 // ---------------------------------------------------------------------------
