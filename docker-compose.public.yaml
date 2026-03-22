@@ -98,8 +98,9 @@ services:
   smoke-same-token-transfer:
     image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
     profiles: ["smoke"]
+    entrypoint: ["bun", "test"]
     command:
-      - "scripts/same-token-transfer/same-token-transfer-smoke.ts"
+      - "./scripts/same-token-transfer/same-token-transfer-smoke.ts"
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data:ro
     environment:

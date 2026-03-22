@@ -215,8 +215,9 @@ services:
   smoke-same-token-transfer:
     image: nethermind/aztec-fpc-smoke:local
     profiles: ["smoke", "full"]
+    entrypoint: ["bun", "test"]
     command:
-      - "scripts/same-token-transfer/same-token-transfer-smoke.ts"
+      - "./scripts/same-token-transfer/same-token-transfer-smoke.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:
