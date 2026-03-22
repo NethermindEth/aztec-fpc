@@ -5,7 +5,7 @@
  * and pays gas in a single transaction without going through an account
  * entrypoint (msg_sender = None).
  *
- * Assumes contracts are already deployed (handled by cold-start-smoke.sh).
+ * Assumes contracts are already deployed.
  *
  * All arguments are optional. CLI args take precedence over env vars.
  *

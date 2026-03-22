@@ -410,9 +410,6 @@ FPC_COLD_START_MANIFEST=path/to/manifest.json FPC_ATTESTATION_URL=http://localho
 
 # Services smoke (attestation + topup + contract, via docker compose)
 bun run smoke:services:compose
-
-# Cold-start smoke
-bun run smoke:cold-start:local
 ```
 
 Or run the chaos/adversarial test suite against a deployed attestation endpoint:

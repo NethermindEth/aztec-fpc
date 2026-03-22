@@ -5,7 +5,7 @@
  * A brand-new user gets tokens from the faucet (public), shields them
  * (private), then uses the real FPC for fee payment — no L1 bridging needed.
  *
- * Assumes contracts are already deployed (handled by same-token-transfer-smoke.sh).
+ * Assumes contracts are already deployed.
  *
  * CLI arguments are the same as cold-start-smoke (parsed by ./cli.ts).
  */

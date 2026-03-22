@@ -6,7 +6,7 @@
  * (private), then calls always_revert() via FPC — verifying that fees
  * are still collected even when app logic fails.
  *
- * Assumes contracts are already deployed (handled by always-revert-smoke.sh).
+ * Assumes contracts are already deployed.
  *
  * CLI arguments are the same as same-token-transfer (parsed by ./cli.ts),
  * with an additional --iterations flag.
