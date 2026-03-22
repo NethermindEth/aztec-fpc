@@ -118,8 +118,9 @@ services:
   smoke-always-revert:
     image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
     profiles: ["smoke"]
+    entrypoint: ["bun", "test"]
     command:
-      - "scripts/always-revert/always-revert-smoke.ts"
+      - "./scripts/always-revert/always-revert-smoke.ts"
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data:ro
     environment:

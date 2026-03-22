@@ -1,44 +1,235 @@
-/**
- * Always-revert E2E smoke test entrypoint.
- *
- * Exercises the FPC fee payment mechanism when app logic reverts.
- * A brand-new user gets tokens from the faucet (public), shields them
- * (private), then calls always_revert() via FPC — verifying that fees
- * are still collected even when app logic fails.
- *
- * Assumes contracts are already deployed.
- *
- * CLI arguments are the same as same-token-transfer (parsed by ./cli.ts),
- * with an additional --iterations flag.
- */
+import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
+import path from "node:path";
 
-import pino from "pino";
-import { CliError, parseCliArgs, usage } from "./cli.ts";
-import { setup } from "./setup.ts";
-import { testAlwaysRevert } from "./test-always-revert.ts";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { BatchCall, type Contract } from "@aztec/aztec.js/contracts";
+import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
+import { Fr } from "@aztec/aztec.js/fields";
+import type { AztecNode } from "@aztec/aztec.js/node";
+import { TxExecutionResult } from "@aztec/aztec.js/tx";
+import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { Gas } from "@aztec/stdlib/gas";
+import type { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { FpcClient } from "@aztec-fpc/sdk";
+import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
+import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
+import { setup as commonSetup } from "../common/setup-helpers.ts";
 
-const pinoLogger = pino();
+type AlwaysRevertConfig = {
+  nodeUrl: string;
+  attestationUrl: string;
+  manifestPath: string;
+  operatorSecretKey: Fr;
+  proverEnabled: boolean;
+  messageTimeoutSeconds: number;
+  iterations: number;
+};
 
-async function main() {
-  const result = parseCliArgs(process.argv.slice(2));
-  if (result.kind === "help") return;
+type SetupResult = {
+  node: AztecNode;
+  wallet: EmbeddedWallet;
+  operator: AztecAddress;
+  fpcClient: FpcClient;
+  fpcAddress: AztecAddress;
+  tokenAddress: AztecAddress;
+  token: Contract;
+  faucet: Contract;
+  counter: Contract;
+  sponsoredFeePayment: SponsoredFeePaymentMethod;
+  user: AztecAddress;
+  userData: AccountData;
+  dripAmount: bigint;
+};
 
-  const ctx = await setup(result.args);
-  await testAlwaysRevert(ctx);
+const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 
-  pinoLogger.info("[always-revert] PASS: always-revert E2E smoke test succeeded");
-  process.exit(0);
+function readEnvPositiveInteger(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (value === undefined) return fallback;
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new Error(`Invalid integer env var ${name}: value cannot be empty`);
+  }
+  if (!POSITIVE_INTEGER_PATTERN.test(normalized)) {
+    throw new Error(`Invalid integer env var ${name}=${value}`);
+  }
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Invalid integer env var ${name}=${value} (out of safe integer range)`);
+  }
+  return parsed;
 }
 
-main().catch((error) => {
-  if (error instanceof CliError) {
-    pinoLogger.error(`[always-revert] ERROR: ${error.message}`);
-    pinoLogger.error("");
-    pinoLogger.error(usage());
-  } else {
-    pinoLogger.error(
-      `[always-revert] Unexpected error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-    );
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim().length === 0) {
+    throw new Error(`Required environment variable ${name} is not set`);
   }
-  process.exit(1);
+  return value.trim();
+}
+
+function getConfig(): AlwaysRevertConfig {
+  return {
+    nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
+    attestationUrl: requireEnv("FPC_ATTESTATION_URL"),
+    manifestPath: requireEnv("FPC_COLD_START_MANIFEST"),
+    operatorSecretKey: Fr.fromHexString(requireEnv("FPC_OPERATOR_SECRET_KEY")),
+    proverEnabled:
+      process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
+    messageTimeoutSeconds: readEnvPositiveInteger("FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS", 120),
+    iterations: readEnvPositiveInteger("FPC_SMOKE_ITERATIONS", 3),
+  };
+}
+
+async function setupFromManifest(config: AlwaysRevertConfig): Promise<SetupResult> {
+  const repoRoot = path.resolve(import.meta.dirname, "../..");
+
+  const { node, wallet, operator, contracts, sponsoredFpcAddress } = await commonSetup(
+    {
+      nodeUrl: config.nodeUrl,
+      manifestPath: config.manifestPath,
+      proverEnabled: config.proverEnabled,
+      messageTimeoutSeconds: config.messageTimeoutSeconds,
+    },
+    repoRoot,
+    "always-revert",
+  );
+
+  const { token, fpc, counter, faucet } = contracts;
+  if (!counter) {
+    throw new Error("Manifest missing contracts.counter (required for always-revert)");
+  }
+  if (!faucet) {
+    throw new Error("Manifest missing contracts.faucet (required for always-revert)");
+  }
+
+  const fpcClient = new FpcClient({
+    fpcAddress: fpc.address,
+    operator,
+    node,
+    attestationBaseUrl: config.attestationUrl,
+  });
+
+  const sponsoredFeePayment = new SponsoredFeePaymentMethod(sponsoredFpcAddress);
+
+  // Derive fresh user for this test run.
+  const userData = await deriveAccount(Fr.random(), wallet);
+  const user = userData.address;
+
+  // Query faucet config for drip amount.
+  const { result: faucetConfig } = await faucet.methods.get_config().simulate({ from: user });
+  const dripAmount = BigInt(faucetConfig.drip_amount.toString());
+
+  return {
+    node,
+    wallet,
+    operator,
+    fpcClient,
+    fpcAddress: fpc.address,
+    tokenAddress: token.address,
+    token,
+    faucet,
+    counter,
+    sponsoredFeePayment,
+    user,
+    userData,
+    dripAmount,
+  };
+}
+
+const E2E_TIMEOUT_MS = 600_000;
+setDefaultTimeout(E2E_TIMEOUT_MS);
+
+let config: AlwaysRevertConfig;
+let ctx: SetupResult;
+
+describe("always-revert smoke", () => {
+  beforeAll(async () => {
+    config = getConfig();
+    ctx = await setupFromManifest(config);
+  });
+
+  it("deploys user account via SponsoredFPC", async () => {
+    const deployMethod = await ctx.userData.accountManager.getDeployMethod();
+    await deployMethod.send({
+      from: AztecAddress.ZERO,
+      fee: { paymentMethod: ctx.sponsoredFeePayment },
+      skipClassPublication: true,
+    });
+  });
+
+  it("funds user via faucet drip and shield", async () => {
+    const batch = new BatchCall(ctx.wallet, [
+      ctx.faucet.methods.drip(ctx.user),
+      ctx.token.methods.transfer_public_to_private(ctx.user, ctx.user, ctx.dripAmount, Fr.random()),
+    ]);
+    await batch.send({
+      from: ctx.user,
+      fee: { paymentMethod: ctx.sponsoredFeePayment },
+    });
+
+    const userBal = await PrivateBalanceTracker.create(
+      ctx.token,
+      ctx.wallet,
+      ctx.userData.secret,
+      "User",
+    );
+    await userBal.change(ctx.dripAmount);
+  });
+
+  it("collects fees when app logic reverts", async () => {
+    const { iterations } = config;
+    const { result: operatorStartBalanceRaw } = await ctx.token.methods
+      .balance_of_private(ctx.operator)
+      .simulate({ from: ctx.operator });
+    const operatorStartBalance = BigInt(operatorStartBalanceRaw.toString());
+
+    const userBal = await PrivateBalanceTracker.create(
+      ctx.token,
+      ctx.wallet,
+      ctx.userData.secret,
+      "User",
+      ctx.dripAmount,
+    );
+    const operatorBal = await PrivateBalanceTracker.create(
+      ctx.token,
+      ctx.wallet,
+      config.operatorSecretKey,
+      "Operator",
+      operatorStartBalance,
+      "atLeast",
+    );
+
+    const gasSettings = {
+      gasLimits: new Gas(5_000, 1_000_000),
+      teardownGasLimits: new Gas(0, 0),
+    };
+
+    for (let i = 0; i < iterations; i += 1) {
+      const fjBefore = await getFeeJuiceBalance(ctx.fpcAddress, ctx.node);
+
+      const fpcResult = await ctx.fpcClient.createPaymentMethod({
+        wallet: ctx.wallet,
+        user: ctx.user,
+        tokenAddress: ctx.tokenAddress,
+        estimatedGas: gasSettings,
+      });
+      const aaPaymentAmount = BigInt(fpcResult.quote.aa_payment_amount);
+
+      const { receipt } = await ctx.counter.methods.always_revert().send({
+        from: ctx.user,
+        fee: fpcResult.fee,
+        wait: { dontThrowOnRevert: true },
+      });
+
+      expect(receipt.isMined()).toBe(true);
+      expect(receipt.executionResult).toBe(TxExecutionResult.APP_LOGIC_REVERTED);
+
+      const fjAfter = await getFeeJuiceBalance(ctx.fpcAddress, ctx.node);
+      expect(fjAfter).toBeLessThan(fjBefore);
+
+      await operatorBal.change(aaPaymentAmount);
+      await userBal.change(-aaPaymentAmount);
+    }
+  });
 });
