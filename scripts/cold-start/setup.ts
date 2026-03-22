@@ -9,19 +9,14 @@
 import path from "node:path";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Contract } from "@aztec/aztec.js/contracts";
-import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
+import type { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
 import type { AztecNode } from "@aztec/aztec.js/node";
-import { createExtendedL1Client } from "@aztec/ethereum/client";
 import type { ExtendedViemWalletClient } from "@aztec/ethereum/types";
-import { EthAddress } from "@aztec/foundation/eth-address";
-import { createLogger } from "@aztec/foundation/log";
-import { TestERC20Abi } from "@aztec/l1-artifacts";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
-import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
-import * as viemChains from "viem/chains";
+import type { GetContractReturnType, Hex } from "viem";
 import { resolveScriptAccounts } from "../common/script-credentials.ts";
-import { setup as commonSetup } from "../common/setup-helpers.ts";
+import { setup as commonSetup, setupL1Infrastructure } from "../common/setup-helpers.ts";
 import type { CliArgs } from "./cli.ts";
 
 const pinoLogger = pino();
@@ -79,35 +74,20 @@ export async function setup(args: CliArgs): Promise<TestContext> {
     ({ l1PrivateKey } = await resolveScriptAccounts(args.nodeUrl, args.l1RpcUrl, wallet, 0));
   }
 
-  // Setup L1 infrastructure
-  const l1PortalAddress = manifest.l1_contracts.token_portal;
-  const l1Erc20Address = manifest.l1_contracts.erc20;
-
-  const nodeInfo = await node.getNodeInfo();
-  const l1Chain = extractChain({
-    chains: Object.values(viemChains) as readonly Chain[],
-    id: nodeInfo.l1ChainId,
-  });
-  const l1WalletClient = createExtendedL1Client([args.l1RpcUrl], l1PrivateKey, l1Chain);
-
   if (!args.l1DeployerKey) {
     throw new Error("Missing --l1-deployer-key or FPC_L1_DEPLOYER_KEY");
   }
-  const l1MintClient = createExtendedL1Client([args.l1RpcUrl], args.l1DeployerKey, l1Chain);
 
-  const l1Erc20 = getContract({
-    address: l1Erc20Address as Hex,
-    abi: TestERC20Abi,
-    client: l1MintClient,
+  // Setup L1 infrastructure
+  const { l1WalletClient, l1Erc20, portalManager } = await setupL1Infrastructure({
+    l1RpcUrl: args.l1RpcUrl,
+    l1PrivateKey,
+    l1DeployerKey: args.l1DeployerKey,
+    l1PortalAddress: manifest.l1_contracts.token_portal,
+    l1Erc20Address: manifest.l1_contracts.erc20,
+    node,
+    loggerName: "cold-start:bridge",
   });
-
-  const portalManager = new L1ToL2TokenPortalManager(
-    EthAddress.fromString(l1PortalAddress),
-    EthAddress.fromString(l1Erc20Address),
-    undefined,
-    l1WalletClient,
-    createLogger("cold-start:bridge"),
-  );
 
   return {
     args,
