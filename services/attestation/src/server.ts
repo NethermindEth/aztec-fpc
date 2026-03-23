@@ -7,6 +7,7 @@ import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-st
 import {
   type Config,
   computeFinalRate,
+  modeNeedsApiKey,
   normalizeAztecAddress,
   type SupportedAssetPolicy,
 } from "./config.js";
@@ -125,14 +126,6 @@ function isAdminAuthorized(
   return headerMatchesSecret(headers[config.admin_auth.apiKeyHeader], config.admin_auth.apiKey);
 }
 
-function modeUsesApiKey(mode: Config["quote_auth"]["mode"]): boolean {
-  return (
-    mode === "api_key" ||
-    mode === "api_key_or_trusted_header" ||
-    mode === "api_key_and_trusted_header"
-  );
-}
-
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
   if (typeof value === "string") {
     return value;
@@ -186,7 +179,7 @@ function resolveQuoteRateLimitIdentity(
   headers: Record<string, string | string[] | undefined>,
   remoteIp: string,
 ): QuoteRateLimitIdentity {
-  if (modeUsesApiKey(config.quote_auth.mode)) {
+  if (modeNeedsApiKey(config.quote_auth.mode)) {
     const apiKeyCandidate = firstHeaderValue(headers[config.quote_auth.apiKeyHeader]);
     if (apiKeyCandidate && headerMatchesSecret(apiKeyCandidate, config.quote_auth.apiKey)) {
       const apiKeyDigest = createHash("sha256").update(apiKeyCandidate, "utf8").digest("hex");
