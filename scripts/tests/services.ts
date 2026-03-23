@@ -30,6 +30,9 @@ type SmokeConfig = {
   messageTimeoutSeconds: number;
   daGasLimit: number;
   l2GasLimit: number;
+  quoteAuthApiKey: string | null;
+  quoteAuthHeader: string | null;
+  quoteAuthValue: string | null;
 };
 
 type QuoteResponse = {
@@ -78,6 +81,12 @@ function readEnvNumber(name: string, fallback: number): number {
   return parsed;
 }
 
+function readEnvString(name: string): string | null {
+  const value = process.env[name];
+  if (!value || value.trim() === "") return null;
+  return value.trim();
+}
+
 function getConfig(): SmokeConfig {
   return {
     nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
@@ -88,7 +97,25 @@ function getConfig(): SmokeConfig {
     messageTimeoutSeconds: readEnvNumber("FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS", 120),
     daGasLimit: readEnvNumber("FPC_SMOKE_DA_GAS_LIMIT", 200_000),
     l2GasLimit: readEnvNumber("FPC_SMOKE_L2_GAS_LIMIT", 1_000_000),
+    quoteAuthApiKey: readEnvString("FPC_QUOTE_AUTH_API_KEY"),
+    quoteAuthHeader: readEnvString("FPC_QUOTE_AUTH_HEADER"),
+    quoteAuthValue: readEnvString("FPC_QUOTE_AUTH_VALUE"),
   };
+}
+
+function hasQuoteAuth(config: SmokeConfig): boolean {
+  return !!(config.quoteAuthApiKey || (config.quoteAuthHeader && config.quoteAuthValue));
+}
+
+function buildAuthHeaders(config: SmokeConfig): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (config.quoteAuthApiKey) {
+    const headerName = config.quoteAuthHeader ?? "x-api-key";
+    headers[headerName] = config.quoteAuthApiKey;
+  } else if (config.quoteAuthHeader && config.quoteAuthValue) {
+    headers[config.quoteAuthHeader] = config.quoteAuthValue;
+  }
+  return headers;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,13 +150,17 @@ async function getCurrentChainUnixSeconds(node: AztecNode): Promise<bigint> {
 // HTTP fetch helpers (with retry)
 // ---------------------------------------------------------------------------
 
-async function fetchQuote(quoteUrl: string, timeoutMs: number): Promise<QuoteResponse> {
+async function fetchQuote(
+  quoteUrl: string,
+  timeoutMs: number,
+  headers?: Record<string, string>,
+): Promise<QuoteResponse> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
 
   while (Date.now() <= deadline) {
     try {
-      const response = await fetch(quoteUrl);
+      const response = await fetch(quoteUrl, headers ? { headers } : undefined);
       const bodyText = await response.text();
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ${bodyText}`;
@@ -394,9 +425,11 @@ describe("fpc services smoke", () => {
 
     it("returns valid quote with correct signature", async () => {
       const chainNowBefore = await getCurrentChainUnixSeconds(ctx.node);
+      const authHeaders = buildAuthHeaders(ctx.config);
       const quote = await fetchQuote(
         `${ctx.config.attestationBaseUrl}/quote?user=${ctx.operator.toString()}&accepted_asset=${ctx.tokenAddress.toString()}&fj_amount=${ctx.quoteFjAmount.toString()}`,
         ctx.config.httpTimeoutMs,
+        authHeaders,
       );
       const chainNowAfter = await getCurrentChainUnixSeconds(ctx.node);
 
@@ -542,8 +575,11 @@ describe("fpc services smoke", () => {
     describe("quote concurrency", () => {
       it("20 concurrent requests return no 5xx and consistent quotes", async () => {
         const url = `${ctx.config.attestationBaseUrl}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${ctx.tokenAddress.toString()}`;
+        const authHeaders = buildAuthHeaders(ctx.config);
+        const fetchOpts =
+          Object.keys(authHeaders).length > 0 ? { headers: authHeaders } : undefined;
         const requests = Array.from({ length: 20 }, () =>
-          fetch(url).then(async (r) => ({
+          fetch(url, fetchOpts).then(async (r) => ({
             status: r.status,
             body: await r.text(),
           })),
@@ -563,6 +599,36 @@ describe("fpc services smoke", () => {
           expect(assets.size).toBe(1);
         }
       });
+    });
+  });
+
+  describe.skipIf(!hasQuoteAuth(getConfig()))("quote auth", () => {
+    function quoteUrlWithDefaults(): string {
+      return `${ctx.config.attestationBaseUrl}/quote?user=${SENTINEL_USER}&fj_amount=${SENTINEL_FJ_AMOUNT}&accepted_asset=${ctx.tokenAddress.toString()}`;
+    }
+
+    it("rejects request without auth header with 401", async () => {
+      const response = await fetch(quoteUrlWithDefaults());
+      expect(response.status).toBe(401);
+    });
+
+    it("rejects request with wrong auth key with 401", async () => {
+      const wrongHeaders: Record<string, string> = {};
+      if (ctx.config.quoteAuthApiKey) {
+        wrongHeaders[ctx.config.quoteAuthHeader ?? "x-api-key"] = "WRONG_KEY_FOR_TEST";
+      } else if (ctx.config.quoteAuthHeader) {
+        wrongHeaders[ctx.config.quoteAuthHeader] = "WRONG_VALUE_FOR_TEST";
+      }
+      const response = await fetch(quoteUrlWithDefaults(), { headers: wrongHeaders });
+      expect(response.status).toBe(401);
+    });
+
+    it("accepts request with correct auth key", async () => {
+      const response = await fetch(quoteUrlWithDefaults(), {
+        headers: buildAuthHeaders(ctx.config),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(200);
+      expect(response.status).toBeLessThan(300);
     });
   });
 
