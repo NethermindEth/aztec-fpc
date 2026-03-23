@@ -11,3 +11,4 @@ members = [
 
 [benchmark]
 fpc = "profiling/benchmarks/fpc.benchmark.ts"
+cold_start = "profiling/benchmarks/cold-start.benchmark.ts"
