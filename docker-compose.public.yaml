@@ -78,7 +78,7 @@ services:
     profiles: ["smoke"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/cold-start/cold-start-smoke.ts"
+      - "./scripts/tests/cold-start.ts"
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data:ro
     environment:
@@ -101,7 +101,7 @@ services:
     profiles: ["smoke"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/same-token-transfer/same-token-transfer-smoke.ts"
+      - "./scripts/tests/same-token-transfer.ts"
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data:ro
     environment:
@@ -122,7 +122,7 @@ services:
     profiles: ["smoke"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/always-revert/always-revert-smoke.ts"
+      - "./scripts/tests/always-revert.ts"
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data:ro
     environment:
