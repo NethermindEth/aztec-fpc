@@ -114,7 +114,7 @@ TAG=v0.1.0 docker buildx bake
 REGISTRY=ghcr.io/ TAG=v0.1.0 docker buildx bake
 ```
 
-Available images: `nethermind/aztec-fpc-contract-deployment`, `nethermind/aztec-fpc-attestation`, `nethermind/aztec-fpc-topup`, `nethermind/aztec-fpc-smoke`.
+Available images: `nethermind/aztec-fpc-contract-deployment`, `nethermind/aztec-fpc-attestation`, `nethermind/aztec-fpc-topup`, `nethermind/aztec-fpc-test`.
 
 Replace `:local` with the appropriate tag if using pre-built images from a registry.
 

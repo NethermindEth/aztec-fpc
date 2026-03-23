@@ -13,20 +13,20 @@ fi
 
 mkdir -p "$ARTIFACT_DIR"
 
-echo "[compose-full-lifecycle] running profile=e2e-fpc service=e2e-fpc"
+echo "[compose-full-lifecycle] running profile=full service=tests-fee-entrypoint-validation"
 docker compose down -v --remove-orphans >/dev/null 2>&1 || true
 
 set +e
 (
   cd "$REPO_ROOT"
-  docker compose --profile "e2e-fpc" up --attach "e2e-fpc" --exit-code-from "e2e-fpc" "e2e-fpc"
+  docker compose --profile "full" up --attach "tests-fee-entrypoint-validation" --exit-code-from "tests-fee-entrypoint-validation" "tests-fee-entrypoint-validation"
 )
 status=$?
 set -e
 
 (
   cd "$REPO_ROOT"
-  docker compose --profile "e2e-fpc" logs --no-color >"$COMPOSE_LOG" 2>&1
+  docker compose --profile "full" logs --no-color >"$COMPOSE_LOG" 2>&1
 ) || true
 (
   cd "$REPO_ROOT"

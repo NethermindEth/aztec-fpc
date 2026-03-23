@@ -15,7 +15,8 @@ services:
       - .env.${DEPLOYMENT}
 
   postdeploy:
-    image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
+    image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
+    entrypoint: ["bun", "run", "--sequential"]
     command:
       - "scripts/contract/devnet-postdeploy-smoke.ts"
     volumes:
@@ -73,10 +74,9 @@ services:
       deploy:
         condition: service_completed_successfully
 
-  smoke-cold-start:
-    image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
-    profiles: ["smoke"]
-    entrypoint: ["bun", "test"]
+  tests-cold-start:
+    image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
+    profiles: ["full"]
     command:
       - "./scripts/tests/cold-start.ts"
     volumes:
@@ -96,10 +96,9 @@ services:
       topup:
         condition: service_healthy
 
-  smoke-same-token-transfer:
-    image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
-    profiles: ["smoke"]
-    entrypoint: ["bun", "test"]
+  tests-same-token-transfer:
+    image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
+    profiles: ["full"]
     command:
       - "./scripts/tests/same-token-transfer.ts"
     volumes:
@@ -117,10 +116,9 @@ services:
       topup:
         condition: service_healthy
 
-  smoke-always-revert:
-    image: "${SMOKE_IMAGE:-nethermind/aztec-fpc-smoke:local}"
-    profiles: ["smoke"]
-    entrypoint: ["bun", "test"]
+  tests-always-revert:
+    image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
+    profiles: ["full"]
     command:
       - "./scripts/tests/always-revert.ts"
     volumes:

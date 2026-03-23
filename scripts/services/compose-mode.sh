@@ -12,7 +12,7 @@ Usage: bash scripts/services/compose-mode.sh [infra|full|services-devnet] [docke
 
 Modes:
 - infra: start only infra/services (no test profile).
-- full: run compose with test profile and fail on smoke test failure.
+- full: run compose with full profile and fail on test failure.
 - services-devnet: generate configs from devnet manifest, then run only attestation+topup compose.
 
 Examples:
@@ -97,7 +97,7 @@ full)
     cd "$REPO_ROOT"
     docker compose --profile full up \
       --attach smoke-credit-fpc \
-      --attach smoke-services
+      --attach tests-services
   )
   ;;
 --help|-h)

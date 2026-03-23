@@ -9,7 +9,7 @@ on:
     paths:
       - "docker-compose.yaml"
       - "docker-bake.hcl"
-      - "Dockerfile.smoke"
+      - "Dockerfile.test"
       - "contracts/**"
       - "scripts/**"
       - "services/**"
@@ -41,7 +41,7 @@ jobs:
             relevant:
               - "docker-compose.yaml"
               - "docker-bake.hcl"
-              - "Dockerfile.smoke"
+              - "Dockerfile.test"
               - "contracts/**"
               - "scripts/**"
               - "services/**"
@@ -93,29 +93,29 @@ jobs:
       - name: Run services and tests
         run: docker compose --profile full up wait --wait
 
-      - name: Print smoke-services logs
+      - name: Print tests-services logs
         if: always()
-        run: docker compose --profile full logs --timestamps smoke-services
+        run: docker compose --profile full logs --timestamps tests-services
 
-      - name: Print smoke-same-token-transfer logs
+      - name: Print tests-same-token-transfer logs
         if: always()
-        run: docker compose --profile full logs --timestamps smoke-same-token-transfer
+        run: docker compose --profile full logs --timestamps tests-same-token-transfer
 
-      - name: Print smoke-always-revert logs
+      - name: Print tests-always-revert logs
         if: always()
-        run: docker compose --profile full logs --timestamps smoke-always-revert
+        run: docker compose --profile full logs --timestamps tests-always-revert
 
-      - name: Print smoke-cold-start logs
+      - name: Print tests-cold-start logs
         if: always()
-        run: docker compose --profile full logs --timestamps smoke-cold-start
+        run: docker compose --profile full logs --timestamps tests-cold-start
 
-      - name: Print e2e-fpc logs
+      - name: Print tests-fee-entrypoint-validation logs
         if: always()
-        run: docker compose --profile full logs --timestamps e2e-fpc
+        run: docker compose --profile full logs --timestamps tests-fee-entrypoint-validation
 
-      - name: Print e2e-concurrent logs
+      - name: Print tests-concurrent logs
         if: always()
-        run: docker compose --profile full logs --timestamps e2e-concurrent
+        run: docker compose --profile full logs --timestamps tests-concurrent
 
       - name: Print deploy logs
         if: always()

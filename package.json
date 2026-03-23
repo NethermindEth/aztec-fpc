@@ -48,7 +48,7 @@
     "docker:build:attestation": "docker buildx bake attestation",
     "docker:build:deploy": "docker buildx bake deploy",
     "docker:build:services": "docker buildx bake services",
-    "docker:build:smoke": "docker buildx bake smoke",
+    "docker:build:test": "docker buildx bake test",
     "docker:build:topup": "docker buildx bake topup",
     "compose:infra": "bash scripts/services/compose-mode.sh infra",
     "compose:full": "bash scripts/services/compose-mode.sh full",
