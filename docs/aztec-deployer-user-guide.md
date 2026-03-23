@@ -412,14 +412,6 @@ FPC_COLD_START_MANIFEST=path/to/manifest.json FPC_ATTESTATION_URL=http://localho
 bun run smoke:services:compose
 ```
 
-Or run the chaos/adversarial test suite against a deployed attestation endpoint:
-
-```bash
-export FPC_CHAOS_ATTESTATION_URL="<ATTESTATION_URL>"
-export FPC_CHAOS_MANIFEST="./deployments/manifest.json"
-bun run chaos:api
-```
-
 ---
 
 ### Docker Compose (All-in-One)
@@ -835,7 +827,7 @@ docker run -v ./deployments:/app/deployments \
 [ ] quote_base_url set if behind a reverse proxy
 [ ] Top-up service running and /ready returns 200
 [ ] Auto-claim configured (TOPUP_AUTOCLAIM_SECRET_KEY set)
-[ ] Smoke test passing (docker compose smoke profile or chaos:api)
+[ ] Smoke test passing (docker compose smoke profile)
 [ ] Publish to users:
     [ ] ATTESTATION_URL: <ATTESTATION_URL>
     [ ] FPC_ADDRESS: <FPC_ADDRESS>

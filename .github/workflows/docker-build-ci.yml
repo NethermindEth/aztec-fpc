@@ -109,13 +109,13 @@ jobs:
         if: always()
         run: docker compose --profile full logs --timestamps smoke-cold-start
 
-      - name: Print smoke-chaos logs
-        if: always()
-        run: docker compose --profile full logs --timestamps smoke-chaos
-
       - name: Print e2e-fpc logs
         if: always()
         run: docker compose --profile full logs --timestamps e2e-fpc
+
+      - name: Print e2e-concurrent logs
+        if: always()
+        run: docker compose --profile full logs --timestamps e2e-concurrent
 
       - name: Print deploy logs
         if: always()

@@ -102,9 +102,9 @@ aztec-fpc/
 │   ├── src/                    ← Public client, exported types, and artifact loading
 │   └── test/                   ← SDK unit tests
 ├── scripts/
-│   ├── chaos/                  ← FPC chaos / adversarial test suite (see scripts/chaos/README.md)
 │   ├── contract/               ← Deploy + contract smoke wrappers
-│   └── services/               ← Service-integrated smoke wrapper
+│   ├── services/               ← Service bootstrap and operational scripts
+│   └── tests/                  ← Integration and E2E test suites
 ├── vendor/
 │   └── aztec-standards/        ← Git submodule (token contract dependency)
 └── docs/
@@ -195,7 +195,6 @@ bun run ci
 
 - `spec-deploy-smoke.yml`: local deploy smoke for `deploy-fpc-local` output validation
 - `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suite for `FPC`, with uploaded diagnostics artifacts
-- `spec-chaos-smoke.yml`: chaos / adversarial test suite (API + on-chain + stress)
 
 ### 5. Run fee-entrypoint negative-path smoke test
 
@@ -237,49 +236,7 @@ bun run smoke:services:compose
 - `FPC_SERVICES_SMOKE_ATTESTATION_PORT` (default `3300`)
 - `FPC_SERVICES_SMOKE_TOPUP_OPS_PORT` (default `3401`)
 
-### 7. Run chaos / adversarial tests
-
-The chaos suite exercises the FPC protocol under edge cases and adversarial conditions across three tiers:
-
-| Mode      | What runs                          | Use case                          |
-|-----------|------------------------------------|-----------------------------------|
-| `api`     | API tests only                     | Safe against any endpoint (incl. prod) |
-| `onchain` | API + on-chain security tests      | Node + operator key + FPC required    |
-| `full`    | API + on-chain + stress tests      | Full validation (local or staging)     |
-
-**Self-contained local run (recommended):**
-
-```bash
-bun run chaos:local
-```
-
-This starts a local Aztec network, compiles contracts, deploys Token + FPC, starts services, funds the FPC, and runs the full suite. No manual env or manifest needed.
-
-**Against a deployed endpoint:**
-
-```bash
-# API-only (safe for production)
-FPC_CHAOS_ATTESTATION_URL=https://<host> \
-FPC_CHAOS_MANIFEST=./deployments/devnet-manifest-v2.json \
-  bun run chaos:api
-
-# Full suite (requires operator key)
-FPC_CHAOS_MODE=full \
-FPC_CHAOS_ATTESTATION_URL=https://<host> \
-FPC_CHAOS_OPERATOR_SECRET_KEY=0x<hex> \
-FPC_CHAOS_MANIFEST=./deployments/devnet-manifest-v2.json \
-  bun run chaos:full
-```
-
-**Docker Compose:**
-
-```bash
-bun run smoke:chaos:compose
-```
-
-See [scripts/chaos/README.md](scripts/chaos/README.md) for the full environment variable reference and advanced usage.
-
-### 8. Deploy contracts (recommended)
+### 7. Deploy contracts (recommended)
 
 Use the local deploy wrapper (deploys `Token` and `FPC`):
 
@@ -452,7 +409,6 @@ The compose stack (`docker-compose.yaml`) includes:
 | `attestation` | FPC attestation service | 3000 |
 | `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
 | `e2e-fpc` (profile `e2e-fpc`) | Compose-backed `FPC` full lifecycle runner | — |
-| `smoke-chaos` (profile `chaos`) | Chaos / adversarial test runner | — |
 
 Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
 

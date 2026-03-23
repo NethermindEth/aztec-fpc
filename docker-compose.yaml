@@ -287,26 +287,6 @@ services:
       topup:
         condition: service_healthy
 
-  smoke-chaos:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["chaos", "full"]
-    command:
-      - "scripts/chaos/fpc-chaos-test.ts"
-    volumes:
-      - ./deployments/local:/app/data:ro
-    environment:
-      FPC_CHAOS_ATTESTATION_URL: "http://attestation:3000"
-      FPC_CHAOS_MANIFEST: "/app/data/manifest.json"
-    depends_on:
-      block-producer:
-        condition: service_started
-      deploy:
-        condition: service_completed_successfully
-      attestation:
-        condition: service_healthy
-      topup:
-        condition: service_healthy
-
   wait:
     image: busybox
     profiles: ["full"]
@@ -323,8 +303,6 @@ services:
       smoke-same-token-transfer:
         condition: service_completed_successfully
       smoke-always-revert:
-        condition: service_completed_successfully
-      smoke-chaos:
         condition: service_completed_successfully
       attestation:
         condition: service_healthy
