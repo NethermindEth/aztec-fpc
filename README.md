@@ -2,10 +2,12 @@
 
 ## Why FPC Exists
 
-Every transaction on Aztec L2 costs gas, paid in the native **Fee Juice** token (more in the [docs](https://docs.aztec.network/developers/docs/foundational-topics/fees)). But most users arrive on Aztec by bridging assets like USDC or ETH from Ethereum, they have no Fee Juice and may not even have a deployed account contract - so how do they claim bridget assets?
-This is the chicken-and-egg problem: you need Fee Juice to do anything, but getting Fee Juice *is* doing something.
+Every transaction on Aztec L2 costs gas, paid in the native **Fee Juice** token (more in the [docs](https://docs.aztec.network/developers/docs/foundational-topics/fees)). Fee Juice creates two problems for users:
 
-**This FPC implementation solves this.**. Users bridge token, pay fees in whatever token the operator accepts (e.g., USDC/ETH/...); the FPC pays the actual gas in Fee Juice on their behalf and transfer tokens to the end-user.
+1. **Cold start**: Users arrive on Aztec by bridging assets like USDC or ETH from Ethereum — they have no Fee Juice and may not even have a deployed account contract. You need Fee Juice to do anything, but getting Fee Juice *is* doing something.
+2. **Ongoing UX friction**: Even after onboarding, users don't want to keep buying and bridging small amounts of Fee Juice just to run transactions. They already hold tokens — they should be able to pay with those.
+
+**This FPC implementation solves both.** Users pay fees in whatever token the operator accepts (e.g., USDC/ETH/...); the FPC pays the actual gas in Fee Juice on their behalf.
 
 ## How It Works
 
@@ -19,7 +21,7 @@ The FPC system has following components:
 
 ## Token Flow
 
-There are two transaction paths. Both are fully private.
+There are two transaction paths. Both are fully private*.
 
 
 ### Cold Start (`cold_start_entrypoint`)
@@ -44,15 +46,15 @@ For users who just bridged tokens from L1 — no L2 balance, no deployed account
 │  App phase:                                                      │
 │    1. Claim bridged tokens INTO FPC's private balance            │
 │       (not the user's — avoids needing authwit or deployed acct) │
-│    2. Transfer (claim - fee) → user's address                    │
-│    3. Transfer fee → operator's address                          │
+│    2. Transfer (claim - fee) → user's address (remainder)        │
+│    3. Transfer fee → operator's address (exact token payment)    │
 │                                                                  │
 │  Fee deduction:                                                  │
 │    Protocol deducts gas cost from FPC's Fee Juice                │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-The operator is reimbursed in the accepted token. The FPC itself never holds tokens — it is a pass-through. Unused Fee Juice stays in the FPC's balance, reducing future top-up frequency.
+The operator is reimbursed in the accepted token. The FPC itself never holds tokens — it is a pass-through. Unused Fee Juice stays in the FPC's balance.
 
 
 ### Normal Payment (`fee_entrypoint`)
@@ -72,7 +74,9 @@ For users who already have an L2 account and token balance:
 │                                                          │
 │  Setup phase:                                            │
 │    Perform verifications & guards                        │
-│    Token.transfer_private_to_private(user → operator)    │
+│    User transfers exact token payment → operator         │
+│    (no refund — user calculates the precise amount       │
+│     based on estimated gas and quoted rate)              │
 │    FPC declares itself fee_payer                         │
 │                                                          │
 │  App phase:                                              │
@@ -94,6 +98,8 @@ For users who already have an L2 account and token balance:
 ```
 
 The top-up service holds an L1 wallet key with ETH + Fee Juice. It polls the FPC's L2 balance and bridges via the Fee Juice portal when it drops below a threshold.
+
+\* The cold start path claims bridged tokens via `Token::mint_to_private`, which enqueues a public call to update the token's total supply — so the minted amount is visible on-chain. User identity and balances remain private. This is an inherent property of Aztec's `mint_to_private` design, not specific to the FPC.
 
 See [docs/spec/protocol-spec.md](docs/spec/protocol-spec.md) for the full protocol specification, quote format, and security model.
 
