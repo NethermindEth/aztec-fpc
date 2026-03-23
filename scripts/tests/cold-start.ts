@@ -263,6 +263,10 @@ describe("cold-start smoke", () => {
       skipClassPublication: true,
     });
 
+    if (!estimatedGas) {
+      throw new Error("Failed to estimate gas for deploy method");
+    }
+
     const paymentMethod = await fpcClient.createPaymentMethod({
       wallet,
       user,
@@ -295,6 +299,10 @@ describe("cold-start smoke", () => {
       from: user,
       fee: { estimateGas: true },
     });
+
+    if (!estimatedGas) {
+      throw new Error("Failed to estimate gas for increment method");
+    }
 
     const paymentMethod = await fpcClient.createPaymentMethod({
       wallet,
@@ -372,6 +380,10 @@ describe("cold-start smoke", () => {
       fee: { estimateGas: true },
     });
 
+    if (!estimatedGas) {
+      throw new Error("Failed to estimate gas for transfer method");
+    }
+
     const paymentMethod = await fpcClient.createPaymentMethod({
       wallet,
       user,
@@ -411,7 +423,6 @@ describe("cold-start smoke", () => {
     const tinyMsgHash = Fr.fromHexString(tinyClaim.messageHash as string);
     await waitForL1ToL2MessageReady(node, tinyMsgHash, {
       timeoutSeconds: config.messageTimeoutSeconds,
-      forPublicConsumption: false,
     });
 
     // Attempt cold-start — should fail at quote stage

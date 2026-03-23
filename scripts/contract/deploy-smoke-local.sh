@@ -5,20 +5,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/deploy-smoke-local.XXXXXX")"
 source "$REPO_ROOT/scripts/common/node-setup.sh"
 
-resolve_default_fpc_artifact() {
-  if [[ -n "${FPC_ARTIFACT:-}" ]]; then
-    printf "%s\n" "${FPC_ARTIFACT}"
-    return
-  fi
-
-  local multi_asset_path="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
-  if [[ -f "$multi_asset_path" ]]; then
-    printf "%s\n" "$multi_asset_path"
-    return
-  fi
-  printf "%s\n" "$multi_asset_path"
-}
-
 setup_require_cmds "[deploy-smoke]" aztec bun node
 cd "$REPO_ROOT"
 
@@ -37,7 +23,6 @@ echo "[deploy-smoke] Compiling contracts workspace"
 aztec compile --workspace --force
 
 DEPLOY_OUTPUT="${FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT:-$TMP_DIR/deploy-fpc-local.json}"
-FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 # Defaults use sandbox test account 0 (well-known keys from aztec local devnet TEST_ACCOUNTS)
 OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
 DEPLOYER_SECRET_KEY="${FPC_LOCAL_DEPLOYER_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
@@ -51,7 +36,6 @@ cmd=(
   --l1-deployer-key "$L1_DEPLOYER_KEY"
   --deployer-secret-key "$DEPLOYER_SECRET_KEY"
   --operator-secret-key "$OPERATOR_SECRET_KEY"
-  --fpc-artifact "$FPC_ARTIFACT"
   --out "$DEPLOY_OUTPUT"
 )
 if [[ -n "${FPC_LOCAL_ACCEPTED_ASSET:-}" ]]; then

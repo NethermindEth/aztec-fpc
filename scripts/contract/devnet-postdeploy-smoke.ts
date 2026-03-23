@@ -3,16 +3,15 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  type DevnetDeployManifest,
-  validateDevnetDeployManifest,
-} from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+  type DeployManifest,
+  readDeployManifest,
+} from "@aztec-fpc/contract-deployment/src/manifest.ts";
 import pino from "pino";
 
 const pinoLogger = pino();
 
 type CliArgs = {
   manifestPath: string;
-  fpcArtifactPath: string | null;
   l1RpcUrl: string;
   operatorSecretKey: string | null;
   l1OperatorPrivateKey: string | null;
@@ -27,8 +26,6 @@ type CliArgs = {
   fpcRateDen: bigint;
   fpcTopupWeiOverride: bigint | null;
 };
-
-type FpcVariant = "FPC" | "FPCMultiAsset";
 
 type CliParseResult =
   | { kind: "help" }
@@ -168,11 +165,7 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
 const DEFAULT_MANIFEST_PATH = path.join(REPO_ROOT, "deployments", "manifest.json");
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-// Keep the legacy FPC artifact only as a non-default compatibility fallback.
-const FPC_ARTIFACT_PATH_CANDIDATES = [
-  path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
-  path.join(REPO_ROOT, "target", "fpc-FPC.json"),
-] as const;
+const FPC_ARTIFACT_PATH = path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json");
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const UINT_DEC_PATTERN = /^(0|[1-9][0-9]*)$/;
 const ETH_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -183,7 +176,6 @@ function usage(): string {
     "Usage:",
     "  bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \\",
     "    [--manifest <path.json>] \\",
-    "    [--fpc-artifact <path/to/*-FPC.json|*-FPCMultiAsset.json>] \\",
     "    [--l1-rpc-url <http(s)-url>] \\",
     "    [--operator-secret-key <hex32>] \\",
     "    [--l1-operator-private-key <hex32>] \\",
@@ -212,7 +204,6 @@ function usage(): string {
     "",
     "Environment fallbacks:",
     "  FPC_DEVNET_SMOKE_MANIFEST",
-    "  FPC_FPC_ARTIFACT",
     "  FPC_DEVNET_L1_RPC_URL (or L1_RPC_URL)",
     "  FPC_OPERATOR_SECRET_KEY",
     "  L1_OPERATOR_PRIVATE_KEY",
@@ -288,7 +279,6 @@ function parseHex32(value: string, fieldName: string): string {
 
 function parseCliArgs(argv: string[]): CliParseResult {
   let manifestPath = readEnvString("FPC_DEVNET_SMOKE_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
-  let fpcArtifactPath = readEnvString("FPC_FPC_ARTIFACT");
   let l1RpcUrlRaw =
     readEnvString("FPC_DEVNET_L1_RPC_URL") ??
     readEnvString("L1_RPC_URL") ??
@@ -339,10 +329,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
     switch (arg) {
       case "--manifest":
         manifestPath = path.resolve(nextArg(argv, i, arg));
-        i += 1;
-        break;
-      case "--fpc-artifact":
-        fpcArtifactPath = path.resolve(nextArg(argv, i, arg));
         i += 1;
         break;
       case "--l1-rpc-url":
@@ -414,7 +400,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
     kind: "args",
     args: {
       manifestPath: path.resolve(manifestPath),
-      fpcArtifactPath,
       l1RpcUrl: parseHttpUrl(l1RpcUrlRaw, "l1-rpc-url"),
       operatorSecretKey: operatorSecretKey
         ? parseHex32(operatorSecretKey, "operator-secret-key")
@@ -438,25 +423,11 @@ function parseCliArgs(argv: string[]): CliParseResult {
   };
 }
 
-function parseManifestFromDisk(manifestPath: string): DevnetDeployManifest {
-  let raw: string;
+function parseManifestFromDisk(manifestPath: string): DeployManifest {
   try {
-    raw = readFileSync(manifestPath, "utf8");
+    return readDeployManifest(manifestPath);
   } catch (error) {
-    throw new CliError(`Failed to read manifest at ${manifestPath}: ${String(error)}`);
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch (error) {
-    throw new CliError(`Manifest at ${manifestPath} is not valid JSON: ${String(error)}`);
-  }
-
-  try {
-    return validateDevnetDeployManifest(parsed);
-  } catch (error) {
-    throw new CliError(`Manifest validation failed for ${manifestPath}: ${String(error)}`);
+    throw new CliError(`Failed to load manifest at ${manifestPath}: ${String(error)}`);
   }
 }
 
@@ -580,15 +551,6 @@ async function loadDeps(): Promise<AztecDeps> {
   return deps;
 }
 
-function resolveDefaultFpcArtifactPath(): string {
-  for (const candidatePath of FPC_ARTIFACT_PATH_CANDIDATES) {
-    if (existsSync(candidatePath)) {
-      return candidatePath;
-    }
-  }
-  return FPC_ARTIFACT_PATH_CANDIDATES[0];
-}
-
 function loadArtifact(deps: AztecDeps, artifactPath: string): unknown {
   const raw = readFileSync(artifactPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
@@ -603,68 +565,6 @@ function loadArtifact(deps: AztecDeps, artifactPath: string): unknown {
     }
     throw error;
   }
-}
-
-function resolveFpcArtifactSelection(
-  manifest: DevnetDeployManifest,
-  args: CliArgs,
-): { path: string; variant: FpcVariant } {
-  const rawPath =
-    args.fpcArtifactPath ?? manifest.fpc_artifact?.path ?? resolveDefaultFpcArtifactPath();
-  const artifactPath = path.resolve(rawPath);
-  if (!existsSync(artifactPath)) {
-    throw new CliError(
-      `FPC artifact not found: ${artifactPath}. Provide --fpc-artifact or set FPC_FPC_ARTIFACT.`,
-    );
-  }
-
-  let raw: string;
-  try {
-    raw = readFileSync(artifactPath, "utf8");
-  } catch (error) {
-    throw new CliError(`Failed to read FPC artifact at ${artifactPath}: ${String(error)}`);
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch (error) {
-    throw new CliError(`FPC artifact at ${artifactPath} is not valid JSON: ${String(error)}`);
-  }
-  if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    !("name" in parsed) ||
-    typeof (parsed as { name?: unknown }).name !== "string"
-  ) {
-    throw new CliError(`Invalid FPC artifact at ${artifactPath}: missing string "name" field`);
-  }
-
-  const variant = (parsed as { name: string }).name;
-  if (variant !== "FPC" && variant !== "FPCMultiAsset") {
-    throw new CliError(
-      `Unsupported FPC artifact variant at ${artifactPath}: ${variant}. Expected FPC or FPCMultiAsset.`,
-    );
-  }
-
-  if (
-    manifest.fpc_artifact?.name &&
-    manifest.fpc_artifact.name !== variant &&
-    !args.fpcArtifactPath
-  ) {
-    throw new CliError(
-      `Manifest fpc_artifact.name=${manifest.fpc_artifact.name} does not match artifact file name=${variant}. Pass --fpc-artifact explicitly to override.`,
-    );
-  }
-
-  return { path: artifactPath, variant };
-}
-
-function fieldStringToBigInt(value: string, fieldName: string): bigint {
-  if (/^0x[0-9a-fA-F]+$/.test(value) || /^[0-9]+$/.test(value)) {
-    return BigInt(value);
-  }
-  throw new CliError(`Invalid ${fieldName}: expected decimal or 0x-prefixed field value`);
 }
 
 function resolveOperatorSecretKey(args: CliArgs): string {
@@ -865,7 +765,10 @@ async function topUpFeePayer(params: {
 async function runSmoke(args: CliArgs): Promise<void> {
   const deps = await loadDeps();
   const manifest = parseManifestFromDisk(args.manifestPath);
-  const fpcSelection = resolveFpcArtifactSelection(manifest, args);
+
+  if (!existsSync(FPC_ARTIFACT_PATH)) {
+    throw new CliError(`FPC artifact not found: ${FPC_ARTIFACT_PATH}`);
+  }
 
   const operatorSecretKeyHex = resolveOperatorSecretKey(args);
   const l1OperatorPrivateKeyHex = resolveL1OperatorPrivateKey(args);
@@ -876,10 +779,9 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const derivedPubkey = await schnorr.computePublicKey(operatorSigningKey);
   const derivedX = BigInt(derivedPubkey.x.toString());
   const derivedY = BigInt(derivedPubkey.y.toString());
-  const manifestX = fieldStringToBigInt(manifest.operator.pubkey_x, "manifest.operator.pubkey_x");
-  const manifestY = fieldStringToBigInt(manifest.operator.pubkey_y, "manifest.operator.pubkey_y");
-  const shouldValidateOperatorPubkey =
-    manifest.operator.pubkey_x !== "0" || manifest.operator.pubkey_y !== "0";
+  const manifestX = manifest.operator.pubkey_x.toBigInt();
+  const manifestY = manifest.operator.pubkey_y.toBigInt();
+  const shouldValidateOperatorPubkey = manifestX !== 0n || manifestY !== 0n;
   if (shouldValidateOperatorPubkey && (derivedX !== manifestX || derivedY !== manifestY)) {
     throw new OperatorKeyMismatchError(
       "operator pubkey mismatch between supplied key and manifest operator pubkeys",
@@ -908,9 +810,11 @@ async function runSmoke(args: CliArgs): Promise<void> {
     operatorSigningKey,
   );
   const operatorAddress = deps.AztecAddress.fromString(operatorAccount.address.toString());
-  if (operatorAddress.toString().toLowerCase() !== manifest.operator.address.toLowerCase()) {
+  if (
+    operatorAddress.toString().toLowerCase() !== manifest.operator.address.toString().toLowerCase()
+  ) {
     throw new OperatorKeyMismatchError(
-      `operator address mismatch. manifest=${manifest.operator.address} derived=${operatorAddress.toString()}`,
+      `operator address mismatch. manifest=${manifest.operator.address.toString()} derived=${operatorAddress.toString()}`,
     );
   }
 
@@ -935,10 +839,10 @@ async function runSmoke(args: CliArgs): Promise<void> {
     deps,
     path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   );
-  const selectedFpcArtifact = loadArtifact(deps, fpcSelection.path);
+  const selectedFpcArtifact = loadArtifact(deps, FPC_ARTIFACT_PATH);
 
-  const tokenAddress = deps.AztecAddress.fromString(manifest.contracts.accepted_asset);
-  const fpcAddress = deps.AztecAddress.fromString(manifest.contracts.fpc);
+  const tokenAddress = manifest.contracts.accepted_asset;
+  const fpcAddress = manifest.contracts.fpc;
 
   // Contract.at() no longer auto-registers with PXE (SDK breaking change).
   // Fetch on-chain instances and register explicitly before use.
@@ -963,7 +867,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
       "Manifest missing contracts.faucet (required for token funding in smoke test)",
     );
   }
-  const faucetAddress = deps.AztecAddress.fromString(manifest.contracts.faucet);
+  const faucetAddress = manifest.contracts.faucet;
   const faucetArtifact = loadArtifact(deps, path.join(REPO_ROOT, "target", "faucet-Faucet.json"));
   const faucetInstance = await node.getContract(faucetAddress);
   if (!faucetInstance) {
@@ -988,7 +892,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
     `[devnet-postdeploy-smoke] manifest=${args.manifestPath} node_url=${manifest.network.node_url}`,
   );
   pinoLogger.info(
-    `[devnet-postdeploy-smoke] contracts accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${fpcSelection.variant}`,
+    `[devnet-postdeploy-smoke] contracts accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${"FPCMultiAsset"}`,
   );
   pinoLogger.info(`[devnet-postdeploy-smoke] topup target fpc=${fpcTopupAmount}`);
 
@@ -1002,7 +906,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
     l1WalletClient,
     feePayerAddress: fpc.address,
     amount: fpcTopupAmount,
-    label: fpcSelection.variant.toLowerCase(),
+    label: "FPCMultiAsset".toLowerCase(),
   });
   pinoLogger.info(`[devnet-postdeploy-smoke] fpc_fee_juice_balance=${fpcFeeJuiceBalance}`);
 
@@ -1083,9 +987,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
   pinoLogger.info(
     `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
   );
-  pinoLogger.info(
-    `[devnet-postdeploy-smoke] PASS variant=${fpcSelection.variant} successful_txs=1`,
-  );
+  pinoLogger.info(`[devnet-postdeploy-smoke] PASS variant=${"FPCMultiAsset"} successful_txs=1`);
 }
 
 async function main(argv: string[]): Promise<void> {

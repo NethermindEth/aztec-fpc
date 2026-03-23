@@ -1,11 +1,10 @@
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  type DevnetDeployManifest,
-  validateDevnetDeployManifest,
-} from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+  type DeployManifest,
+  readDeployManifest,
+} from "@aztec-fpc/contract-deployment/src/manifest.ts";
 import pino from "pino";
 import {
   FpcImmutableVerificationError,
@@ -160,28 +159,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function readManifestFromDisk(manifestPath: string): DevnetDeployManifest {
-  let raw: string;
-  try {
-    raw = readFileSync(manifestPath, "utf8");
-  } catch (error) {
-    throw new CliError(`Failed to read manifest at ${manifestPath}: ${String(error)}`);
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch (error) {
-    throw new CliError(`Manifest at ${manifestPath} is not valid JSON: ${String(error)}`);
-  }
-
-  try {
-    return validateDevnetDeployManifest(parsed);
-  } catch (error) {
-    throw new CliError(`Manifest validation failed for ${manifestPath}: ${String(error)}`);
-  }
-}
-
 async function importWithWorkspaceFallback(moduleId: string): Promise<Record<string, unknown>> {
   const errors: string[] = [];
   try {
@@ -271,19 +248,6 @@ function isRetryableVerificationError(error: unknown): boolean {
   );
 }
 
-function parseFieldToFr(rawField: string, FrApi: AztecDeps["Fr"], fieldName: string): unknown {
-  try {
-    if (rawField.startsWith("0x") || rawField.startsWith("0X")) {
-      return FrApi.fromHexString(rawField);
-    }
-    return FrApi.fromString(rawField);
-  } catch (error) {
-    throw new CliError(
-      `Invalid ${fieldName} in manifest: ${rawField}. Underlying error: ${String(error)}`,
-    );
-  }
-}
-
 function asObjectRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -323,16 +287,15 @@ function isZeroFieldLike(value: string): boolean {
 }
 
 async function verifyAttempt(params: {
-  manifest: DevnetDeployManifest;
+  manifest: DeployManifest;
   deps: AztecDeps;
   node: {
     getContract: (address: unknown) => Promise<unknown>;
     getContractClass: (classId: unknown) => Promise<unknown>;
   };
 }): Promise<string[]> {
-  const { manifest, deps, node } = params;
+  const { manifest, node } = params;
   const issues: string[] = [];
-  const AztecAddressApi = deps.AztecAddress;
 
   const contracts = [
     {
@@ -347,7 +310,7 @@ async function verifyAttempt(params: {
 
   const parsedAddresses = new Map<string, unknown>();
   for (const contract of contracts) {
-    parsedAddresses.set(contract.key, AztecAddressApi.fromString(contract.address));
+    parsedAddresses.set(contract.key, contract.address);
   }
 
   for (const contract of contracts) {
@@ -397,17 +360,9 @@ async function verifyAttempt(params: {
     await verifyFpcImmutablesOnStartup(node, {
       fpcAddress: parsedAddresses.get("fpc") as never,
       acceptedAsset: parsedAddresses.get("accepted_asset") as never,
-      operatorAddress: AztecAddressApi.fromString(manifest.operator.address) as never,
-      operatorPubkeyX: parseFieldToFr(
-        manifest.operator.pubkey_x,
-        deps.Fr,
-        "operator.pubkey_x",
-      ) as never,
-      operatorPubkeyY: parseFieldToFr(
-        manifest.operator.pubkey_y,
-        deps.Fr,
-        "operator.pubkey_y",
-      ) as never,
+      operatorAddress: manifest.operator.address as never,
+      operatorPubkeyX: manifest.operator.pubkey_x as never,
+      operatorPubkeyY: manifest.operator.pubkey_y as never,
     });
   } catch (error) {
     if (error instanceof FpcImmutableVerificationError && error.reason === "IMMUTABLE_MISMATCH") {
@@ -431,7 +386,7 @@ async function main(): Promise<void> {
   pinoLogger.info(
     `[verify-fpc-devnet] manifest=${path.resolve(args.manifestPath)} max_attempts=${args.maxAttempts} poll_ms=${args.pollMs}`,
   );
-  const manifest = readManifestFromDisk(args.manifestPath);
+  const manifest = readDeployManifest(args.manifestPath);
   pinoLogger.info(
     `[verify-fpc-devnet] loaded manifest for node=${manifest.network.node_url} fpc=${manifest.contracts.fpc}`,
   );

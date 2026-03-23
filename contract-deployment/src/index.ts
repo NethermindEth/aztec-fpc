@@ -27,11 +27,9 @@ import pino from "pino";
 import { type Chain, createPublicClient, extractChain, type Hex, http } from "viem";
 import * as viemChains from "viem/chains";
 import { deployContract } from "./deploy-utils.js";
-import { writeDevnetDeployManifest } from "./devnet-manifest.js";
+import { type DeployManifest, writeDeployManifest } from "./manifest.js";
 
 const pinoLogger = pino();
-
-import type { FpcArtifactName } from "./devnet-manifest.js";
 
 type CliArgs = {
   nodeUrl: string;
@@ -860,7 +858,7 @@ async function main(): Promise<void> {
     throw new CliError("node_getNodeInfo.l1ContractAddresses.feeAssetHandlerAddress is missing");
   }
 
-  const manifest = writeDevnetDeployManifest(args.out, {
+  const manifest: DeployManifest = {
     status: "deploy_ok",
     generated_at: new Date().toISOString(),
     network: {
@@ -870,47 +868,36 @@ async function main(): Promise<void> {
       rollup_version: nodeInfo.rollupVersion,
     },
     aztec_required_addresses: {
-      l1_contract_addresses: {
-        registryAddress: nodeInfo.l1ContractAddresses.registryAddress.toString(),
-        rollupAddress: nodeInfo.l1ContractAddresses.rollupAddress.toString(),
-        inboxAddress: nodeInfo.l1ContractAddresses.inboxAddress.toString(),
-        outboxAddress: nodeInfo.l1ContractAddresses.outboxAddress.toString(),
-        feeJuiceAddress: nodeInfo.l1ContractAddresses.feeJuiceAddress.toString(),
-        feeJuicePortalAddress: nodeInfo.l1ContractAddresses.feeJuicePortalAddress.toString(),
-        feeAssetHandlerAddress: feeAssetHandlerAddress.toString(),
-      },
-      protocol_contract_addresses: {
-        instanceRegistry: nodeInfo.protocolContractAddresses.instanceRegistry.toString(),
-        classRegistry: nodeInfo.protocolContractAddresses.classRegistry.toString(),
-        multiCallEntrypoint: nodeInfo.protocolContractAddresses.multiCallEntrypoint.toString(),
-        feeJuice: nodeInfo.protocolContractAddresses.feeJuice.toString(),
-      },
-      ...(args.sponsoredFpcAddress ? { sponsored_fpc_address: args.sponsoredFpcAddress } : {}),
+      l1_contract_addresses: nodeInfo.l1ContractAddresses,
+      protocol_contract_addresses: nodeInfo.protocolContractAddresses,
+      ...(args.sponsoredFpcAddress
+        ? { sponsored_fpc_address: AztecAddress.fromString(args.sponsoredFpcAddress) }
+        : {}),
     },
-    deployer_address: deployerAddress.toString(),
+    deployer_address: deployerAddress,
     contracts: {
-      accepted_asset: acceptedAssetAddress,
-      fpc: fpcAddress,
-      ...(faucetAddress ? { faucet: faucetAddress } : {}),
-      ...(counterAddress ? { counter: counterAddress } : {}),
-      ...(bridgeAddress ? { bridge: bridgeAddress } : {}),
+      accepted_asset: AztecAddress.fromString(acceptedAssetAddress),
+      fpc: AztecAddress.fromString(fpcAddress),
+      ...(faucetAddress ? { faucet: AztecAddress.fromString(faucetAddress) } : {}),
+      ...(counterAddress ? { counter: AztecAddress.fromString(counterAddress) } : {}),
+      ...(bridgeAddress ? { bridge: AztecAddress.fromString(bridgeAddress) } : {}),
     },
     ...(l1TokenPortalAddress && l1Erc20Address
       ? {
           l1_contracts: {
-            token_portal: l1TokenPortalAddress,
-            erc20: l1Erc20Address,
+            token_portal: EthAddress.fromString(l1TokenPortalAddress),
+            erc20: EthAddress.fromString(l1Erc20Address),
           },
         }
       : {}),
     fpc_artifact: {
-      name: fpcArtifact.name as FpcArtifactName,
+      name: "FPCMultiAsset",
       path: fpcArtifactPath,
     },
     operator: {
-      address: operatorIdentity.address,
-      pubkey_x: operatorIdentity.pubkeyX,
-      pubkey_y: operatorIdentity.pubkeyY,
+      address: AztecAddress.fromString(operatorIdentity.address),
+      pubkey_x: Fr.fromHexString(operatorIdentity.pubkeyX),
+      pubkey_y: Fr.fromHexString(operatorIdentity.pubkeyY),
     },
     tx_hashes: {
       accepted_asset_deploy: null,
@@ -918,7 +905,6 @@ async function main(): Promise<void> {
       counter_deploy: null,
       bridge_deploy: null,
     },
-
     ...(faucetConfig
       ? {
           faucet_config: {
@@ -929,7 +915,8 @@ async function main(): Promise<void> {
         }
       : {}),
     payment_mode: paymentMode,
-  });
+  };
+  writeDeployManifest(args.out, manifest);
 
   pinoLogger.info(
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
