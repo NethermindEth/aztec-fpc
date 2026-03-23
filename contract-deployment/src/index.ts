@@ -436,58 +436,18 @@ function readFaucetEnvConfig(): {
   return { dripAmount, cooldownSeconds, initialSupply };
 }
 
-function parseNonZeroAztecAddress(value: unknown, fieldName: string): string {
-  if (typeof value !== "string" || !AZTEC_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(`Aztec node preflight failed: invalid ${fieldName}=${String(value)}`);
-  }
-  if (ZERO_AZTEC_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(`Aztec node preflight failed: ${fieldName} is zero-address`);
-  }
-  return value;
-}
-
-function stringifyWithToString(value: unknown, context: string): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (
-    value &&
-    typeof value === "object" &&
-    "toString" in value &&
-    typeof value.toString === "function"
-  ) {
-    return value.toString();
-  }
-  throw new CliError(
-    `${context} returned invalid value ${String(value)} (expected string-like output)`,
-  );
-}
-
-function parseFieldValueString(value: unknown, context: string): string {
-  const raw = stringifyWithToString(value, context).trim();
-  if (!DECIMAL_UINT_PATTERN.test(raw) && !HEX_FIELD_PATTERN.test(raw)) {
-    throw new CliError(
-      `${context} returned invalid field value ${raw}. Expected decimal integer or 0x-prefixed hex.`,
-    );
-  }
-  return raw;
-}
-
 async function deriveOperatorIdentity(operatorSecretKey: string): Promise<OperatorIdentity> {
   const secretKeyFr = Fr.fromHexString(operatorSecretKey);
   const signingKey = deriveSigningKey(secretKeyFr);
   const schnorr = new Schnorr();
   const pubkey = await schnorr.computePublicKey(signingKey);
-  const operatorAddressRaw = await getSchnorrAccountContractAddress(secretKeyFr, Fr.ZERO);
+  const address = await getSchnorrAccountContractAddress(secretKeyFr, Fr.ZERO);
 
-  const address = parseNonZeroAztecAddress(
-    stringifyWithToString(operatorAddressRaw, "operator address derivation"),
-    "operator address derivation",
-  );
-  const pubkeyX = parseFieldValueString(pubkey.x, "operator pubkey x");
-  const pubkeyY = parseFieldValueString(pubkey.y, "operator pubkey y");
-
-  return { address, pubkeyX, pubkeyY };
+  return {
+    address: address.toString(),
+    pubkeyX: pubkey.x.toString(),
+    pubkeyY: pubkey.y.toString(),
+  };
 }
 
 function assertRequiredArtifactsExistForDevnet(
