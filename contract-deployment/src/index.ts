@@ -8,7 +8,7 @@ import { Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
 import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { EthAddress } from "@aztec/foundation/eth-address";
@@ -24,7 +24,7 @@ import { deriveKeys, deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
-import { type Chain, extractChain, type Hex } from "viem";
+import { type Chain, createPublicClient, extractChain, type Hex, http } from "viem";
 import * as viemChains from "viem/chains";
 import { deployContract } from "./deploy-utils.js";
 import { writeDevnetDeployManifest } from "./devnet-manifest.js";
@@ -60,46 +60,6 @@ type CliParseResult =
       args: CliArgs;
     };
 
-type JsonRpcErrorObject = {
-  code: number;
-  message: string;
-  data?: unknown;
-};
-
-type JsonRpcSuccess<T> = {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  result: T;
-};
-
-type JsonRpcFailure = {
-  jsonrpc: "2.0";
-  id: number | string | null;
-  error: JsonRpcErrorObject;
-};
-
-type NodePreflightState = {
-  nodeVersion: string;
-  l1ChainId: number;
-  l2ChainId: number;
-  rollupVersion: number;
-  l1ContractAddresses: {
-    registryAddress: string;
-    rollupAddress: string;
-    inboxAddress: string;
-    outboxAddress: string;
-    feeJuiceAddress: string;
-    feeJuicePortalAddress: string;
-    feeAssetHandlerAddress: string;
-  };
-  protocolContractAddresses: {
-    instanceRegistry: string;
-    classRegistry: string;
-    multiCallEntrypoint: string;
-    feeJuice: string;
-  };
-};
-
 type OperatorIdentity = {
   address: string;
   pubkeyX: string;
@@ -113,8 +73,6 @@ type FpcArtifactSelection = {
 
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_AZTEC_ADDRESS_PATTERN = /^0x0{64}$/i;
-const L1_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
-const ZERO_L1_ADDRESS_PATTERN = /^0x0{40}$/i;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
@@ -504,152 +462,6 @@ function readFaucetEnvConfig(): {
   return { dripAmount, cooldownSeconds, initialSupply };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isJsonRpcFailure(payload: unknown): payload is JsonRpcFailure {
-  if (!payload || typeof payload !== "object") {
-    return false;
-  }
-  return "error" in payload;
-}
-
-async function rpcCall<T>(url: string, method: string, params: unknown[]): Promise<T> {
-  const retries = parseEnvPositiveNumber("FPC_RPC_RETRIES", 3);
-  const backoffMs = parseEnvPositiveNumber("FPC_RPC_RETRY_BACKOFF_MS", 250);
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= retries; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method,
-          params,
-        }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      clearTimeout(timeout);
-      lastError = new CliError(
-        `RPC request failed for method ${method} at ${url}: ${String(error)}`,
-      );
-      if (attempt < retries) {
-        await sleep(backoffMs * attempt);
-        continue;
-      }
-      throw lastError;
-    }
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const error = new CliError(
-        `RPC request failed for method ${method} at ${url}: HTTP ${response.status} ${response.statusText}`,
-      );
-      lastError = error;
-      if (response.status >= 500 && attempt < retries) {
-        await sleep(backoffMs * attempt);
-        continue;
-      }
-      throw error;
-    }
-
-    let payload: JsonRpcSuccess<T> | JsonRpcFailure;
-    try {
-      payload = (await response.json()) as JsonRpcSuccess<T> | JsonRpcFailure;
-    } catch (error) {
-      lastError = new CliError(
-        `RPC response for method ${method} at ${url} is not valid JSON: ${String(error)}`,
-      );
-      if (attempt < retries) {
-        await sleep(backoffMs * attempt);
-        continue;
-      }
-      throw lastError;
-    }
-
-    if (isJsonRpcFailure(payload)) {
-      throw new CliError(
-        `RPC method ${method} failed at ${url}: code=${payload.error.code} message="${payload.error.message}"`,
-      );
-    }
-
-    return payload.result;
-  }
-
-  throw (
-    lastError ??
-    new CliError(`RPC request failed for method ${method} at ${url}: exhausted retries`)
-  );
-}
-
-function parsePositiveInteger(
-  value: unknown,
-  fieldName: string,
-  expectedKind: "number_or_decimal" | "hex",
-): number {
-  let parsed: bigint;
-
-  if (expectedKind === "hex") {
-    if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) {
-      throw new CliError(
-        `${fieldName} returned invalid value ${String(value)}; expected 0x-prefixed hex`,
-      );
-    }
-    parsed = BigInt(value);
-  } else if (typeof value === "number" && Number.isInteger(value)) {
-    parsed = BigInt(value);
-  } else if (typeof value === "string" && /^0x[0-9a-fA-F]+$/.test(value)) {
-    parsed = BigInt(value);
-  } else if (typeof value === "string" && DECIMAL_UINT_PATTERN.test(value)) {
-    parsed = BigInt(value);
-  } else {
-    throw new CliError(
-      `${fieldName} returned invalid value ${String(value)}; expected positive integer`,
-    );
-  }
-
-  if (parsed <= 0n) {
-    throw new CliError(`${fieldName} returned invalid value ${String(value)}`);
-  }
-  if (parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new CliError(
-      `${fieldName} returned too-large value ${parsed.toString()} (exceeds Number.MAX_SAFE_INTEGER)`,
-    );
-  }
-  return Number(parsed);
-}
-
-function parseNodeVersion(value: unknown): string {
-  if (typeof value === "string") {
-    const normalized = value.trim();
-    if (normalized.length > 0) {
-      return normalized;
-    }
-  }
-
-  // Some local-network builds report empty nodeVersion while otherwise healthy.
-  // Treat version as best-effort metadata instead of blocking deployment preflight.
-  return "unknown";
-}
-
-function parseNonZeroL1Address(value: unknown, fieldName: string): string {
-  if (typeof value !== "string" || !L1_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(`Aztec node preflight failed: invalid ${fieldName}=${String(value)}`);
-  }
-  if (ZERO_L1_ADDRESS_PATTERN.test(value)) {
-    throw new CliError(`Aztec node preflight failed: ${fieldName} is zero-address`);
-  }
-  return value;
-}
-
 function parseNonZeroAztecAddress(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || !AZTEC_ADDRESS_PATTERN.test(value)) {
     throw new CliError(`Aztec node preflight failed: invalid ${fieldName}=${String(value)}`);
@@ -702,136 +514,6 @@ async function deriveOperatorIdentity(operatorSecretKey: string): Promise<Operat
   const pubkeyY = parseFieldValueString(pubkey.y, "operator pubkey y");
 
   return { address, pubkeyX, pubkeyY };
-}
-
-async function assertAztecNodePreflight(nodeUrl: string): Promise<NodePreflightState> {
-  const ready = await rpcCall<boolean>(nodeUrl, "node_isReady", []);
-  if (!ready) {
-    throw new CliError(`Aztec node preflight failed: ${nodeUrl} responded but node_isReady=false`);
-  }
-
-  const nodeInfo = await rpcCall<unknown>(nodeUrl, "node_getNodeInfo", []);
-  if (!nodeInfo || typeof nodeInfo !== "object") {
-    throw new CliError("Aztec node preflight failed: node_getNodeInfo returned non-object payload");
-  }
-
-  const info = nodeInfo as {
-    nodeVersion?: unknown;
-    l1ChainId?: unknown;
-    rollupVersion?: unknown;
-    l1ContractAddresses?: {
-      registryAddress?: unknown;
-      rollupAddress?: unknown;
-      inboxAddress?: unknown;
-      outboxAddress?: unknown;
-      feeJuiceAddress?: unknown;
-      feeJuicePortalAddress?: unknown;
-      feeAssetHandlerAddress?: unknown;
-    };
-    protocolContractAddresses?: {
-      instanceRegistry?: unknown;
-      classRegistry?: unknown;
-      multiCallEntrypoint?: unknown;
-      feeJuice?: unknown;
-    };
-  };
-
-  const l1Contracts = info.l1ContractAddresses;
-  if (!l1Contracts || typeof l1Contracts !== "object") {
-    throw new CliError(
-      "Aztec node preflight failed: node_getNodeInfo.l1ContractAddresses missing or invalid",
-    );
-  }
-
-  const protocolContracts = info.protocolContractAddresses;
-  if (!protocolContracts || typeof protocolContracts !== "object") {
-    throw new CliError(
-      "Aztec node preflight failed: node_getNodeInfo.protocolContractAddresses missing or invalid",
-    );
-  }
-
-  const l2ChainIdRaw = await rpcCall<unknown>(nodeUrl, "node_getChainId", []);
-
-  return {
-    nodeVersion: parseNodeVersion(info.nodeVersion),
-    l1ChainId: parsePositiveInteger(
-      info.l1ChainId,
-      "Aztec node preflight failed: node_getNodeInfo.l1ChainId",
-      "number_or_decimal",
-    ),
-    l2ChainId: parsePositiveInteger(
-      l2ChainIdRaw,
-      "Aztec node preflight failed: node_getChainId",
-      "number_or_decimal",
-    ),
-    rollupVersion: parsePositiveInteger(
-      info.rollupVersion,
-      "Aztec node preflight failed: node_getNodeInfo.rollupVersion",
-      "number_or_decimal",
-    ),
-    l1ContractAddresses: {
-      registryAddress: parseNonZeroL1Address(
-        l1Contracts.registryAddress,
-        "node_getNodeInfo.l1ContractAddresses.registryAddress",
-      ),
-      rollupAddress: parseNonZeroL1Address(
-        l1Contracts.rollupAddress,
-        "node_getNodeInfo.l1ContractAddresses.rollupAddress",
-      ),
-      inboxAddress: parseNonZeroL1Address(
-        l1Contracts.inboxAddress,
-        "node_getNodeInfo.l1ContractAddresses.inboxAddress",
-      ),
-      outboxAddress: parseNonZeroL1Address(
-        l1Contracts.outboxAddress,
-        "node_getNodeInfo.l1ContractAddresses.outboxAddress",
-      ),
-      feeJuiceAddress: parseNonZeroL1Address(
-        l1Contracts.feeJuiceAddress,
-        "node_getNodeInfo.l1ContractAddresses.feeJuiceAddress",
-      ),
-      feeJuicePortalAddress: parseNonZeroL1Address(
-        l1Contracts.feeJuicePortalAddress,
-        "node_getNodeInfo.l1ContractAddresses.feeJuicePortalAddress",
-      ),
-      feeAssetHandlerAddress: parseNonZeroL1Address(
-        l1Contracts.feeAssetHandlerAddress,
-        "node_getNodeInfo.l1ContractAddresses.feeAssetHandlerAddress",
-      ),
-    },
-    protocolContractAddresses: {
-      instanceRegistry: parseNonZeroAztecAddress(
-        protocolContracts.instanceRegistry,
-        "node_getNodeInfo.protocolContractAddresses.instanceRegistry",
-      ),
-      classRegistry: parseNonZeroAztecAddress(
-        protocolContracts.classRegistry,
-        "node_getNodeInfo.protocolContractAddresses.classRegistry",
-      ),
-      multiCallEntrypoint: parseNonZeroAztecAddress(
-        protocolContracts.multiCallEntrypoint,
-        "node_getNodeInfo.protocolContractAddresses.multiCallEntrypoint",
-      ),
-      feeJuice: parseNonZeroAztecAddress(
-        protocolContracts.feeJuice,
-        "node_getNodeInfo.protocolContractAddresses.feeJuice",
-      ),
-    },
-  };
-}
-
-async function assertL1RpcReachable(l1RpcUrl: string): Promise<number> {
-  try {
-    const chainIdHex = await rpcCall<string>(l1RpcUrl, "eth_chainId", []);
-    return parsePositiveInteger(chainIdHex, "L1 RPC preflight failed: eth_chainId", "hex");
-  } catch (error) {
-    if (error instanceof CliError) {
-      throw error;
-    }
-    throw new CliError(
-      `L1 RPC preflight failed: could not reach ${l1RpcUrl}. Underlying error: ${String(error)}`,
-    );
-  }
 }
 
 function loadFpcArtifactSelection(artifactPathInput: string): FpcArtifactSelection {
@@ -1119,19 +801,22 @@ async function main(): Promise<void> {
   assertRequiredArtifactsExistForDevnet(fpcSelection, !args.acceptedAsset);
   pinoLogger.info("[deploy-fpc-devnet] artifact preflight passed");
 
-  const nodeState = await assertAztecNodePreflight(args.nodeUrl);
+  const node = createAztecNodeClient(args.nodeUrl);
+  await waitForNode(node);
+  const nodeInfo = await node.getNodeInfo();
   pinoLogger.info(
-    `[deploy-fpc-devnet] node preflight passed. node_version=${nodeState.nodeVersion} l1_chain_id=${nodeState.l1ChainId} l2_chain_id=${nodeState.l2ChainId} rollup_version=${nodeState.rollupVersion}`,
+    `[deploy-fpc-devnet] node preflight passed. node_version=${nodeInfo.nodeVersion} l1_chain_id=${nodeInfo.l1ChainId} rollup_version=${nodeInfo.rollupVersion}`,
   );
 
   if (args.validateTopupPath || args.l1RpcUrl) {
     if (!args.l1RpcUrl) {
       throw new CliError("L1 RPC preflight requested, but --l1-rpc-url was not provided");
     }
-    const l1RpcChainId = await assertL1RpcReachable(args.l1RpcUrl);
-    if (l1RpcChainId !== nodeState.l1ChainId) {
+    const l1Public = createPublicClient({ transport: http(args.l1RpcUrl) });
+    const l1RpcChainId = await l1Public.getChainId();
+    if (l1RpcChainId !== nodeInfo.l1ChainId) {
       throw new CliError(
-        `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeState.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
+        `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeInfo.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
       );
     }
     pinoLogger.info(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
@@ -1188,7 +873,6 @@ async function main(): Promise<void> {
   const paymentMode = args.sponsoredFpcAddress ? "fpc-sponsored" : "fee_juice";
 
   // --- JS API wallet setup for contract deployments ---
-  const node = createAztecNodeClient(args.nodeUrl);
   const wallet = await EmbeddedWallet.create(node, {
     pxeConfig: { proverEnabled: args.proverEnabled },
   });
@@ -1252,8 +936,8 @@ async function main(): Promise<void> {
     const ecosystem = await deployTestTokenEcosystem({
       l1DeployerKey: args.l1DeployerKey,
       l1RpcUrl: args.l1RpcUrl,
-      l1ChainId: nodeState.l1ChainId,
-      l1RegistryAddress: nodeState.l1ContractAddresses.registryAddress,
+      l1ChainId: nodeInfo.l1ChainId,
+      l1RegistryAddress: nodeInfo.l1ContractAddresses.registryAddress.toString(),
       wallet,
       node,
       tokenArtifact,
@@ -1285,30 +969,35 @@ async function main(): Promise<void> {
   await deployContract(wallet, fpcArtifact, fpcDeployMethod, deployOpts);
   pinoLogger.info(`[deploy-fpc-devnet] fpc deployed. address=${fpcAddress}`);
 
+  const feeAssetHandlerAddress = nodeInfo.l1ContractAddresses.feeAssetHandlerAddress;
+  if (!feeAssetHandlerAddress) {
+    throw new CliError("node_getNodeInfo.l1ContractAddresses.feeAssetHandlerAddress is missing");
+  }
+
   const manifest = writeDevnetDeployManifest(args.out, {
     status: "deploy_ok",
     generated_at: new Date().toISOString(),
     network: {
       node_url: args.nodeUrl,
-      node_version: nodeState.nodeVersion,
-      l1_chain_id: nodeState.l1ChainId,
-      rollup_version: nodeState.rollupVersion,
+      node_version: nodeInfo.nodeVersion,
+      l1_chain_id: nodeInfo.l1ChainId,
+      rollup_version: nodeInfo.rollupVersion,
     },
     aztec_required_addresses: {
       l1_contract_addresses: {
-        registryAddress: nodeState.l1ContractAddresses.registryAddress,
-        rollupAddress: nodeState.l1ContractAddresses.rollupAddress,
-        inboxAddress: nodeState.l1ContractAddresses.inboxAddress,
-        outboxAddress: nodeState.l1ContractAddresses.outboxAddress,
-        feeJuiceAddress: nodeState.l1ContractAddresses.feeJuiceAddress,
-        feeJuicePortalAddress: nodeState.l1ContractAddresses.feeJuicePortalAddress,
-        feeAssetHandlerAddress: nodeState.l1ContractAddresses.feeAssetHandlerAddress,
+        registryAddress: nodeInfo.l1ContractAddresses.registryAddress.toString(),
+        rollupAddress: nodeInfo.l1ContractAddresses.rollupAddress.toString(),
+        inboxAddress: nodeInfo.l1ContractAddresses.inboxAddress.toString(),
+        outboxAddress: nodeInfo.l1ContractAddresses.outboxAddress.toString(),
+        feeJuiceAddress: nodeInfo.l1ContractAddresses.feeJuiceAddress.toString(),
+        feeJuicePortalAddress: nodeInfo.l1ContractAddresses.feeJuicePortalAddress.toString(),
+        feeAssetHandlerAddress: feeAssetHandlerAddress.toString(),
       },
       protocol_contract_addresses: {
-        instanceRegistry: nodeState.protocolContractAddresses.instanceRegistry,
-        classRegistry: nodeState.protocolContractAddresses.classRegistry,
-        multiCallEntrypoint: nodeState.protocolContractAddresses.multiCallEntrypoint,
-        feeJuice: nodeState.protocolContractAddresses.feeJuice,
+        instanceRegistry: nodeInfo.protocolContractAddresses.instanceRegistry.toString(),
+        classRegistry: nodeInfo.protocolContractAddresses.classRegistry.toString(),
+        multiCallEntrypoint: nodeInfo.protocolContractAddresses.multiCallEntrypoint.toString(),
+        feeJuice: nodeInfo.protocolContractAddresses.feeJuice.toString(),
       },
       ...(args.sponsoredFpcAddress ? { sponsored_fpc_address: args.sponsoredFpcAddress } : {}),
     },
