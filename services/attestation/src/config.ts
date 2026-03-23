@@ -313,7 +313,7 @@ function normalizeHeaderName(value: string, label: string): string {
   return normalized;
 }
 
-function modeNeedsApiKey(mode: QuoteAuthMode): boolean {
+export function modeNeedsApiKey(mode: QuoteAuthMode): boolean {
   return (
     mode === "api_key" ||
     mode === "api_key_or_trusted_header" ||
@@ -544,14 +544,6 @@ function resolveSupportedAssets(config: ParsedConfig): SupportedAssetPolicy[] {
   }
 
   return resolvedAssets;
-}
-
-export function resolveSelectedAssetPolicy(
-  config: Config,
-  selectedAcceptedAssetAddress: string,
-): SupportedAssetPolicy | undefined {
-  const selectedAddress = normalizeAddress(selectedAcceptedAssetAddress);
-  return config.supported_assets.find((asset) => asset.address.toLowerCase() === selectedAddress);
 }
 
 export function loadConfig(path: string, options: LoadConfigOptions = {}): Config {
