@@ -32,9 +32,14 @@ const GAS_BUFFER = new Gas(5_000, 100_000);
 // 2. The quote signature is a function argument — we'd need the quote to
 //    simulate, but we need gas limits to request the quote (chicken-and-egg).
 //
-// These values are empirically chosen upper bounds for the cold start workload
-// (bridge claim + 2 private transfers). The user pays based on worst-case gas;
-// unused Fee Juice remains in the FPC's balance (no teardown/refund phase).
+// These values are upper bounds for the cold start workload (bridge claim +
+// 2 private transfers), informed by the cold_start benchmark:
+//   Measured: DA 1,568 / L2 711,103 (safety margin: ~3.2x DA, ~1.4x L2)
+//   Re-measure after contract changes: ./profiling/setup.sh && ./profiling/run.sh
+//   Output: profiling/benchmarks/cold_start.benchmark.json
+//
+// The user pays based on worst-case gas; unused Fee Juice remains in the
+// FPC's balance (no teardown/refund phase).
 // See sdk/README.md § "Why cold-start gas limits are hardcoded" for full details.
 const COLD_START_GAS_LIMITS = new Gas(5_000, 1_000_000);
 const TX_MINE_POLL_MS = 2_000;
