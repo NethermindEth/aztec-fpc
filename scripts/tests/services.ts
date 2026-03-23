@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
 import { Fr } from "@aztec/aztec.js/fields";
 import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -350,18 +350,14 @@ async function verifyQuoteSignature(
 async function setupFromConfig(config: SmokeConfig): Promise<SmokeRuntimeResult> {
   const manifest = readManifest(config.manifestPath);
 
-  const fpcAddress = AztecAddress.fromString(manifest.contracts.fpc);
-  const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
+  const fpcAddress = manifest.contracts.fpc;
+  const tokenAddress = manifest.contracts.accepted_asset;
 
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNode(node);
 
-  const operator = AztecAddress.fromString(manifest.operator.address);
-  const operatorPubKey = new Point(
-    Fr.fromHexString(manifest.operator.pubkey_x),
-    Fr.fromHexString(manifest.operator.pubkey_y),
-    false,
-  );
+  const operator = manifest.operator.address;
+  const operatorPubKey = new Point(manifest.operator.pubkey_x, manifest.operator.pubkey_y, false);
 
   await waitForFpcFeeJuice(fpcAddress, node, config.messageTimeoutSeconds, "fpc-services-smoke");
 

@@ -44,21 +44,6 @@ artifact_is_transpiled() {
   ' "$artifact_path" >/dev/null 2>&1
 }
 
-resolve_default_fpc_artifact() {
-  if [[ -n "${FPC_FPC_ARTIFACT:-}" ]]; then
-    printf "%s\n" "${FPC_FPC_ARTIFACT}"
-    return
-  fi
-
-  local multi_asset_path="$REPO_ROOT/target/fpc-FPCMultiAsset.json"
-  if [[ -f "$multi_asset_path" ]]; then
-    printf "%s\n" "$multi_asset_path"
-    return
-  fi
-  printf "%s\n" "$multi_asset_path"
-}
-
-FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 
 if [[ "$MODE" != "devnet" && "$MODE" != "local" ]]; then
   echo "ERROR: FPC_DEPLOY_ENV must be 'devnet' or 'local' (got '$MODE')" >&2
@@ -70,7 +55,7 @@ cd "${REPO_ROOT}"
 artifacts_require_compile=0
 required_artifacts=(
   "target/token_contract-Token.json"
-  "${FPC_ARTIFACT}"
+  "target/fpc-FPCMultiAsset.json"
   "target/faucet-Faucet.json"
   "target/mock_counter-Counter.json"
 )
@@ -94,7 +79,6 @@ fi
 if [[ "$artifacts_require_compile" -eq 1 ]]; then
   echo "Compiling Aztec workspace artifacts (transpiled output required)..."
   aztec compile --workspace --force
-  FPC_ARTIFACT="$(resolve_default_fpc_artifact)"
 fi
 
 if [[ "$MODE" == "local" ]]; then
@@ -120,11 +104,10 @@ if [[ "$MODE" == "local" ]]; then
   DEPLOYER_SECRET_KEY="${FPC_LOCAL_DEPLOYER_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
   OPERATOR_SECRET_KEY="${FPC_LOCAL_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
 
-  run_local_deploy_variant() {
-    local artifact_path="$1"
-    local out_path="$2"
-    local accepted_asset="$3"
-    shift 3
+  run_local_deploy() {
+    local out_path="$1"
+    local accepted_asset="$2"
+    shift 2
     local extra_args=("$@")
 
     local cmd=(
@@ -133,7 +116,6 @@ if [[ "$MODE" == "local" ]]; then
       --l1-rpc-url "${L1_RPC_URL}"
       --deployer-secret-key "${DEPLOYER_SECRET_KEY}"
       --operator-secret-key "${OPERATOR_SECRET_KEY}"
-      --fpc-artifact "${artifact_path}"
       --out "${out_path}"
     )
 
@@ -145,7 +127,7 @@ if [[ "$MODE" == "local" ]]; then
     "${cmd[@]}"
   }
 
-  run_local_deploy_variant "$FPC_ARTIFACT" "$OUT_PATH" "${FPC_LOCAL_ACCEPTED_ASSET:-}" "$@"
+  run_local_deploy "$OUT_PATH" "${FPC_LOCAL_ACCEPTED_ASSET:-}" "$@"
 
   FPC_MASTER_CONFIG="${FPC_MASTER_CONFIG:-./fpc-config.yaml}"
   if [[ -f "$OUT_PATH" && -f "$FPC_MASTER_CONFIG" ]]; then
@@ -207,7 +189,6 @@ cmd=(
   bunx tsx contract-deployment/src/index.ts
   --node-url "${NODE_URL}"
   --sponsored-fpc-address "${SPONSORED_FPC_ADDRESS}"
-  --fpc-artifact "${FPC_ARTIFACT}"
   --out "${OUT_PATH}"
 )
 

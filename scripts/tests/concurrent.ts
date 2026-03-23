@@ -50,7 +50,7 @@ function requireEnv(name: string): string {
 
 function getConfig(): ConcurrentConfig {
   const concurrentNRaw = process.env.FPC_CONCURRENT_N?.trim();
-  const concurrentN = concurrentNRaw ? Number(concurrentNRaw) : 20;
+  const concurrentN = concurrentNRaw ? Number(concurrentNRaw) : 10;
   if (!Number.isSafeInteger(concurrentN) || concurrentN < 1) {
     throw new Error(`Invalid FPC_CONCURRENT_N: ${concurrentNRaw}`);
   }

@@ -1,10 +1,11 @@
-import { validateDevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import { validateDeployManifest } from "@aztec-fpc/contract-deployment/src/manifest.ts";
 import pino from "pino";
 
 export {
-  type DevnetDeployManifest,
-  validateDevnetDeployManifest,
-} from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+  type DeployManifest,
+  readDeployManifest,
+  validateDeployManifest,
+} from "@aztec-fpc/contract-deployment/src/manifest.ts";
 
 const pinoLogger = pino();
 
@@ -38,16 +39,12 @@ function buildSelfCheckFixture() {
     },
     deployer_address: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
     contracts: {
-      accepted_asset: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      fpc: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      counter: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    },
-    fpc_artifact: {
-      name: "FPCMultiAsset",
-      path: "./target/fpc-FPCMultiAsset.json",
+      accepted_asset: "0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      fpc: "0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      counter: "0x0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
     },
     operator: {
-      address: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      address: "0x0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
       pubkey_x: "123456789",
       pubkey_y: "987654321",
     },
@@ -74,9 +71,9 @@ function expectThrow(description: string, fn: () => void): void {
 
 function runSelfCheck(): void {
   const validFixture = buildSelfCheckFixture();
-  const validated = validateDevnetDeployManifest(validFixture);
+  const validated = validateDeployManifest(validFixture);
 
-  if (validated.contracts.fpc !== validFixture.contracts.fpc) {
+  if (validated.contracts.fpc.toString() !== validFixture.contracts.fpc) {
     throw new Error("Self-check failed: contracts.fpc mismatch");
   }
 
@@ -84,20 +81,21 @@ function runSelfCheck(): void {
     const broken = buildSelfCheckFixture() as unknown as Record<string, unknown>;
     const contracts = broken.contracts as Record<string, unknown>;
     delete contracts.fpc;
-    validateDevnetDeployManifest(broken);
+    validateDeployManifest(broken);
   });
 
-  pinoLogger.info("[devnet-manifest] self-check passed");
+  pinoLogger.info("[manifest] self-check passed");
 }
 
 function usage(): string {
   return [
     "Usage:",
-    "  bunx tsx scripts/contract/devnet-manifest.ts --self-check",
+    "  bunx tsx scripts/contract/manifest.ts --self-check",
     "",
     "Exports (re-exported from @aztec-fpc/contract-deployment):",
-    "  - validateDevnetDeployManifest(input)",
-    "  - DevnetDeployManifest (type)",
+    "  - validateDeployManifest(input)",
+    "  - readDeployManifest(filePath)",
+    "  - DeployManifest (type)",
   ].join("\n");
 }
 

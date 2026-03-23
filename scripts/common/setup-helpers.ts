@@ -10,7 +10,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
@@ -19,7 +19,7 @@ import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { SPONSORED_FPC_SALT } from "@aztec/constants";
 import { createExtendedL1Client } from "@aztec/ethereum/client";
 import type { ExtendedViemWalletClient } from "@aztec/ethereum/types";
-import { EthAddress } from "@aztec/foundation/eth-address";
+import type { EthAddress } from "@aztec/foundation/eth-address";
 import { createLogger } from "@aztec/foundation/log";
 import { TestERC20Abi } from "@aztec/l1-artifacts";
 import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
@@ -27,7 +27,10 @@ import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdl
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import type { DevnetDeployManifest } from "@aztec-fpc/contract-deployment/src/devnet-manifest.ts";
+import {
+  type DeployManifest,
+  readDeployManifest,
+} from "@aztec-fpc/contract-deployment/src/manifest.ts";
 import pino from "pino";
 import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
 import * as viemChains from "viem/chains";
@@ -41,14 +44,13 @@ const pinoLogger = pino();
 export async function registerAndGet(
   node: AztecNode,
   wallet: EmbeddedWallet,
-  addressHex: string,
+  address: AztecAddress,
   artifactPath: string,
   secretKey?: Fr,
 ) {
-  const address = AztecAddress.fromString(addressHex);
   const instance = await node.getContract(address);
   if (!instance) {
-    throw new Error(`Contract not found on node: ${addressHex}`);
+    throw new Error(`Contract not found on node: ${address.toString()}`);
   }
   const raw = readFileSync(artifactPath, "utf8");
   const parsed = JSON.parse(raw) as NoirCompiledContract;
@@ -73,11 +75,11 @@ export async function registerAndGet(
 // Manifest
 // ---------------------------------------------------------------------------
 
-export function readManifest(manifestPath: string): DevnetDeployManifest {
+export function readManifest(manifestPath: string): DeployManifest {
   if (!existsSync(manifestPath)) {
     throw new Error(`Manifest not found: ${manifestPath}`);
   }
-  return JSON.parse(readFileSync(manifestPath, "utf8")) as DevnetDeployManifest;
+  return readDeployManifest(manifestPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +110,7 @@ export type CoreContracts = {
 
 export async function registerCoreContracts(
   repoRoot: string,
-  manifest: DevnetDeployManifest,
+  manifest: DeployManifest,
   node: AztecNode,
   wallet: EmbeddedWallet,
 ): Promise<CoreContracts> {
@@ -209,8 +211,8 @@ export type L1InfraArgs = {
   l1RpcUrl: string;
   l1PrivateKey: Hex;
   l1DeployerKey: string;
-  l1PortalAddress: string;
-  l1Erc20Address: string;
+  l1PortalAddress: EthAddress;
+  l1Erc20Address: EthAddress;
   node: AztecNode;
   loggerName: string;
 };
@@ -232,14 +234,14 @@ export async function setupL1Infrastructure(args: L1InfraArgs): Promise<L1Infra>
   const l1MintClient = createExtendedL1Client([args.l1RpcUrl], args.l1DeployerKey, l1Chain);
 
   const l1Erc20 = getContract({
-    address: args.l1Erc20Address as Hex,
+    address: args.l1Erc20Address.toString(),
     abi: TestERC20Abi,
     client: l1MintClient,
   });
 
   const portalManager = new L1ToL2TokenPortalManager(
-    EthAddress.fromString(args.l1PortalAddress),
-    EthAddress.fromString(args.l1Erc20Address),
+    args.l1PortalAddress,
+    args.l1Erc20Address,
     undefined,
     l1WalletClient,
     createLogger(args.loggerName),
@@ -260,7 +262,7 @@ export type SetupArgs = {
 };
 
 export type SetupResult = {
-  manifest: DevnetDeployManifest;
+  manifest: DeployManifest;
   node: AztecNode;
   wallet: EmbeddedWallet;
   operator: AztecAddress;
@@ -285,7 +287,7 @@ export async function setup(
 
   const { node, wallet } = await connectAndCreateWallet(args.nodeUrl, args.proverEnabled);
 
-  const operator = AztecAddress.fromString(manifest.operator.address);
+  const operator = manifest.operator.address;
   pinoLogger.info(`[${label}] operator=${operator.toString()}`);
 
   const contracts = await registerCoreContracts(repoRoot, manifest, node, wallet);

@@ -109,7 +109,6 @@ CLI equivalents (`--deployer-secret-key`, `--operator-secret-key`, `--l1-deploye
 | `--sponsored-fpc-address <addr>` | Use sponsored FPC payment mode for deployment | `FPC_SPONSORED_FPC_ADDRESS` |
 | `--operator <addr>` | Explicit operator address (default: derived from secret key) | `FPC_OPERATOR` |
 | `--l1-deployer-key <key>` | L1 deployer private key (required when deploying test tokens) | `FPC_L1_DEPLOYER_KEY` |
-| `--fpc-artifact <path>` | Path to FPC artifact JSON (default: auto-detected) | `FPC_ARTIFACT` |
 | `--validate-topup-path` | Enforce L1 chain-id matching (requires `--l1-rpc-url`) | `FPC_VALIDATE_TOPUP_PATH=1` |
 | `--preflight-only` | Run checks only, do not deploy | `FPC_PREFLIGHT_ONLY=1` |
 
