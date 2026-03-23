@@ -408,7 +408,7 @@ The compose stack (`docker-compose.yaml`) includes:
 | `aztec-node` | Aztec sandbox node | 8080 |
 | `attestation` | FPC attestation service | 3000 |
 | `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
-| `e2e-fpc` (profile `e2e-fpc`) | Compose-backed `FPC` full lifecycle runner | — |
+| `tests-fee-entrypoint-validation` (profile `full`) | Fee entrypoint validation test runner | — |
 
 Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
 

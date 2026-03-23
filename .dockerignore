@@ -45,7 +45,7 @@ deployments/
 # Docker infrastructure files (never COPY'd by any Dockerfile)
 docker-bake.hcl
 docker-compose.yaml
-Dockerfile.smoke
+Dockerfile.test
 services/Dockerfile.common
 services/attestation/Dockerfile
 services/topup/Dockerfile

@@ -20,7 +20,7 @@ variable "PLATFORM_SUFFIX" {
 }
 
 group "default" {
-  targets = ["attestation", "topup", "deploy", "contract", "smoke"]
+  targets = ["attestation", "topup", "deploy", "contract", "test"]
 }
 
 group "services" {
@@ -114,17 +114,17 @@ target "deploy" {
   ])
 }
 
-target "smoke" {
+target "test" {
   inherits   = ["_labels"]
   context    = "."
-  dockerfile = "Dockerfile.smoke"
+  dockerfile = "Dockerfile.test"
   contexts   = {
     common = "target:deps"
     deploy = "target:deploy"
   }
   platforms  = PLATFORMS
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-smoke:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-smoke:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+    "${REGISTRY}nethermind/aztec-fpc-test:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-test:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }

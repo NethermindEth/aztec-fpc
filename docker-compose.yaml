@@ -126,8 +126,9 @@ services:
         condition: service_healthy
 
   postdeploy:
-    image: nethermind/aztec-fpc-smoke:local
+    image: nethermind/aztec-fpc-test:local
     profiles: ["postdeploy"]
+    entrypoint: ["bun", "run", "--sequential"]
     command:
       - "scripts/contract/devnet-postdeploy-smoke.ts"
     volumes:
@@ -143,10 +144,9 @@ services:
       deploy:
         condition: service_completed_successfully
 
-  smoke-services:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke", "full"]
-    entrypoint: ["bun", "test"]
+  tests-services:
+    image: nethermind/aztec-fpc-test:local
+    profiles: ["full"]
     command:
       - "./scripts/tests/services.ts"
     volumes:
@@ -166,10 +166,9 @@ services:
       topup:
         condition: service_healthy
 
-  smoke-cold-start:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke", "full"]
-    entrypoint: ["bun", "test"]
+  tests-cold-start:
+    image: nethermind/aztec-fpc-test:local
+    profiles: ["full"]
     command:
       - "./scripts/tests/cold-start.ts"
     volumes:
@@ -192,10 +191,9 @@ services:
       topup:
         condition: service_healthy
 
-  e2e-fpc:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["e2e", "full"]
-    entrypoint: ["bun", "test"]
+  tests-fee-entrypoint-validation:
+    image: nethermind/aztec-fpc-test:local
+    profiles: ["full"]
     command:
       - "./scripts/tests/fee-entrypoint-validation.ts"
     volumes:
@@ -213,10 +211,9 @@ services:
       topup:
         condition: service_healthy
 
-  e2e-concurrent:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["e2e", "full"]
-    entrypoint: ["bun", "test"]
+  tests-concurrent:
+    image: nethermind/aztec-fpc-test:local
+    profiles: ["full"]
     command:
       - "./scripts/tests/concurrent.ts"
     volumes:
@@ -239,10 +236,9 @@ services:
       topup:
         condition: service_healthy
 
-  smoke-same-token-transfer:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke", "full"]
-    entrypoint: ["bun", "test"]
+  tests-same-token-transfer:
+    image: nethermind/aztec-fpc-test:local
+    profiles: ["full"]
     command:
       - "./scripts/tests/same-token-transfer.ts"
     volumes:
@@ -263,10 +259,9 @@ services:
       topup:
         condition: service_healthy
 
-  smoke-always-revert:
-    image: nethermind/aztec-fpc-smoke:local
-    profiles: ["smoke", "full"]
-    entrypoint: ["bun", "test"]
+  tests-always-revert:
+    image: nethermind/aztec-fpc-test:local
+    profiles: ["full"]
     command:
       - "./scripts/tests/always-revert.ts"
     volumes:
@@ -292,17 +287,17 @@ services:
     profiles: ["full"]
     command: ["sh", "-c", "sleep 5"]
     depends_on:
-      smoke-services:
+      tests-services:
         condition: service_completed_successfully
-      smoke-cold-start:
+      tests-cold-start:
         condition: service_completed_successfully
-      e2e-fpc:
+      tests-fee-entrypoint-validation:
         condition: service_completed_successfully
-      e2e-concurrent:
+      tests-concurrent:
         condition: service_completed_successfully
-      smoke-same-token-transfer:
+      tests-same-token-transfer:
         condition: service_completed_successfully
-      smoke-always-revert:
+      tests-always-revert:
         condition: service_completed_successfully
       attestation:
         condition: service_healthy
