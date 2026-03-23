@@ -9,7 +9,7 @@ const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_TX_HASH_PATTERN = /^0x0{64}$/i;
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
-export type FpcArtifactName = "FPC" | "FPCMultiAsset";
+export type FpcArtifactName = "FPCMultiAsset";
 
 export type DevnetDeployManifest = {
   status: "deploy_ok";
@@ -392,9 +392,9 @@ function parseManifest(input: unknown): DevnetDeployManifest {
   if (hasOwn(input, "fpc_artifact")) {
     const fpcArtifactRaw = requireObject(input, "fpc_artifact", "manifest");
     const artifactName = requireString(fpcArtifactRaw, "name", "manifest.fpc_artifact");
-    if (artifactName !== "FPC" && artifactName !== "FPCMultiAsset") {
+    if (artifactName !== "FPCMultiAsset") {
       throw new ManifestValidationError(
-        'Invalid manifest.fpc_artifact.name: expected "FPC" or "FPCMultiAsset"',
+        'Invalid manifest.fpc_artifact.name: expected "FPCMultiAsset"',
       );
     }
     const artifactPath = requireString(fpcArtifactRaw, "path", "manifest.fpc_artifact");

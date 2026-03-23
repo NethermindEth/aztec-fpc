@@ -31,7 +31,7 @@ import { writeDevnetDeployManifest } from "./devnet-manifest.js";
 
 const pinoLogger = pino();
 
-type FpcArtifactName = "FPC" | "FPCMultiAsset";
+import type { FpcArtifactName } from "./devnet-manifest.js";
 
 type CliArgs = {
   nodeUrl: string;
@@ -45,7 +45,6 @@ type CliArgs = {
   operator: string | null;
   acceptedAsset: string | null;
   l1DeployerKey: string | null;
-  fpcArtifact: string;
   out: string;
   proverEnabled: boolean;
   preflightOnly: boolean;
@@ -66,11 +65,6 @@ type OperatorIdentity = {
   pubkeyY: string;
 };
 
-type FpcArtifactSelection = {
-  artifactPath: string;
-  name: FpcArtifactName;
-};
-
 const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_AZTEC_ADDRESS_PATTERN = /^0x0{64}$/i;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -84,12 +78,8 @@ const DEVNET_DEFAULT_TEST_KEY =
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "../..");
-// Keep the legacy FPC artifact only as a non-default compatibility fallback.
-const FPC_ARTIFACT_PATH_CANDIDATES = [
-  path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
-  path.join(REPO_ROOT, "target", "fpc-FPC.json"),
-] as const;
 const REQUIRED_ARTIFACTS = {
+  fpc: path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
   token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
   tokenBridge: path.join(REPO_ROOT, "target", "token_bridge_contract-TokenBridge.json"),
   faucet: path.join(REPO_ROOT, "target", "faucet-Faucet.json"),
@@ -139,7 +129,6 @@ function usage(): string {
     "",
     "Options:",
     "  --operator <aztec_address>       Operator address (default: derived from key) [env: FPC_OPERATOR]",
-    "  --fpc-artifact <path>            Path to FPC artifact JSON (default: auto-detected) [env: FPC_ARTIFACT]",
     "  --sponsored-fpc-address <addr>   Use sponsored FPC payment mode [env: FPC_SPONSORED_FPC_ADDRESS]",
     "  --accepted-asset <addr>          Reuse existing token [env: FPC_ACCEPTED_ASSET]",
     "  --validate-topup-path            Enforce L1 chain-id matching [env: FPC_VALIDATE_TOPUP_PATH=1]",
@@ -160,15 +149,6 @@ function usage(): string {
     "    If both are provided, they must match.",
     "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
   ].join("\n");
-}
-
-function resolveDefaultFpcArtifactPath(): string {
-  for (const candidatePath of FPC_ARTIFACT_PATH_CANDIDATES) {
-    if (existsSync(candidatePath)) {
-      return candidatePath;
-    }
-  }
-  return FPC_ARTIFACT_PATH_CANDIDATES[0];
 }
 
 function nextArg(argv: string[], index: number, flag: string): string {
@@ -252,7 +232,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let operator: string | null = process.env.FPC_OPERATOR ?? null;
   let l1DeployerKey: string | null = process.env.FPC_L1_DEPLOYER_KEY ?? null;
   let acceptedAsset: string | null = process.env.FPC_ACCEPTED_ASSET ?? null;
-  let fpcArtifact: string = process.env.FPC_ARTIFACT ?? resolveDefaultFpcArtifactPath();
   let dataDir: string = process.env.FPC_DATA_DIR ?? DEVNET_DEFAULT_DATA_DIR;
   let outExplicit = !!process.env.FPC_OUT;
   let out: string = process.env.FPC_OUT ?? path.join(dataDir, "manifest.json");
@@ -305,10 +284,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--accepted-asset":
         acceptedAsset = nextArg(argv, i, arg);
-        i += 1;
-        break;
-      case "--fpc-artifact":
-        fpcArtifact = nextArg(argv, i, arg);
         i += 1;
         break;
       case "--data-dir":
@@ -396,7 +371,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
       operator: parsedOperator,
       acceptedAsset: acceptedAsset ? parseAztecAddress(acceptedAsset, "--accepted-asset") : null,
       l1DeployerKey: l1DeployerKey ? parseHex32(l1DeployerKey, "--l1-deployer-key") : null,
-      fpcArtifact: parseNonEmptyString(fpcArtifact, "--fpc-artifact"),
       out,
       proverEnabled,
       preflightOnly,
@@ -516,65 +490,19 @@ async function deriveOperatorIdentity(operatorSecretKey: string): Promise<Operat
   return { address, pubkeyX, pubkeyY };
 }
 
-function loadFpcArtifactSelection(artifactPathInput: string): FpcArtifactSelection {
-  const artifactPath = path.resolve(artifactPathInput);
-  if (!existsSync(artifactPath)) {
-    throw new CliError(
-      `FPC artifact not found: ${artifactPath}. Run 'aztec compile --workspace --force' and retry.`,
-    );
-  }
-  let raw: string;
-  try {
-    raw = readFileSync(artifactPath, "utf8");
-  } catch (error) {
-    throw new CliError(`Failed to read --fpc-artifact at ${artifactPath}: ${String(error)}`);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch (error) {
-    throw new CliError(`FPC artifact at ${artifactPath} is not valid JSON: ${String(error)}`);
-  }
-  if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    !("name" in parsed) ||
-    typeof (parsed as { name?: unknown }).name !== "string"
-  ) {
-    throw new CliError(
-      `Invalid --fpc-artifact at ${artifactPath}: expected JSON artifact with string "name"`,
-    );
-  }
-  const name = (parsed as { name: string }).name;
-  if (name !== "FPC" && name !== "FPCMultiAsset") {
-    throw new CliError(
-      `Invalid --fpc-artifact at ${artifactPath}: unsupported contract name "${name}". Expected "FPC" or "FPCMultiAsset".`,
-    );
-  }
-  const transpiledValue = (parsed as { transpiled?: unknown }).transpiled;
-  if (transpiledValue !== true) {
-    const renderedValue =
-      transpiledValue === undefined ? "<missing>" : JSON.stringify(transpiledValue);
-    throw new CliError(
-      `Invalid --fpc-artifact at ${artifactPath}: contract artifact is not transpiled (transpiled=${renderedValue}). Run 'aztec compile --workspace --force' and retry.`,
-    );
-  }
-  return { artifactPath, name };
-}
-
 function assertRequiredArtifactsExistForDevnet(
-  selection: FpcArtifactSelection,
+  fpcArtifactPath: string,
   deployFaucet: boolean,
 ): void {
   const missing: string[] = [];
+  if (!existsSync(fpcArtifactPath)) {
+    missing.push(fpcArtifactPath);
+  }
   if (!existsSync(REQUIRED_ARTIFACTS.token)) {
     missing.push(REQUIRED_ARTIFACTS.token);
   }
   if (!existsSync(REQUIRED_ARTIFACTS.tokenBridge)) {
     missing.push(REQUIRED_ARTIFACTS.tokenBridge);
-  }
-  if (!existsSync(selection.artifactPath)) {
-    missing.push(selection.artifactPath);
   }
   if (deployFaucet && !existsSync(REQUIRED_ARTIFACTS.faucet)) {
     missing.push(REQUIRED_ARTIFACTS.faucet);
@@ -784,7 +712,7 @@ async function main(): Promise<void> {
     return;
   }
   const args = parseResult.args;
-  const fpcSelection = loadFpcArtifactSelection(args.fpcArtifact);
+  const fpcArtifactPath = REQUIRED_ARTIFACTS.fpc;
 
   pinoLogger.info("[deploy-fpc-devnet] starting preflight checks");
   pinoLogger.info(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
@@ -793,12 +721,10 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] sponsored_fpc_address=${args.sponsoredFpcAddress ?? "<none — fee juice payment>"}`,
   );
   pinoLogger.info(`[deploy-fpc-devnet] accepted_asset=${args.acceptedAsset ?? "<deploy token>"}`);
-  pinoLogger.info(
-    `[deploy-fpc-devnet] fpc_artifact=${fpcSelection.artifactPath} variant=${fpcSelection.name}`,
-  );
+  pinoLogger.info(`[deploy-fpc-devnet] fpc_artifact=${fpcArtifactPath}`);
   pinoLogger.info(`[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`);
 
-  assertRequiredArtifactsExistForDevnet(fpcSelection, !args.acceptedAsset);
+  assertRequiredArtifactsExistForDevnet(fpcArtifactPath, !args.acceptedAsset);
   pinoLogger.info("[deploy-fpc-devnet] artifact preflight passed");
 
   const node = createAztecNodeClient(args.nodeUrl);
@@ -954,10 +880,10 @@ async function main(): Promise<void> {
     faucetConfig = ecosystem.faucetConfig;
   }
 
+  const fpcArtifact = loadArtifact(fpcArtifactPath);
   pinoLogger.info(
-    `[deploy-fpc-devnet] deploying ${fpcSelection.name} contract from ${fpcSelection.artifactPath}`,
+    `[deploy-fpc-devnet] deploying ${fpcArtifact.name} contract from ${fpcArtifactPath}`,
   );
-  const fpcArtifact = loadArtifact(fpcSelection.artifactPath);
 
   const { publicKeys: fpcPublicKeys } = await deriveKeys(Fr.ZERO);
   const fpcDeployMethod = Contract.deployWithPublicKeys(fpcPublicKeys, wallet, fpcArtifact, [
@@ -1018,8 +944,8 @@ async function main(): Promise<void> {
         }
       : {}),
     fpc_artifact: {
-      name: fpcSelection.name,
-      path: fpcSelection.artifactPath,
+      name: fpcArtifact.name as FpcArtifactName,
+      path: fpcArtifactPath,
     },
     operator: {
       address: operatorIdentity.address,
@@ -1049,7 +975,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
   pinoLogger.info(
-    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} counter=${manifest.contracts.counter ?? "n/a"} bridge=${manifest.contracts.bridge ?? "n/a"} variant=${fpcSelection.name}`,
+    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} counter=${manifest.contracts.counter ?? "n/a"} bridge=${manifest.contracts.bridge ?? "n/a"} variant=${fpcArtifact.name}`,
   );
 
   process.exit(0);
