@@ -222,7 +222,17 @@ Unlike `createPaymentMethod` — which derives gas limits from a prior simulatio
 
 With `fee_entrypoint`, neither problem applies: the user's account is deployed, and the app call (e.g., a token swap) is separate from the fee call — so the app can be simulated independently, and gas limits from that simulation are used to fetch the quote afterward.
 
-The cold-start gas limits are empirically chosen upper bounds for the workload (bridge claim + two private token transfers). The user pays based on worst-case gas, not actual consumption. Since there is no teardown/refund phase, unused Fee Juice remains in the FPC's balance — reducing future topup frequency for the operator.
+The cold-start gas limits are upper bounds informed by the `cold_start` benchmark (`profiling/benchmarks/cold_start.benchmark.json`). The benchmark measures actual gas consumption of the full `cold_start_entrypoint` tx (bridge claim + two private token transfers):
+
+| | DA gas | L2 gas |
+|---|---|---|
+| **Measured** | 1,568 | 711,103 |
+| **Hardcoded limit** | 5,000 | 1,000,000 |
+| **Safety margin** | ~3.2× | ~1.4× |
+
+To re-measure after contract changes: `./profiling/setup.sh && ./profiling/run.sh` (runs both `fpc` and `cold_start` benchmarks).
+
+The user pays based on worst-case gas, not actual consumption. Since there is no teardown/refund phase, unused Fee Juice remains in the FPC's balance — reducing future topup frequency for the operator.
 
 ## Contract artifacts
 

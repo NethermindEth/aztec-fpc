@@ -2,7 +2,8 @@
 # Compile contracts and benchmark the FPC contract.
 #
 # Benchmarks:
-#   fpc — FPC.fee_entrypoint
+#   fpc        — FPC.fee_entrypoint
+#   cold_start — FPC.cold_start_entrypoint
 #
 # Produces structured JSON (profiling/benchmarks/*.benchmark.json) and
 # human-readable console summaries (gate counts, gas, proving time).
@@ -64,6 +65,15 @@ AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
     --output-dir "$SCRIPT_DIR/benchmarks" \
     --contracts fpc
 echo "[profile] Finished benchmark: fpc"
+
+echo ""
+echo "[profile] Running benchmark: cold_start ..."
+AZTEC_NODE_URL="$NODE_URL" L1_RPC_URL="$L1_URL" \
+  node "$SCRIPT_DIR/runner.mjs" \
+    --config "$REPO_ROOT/Nargo.toml" \
+    --output-dir "$SCRIPT_DIR/benchmarks" \
+    --contracts cold_start
+echo "[profile] Finished benchmark: cold_start"
 
 echo ""
 echo "[profile] Benchmark JSONs saved to profiling/benchmarks/"

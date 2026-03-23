@@ -200,6 +200,8 @@ describe("always-revert smoke", () => {
       "atLeast",
     );
 
+    // Must match COLD_START_GAS_LIMITS in sdk/src/payment-method.ts.
+    // See profiling/benchmarks/cold_start.benchmark.json for measured values.
     const gasSettings = {
       gasLimits: new Gas(5_000, 1_000_000),
       teardownGasLimits: new Gas(0, 0),

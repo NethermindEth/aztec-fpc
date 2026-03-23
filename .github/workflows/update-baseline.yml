@@ -108,6 +108,13 @@ jobs:
             --suffix _latest \
             --contracts fpc
 
+          echo "--- Benchmarking cold_start ---"
+          NODE_PATH=profiling/node_modules node profiling/runner.mjs \
+            --config Nargo.toml \
+            --output-dir profiling/benchmarks \
+            --suffix _latest \
+            --contracts cold_start
+
       - name: List baseline files
         run: ls -lh profiling/benchmarks/*_latest.benchmark.json
 

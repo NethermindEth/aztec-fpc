@@ -113,6 +113,34 @@ export async function signQuote(
   return Array.from(sig.toBuffer()).map(b => new Fr(b));
 }
 
+export async function signColdStartQuote(
+  schnorr,
+  operatorSigningKey,
+  fpcAddress,
+  tokenAddress,
+  fjFeeAmount,
+  aaPaymentAmount,
+  validUntil,
+  userAddress,
+  quoteDomainSep,
+  claimAmount,
+  claimSecretHash,
+) {
+  const quoteHash = await computeInnerAuthWitHash([
+    new Fr(quoteDomainSep),
+    fpcAddress.toField(),
+    tokenAddress.toField(),
+    new Fr(fjFeeAmount),
+    new Fr(aaPaymentAmount),
+    new Fr(validUntil),
+    userAddress.toField(),
+    new Fr(claimAmount),
+    claimSecretHash,
+  ]);
+  const sig = await schnorr.constructSignature(quoteHash.toBuffer(), operatorSigningKey);
+  return Array.from(sig.toBuffer()).map(b => new Fr(b));
+}
+
 export async function signRateQuote(
   schnorr,
   operatorSigningKey,
