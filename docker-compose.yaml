@@ -148,7 +148,7 @@ services:
     profiles: ["smoke", "full"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/services/fpc-services-smoke.ts"
+      - "./scripts/tests/services.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:
@@ -171,7 +171,7 @@ services:
     profiles: ["smoke", "full"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/cold-start/cold-start-smoke.ts"
+      - "./scripts/tests/cold-start.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:
@@ -197,7 +197,7 @@ services:
     profiles: ["e2e", "full"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/services/fpc-full-lifecycle-e2e.ts"
+      - "./scripts/tests/fee-entrypoint-validation.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:
@@ -218,7 +218,7 @@ services:
     profiles: ["e2e", "full"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/services/fpc-concurrent-e2e.ts"
+      - "./scripts/tests/concurrent.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:
@@ -244,7 +244,7 @@ services:
     profiles: ["smoke", "full"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/same-token-transfer/same-token-transfer-smoke.ts"
+      - "./scripts/tests/same-token-transfer.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:
@@ -268,7 +268,7 @@ services:
     profiles: ["smoke", "full"]
     entrypoint: ["bun", "test"]
     command:
-      - "./scripts/always-revert/always-revert-smoke.ts"
+      - "./scripts/tests/always-revert.ts"
     volumes:
       - ./deployments/local:/app/data:ro
     environment:

@@ -14,16 +14,14 @@ and then runs the two-tx insufficient balance test.
 Happy-path FPC transaction coverage (fee-paid transfers, balance-delta
 assertions, multi-cycle bridge re-funding) is provided by the
 same-token-transfer integration test
-(`scripts/same-token-transfer/test-same-token-transfer.ts`), which exercises
+(`scripts/tests/same-token-transfer.ts`), which exercises
 more transfer types (private-to-private, public-to-public, batched
 cross-domain) against a running attestation service and top-up-funded FPC.
 
 No other smoke/deploy/test flows are part of this definition.
 
 ## Test Entry Point
-- Command: `bun run e2e:full-lifecycle:fpc:local`
-- Script: `scripts/services/fpc-full-lifecycle-e2e.sh`
-- Runner: `scripts/services/fpc-full-lifecycle-e2e.ts`
+- Runner: `scripts/tests/fee-entrypoint-validation.ts`
 
 ## Required Environment
 - Aztec CLI (`aztec`) available in `PATH`
@@ -106,8 +104,8 @@ Use this runbook when local E2E fails with address or wiring symptoms.
 ## Coverage Findings And Test Tiering
 Current script coverage in this repository is intentionally split:
 - `scripts/contract/deploy-fpc-local.ts` and `scripts/contract/deploy-fpc-local-smoke.ts` are deployment/relay usability checks, not quote-security or negative-behavior tests.
-- `scripts/services/fpc-services-smoke.ts` tests deployed service HTTP endpoints (attestation quotes, topup health, metrics).
-- `scripts/same-token-transfer/test-same-token-transfer.ts` is the happy-path integration test covering FPC-paid transactions across multiple transfer types.
+- `scripts/tests/services.ts` tests deployed service HTTP endpoints (attestation quotes, topup health, metrics).
+- `scripts/tests/same-token-transfer.ts` is the happy-path integration test covering FPC-paid transactions across multiple transfer types.
 
 This document is the source of truth for full FPC e2e negative-scenario requirements. Happy-path coverage is defined by the same-token-transfer test.
 
