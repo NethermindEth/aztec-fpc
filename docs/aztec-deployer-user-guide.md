@@ -633,7 +633,6 @@ console.log(`Token charged: ${result.aaPaymentAmount}`);
 | `GET` | `/health` | Liveness probe (returns 200) |
 | `GET` | `/.well-known/fpc.json` | Discovery metadata (network, FPC address, supported assets, endpoints) |
 | `GET` | `/accepted-assets` | List of supported assets with pricing |
-| `GET` | `/asset` | Legacy: default accepted asset |
 | `GET` | `/quote` | Request a signed fee quote |
 | `GET` | `/cold-start-quote` | Request a signed cold-start quote (includes claim fields) |
 | `GET` | `/metrics` | Prometheus metrics |

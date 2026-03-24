@@ -75,7 +75,6 @@ async function main() {
   try {
     await verifyFpcImmutablesOnStartup(node, {
       fpcAddress,
-      acceptedAsset: acceptedAssetAddress,
       operatorAddress,
       operatorPubkeyX: Fr.fromString(operatorPubKey.x.toString()),
       operatorPubkeyY: Fr.fromString(operatorPubKey.y.toString()),

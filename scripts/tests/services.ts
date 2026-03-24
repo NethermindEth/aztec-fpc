@@ -187,22 +187,22 @@ async function fetchQuote(
   throw new Error(`Timed out requesting quote. Last error: ${lastError}`);
 }
 
-async function fetchAsset(assetUrl: string, timeoutMs: number): Promise<AssetResponse> {
+async function fetchAcceptedAssets(url: string, timeoutMs: number): Promise<AssetResponse[]> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
 
   while (Date.now() <= deadline) {
     try {
-      const response = await fetch(assetUrl);
+      const response = await fetch(url);
       const bodyText = await response.text();
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ${bodyText}`;
       } else {
-        const parsed = JSON.parse(bodyText) as AssetResponse;
-        if (typeof parsed.name === "string" && typeof parsed.address === "string") {
+        const parsed = JSON.parse(bodyText) as AssetResponse[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
-        lastError = `Invalid asset payload: ${bodyText}`;
+        lastError = `Invalid accepted-assets payload: ${bodyText}`;
       }
     } catch (error) {
       lastError = (error as Error).message;
@@ -211,7 +211,7 @@ async function fetchAsset(assetUrl: string, timeoutMs: number): Promise<AssetRes
     await sleep(500);
   }
 
-  throw new Error(`Timed out requesting asset metadata. Last error: ${lastError}`);
+  throw new Error(`Timed out requesting accepted-assets. Last error: ${lastError}`);
 }
 
 async function fetchMetrics(metricsUrl: string, timeoutMs: number): Promise<string> {
@@ -410,13 +410,16 @@ describe("fpc services smoke", () => {
       expect(response.status).toBe(400);
     });
 
-    it("asset endpoint returns matching token address", async () => {
-      const asset = await fetchAsset(
-        `${ctx.config.attestationBaseUrl}/asset`,
+    it("accepted-assets endpoint includes configured token", async () => {
+      const assets = await fetchAcceptedAssets(
+        `${ctx.config.attestationBaseUrl}/accepted-assets`,
         ctx.config.httpTimeoutMs,
       );
-      expect(asset.name.trim().length).toBeGreaterThan(0);
-      expect(asset.address.toLowerCase()).toBe(ctx.tokenAddress.toString().toLowerCase());
+      const match = assets.find(
+        (a) => a.address.toLowerCase() === ctx.tokenAddress.toString().toLowerCase(),
+      );
+      expect(match).toBeDefined();
+      expect(match?.name.trim().length).toBeGreaterThan(0);
     });
 
     it("returns valid quote with correct signature", async () => {
