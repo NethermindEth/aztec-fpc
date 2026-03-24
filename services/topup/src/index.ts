@@ -19,7 +19,7 @@ import { createTopupChecker, type TopupChecker, type TopupCheckerDependencies } 
 import { type Config, loadConfig } from "./config.js";
 import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
 import { assertL1RpcChainIdMatches } from "./l1.js";
-import { createFeeJuiceBalanceReader, type FeeJuiceBalanceReader } from "./monitor.js";
+import { createGetFeeJuiceBalance, type GetFeeJuiceBalance } from "./monitor.js";
 import { createTopupOpsServer, type TopupOpsServer, TopupOpsState } from "./ops.js";
 import { reconcilePersistedBridgeState } from "./reconcile.js";
 import {
@@ -66,7 +66,7 @@ interface StartupLogContext extends ServiceAddresses, NodeChainInfo, AutoClaimer
   topUpAmount: bigint;
   logClaimSecret: boolean;
   bridgeStateStore: TopupBridgeStateStore;
-  balanceReader: FeeJuiceBalanceReader;
+  getBalance: GetFeeJuiceBalance;
 }
 
 function parseConfigPath(argv: string[]): string {
@@ -136,7 +136,7 @@ async function resolveNodeChainInfo(
 async function resolveAutoClaimerState(
   autoClaimEnabled: boolean,
   pxe: TopupNodeClient,
-  balanceReader: FeeJuiceBalanceReader,
+  getBalance: GetFeeJuiceBalance,
   runtimeProfile: string,
 ): Promise<AutoClaimerState> {
   if (!autoClaimEnabled) {
@@ -146,7 +146,7 @@ async function resolveAutoClaimerState(
   const autoClaimer = await createTopupAutoClaimer(pxe, runtimeProfile);
   let autoClaimerFeeJuiceBalance: bigint | null = null;
   try {
-    autoClaimerFeeJuiceBalance = await balanceReader.getBalance(autoClaimer.claimerAddress);
+    autoClaimerFeeJuiceBalance = await getBalance(autoClaimer.claimerAddress);
   } catch (error) {
     pinoLogger.warn(
       { err: error },
@@ -204,9 +204,6 @@ function logStartupDetails(context: StartupLogContext): void {
   pinoLogger.info(
     `  Confirm poll:  ${context.config.confirmation_poll_initial_ms}ms -> ${context.config.confirmation_poll_max_ms}ms`,
   );
-  pinoLogger.info(
-    `  Fee Juice contract: ${context.balanceReader.feeJuiceAddress.toString()} (${context.balanceReader.addressSource})`,
-  );
   pinoLogger.info(`  Ops endpoint:  http://0.0.0.0:${context.config.ops_port}`);
   if (context.logClaimSecret) {
     pinoLogger.warn(
@@ -217,13 +214,13 @@ function logStartupDetails(context: StartupLogContext): void {
 }
 
 function createGetBalanceDependency(
-  balanceReader: FeeJuiceBalanceReader,
+  getBalance: GetFeeJuiceBalance,
   topupTargetAddress: AztecAddress,
   opsState: TopupOpsState,
 ): TopupCheckerDependencies["getBalance"] {
   return async () => {
     try {
-      const balance = await balanceReader.getBalance(topupTargetAddress);
+      const balance = await getBalance(topupTargetAddress);
       opsState.recordBalanceCheckSuccess();
       return balance;
     } catch (error) {
@@ -258,7 +255,7 @@ function createOnMessageReadyHandler(
 }
 
 function createConfirmDependency(
-  balanceReader: FeeJuiceBalanceReader,
+  getBalance: GetFeeJuiceBalance,
   topupTargetAddress: AztecAddress,
   config: TopupConfig,
   pxe: TopupNodeClient,
@@ -267,7 +264,7 @@ function createConfirmDependency(
 ): TopupCheckerDependencies["confirm"] {
   return (baselineBalance, bridgeResult) =>
     waitForFeeJuiceBridgeConfirmation({
-      balanceReader,
+      getBalance,
       fpcAddress: topupTargetAddress,
       baselineBalance,
       timeoutMs: config.confirmation_timeout_ms,
@@ -334,18 +331,14 @@ function buildCheckerDependencies(args: {
   config: TopupConfig;
   l1ChainId: number;
   topupTargetAddress: AztecAddress;
-  balanceReader: FeeJuiceBalanceReader;
+  getBalance: GetFeeJuiceBalance;
   bridgeStateStore: TopupBridgeStateStore;
   shutdownController: AbortController;
   autoClaimer: TopupAutoClaimer | null;
   opsState: TopupOpsState;
 }): TopupCheckerDependencies {
   return {
-    getBalance: createGetBalanceDependency(
-      args.balanceReader,
-      args.topupTargetAddress,
-      args.opsState,
-    ),
+    getBalance: createGetBalanceDependency(args.getBalance, args.topupTargetAddress, args.opsState),
     bridge: (amount) =>
       bridgeFeeJuice(
         args.pxe,
@@ -356,7 +349,7 @@ function buildCheckerDependencies(args: {
         amount,
       ),
     confirm: createConfirmDependency(
-      args.balanceReader,
+      args.getBalance,
       args.topupTargetAddress,
       args.config,
       args.pxe,
@@ -424,7 +417,7 @@ const RECONCILIATION_MAX_AGE_MS = 24 * 60 * 60 * 1_000; // 24 hours
 
 function createReconciliationRunner(args: {
   bridgeStateStore: TopupBridgeStateStore;
-  balanceReader: FeeJuiceBalanceReader;
+  getBalance: GetFeeJuiceBalance;
   pxe: TopupNodeClient;
   topupTargetAddress: AztecAddress;
   config: TopupConfig;
@@ -434,7 +427,7 @@ function createReconciliationRunner(args: {
   return async () => {
     const outcome = await reconcilePersistedBridgeState({
       stateStore: args.bridgeStateStore,
-      balanceReader: args.balanceReader,
+      getBalance: args.getBalance,
       node: args.pxe,
       fpcAddress: args.topupTargetAddress,
       timeoutMs: args.config.confirmation_timeout_ms,
@@ -550,7 +543,7 @@ async function main(): Promise<void> {
   // must be wrapped so the lock is released if startup fails. Without this,
   // a crash during initialization (e.g. node connection, balance reader)
   // leaves a stale lock file that blocks the next restart.
-  let balanceReader: FeeJuiceBalanceReader;
+  let getBalance: GetFeeJuiceBalance;
   let autoClaimer: TopupAutoClaimerInstance | null;
   let shutdownController: AbortController;
   let opsState: TopupOpsState;
@@ -558,11 +551,11 @@ async function main(): Promise<void> {
   let checker: TopupChecker;
   let loopState: TopupLoopState;
   try {
-    balanceReader = await createFeeJuiceBalanceReader(pxe);
+    getBalance = createGetFeeJuiceBalance(pxe);
     const autoClaimerState = await resolveAutoClaimerState(
       autoClaimEnabled,
       pxe,
-      balanceReader,
+      getBalance,
       config.runtime_profile,
     );
     autoClaimer = autoClaimerState.autoClaimer;
@@ -586,7 +579,7 @@ async function main(): Promise<void> {
       topUpAmount,
       logClaimSecret,
       bridgeStateStore,
-      balanceReader,
+      getBalance,
       autoClaimer,
       autoClaimerFeeJuiceBalance,
     });
@@ -598,7 +591,7 @@ async function main(): Promise<void> {
         config,
         l1ChainId,
         topupTargetAddress,
-        balanceReader,
+        getBalance,
         bridgeStateStore,
         shutdownController,
         autoClaimer,
@@ -623,7 +616,7 @@ async function main(): Promise<void> {
 
   const runReconciliation = createReconciliationRunner({
     bridgeStateStore,
-    balanceReader,
+    getBalance,
     pxe,
     topupTargetAddress,
     config,

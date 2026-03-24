@@ -29,11 +29,7 @@ describe("reconcile", () => {
     const result = await reconcilePersistedBridgeState(
       {
         stateStore: store,
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => 0n,
-        },
+        getBalance: async () => 0n,
         node: {} as never,
         fpcAddress: FPC,
         timeoutMs: 1,
@@ -62,11 +58,7 @@ describe("reconcile", () => {
     const result = await reconcilePersistedBridgeState(
       {
         stateStore: store,
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => 10n,
-        },
+        getBalance: async () => 10n,
         node: {} as never,
         fpcAddress: FPC,
         timeoutMs: 1,
@@ -108,11 +100,7 @@ describe("reconcile", () => {
     const result = await reconcilePersistedBridgeState(
       {
         stateStore: store,
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => 10n,
-        },
+        getBalance: async () => 10n,
         node: {} as never,
         fpcAddress: FPC,
         timeoutMs: 1,
@@ -154,11 +142,7 @@ describe("reconcile", () => {
     const result = await reconcilePersistedBridgeState(
       {
         stateStore: store,
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => 0n,
-        },
+        getBalance: async () => 0n,
         node: {} as never,
         fpcAddress: FPC,
         timeoutMs: 1,
@@ -188,11 +172,7 @@ describe("reconcile", () => {
     const result = await reconcilePersistedBridgeState(
       {
         stateStore: store,
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => 11n,
-        },
+        getBalance: async () => 11n,
         node: {} as never,
         fpcAddress: FPC,
         timeoutMs: 1,
@@ -234,11 +214,7 @@ describe("reconcile", () => {
     const result = await reconcilePersistedBridgeState(
       {
         stateStore: store,
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => 10n,
-        },
+        getBalance: async () => 10n,
         node: {} as never,
         fpcAddress: FPC,
         timeoutMs: 1,

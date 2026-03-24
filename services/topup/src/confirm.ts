@@ -4,7 +4,7 @@ import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import pino from "pino";
 import type { Hex } from "viem";
-import type { FeeJuiceBalanceReader } from "./monitor.js";
+import type { GetFeeJuiceBalance } from "./monitor.js";
 
 const pinoLogger = pino();
 
@@ -16,7 +16,7 @@ export interface BridgeMessageContext {
 }
 
 export interface BridgeConfirmationOptions {
-  balanceReader: FeeJuiceBalanceReader;
+  getBalance: GetFeeJuiceBalance;
   fpcAddress: AztecAddress;
   baselineBalance: bigint;
   timeoutMs: number;
@@ -219,7 +219,7 @@ async function pollBalanceOnce(
   state: BridgeConfirmationState,
 ): Promise<boolean> {
   try {
-    const balance = await options.balanceReader.getBalance(options.fpcAddress);
+    const balance = await options.getBalance(options.fpcAddress);
     state.successfulReads += 1;
     state.lastObservedBalance = balance;
     if (balance > state.maxObservedBalance) {

@@ -15,13 +15,9 @@ describe("confirm", () => {
     let reads = 0;
     const result = await waitForFeeJuiceBridgeConfirmation(
       {
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: () => {
-            reads += 1;
-            return Promise.resolve(reads < 2 ? 10n : 11n);
-          },
+        getBalance: () => {
+          reads += 1;
+          return Promise.resolve(reads < 2 ? 10n : 11n);
         },
         fpcAddress: FPC,
         baselineBalance: 10n,
@@ -53,13 +49,9 @@ describe("confirm", () => {
   it("confirms on balance delta alone when no messageContext", async () => {
     let reads = 0;
     const result = await waitForFeeJuiceBridgeConfirmation({
-      balanceReader: {
-        feeJuiceAddress: AztecAddress.zero(),
-        addressSource: "node_info",
-        getBalance: () => {
-          reads += 1;
-          return Promise.resolve(reads < 2 ? 10n : 11n);
-        },
+      getBalance: () => {
+        reads += 1;
+        return Promise.resolve(reads < 2 ? 10n : 11n);
       },
       fpcAddress: FPC,
       baselineBalance: 10n,
@@ -76,13 +68,9 @@ describe("confirm", () => {
     let reads = 0;
     const result = await waitForFeeJuiceBridgeConfirmation(
       {
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: () => {
-            reads += 1;
-            return Promise.resolve(reads < 3 ? 10n : 11n);
-          },
+        getBalance: () => {
+          reads += 1;
+          return Promise.resolve(reads < 3 ? 10n : 11n);
         },
         fpcAddress: FPC,
         baselineBalance: 10n,
@@ -109,13 +97,9 @@ describe("confirm", () => {
     let reads = 0;
     const result = await waitForFeeJuiceBridgeConfirmation(
       {
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: () => {
-            reads += 1;
-            return Promise.resolve(reads < 3 ? 10n : 12n);
-          },
+        getBalance: () => {
+          reads += 1;
+          return Promise.resolve(reads < 3 ? 10n : 12n);
         },
         fpcAddress: FPC,
         baselineBalance: 10n,
@@ -145,11 +129,7 @@ describe("confirm", () => {
   it("times out when message is ready but no balance delta is observed", async () => {
     const result = await waitForFeeJuiceBridgeConfirmation(
       {
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => 10n,
-        },
+        getBalance: async () => 10n,
         fpcAddress: FPC,
         baselineBalance: 10n,
         timeoutMs: 200,
@@ -179,11 +159,7 @@ describe("confirm", () => {
     await assert.doesNotReject(async () => {
       const result = await waitForFeeJuiceBridgeConfirmation(
         {
-          balanceReader: {
-            feeJuiceAddress: AztecAddress.zero(),
-            addressSource: "node_info",
-            getBalance: () => Promise.reject(new Error("temporary balance rpc failure")),
-          },
+          getBalance: () => Promise.reject(new Error("temporary balance rpc failure")),
           fpcAddress: FPC,
           baselineBalance: 10n,
           timeoutMs: 200,
@@ -209,11 +185,7 @@ describe("confirm", () => {
     let actionCompleted = false;
     const result = await waitForFeeJuiceBridgeConfirmation(
       {
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => (actionCompleted ? 12n : 10n),
-        },
+        getBalance: async () => (actionCompleted ? 12n : 10n),
         fpcAddress: FPC,
         baselineBalance: 10n,
         timeoutMs: 400,
@@ -249,11 +221,7 @@ describe("confirm", () => {
 
     const result = await waitForFeeJuiceBridgeConfirmation(
       {
-        balanceReader: {
-          feeJuiceAddress: AztecAddress.zero(),
-          addressSource: "node_info",
-          getBalance: async () => 10n,
-        },
+        getBalance: async () => 10n,
         fpcAddress: FPC,
         baselineBalance: 10n,
         timeoutMs: 200,

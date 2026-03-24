@@ -24,12 +24,8 @@ export async function acquireProcessLock(lockPath: string): Promise<void> {
       );
     }
   } catch (error) {
-    const maybeNodeError = error as NodeJS.ErrnoException;
-    if (maybeNodeError.code !== "ENOENT") {
-      // Re-throw unless the lock file simply doesn't exist
-      if (maybeNodeError.message?.includes("Another topup service")) {
-        throw error;
-      }
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
     }
   }
   await mkdir(path.dirname(lockPath), { recursive: true });

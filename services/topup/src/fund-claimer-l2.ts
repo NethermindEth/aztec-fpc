@@ -55,8 +55,6 @@ type PartialManifest = {
   };
 };
 
-type BridgeClaim = L2AmountClaim;
-
 function usage(): string {
   return [
     "Usage:",
@@ -461,12 +459,12 @@ async function submitBridgeToClaimer(
   portalManager: BridgePortalManager,
   claimerAddress: AztecAddress,
   amountWei: bigint,
-): Promise<BridgeClaim> {
+): Promise<L2AmountClaim> {
   pinoLogger.info(`${LOG_PREFIX} bridging FeeJuice to claimer...`);
   const bridgeClaim = (await portalManager.bridgeTokensPublic(
     claimerAddress,
     amountWei,
-  )) as BridgeClaim;
+  )) as L2AmountClaim;
   pinoLogger.info(
     `${LOG_PREFIX} bridge submitted message_hash=${bridgeClaim.messageHash} leaf_index=${bridgeClaim.messageLeafIndex} claim_secret_hash=<hidden>`,
   );
@@ -475,7 +473,7 @@ async function submitBridgeToClaimer(
 
 async function waitForBridgeMessageReady(
   node: TopupNode,
-  bridgeClaim: BridgeClaim,
+  bridgeClaim: L2AmountClaim,
   timeoutSeconds: number,
 ): Promise<void> {
   const messageHashFr = Fr.fromHexString(bridgeClaim.messageHash);
@@ -560,7 +558,7 @@ function isInsufficientFeePayerBalanceError(renderedError: string): boolean {
 interface ClaimWithRetriesArgs {
   feeJuice: ReturnType<typeof FeeJuiceContract.at>;
   claimerAddress: AztecAddress;
-  bridgeClaim: BridgeClaim;
+  bridgeClaim: L2AmountClaim;
   useSelfPay: boolean;
   claimerWalletAddress: AztecAddress;
   feePayerAddress: AztecAddress;
