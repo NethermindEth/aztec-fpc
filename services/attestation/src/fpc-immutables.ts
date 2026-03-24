@@ -11,7 +11,7 @@ const AZTEC_ADDRESS_TYPE: ABIParameter["type"] = {
   fields: [{ name: "inner", type: { kind: "field" } }],
 };
 
-const FPC_CONSTRUCTOR_ABI_V2: FunctionAbi = {
+const FPC_CONSTRUCTOR_ABI: FunctionAbi = {
   name: "constructor",
   functionType: FunctionType.PUBLIC,
   isOnlySelf: false,
@@ -38,18 +38,6 @@ const FPC_CONSTRUCTOR_ABI_V2: FunctionAbi = {
   errorTypes: {},
 };
 
-const FPC_CONSTRUCTOR_ABI_LEGACY: FunctionAbi = {
-  ...FPC_CONSTRUCTOR_ABI_V2,
-  parameters: [
-    ...FPC_CONSTRUCTOR_ABI_V2.parameters,
-    {
-      name: "accepted_asset",
-      type: AZTEC_ADDRESS_TYPE,
-      visibility: "private",
-    },
-  ],
-};
-
 export type FpcImmutableVerificationReason =
   | "CONTRACT_QUERY_FAILED"
   | "CONTRACT_NOT_FOUND"
@@ -67,7 +55,6 @@ export class FpcImmutableVerificationError extends Error {
 
 export interface FpcImmutableInputs {
   fpcAddress: AztecAddress;
-  acceptedAsset: AztecAddress;
   operatorAddress: AztecAddress;
   operatorPubkeyX: Fr;
   operatorPubkeyY: Fr;
@@ -76,24 +63,10 @@ export interface FpcImmutableInputs {
 export async function computeExpectedFpcInitializationHash(
   inputs: Pick<FpcImmutableInputs, "operatorAddress" | "operatorPubkeyX" | "operatorPubkeyY">,
 ): Promise<Fr> {
-  return await computeInitializationHash(FPC_CONSTRUCTOR_ABI_V2, [
+  return await computeInitializationHash(FPC_CONSTRUCTOR_ABI, [
     inputs.operatorAddress,
     inputs.operatorPubkeyX,
     inputs.operatorPubkeyY,
-  ]);
-}
-
-async function computeExpectedLegacyFpcInitializationHash(
-  inputs: Pick<
-    FpcImmutableInputs,
-    "acceptedAsset" | "operatorAddress" | "operatorPubkeyX" | "operatorPubkeyY"
-  >,
-): Promise<Fr> {
-  return await computeInitializationHash(FPC_CONSTRUCTOR_ABI_LEGACY, [
-    inputs.operatorAddress,
-    inputs.operatorPubkeyX,
-    inputs.operatorPubkeyY,
-    inputs.acceptedAsset,
   ]);
 }
 
@@ -120,18 +93,14 @@ export async function verifyFpcImmutablesOnStartup(
   }
 
   const expectedInitializationHash = await computeExpectedFpcInitializationHash(inputs);
-  const expectedLegacyInitializationHash = await computeExpectedLegacyFpcInitializationHash(inputs);
   const onChainInitializationHash = deployed.initializationHash;
 
-  if (
-    !onChainInitializationHash.equals(expectedInitializationHash) &&
-    !onChainInitializationHash.equals(expectedLegacyInitializationHash)
-  ) {
+  if (!onChainInitializationHash.equals(expectedInitializationHash)) {
     const currentClassId = deployed.currentContractClassId?.toString() ?? "unknown";
     const originalClassId = deployed.originalContractClassId?.toString() ?? "unknown";
     throw new FpcImmutableVerificationError(
       "IMMUTABLE_MISMATCH",
-      `[startup] on-chain FPC immutable mismatch: expected operator=${inputs.operatorAddress.toString()} (pubkey_x=${inputs.operatorPubkeyX.toString()}, pubkey_y=${inputs.operatorPubkeyY.toString()}) for contract ${inputs.fpcAddress.toString()}, but deployment initialization_hash differs (expected_v2=${expectedInitializationHash.toString()}, expected_legacy=${expectedLegacyInitializationHash.toString()}, on_chain=${onChainInitializationHash.toString()}, current_class_id=${currentClassId}, original_class_id=${originalClassId})`,
+      `[startup] on-chain FPC immutable mismatch: expected operator=${inputs.operatorAddress.toString()} (pubkey_x=${inputs.operatorPubkeyX.toString()}, pubkey_y=${inputs.operatorPubkeyY.toString()}) for contract ${inputs.fpcAddress.toString()}, but deployment initialization_hash differs (expected=${expectedInitializationHash.toString()}, on_chain=${onChainInitializationHash.toString()}, current_class_id=${currentClassId}, original_class_id=${originalClassId})`,
     );
   }
 }

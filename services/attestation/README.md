@@ -167,7 +167,6 @@ Response:
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
     "accepted_assets": "/accepted-assets",
-    "asset": "/asset",
     "quote": "/quote"
   },
   "supported_assets": [{ "address": "0x...", "name": "humanUSDC" }]
@@ -244,19 +243,6 @@ Request body:
 ### `DELETE /admin/asset-policies/:assetAddress`
 
 Requires the configured admin API key header.
-
-### `GET /asset` (legacy compatibility)
-
-Returns configured accepted asset metadata.
-
-Response:
-
-```json
-{
-  "name": "humanUSDC",
-  "address": "0x..."
-}
-```
 
 ### `GET /quote?user=<aztec_address>&accepted_asset=<aztec_address>&fj_amount=<positive_u128_decimal>`
 
@@ -352,7 +338,7 @@ Example checks:
 ```bash
 curl http://localhost:3000/.well-known/fpc.json
 curl http://localhost:3000/health
-curl http://localhost:3000/asset
+curl http://localhost:3000/accepted-assets
 curl "http://localhost:3000/quote?user=<aztec_address>&accepted_asset=<asset_address>&fj_amount=1000000"
 curl -H "x-admin-api-key: <admin-key>" http://localhost:3000/admin/asset-policies
 ```

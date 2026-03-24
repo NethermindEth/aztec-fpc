@@ -100,7 +100,7 @@ Concrete `GET /.well-known/fpc.json` response:
   "endpoints": {
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
-    "asset": "/asset",
+    "accepted_assets": "/accepted-assets",
     "quote": "/quote"
   },
   "supported_assets": [

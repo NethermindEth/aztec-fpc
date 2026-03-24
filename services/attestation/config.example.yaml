@@ -104,7 +104,6 @@ accepted_asset_address: "0x00000000000000000000000000000000000000000000000000000
 # This powers both discovery `supported_assets` and `GET /accepted-assets`.
 # If omitted, the service falls back to [{ accepted_asset_address, accepted_asset_name }]
 # until admin endpoints write `asset_policy_state_path`.
-# Legacy `GET /asset` exposes the current primary asset from the effective set.
 # supported_assets:
 #   - address: "0x0000000000000000000000000000000000000000000000000000000000000002"
 #     name: "humanUSDC"

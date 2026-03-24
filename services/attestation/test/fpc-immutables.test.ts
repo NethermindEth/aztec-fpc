@@ -12,9 +12,6 @@ import {
 const TEST_FPC_ADDRESS = AztecAddress.fromString(
   "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
 );
-const TEST_ACCEPTED_ASSET = AztecAddress.fromString(
-  "0x0000000000000000000000000000000000000000000000000000000000000002",
-);
 const TEST_OPERATOR = AztecAddress.fromString(
   "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72",
 );
@@ -52,7 +49,6 @@ function mockNodeGetContractThrows(message: string): Pick<AztecNode, "getContrac
 describe("fpc immutable startup verification", () => {
   it("passes when on-chain immutables match expected config and signer", async () => {
     const expectedHash = await computeExpectedFpcInitializationHash({
-      acceptedAsset: TEST_ACCEPTED_ASSET,
       operatorAddress: TEST_OPERATOR,
       operatorPubkeyX: TEST_OPERATOR_PUBKEY_X,
       operatorPubkeyY: TEST_OPERATOR_PUBKEY_Y,
@@ -61,7 +57,6 @@ describe("fpc immutable startup verification", () => {
 
     await verifyFpcImmutablesOnStartup(node, {
       fpcAddress: TEST_FPC_ADDRESS,
-      acceptedAsset: TEST_ACCEPTED_ASSET,
       operatorAddress: TEST_OPERATOR,
       operatorPubkeyX: TEST_OPERATOR_PUBKEY_X,
       operatorPubkeyY: TEST_OPERATOR_PUBKEY_Y,
@@ -74,7 +69,6 @@ describe("fpc immutable startup verification", () => {
     await assert.rejects(
       verifyFpcImmutablesOnStartup(node, {
         fpcAddress: TEST_FPC_ADDRESS,
-        acceptedAsset: TEST_ACCEPTED_ASSET,
         operatorAddress: TEST_OPERATOR,
         operatorPubkeyX: TEST_OPERATOR_PUBKEY_X,
         operatorPubkeyY: TEST_OPERATOR_PUBKEY_Y,
@@ -97,7 +91,6 @@ describe("fpc immutable startup verification", () => {
     await assert.rejects(
       verifyFpcImmutablesOnStartup(node, {
         fpcAddress: TEST_FPC_ADDRESS,
-        acceptedAsset: TEST_ACCEPTED_ASSET,
         operatorAddress: TEST_OPERATOR,
         operatorPubkeyX: TEST_OPERATOR_PUBKEY_X,
         operatorPubkeyY: TEST_OPERATOR_PUBKEY_Y,
@@ -121,7 +114,6 @@ describe("fpc immutable startup verification", () => {
     await assert.rejects(
       verifyFpcImmutablesOnStartup(node, {
         fpcAddress: TEST_FPC_ADDRESS,
-        acceptedAsset: TEST_ACCEPTED_ASSET,
         operatorAddress: TEST_OPERATOR,
         operatorPubkeyX: TEST_OPERATOR_PUBKEY_X,
         operatorPubkeyY: TEST_OPERATOR_PUBKEY_Y,
@@ -132,8 +124,7 @@ describe("fpc immutable startup verification", () => {
           return false;
         }
         assert.equal(error.reason, "IMMUTABLE_MISMATCH");
-        assert.match(error.message, /expected_v2=/);
-        assert.match(error.message, /expected_legacy=/);
+        assert.match(error.message, /expected=/);
         assert.match(error.message, /operator=/);
         assert.match(error.message, /initialization_hash/);
         assert.match(error.message, /current_class_id=/);

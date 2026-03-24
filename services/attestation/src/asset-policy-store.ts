@@ -112,7 +112,6 @@ async function readStateFile(filePath: string): Promise<PersistedAssetPolicyStat
 
 export interface AssetPolicyStore {
   getAll(): SupportedAssetPolicy[];
-  getPrimaryAsset(): SupportedAssetPolicy;
   upsert(policy: SupportedAssetPolicy): Promise<SupportedAssetPolicy>;
   remove(address: string): Promise<SupportedAssetPolicy>;
 }
@@ -120,20 +119,12 @@ export interface AssetPolicyStore {
 export class MemoryAssetPolicyStore implements AssetPolicyStore {
   private supportedAssets: SupportedAssetPolicy[];
 
-  constructor(
-    initialPolicies: SupportedAssetPolicy[],
-    private readonly primaryAddressHint: string,
-  ) {
+  constructor(initialPolicies: SupportedAssetPolicy[]) {
     this.supportedAssets = normalizeSupportedAssetPolicies(initialPolicies);
   }
 
   getAll(): SupportedAssetPolicy[] {
     return this.supportedAssets.map((asset) => ({ ...asset }));
-  }
-
-  getPrimaryAsset(): SupportedAssetPolicy {
-    const hinted = this.supportedAssets.find((asset) => asset.address === this.primaryAddressHint);
-    return { ...(hinted ?? this.supportedAssets[0]) };
   }
 
   upsert(policy: SupportedAssetPolicy): Promise<SupportedAssetPolicy> {
@@ -170,7 +161,6 @@ export class FileBackedAssetPolicyStore implements AssetPolicyStore {
   private constructor(
     private readonly filePath: string,
     initialPolicies: SupportedAssetPolicy[],
-    private readonly primaryAddressHint: string,
   ) {
     this.supportedAssets = normalizeSupportedAssetPolicies(initialPolicies);
   }
@@ -178,11 +168,7 @@ export class FileBackedAssetPolicyStore implements AssetPolicyStore {
   static async create(config: Config): Promise<FileBackedAssetPolicyStore> {
     const storedState = await readStateFile(config.asset_policy_state_path);
     const initialPolicies = storedState?.supported_assets ?? config.supported_assets;
-    const store = new FileBackedAssetPolicyStore(
-      config.asset_policy_state_path,
-      initialPolicies,
-      normalizeAztecAddress(config.accepted_asset_address),
-    );
+    const store = new FileBackedAssetPolicyStore(config.asset_policy_state_path, initialPolicies);
 
     if (!storedState) {
       await store.persist();
@@ -193,11 +179,6 @@ export class FileBackedAssetPolicyStore implements AssetPolicyStore {
 
   getAll(): SupportedAssetPolicy[] {
     return this.supportedAssets.map((asset) => ({ ...asset }));
-  }
-
-  getPrimaryAsset(): SupportedAssetPolicy {
-    const hinted = this.supportedAssets.find((asset) => asset.address === this.primaryAddressHint);
-    return { ...(hinted ?? this.supportedAssets[0]) };
   }
 
   async upsert(policy: SupportedAssetPolicy): Promise<SupportedAssetPolicy> {

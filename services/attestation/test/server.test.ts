@@ -173,7 +173,6 @@ describe("server", () => {
           discovery: "/.well-known/fpc.json",
           health: "/health",
           accepted_assets: "/accepted-assets",
-          asset: "/asset",
           quote: "/quote",
           cold_start_quote: "/cold-start-quote",
         },
@@ -273,21 +272,6 @@ describe("server", () => {
         { address: DEFAULT_ACCEPTED_ASSET, name: "humanUSDC" },
         { address: SECONDARY_ACCEPTED_ASSET, name: "ravenETH" },
       ]);
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("returns accepted asset metadata", async () => {
-    const app = await buildServer(TEST_CONFIG, mockSigner());
-
-    try {
-      const response = await app.inject({ method: "GET", url: "/asset" });
-      assert.equal(response.statusCode, 200);
-      assert.deepEqual(response.json(), {
-        name: TEST_CONFIG.accepted_asset_name,
-        address: TEST_CONFIG.accepted_asset_address,
-      });
     } finally {
       await app.close();
     }
@@ -1039,10 +1023,7 @@ describe("server", () => {
       apiKey: "admin-secret",
     });
     const app = await buildServer(adminConfig, mockSigner(), {
-      assetPolicyStore: new MemoryAssetPolicyStore(
-        adminConfig.supported_assets,
-        adminConfig.accepted_asset_address,
-      ),
+      assetPolicyStore: new MemoryAssetPolicyStore(adminConfig.supported_assets),
     });
 
     try {
@@ -1078,19 +1059,16 @@ describe("server", () => {
       apiKey: "admin-secret",
     });
     const app = await buildServer(adminConfig, mockSigner(), {
-      assetPolicyStore: new MemoryAssetPolicyStore(
-        [
-          ...adminConfig.supported_assets,
-          {
-            address: SECONDARY_ACCEPTED_ASSET,
-            name: "ravenETH",
-            market_rate_num: 3,
-            market_rate_den: 1000,
-            fee_bips: 25,
-          },
-        ],
-        adminConfig.accepted_asset_address,
-      ),
+      assetPolicyStore: new MemoryAssetPolicyStore([
+        ...adminConfig.supported_assets,
+        {
+          address: SECONDARY_ACCEPTED_ASSET,
+          name: "ravenETH",
+          market_rate_num: 3,
+          market_rate_den: 1000,
+          fee_bips: 25,
+        },
+      ]),
     });
 
     try {
