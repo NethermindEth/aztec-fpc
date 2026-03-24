@@ -3,12 +3,10 @@ import path from "node:path";
 import { z } from "zod";
 import {
   aztecAddress,
-  decimalUint,
   ethAddress,
   fieldValue,
   httpUrl,
   isoTimestamp,
-  nonNegativeSafeInt,
   positiveSafeInt,
   txHash,
 } from "./manifest-types.js";
@@ -46,42 +44,15 @@ const deployManifestSchema = z.object({
   contracts: z.object({
     accepted_asset: aztecAddress,
     fpc: aztecAddress,
-    faucet: aztecAddress.optional(),
-    counter: aztecAddress.optional(),
-    bridge: aztecAddress.optional(),
   }),
-  l1_contracts: z
-    .object({
-      token_portal: ethAddress,
-      erc20: ethAddress,
-    })
-    .optional(),
-  fpc_artifact: z
-    .object({
-      name: z.literal("FPCMultiAsset"),
-      path: z.string().min(1),
-    })
-    .optional(),
   operator: z.object({
     address: aztecAddress,
     pubkey_x: fieldValue,
     pubkey_y: fieldValue,
   }),
   tx_hashes: z.object({
-    accepted_asset_deploy: txHash.nullable(),
-    fpc_deploy: txHash.nullable(),
-    faucet_deploy: txHash.nullable().optional(),
-    counter_deploy: txHash.nullable().optional(),
-    bridge_deploy: txHash.nullable().optional(),
+    fpc_deploy: txHash,
   }),
-  faucet_config: z
-    .object({
-      drip_amount: decimalUint,
-      cooldown_seconds: nonNegativeSafeInt,
-      initial_supply: decimalUint,
-    })
-    .optional(),
-  payment_mode: z.string().min(1).optional(),
 });
 
 // ── Derived type ────────────────────────────────────────────────────

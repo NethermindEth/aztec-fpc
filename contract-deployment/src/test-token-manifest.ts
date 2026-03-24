@@ -7,6 +7,7 @@ import {
   ethAddress,
   isoTimestamp,
   nonNegativeSafeInt,
+  txHash,
 } from "./manifest-types.js";
 
 // ── Schema ──────────────────────────────────────────────────────────
@@ -28,6 +29,14 @@ const testTokenManifestSchema = z.object({
     drip_amount: decimalUint,
     cooldown_seconds: nonNegativeSafeInt,
     initial_supply: decimalUint,
+  }),
+  tx_hashes: z.object({
+    token_deploy: txHash,
+    bridge_deploy: txHash,
+    counter_deploy: txHash,
+    faucet_deploy: txHash,
+    l1_erc20_deploy: txHash,
+    l1_token_portal_deploy: txHash,
   }),
 });
 

@@ -41,7 +41,6 @@ function buildSelfCheckFixture() {
     contracts: {
       accepted_asset: "0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
       fpc: "0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
-      counter: "0x0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
     },
     operator: {
       address: "0x0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
@@ -49,11 +48,8 @@ function buildSelfCheckFixture() {
       pubkey_y: "987654321",
     },
     tx_hashes: {
-      accepted_asset_deploy: "0x1111111111111111111111111111111111111111111111111111111111111111",
       fpc_deploy: "0x2222222222222222222222222222222222222222222222222222222222222222",
-      counter_deploy: "0x3333333333333333333333333333333333333333333333333333333333333333",
     },
-    payment_mode: "fpc-sponsored",
   };
 }
 

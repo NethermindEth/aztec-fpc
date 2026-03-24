@@ -219,17 +219,31 @@ export async function deployTestToken(opts: {
 
   // ── Phase 2: L2 batch 1 — bridge deploy + set_config (4 units) ────
   const bridgeContract = Contract.at(bridgeAddress, bridgeArtifact, opts.wallet);
-  await deployContract(opts.wallet, bridgeArtifact, bridgeDeploy, opts.deployOpts, [
-    bridgeContract.methods.set_config(tokenAddress, EthAddress.fromString(l1TokenPortalAddress)),
-  ]);
+  const bridgeDeployTxHash = await deployContract(
+    opts.wallet,
+    bridgeArtifact,
+    bridgeDeploy,
+    opts.deployOpts,
+    [bridgeContract.methods.set_config(tokenAddress, EthAddress.fromString(l1TokenPortalAddress))],
+  );
   logger.info("[deploy-fpc-devnet] L2 batch 1 completed (bridge deploy + set_config)");
 
   // ── Phase 3: L2 batch 2 — token deploy ─────────────────────────────
-  await deployContract(opts.wallet, tokenArtifact, tokenDeploy, opts.deployOpts);
+  const tokenDeployTxHash = await deployContract(
+    opts.wallet,
+    tokenArtifact,
+    tokenDeploy,
+    opts.deployOpts,
+  );
   logger.info("[deploy-fpc-devnet] L2 batch 2 completed (token deploy)");
 
   // ── Phase 4: L2 batch 3 — counter deploy ───────────────────────────
-  await deployContract(opts.wallet, counterArtifact, counterDeploy, opts.deployOpts);
+  const counterDeployTxHash = await deployContract(
+    opts.wallet,
+    counterArtifact,
+    counterDeploy,
+    opts.deployOpts,
+  );
   logger.info("[deploy-fpc-devnet] L2 batch 3 completed (counter deploy)");
 
   // ── Phase 5: Wait for L1→L2 message ───────────────────────────────
@@ -240,14 +254,20 @@ export async function deployTestToken(opts: {
   logger.info("[deploy-fpc-devnet] L1→L2 message ready");
 
   // ── Phase 6: L2 batch 4 — faucet deploy + claim_public (4 units) ──
-  await deployContract(opts.wallet, faucetArtifact, faucetDeploy, opts.deployOpts, [
-    bridgeContract.methods.claim_public(
-      faucetAddress,
-      faucetBridgeClaim.claimAmount,
-      faucetBridgeClaim.claimSecret,
-      faucetBridgeClaim.messageLeafIndex,
-    ),
-  ]);
+  const faucetDeployTxHash = await deployContract(
+    opts.wallet,
+    faucetArtifact,
+    faucetDeploy,
+    opts.deployOpts,
+    [
+      bridgeContract.methods.claim_public(
+        faucetAddress,
+        faucetBridgeClaim.claimAmount,
+        faucetBridgeClaim.claimSecret,
+        faucetBridgeClaim.messageLeafIndex,
+      ),
+    ],
+  );
   logger.info(
     `[deploy-fpc-devnet] L2 batch 4 completed (faucet deploy + claim_public, ${faucetConfig.initialSupply} tokens)`,
   );
@@ -269,6 +289,14 @@ export async function deployTestToken(opts: {
       drip_amount: faucetConfig.dripAmount.toString(),
       cooldown_seconds: faucetConfig.cooldownSeconds,
       initial_supply: faucetConfig.initialSupply.toString(),
+    },
+    tx_hashes: {
+      token_deploy: tokenDeployTxHash,
+      bridge_deploy: bridgeDeployTxHash,
+      counter_deploy: counterDeployTxHash,
+      faucet_deploy: faucetDeployTxHash,
+      l1_erc20_deploy: l1Erc20Hash,
+      l1_token_portal_deploy: l1PortalHash,
     },
   };
   writeTestTokenManifest(opts.outPath, manifest);
