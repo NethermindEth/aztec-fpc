@@ -19,6 +19,7 @@ type AlwaysRevertConfig = {
   nodeUrl: string;
   attestationUrl: string;
   manifestPath: string;
+  testTokenManifestPath: string;
   operatorSecretKey: Fr;
   proverEnabled: boolean;
   messageTimeoutSeconds: number;
@@ -73,6 +74,7 @@ function getConfig(): AlwaysRevertConfig {
     nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
     attestationUrl: requireEnv("FPC_ATTESTATION_URL"),
     manifestPath: requireEnv("FPC_COLD_START_MANIFEST"),
+    testTokenManifestPath: requireEnv("FPC_TEST_TOKEN_MANIFEST"),
     operatorSecretKey: Fr.fromHexString(requireEnv("FPC_OPERATOR_SECRET_KEY")),
     proverEnabled:
       process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
@@ -88,6 +90,7 @@ async function setupFromManifest(config: AlwaysRevertConfig): Promise<SetupResul
     {
       nodeUrl: config.nodeUrl,
       manifestPath: config.manifestPath,
+      testTokenManifestPath: config.testTokenManifestPath,
       proverEnabled: config.proverEnabled,
       messageTimeoutSeconds: config.messageTimeoutSeconds,
     },
@@ -96,12 +99,6 @@ async function setupFromManifest(config: AlwaysRevertConfig): Promise<SetupResul
   );
 
   const { token, fpc, counter, faucet } = contracts;
-  if (!counter) {
-    throw new Error("Manifest missing contracts.counter (required for always-revert)");
-  }
-  if (!faucet) {
-    throw new Error("Manifest missing contracts.faucet (required for always-revert)");
-  }
 
   const fpcClient = new FpcClient({
     fpcAddress: fpc.address,

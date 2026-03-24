@@ -58,6 +58,7 @@ services:
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
       FPC_DATA_DIR: "/app/data"
+      FPC_TEST_TOKEN_OUT: "/app/data/test-token-manifest.json"
     depends_on:
       aztec-node:
         condition: service_healthy
@@ -156,6 +157,7 @@ services:
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_TOPUP_OPS_URL: "http://topup:3001"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/test-token-manifest.json"
     depends_on:
       block-producer:
         condition: service_started
@@ -178,6 +180,7 @@ services:
       L1_RPC_URL: "http://anvil:8545"
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/test-token-manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
@@ -201,6 +204,7 @@ services:
     environment:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/test-token-manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
     depends_on:
@@ -223,6 +227,7 @@ services:
       L1_RPC_URL: "http://anvil:8545"
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/test-token-manifest.json"
       FPC_CONCURRENT_N: "${FPC_CONCURRENT_N:-20}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
@@ -247,6 +252,7 @@ services:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/test-token-manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
     depends_on:
@@ -270,6 +276,7 @@ services:
       AZTEC_NODE_URL: "http://aztec-node:8080"
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/test-token-manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY:-0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
     depends_on:
