@@ -481,8 +481,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  const paymentMode = args.sponsoredFpcAddress ? "fpc-sponsored" : "fee_juice";
-
   // --- JS API wallet setup for contract deployments ---
   const wallet = await EmbeddedWallet.create(node, {
     pxeConfig: { proverEnabled: args.proverEnabled },
@@ -563,7 +561,7 @@ async function main(): Promise<void> {
     operatorIdentity.pubkeyY,
   ]);
   const fpcAddress = (await fpcDeployMethod.getInstance()).address.toString();
-  await deployContract(wallet, fpcArtifact, fpcDeployMethod, deployOpts);
+  const fpcDeployTxHash = await deployContract(wallet, fpcArtifact, fpcDeployMethod, deployOpts);
   pinoLogger.info(`[deploy-fpc-devnet] fpc deployed. address=${fpcAddress}`);
 
   const feeAssetHandlerAddress = nodeInfo.l1ContractAddresses.feeAssetHandlerAddress;
@@ -591,23 +589,6 @@ async function main(): Promise<void> {
     contracts: {
       accepted_asset: acceptedAssetAddress,
       fpc: AztecAddress.fromString(fpcAddress),
-      ...(testTokenManifest
-        ? {
-            faucet: testTokenManifest.contracts.faucet,
-            counter: testTokenManifest.contracts.counter,
-            bridge: testTokenManifest.contracts.bridge,
-          }
-        : {}),
-    },
-    ...(testTokenManifest
-      ? {
-          l1_contracts: testTokenManifest.l1_contracts,
-          faucet_config: testTokenManifest.faucet_config,
-        }
-      : {}),
-    fpc_artifact: {
-      name: "FPCMultiAsset",
-      path: fpcArtifactPath,
     },
     operator: {
       address: AztecAddress.fromString(operatorIdentity.address),
@@ -615,12 +596,8 @@ async function main(): Promise<void> {
       pubkey_y: Fr.fromHexString(operatorIdentity.pubkeyY),
     },
     tx_hashes: {
-      accepted_asset_deploy: null,
-      fpc_deploy: null,
-      counter_deploy: null,
-      bridge_deploy: null,
+      fpc_deploy: fpcDeployTxHash,
     },
-    payment_mode: paymentMode,
   };
   writeDeployManifest(args.out, manifest);
 
@@ -628,7 +605,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
   pinoLogger.info(
-    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} faucet=${manifest.contracts.faucet ?? "n/a"} counter=${manifest.contracts.counter ?? "n/a"} bridge=${manifest.contracts.bridge ?? "n/a"} variant=${fpcArtifact.name}`,
+    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${fpcArtifact.name}`,
   );
 
   process.exit(0);

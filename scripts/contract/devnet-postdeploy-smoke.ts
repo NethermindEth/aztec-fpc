@@ -6,12 +6,14 @@ import {
   type DeployManifest,
   readDeployManifest,
 } from "@aztec-fpc/contract-deployment/src/manifest.ts";
+import { readTestTokenManifest } from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
 import pino from "pino";
 
 const pinoLogger = pino();
 
 type CliArgs = {
   manifestPath: string;
+  testTokenManifestPath: string;
   l1RpcUrl: string;
   operatorSecretKey: string | null;
   l1OperatorPrivateKey: string | null;
@@ -279,6 +281,9 @@ function parseHex32(value: string, fieldName: string): string {
 
 function parseCliArgs(argv: string[]): CliParseResult {
   let manifestPath = readEnvString("FPC_DEVNET_SMOKE_MANIFEST") ?? DEFAULT_MANIFEST_PATH;
+  const testTokenManifestPath =
+    readEnvString("FPC_TEST_TOKEN_MANIFEST") ??
+    path.join(path.dirname(manifestPath), "test-token-manifest.json");
   let l1RpcUrlRaw =
     readEnvString("FPC_DEVNET_L1_RPC_URL") ??
     readEnvString("L1_RPC_URL") ??
@@ -400,6 +405,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
     kind: "args",
     args: {
       manifestPath: path.resolve(manifestPath),
+      testTokenManifestPath: path.resolve(testTokenManifestPath),
       l1RpcUrl: parseHttpUrl(l1RpcUrlRaw, "l1-rpc-url"),
       operatorSecretKey: operatorSecretKey
         ? parseHex32(operatorSecretKey, "operator-secret-key")
@@ -765,6 +771,7 @@ async function topUpFeePayer(params: {
 async function runSmoke(args: CliArgs): Promise<void> {
   const deps = await loadDeps();
   const manifest = parseManifestFromDisk(args.manifestPath);
+  const testTokenManifest = readTestTokenManifest(args.testTokenManifestPath);
 
   if (!existsSync(FPC_ARTIFACT_PATH)) {
     throw new CliError(`FPC artifact not found: ${FPC_ARTIFACT_PATH}`);
@@ -862,16 +869,11 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const fpc = deps.Contract.at(fpcAddress, selectedFpcArtifact, wallet);
 
   // Register faucet contract for dripping tokens (bridge is the minter, not operator)
-  if (!manifest.contracts.faucet) {
-    throw new CliError(
-      "Manifest missing contracts.faucet (required for token funding in smoke test)",
-    );
-  }
-  const faucetAddress = manifest.contracts.faucet;
+  const faucetAddress = testTokenManifest.contracts.faucet;
   const faucetArtifact = loadArtifact(deps, path.join(REPO_ROOT, "target", "faucet-Faucet.json"));
   const faucetInstance = await node.getContract(faucetAddress);
   if (!faucetInstance) {
-    throw new CliError(`Faucet contract not found on node at ${manifest.contracts.faucet}`);
+    throw new CliError(`Faucet contract not found on node at ${faucetAddress}`);
   }
   await wallet.registerContract(faucetInstance, faucetArtifact);
   const faucet = deps.Contract.at(faucetAddress, faucetArtifact, wallet);

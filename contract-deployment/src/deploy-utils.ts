@@ -72,7 +72,7 @@ export async function deployContract(
   deployMethod: DeployMethod<Contract>,
   sendOptions: DeployOptions,
   extraCalls?: ContractFunctionInteraction[],
-): Promise<void> {
+): Promise<string> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const opts = { ...sendOptions };
@@ -86,12 +86,12 @@ export async function deployContract(
 
       if (extraCalls && extraCalls.length > 0) {
         const batch = new BatchCall(wallet, [deployMethod, ...extraCalls]);
-        await batch.send(opts);
-        return;
+        const { receipt } = await batch.send(opts);
+        return receipt.txHash.toString();
       }
 
-      await deployMethod.send(opts);
-      return;
+      const { receipt } = await deployMethod.send(opts);
+      return receipt.txHash.toString();
     } catch (error) {
       if (isClassPublicationRace(error) && attempt < MAX_RETRIES) {
         pinoLogger.info(

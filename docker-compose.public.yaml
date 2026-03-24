@@ -24,6 +24,7 @@ services:
       - ./deployments/${DEPLOYMENT}:/app/data:ro
     environment:
       FPC_DEVNET_SMOKE_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/test-token-manifest.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       L1_OPERATOR_PRIVATE_KEY: "${FPC_L1_DEPLOYER_KEY}"
     env_file:
