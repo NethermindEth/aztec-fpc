@@ -2,14 +2,14 @@ import { rename } from "node:fs/promises";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
-import type { FeeJuiceBalanceReader } from "./monitor.js";
+import type { GetFeeJuiceBalance } from "./monitor.js";
 import type { BridgeStateStore, PersistedBridgeSubmission } from "./state.js";
 
 export type ReconciliationOutcome = "none" | "confirmed" | "timeout" | "aborted";
 
 export interface ReconcileBridgeStateOptions {
   stateStore: BridgeStateStore;
-  balanceReader: FeeJuiceBalanceReader;
+  getBalance: GetFeeJuiceBalance;
   node: Pick<AztecNode, "getBlock" | "getL1ToL2MessageCheckpoint">;
   fpcAddress: AztecAddress;
   timeoutMs: number;
@@ -81,7 +81,7 @@ export async function reconcilePersistedBridgeState(
   );
 
   const result = await deps.confirmBridge({
-    balanceReader: options.balanceReader,
+    getBalance: options.getBalance,
     fpcAddress: options.fpcAddress,
     baselineBalance,
     timeoutMs: options.timeoutMs,

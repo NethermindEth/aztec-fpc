@@ -101,17 +101,17 @@ export async function bridgeFeeJuice(
   const deps: BridgeDeps = { ...DEFAULT_BRIDGE_DEPS, ...depsOverride };
   const chain = extractChain({ chains: deps.chains as readonly Chain[], id: l1ChainId });
   const logger = deps.createLogger();
+  const extendedClient = deps.createExtendedL1Client(
+    [l1RpcUrl],
+    privateKey as Hex,
+    chain,
+  ) as ExtendedWalletClient;
+  const portalManager = await deps.createPortalManager(node, extendedClient, logger);
   let lastError: unknown;
   let claim: L2AmountClaim | undefined;
 
   for (let attempt = 1; attempt <= MAX_NONCE_RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const extendedClient = deps.createExtendedL1Client(
-        [l1RpcUrl],
-        privateKey as Hex,
-        chain,
-      ) as ExtendedWalletClient;
-      const portalManager = await deps.createPortalManager(node, extendedClient, logger);
       claim = await portalManager.bridgeTokensPublic(fpcL2Address, amount);
       break;
     } catch (error) {
