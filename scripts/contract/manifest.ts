@@ -39,7 +39,6 @@ function buildSelfCheckFixture() {
     },
     deployer_address: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
     contracts: {
-      accepted_asset: "0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
       fpc: "0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
     },
     operator: {

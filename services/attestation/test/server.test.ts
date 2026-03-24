@@ -33,8 +33,6 @@ const TEST_CONFIG: Config = {
   aztec_node_url: "http://localhost:8080",
   quote_validity_seconds: 300,
   port: 3000,
-  accepted_asset_address: DEFAULT_ACCEPTED_ASSET,
-  accepted_asset_name: "humanUSDC",
   supported_assets: [
     {
       address: DEFAULT_ACCEPTED_ASSET,
@@ -44,9 +42,6 @@ const TEST_CONFIG: Config = {
       fee_bips: 200,
     },
   ],
-  market_rate_num: 1,
-  market_rate_den: 1000,
-  fee_bips: 200,
   operator_secret_provider: "auto",
   operator_account_salt: undefined,
   operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001",
@@ -178,8 +173,8 @@ describe("server", () => {
         },
         supported_assets: [
           {
-            address: TEST_CONFIG.accepted_asset_address,
-            name: TEST_CONFIG.accepted_asset_name,
+            address: TEST_CONFIG.supported_assets[0].address,
+            name: TEST_CONFIG.supported_assets[0].name,
           },
         ],
       });
@@ -339,7 +334,7 @@ describe("server", () => {
         rate_num?: string;
         rate_den?: string;
       };
-      assert.equal(body.accepted_asset, TEST_CONFIG.accepted_asset_address);
+      assert.equal(body.accepted_asset, TEST_CONFIG.supported_assets[0].address);
       assert.equal(body.fj_amount, VALID_FJ_AMOUNT);
       assert.equal(body.aa_payment_amount, "1020");
       assert.equal(body.signature, "0xabc123");
@@ -352,7 +347,7 @@ describe("server", () => {
 
       const expectedHash = await computeQuoteHash({
         fpcAddress: AztecAddress.fromString(TEST_CONFIG.fpc_address),
-        acceptedAsset: AztecAddress.fromString(TEST_CONFIG.accepted_asset_address),
+        acceptedAsset: AztecAddress.fromString(TEST_CONFIG.supported_assets[0].address),
         fjFeeAmount: BigInt(VALID_FJ_AMOUNT),
         aaPaymentAmount: 1020n,
         validUntil,

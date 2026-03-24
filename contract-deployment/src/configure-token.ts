@@ -32,11 +32,15 @@ const masterConfigTokensSchema = z.object({
 
 type TokenConfig = z.infer<typeof tokenConfigSchema>;
 
-type CliArgs = {
+type RegistrationCtx = {
   attestationUrl: string;
   adminApiKey: string;
-  configPath: string;
   healthTimeoutMs: number;
+};
+
+type CliArgs = {
+  configPath: string;
+  registration: RegistrationCtx | null;
 };
 
 // ── CLI parsing ──────────────────────────────────────────────────────
@@ -55,6 +59,7 @@ function usage(): string {
     "  --admin-api-key <key>        Admin API key [env: ADMIN_API_KEY]",
     "  --config <path>              Master config path [env: FPC_MASTER_CONFIG, default: $FPC_DATA_DIR/fpc-config.yaml]",
     "  --health-timeout-ms <ms>     Attestation health check timeout (default: 30000) [env: FPC_HEALTH_TIMEOUT_MS]",
+    "  --skip-registration          Deploy tokens only, skip attestation registration [env: FPC_SKIP_REGISTRATION=1|true]",
     "  --help, -h                   Show this help",
   ].join("\n");
 }
@@ -73,6 +78,8 @@ function parseCliArgs(argv: string[]): CliArgs | null {
   let adminApiKey = process.env.ADMIN_API_KEY ?? "";
   let configPath = process.env.FPC_MASTER_CONFIG ?? path.join(dataDir, "fpc-config.yaml");
   let healthTimeoutMs = Number(process.env.FPC_HEALTH_TIMEOUT_MS ?? "30000");
+  let skipRegistration =
+    process.env.FPC_SKIP_REGISTRATION === "1" || process.env.FPC_SKIP_REGISTRATION === "true";
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -89,6 +96,9 @@ function parseCliArgs(argv: string[]): CliArgs | null {
       case "--health-timeout-ms":
         healthTimeoutMs = Number(argv[++i]);
         break;
+      case "--skip-registration":
+        skipRegistration = true;
+        break;
       case "--help":
       case "-h":
         pinoLogger.info(usage());
@@ -98,14 +108,20 @@ function parseCliArgs(argv: string[]): CliArgs | null {
     }
   }
 
-  if (!attestationUrl) throw new Error("--attestation-url or FPC_ATTESTATION_URL is required");
-  if (!adminApiKey) throw new Error("--admin-api-key or ADMIN_API_KEY is required");
+  let registration: RegistrationCtx | null = null;
+  if (!skipRegistration) {
+    if (!attestationUrl) throw new Error("--attestation-url or FPC_ATTESTATION_URL is required");
+    if (!adminApiKey) throw new Error("--admin-api-key or ADMIN_API_KEY is required");
+    registration = {
+      attestationUrl: attestationUrl.replace(/\/$/, ""),
+      adminApiKey,
+      healthTimeoutMs,
+    };
+  }
 
   return {
-    attestationUrl: attestationUrl.replace(/\/$/, ""),
-    adminApiKey,
     configPath: path.resolve(configPath),
-    healthTimeoutMs,
+    registration,
   };
 }
 
@@ -216,7 +232,12 @@ async function main(): Promise<void> {
   const tokens = readTokenConfigs(args.configPath);
   pinoLogger.info(`[${LABEL}] loaded ${tokens.length} token(s) from ${args.configPath}`);
 
-  await waitForAttestationHealth(args.attestationUrl, args.healthTimeoutMs);
+  if (args.registration) {
+    await waitForAttestationHealth(
+      args.registration.attestationUrl,
+      args.registration.healthTimeoutMs,
+    );
+  }
 
   const dataDir = process.env.FPC_DATA_DIR ?? "./deployments";
   let deployDeps: TestTokenDeployDeps | undefined;
@@ -238,7 +259,14 @@ async function main(): Promise<void> {
       address = manifest.contracts.token;
       pinoLogger.info(`[${LABEL}] token[${i}] "${token.name}" — deployed test token at ${address}`);
     }
-    await registerAssetPolicy(args.attestationUrl, args.adminApiKey, address, token);
+    if (args.registration) {
+      await registerAssetPolicy(
+        args.registration.attestationUrl,
+        args.registration.adminApiKey,
+        address,
+        token,
+      );
+    }
   }
 
   pinoLogger.info(`[${LABEL}] done — ${tokens.length} token(s) configured`);

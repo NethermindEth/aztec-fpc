@@ -5,6 +5,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { Point } from "@aztec/foundation/curves/grumpkin";
+import { readTestTokenManifest } from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
 import { sleep } from "../common/managed-process.ts";
 import { readManifest, waitForFpcFeeJuice } from "../common/setup-helpers.ts";
 
@@ -26,6 +27,7 @@ type SmokeConfig = {
   attestationBaseUrl: string;
   topupOpsBaseUrl: string;
   manifestPath: string;
+  testTokenManifestPath: string;
   httpTimeoutMs: number;
   messageTimeoutSeconds: number;
   daGasLimit: number;
@@ -93,6 +95,7 @@ function getConfig(): SmokeConfig {
     attestationBaseUrl: requireEnvOrThrow("FPC_ATTESTATION_URL").replace(/\/$/, ""),
     topupOpsBaseUrl: requireEnvOrThrow("FPC_TOPUP_OPS_URL").replace(/\/$/, ""),
     manifestPath: requireEnvOrThrow("FPC_COLD_START_MANIFEST"),
+    testTokenManifestPath: requireEnvOrThrow("FPC_TEST_TOKEN_MANIFEST"),
     httpTimeoutMs: readEnvNumber("FPC_SMOKE_HTTP_TIMEOUT_MS", 30_000),
     messageTimeoutSeconds: readEnvNumber("FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS", 120),
     daGasLimit: readEnvNumber("FPC_SMOKE_DA_GAS_LIMIT", 200_000),
@@ -349,9 +352,10 @@ async function verifyQuoteSignature(
 
 async function setupFromConfig(config: SmokeConfig): Promise<SmokeRuntimeResult> {
   const manifest = readManifest(config.manifestPath);
+  const testTokenManifest = readTestTokenManifest(config.testTokenManifestPath);
 
   const fpcAddress = manifest.contracts.fpc;
-  const tokenAddress = manifest.contracts.accepted_asset;
+  const tokenAddress = testTokenManifest.contracts.token;
 
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNode(node);

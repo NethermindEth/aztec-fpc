@@ -848,14 +848,14 @@ async function runSmoke(args: CliArgs): Promise<void> {
   );
   const selectedFpcArtifact = loadArtifact(deps, FPC_ARTIFACT_PATH);
 
-  const tokenAddress = manifest.contracts.accepted_asset;
+  const tokenAddress = testTokenManifest.contracts.token;
   const fpcAddress = manifest.contracts.fpc;
 
   // Contract.at() no longer auto-registers with PXE (SDK breaking change).
   // Fetch on-chain instances and register explicitly before use.
   const tokenInstance = await node.getContract(tokenAddress);
   if (!tokenInstance) {
-    throw new CliError(`Token contract not found on node at ${manifest.contracts.accepted_asset}`);
+    throw new CliError(`Token contract not found on node at ${tokenAddress}`);
   }
   await wallet.registerContract(tokenInstance, tokenArtifact);
 
@@ -894,7 +894,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
     `[devnet-postdeploy-smoke] manifest=${args.manifestPath} node_url=${manifest.network.node_url}`,
   );
   pinoLogger.info(
-    `[devnet-postdeploy-smoke] contracts accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${"FPCMultiAsset"}`,
+    `[devnet-postdeploy-smoke] contracts token=${tokenAddress} fpc=${manifest.contracts.fpc} variant=${"FPCMultiAsset"}`,
   );
   pinoLogger.info(`[devnet-postdeploy-smoke] topup target fpc=${fpcTopupAmount}`);
 

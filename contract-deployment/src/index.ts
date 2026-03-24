@@ -10,28 +10,20 @@ import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveKeys, deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
-import { createPublicClient, http } from "viem";
 import { deployContract, loadArtifact, REQUIRED_ARTIFACTS } from "./deploy-utils.js";
 import { type DeployManifest, writeDeployManifest } from "./manifest.js";
-import { deployTestToken } from "./test-token.js";
-import type { TestTokenManifest } from "./test-token-manifest.js";
 
 const pinoLogger = pino();
 
 type CliArgs = {
   nodeUrl: string;
-  l1RpcUrl: string | null;
-  validateTopupPath: boolean;
   sponsoredFpcAddress: string | null;
   deployerSecretKey: string | null;
   deployerSecretKeyRef: string | null;
   operatorSecretKey: string | null;
   operatorSecretKeyRef: string | null;
   operator: string | null;
-  acceptedAsset: string | null;
-  l1DeployerKey: string | null;
   out: string;
-  testTokenOut: string;
   proverEnabled: boolean;
   preflightOnly: boolean;
 };
@@ -79,24 +71,19 @@ function usage(): string {
     "  --deployer-secret-key-ref <ref> Deployer key reference [env: FPC_DEPLOYER_SECRET_KEY_REF]",
     "  --operator-secret-key <hex32>    Operator secret key (default: deployer key) [env: FPC_OPERATOR_SECRET_KEY]",
     "  --operator-secret-key-ref <ref>  Operator key reference [env: FPC_OPERATOR_SECRET_KEY_REF]",
-    "  --l1-deployer-key <hex32>        L1 deployer private key for bridge contracts [env: FPC_L1_DEPLOYER_KEY]",
     "",
     "Network:",
     `  --node-url <url>                 Aztec node URL (default: ${DEVNET_DEFAULT_NODE_URL}) [env: AZTEC_NODE_URL]`,
-    "  --l1-rpc-url <url>               L1 RPC URL [env: L1_RPC_URL]",
     "",
     "Options:",
     "  --operator <aztec_address>       Operator address (default: derived from key) [env: FPC_OPERATOR]",
     "  --sponsored-fpc-address <addr>   Use sponsored FPC payment mode [env: FPC_SPONSORED_FPC_ADDRESS]",
-    "  --accepted-asset <addr>          Reuse existing token [env: FPC_ACCEPTED_ASSET]",
-    "  --validate-topup-path            Enforce L1 chain-id matching [env: FPC_VALIDATE_TOPUP_PATH=1]",
     "  --pxe-prover-enabled <bool>      Enable PXE prover (default: true) [env: PXE_PROVER_ENABLED]",
     "  --preflight-only                 Run checks only, do not deploy [env: FPC_PREFLIGHT_ONLY=1]",
     "",
     "Outputs:",
     `  --data-dir <dir>                 Data directory for artifacts (default: ${DEVNET_DEFAULT_DATA_DIR}) [env: FPC_DATA_DIR]`,
     "  --out <path.json>                Output manifest path (default: $FPC_DATA_DIR/manifest.json) [env: FPC_OUT]",
-    "  --test-token-out <path.json>     Test token manifest path (default: $FPC_DATA_DIR/test-token-manifest.json) [env: FPC_TEST_TOKEN_OUT]",
     "",
     "  --help, -h                       Show this help",
     "",
@@ -106,7 +93,6 @@ function usage(): string {
     "    contracts are deployed with fee juice payment.",
     "  - --operator is optional; if omitted, the operator address is derived from --operator-secret-key.",
     "    If both are provided, they must match.",
-    "  - --validate-topup-path requires --l1-rpc-url and enforces L1 chain-id matching.",
   ].join("\n");
 }
 
@@ -181,22 +167,15 @@ function parseSecretPair(
 
 function parseCliArgs(argv: string[]): CliParseResult {
   let nodeUrl: string = process.env.AZTEC_NODE_URL ?? DEVNET_DEFAULT_NODE_URL;
-  let l1RpcUrl: string | null = process.env.L1_RPC_URL ?? null;
-  let validateTopupPath = process.env.FPC_VALIDATE_TOPUP_PATH === "1";
   let sponsoredFpcAddress: string | null = process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
   let deployerSecretKey: string | null = process.env.FPC_DEPLOYER_SECRET_KEY ?? null;
   let deployerSecretKeyRef: string | null = process.env.FPC_DEPLOYER_SECRET_KEY_REF ?? null;
   let operatorSecretKey: string | null = process.env.FPC_OPERATOR_SECRET_KEY ?? null;
   let operatorSecretKeyRef: string | null = process.env.FPC_OPERATOR_SECRET_KEY_REF ?? null;
   let operator: string | null = process.env.FPC_OPERATOR ?? null;
-  let l1DeployerKey: string | null = process.env.FPC_L1_DEPLOYER_KEY ?? null;
-  let acceptedAsset: string | null = process.env.FPC_ACCEPTED_ASSET ?? null;
   let dataDir: string = process.env.FPC_DATA_DIR ?? DEVNET_DEFAULT_DATA_DIR;
   let outExplicit = !!process.env.FPC_OUT;
   let out: string = process.env.FPC_OUT ?? path.join(dataDir, "manifest.json");
-  let testTokenOutExplicit = !!process.env.FPC_TEST_TOKEN_OUT;
-  let testTokenOut: string =
-    process.env.FPC_TEST_TOKEN_OUT ?? path.join(dataDir, "test-token-manifest.json");
   let proverEnabled = process.env.PXE_PROVER_ENABLED
     ? parseBooleanFlag(process.env.PXE_PROVER_ENABLED, "PXE_PROVER_ENABLED")
     : true;
@@ -208,17 +187,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
       case "--node-url":
         nodeUrl = nextArg(argv, i, arg);
         i += 1;
-        break;
-      case "--l1-rpc-url":
-        l1RpcUrl = nextArg(argv, i, arg);
-        i += 1;
-        break;
-      case "--l1-deployer-key":
-        l1DeployerKey = nextArg(argv, i, arg);
-        i += 1;
-        break;
-      case "--validate-topup-path":
-        validateTopupPath = true;
         break;
       case "--sponsored-fpc-address":
         sponsoredFpcAddress = nextArg(argv, i, arg);
@@ -244,10 +212,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
         operator = nextArg(argv, i, arg);
         i += 1;
         break;
-      case "--accepted-asset":
-        acceptedAsset = nextArg(argv, i, arg);
-        i += 1;
-        break;
       case "--data-dir":
         dataDir = nextArg(argv, i, arg);
         i += 1;
@@ -255,11 +219,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
       case "--out":
         out = nextArg(argv, i, arg);
         outExplicit = true;
-        i += 1;
-        break;
-      case "--test-token-out":
-        testTokenOut = nextArg(argv, i, arg);
-        testTokenOutExplicit = true;
         i += 1;
         break;
       case "--pxe-prover-enabled":
@@ -280,13 +239,6 @@ function parseCliArgs(argv: string[]): CliParseResult {
 
   if (!outExplicit) {
     out = path.join(dataDir, "manifest.json");
-  }
-  if (!testTokenOutExplicit) {
-    testTokenOut = path.join(dataDir, "test-token-manifest.json");
-  }
-
-  if (validateTopupPath && !l1RpcUrl) {
-    throw new CliError("Topup-path validation requested, but --l1-rpc-url is missing");
   }
 
   const parsedDeployer = parseSecretPair(
@@ -314,15 +266,12 @@ function parseCliArgs(argv: string[]): CliParseResult {
   }
 
   const parsedNodeUrl = parseHttpUrl(nodeUrl, "--node-url");
-  const parsedL1Rpc = l1RpcUrl ? parseHttpUrl(l1RpcUrl, "--l1-rpc-url") : null;
   const parsedOperator = operator !== null ? parseAztecAddress(operator, "--operator") : null;
 
   return {
     kind: "args",
     args: {
       nodeUrl: parsedNodeUrl,
-      l1RpcUrl: parsedL1Rpc,
-      validateTopupPath,
       sponsoredFpcAddress: sponsoredFpcAddress
         ? parseAztecAddress(sponsoredFpcAddress, "--sponsored-fpc-address")
         : null,
@@ -339,10 +288,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
         ? parseNonEmptyString(parsedOperatorSecret.ref, "--operator-secret-key-ref")
         : null,
       operator: parsedOperator,
-      acceptedAsset: acceptedAsset ? parseAztecAddress(acceptedAsset, "--accepted-asset") : null,
-      l1DeployerKey: l1DeployerKey ? parseHex32(l1DeployerKey, "--l1-deployer-key") : null,
       out,
-      testTokenOut,
       proverEnabled,
       preflightOnly,
     },
@@ -363,30 +309,10 @@ async function deriveOperatorIdentity(operatorSecretKey: string): Promise<Operat
   };
 }
 
-function assertRequiredArtifactsExistForDevnet(
-  fpcArtifactPath: string,
-  deployFaucet: boolean,
-): void {
-  const missing: string[] = [];
+function assertRequiredArtifactsExistForDevnet(fpcArtifactPath: string): void {
   if (!existsSync(fpcArtifactPath)) {
-    missing.push(fpcArtifactPath);
-  }
-  if (!existsSync(REQUIRED_ARTIFACTS.token)) {
-    missing.push(REQUIRED_ARTIFACTS.token);
-  }
-  if (!existsSync(REQUIRED_ARTIFACTS.tokenBridge)) {
-    missing.push(REQUIRED_ARTIFACTS.tokenBridge);
-  }
-  if (deployFaucet && !existsSync(REQUIRED_ARTIFACTS.faucet)) {
-    missing.push(REQUIRED_ARTIFACTS.faucet);
-  }
-  if (!existsSync(REQUIRED_ARTIFACTS.counter)) {
-    missing.push(REQUIRED_ARTIFACTS.counter);
-  }
-  if (missing.length > 0) {
-    const formatted = missing.map((entry) => `  - ${entry}`).join("\n");
     throw new CliError(
-      `Artifact preflight failed: required compiled artifacts are missing.\n${formatted}\nRun 'aztec compile --workspace --force' and retry.`,
+      `Artifact preflight failed: FPC artifact not found at ${fpcArtifactPath}.\nRun 'aztec compile --workspace --force' and retry.`,
     );
   }
 }
@@ -401,15 +327,13 @@ async function main(): Promise<void> {
 
   pinoLogger.info("[deploy-fpc-devnet] starting preflight checks");
   pinoLogger.info(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
-  pinoLogger.info(`[deploy-fpc-devnet] l1_rpc_url=${args.l1RpcUrl ?? "<not provided>"}`);
   pinoLogger.info(
     `[deploy-fpc-devnet] sponsored_fpc_address=${args.sponsoredFpcAddress ?? "<none — fee juice payment>"}`,
   );
-  pinoLogger.info(`[deploy-fpc-devnet] accepted_asset=${args.acceptedAsset ?? "<deploy token>"}`);
   pinoLogger.info(`[deploy-fpc-devnet] fpc_artifact=${fpcArtifactPath}`);
   pinoLogger.info(`[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`);
 
-  assertRequiredArtifactsExistForDevnet(fpcArtifactPath, !args.acceptedAsset);
+  assertRequiredArtifactsExistForDevnet(fpcArtifactPath);
   pinoLogger.info("[deploy-fpc-devnet] artifact preflight passed");
 
   const node = createAztecNodeClient(args.nodeUrl);
@@ -418,22 +342,6 @@ async function main(): Promise<void> {
   pinoLogger.info(
     `[deploy-fpc-devnet] node preflight passed. node_version=${nodeInfo.nodeVersion} l1_chain_id=${nodeInfo.l1ChainId} rollup_version=${nodeInfo.rollupVersion}`,
   );
-
-  if (args.validateTopupPath || args.l1RpcUrl) {
-    if (!args.l1RpcUrl) {
-      throw new CliError("L1 RPC preflight requested, but --l1-rpc-url was not provided");
-    }
-    const l1Public = createPublicClient({ transport: http(args.l1RpcUrl) });
-    const l1RpcChainId = await l1Public.getChainId();
-    if (l1RpcChainId !== nodeInfo.l1ChainId) {
-      throw new CliError(
-        `L1 preflight failed: node_getNodeInfo.l1ChainId=${nodeInfo.l1ChainId} does not match eth_chainId=${l1RpcChainId} from ${args.l1RpcUrl}`,
-      );
-    }
-    pinoLogger.info(`[deploy-fpc-devnet] l1 rpc preflight passed. chain_id=${l1RpcChainId}`);
-  } else {
-    pinoLogger.info("[deploy-fpc-devnet] l1 rpc preflight skipped (deployment-only path)");
-  }
 
   if (args.sponsoredFpcAddress) {
     pinoLogger.info(
@@ -521,41 +429,6 @@ async function main(): Promise<void> {
     deployOpts = { from: deployerAddress };
   }
 
-  let acceptedAssetAddress: AztecAddress;
-  let testTokenManifest: TestTokenManifest | undefined;
-
-  if (args.acceptedAsset) {
-    acceptedAssetAddress = AztecAddress.fromString(args.acceptedAsset);
-    pinoLogger.info(
-      `[deploy-fpc-devnet] accepted_asset provided; skipping token deployment. accepted_asset=${acceptedAssetAddress}`,
-    );
-  } else {
-    if (!args.l1DeployerKey || !args.l1RpcUrl) {
-      throw new CliError(
-        "Token deployment requires --l1-deployer-key and --l1-rpc-url for L1 bridge contracts.",
-      );
-    }
-    testTokenManifest = await deployTestToken(
-      {
-        l1DeployerKey: args.l1DeployerKey,
-        l1RpcUrl: args.l1RpcUrl,
-        l1ChainId: nodeInfo.l1ChainId,
-        l1RegistryAddress: nodeInfo.l1ContractAddresses.registryAddress.toString(),
-        wallet,
-        node,
-        operatorAddress,
-        deployOpts,
-      },
-      {
-        name: "FpcAcceptedAsset",
-        symbol: "FPCA",
-        decimals: 18,
-        outPath: args.testTokenOut,
-      },
-    );
-    acceptedAssetAddress = testTokenManifest.contracts.token;
-  }
-
   const fpcArtifact = loadArtifact(fpcArtifactPath);
   pinoLogger.info(
     `[deploy-fpc-devnet] deploying ${fpcArtifact.name} contract from ${fpcArtifactPath}`,
@@ -594,7 +467,6 @@ async function main(): Promise<void> {
     },
     deployer_address: deployerAddress,
     contracts: {
-      accepted_asset: acceptedAssetAddress,
       fpc: AztecAddress.fromString(fpcAddress),
     },
     operator: {
@@ -612,7 +484,7 @@ async function main(): Promise<void> {
     `[deploy-fpc-devnet] deployment completed. wrote manifest to ${path.resolve(args.out)}`,
   );
   pinoLogger.info(
-    `[deploy-fpc-devnet] output contracts: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc} variant=${fpcArtifact.name}`,
+    `[deploy-fpc-devnet] output contracts: fpc=${manifest.contracts.fpc} variant=${fpcArtifact.name}`,
   );
 
   process.exit(0);

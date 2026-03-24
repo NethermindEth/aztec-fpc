@@ -25,13 +25,12 @@ docker run -v ./deployments:/app/deployments \
   -e AZTEC_NODE_URL=https://rpc.testnet.aztec-labs.com \
   -e FPC_DEPLOYER_SECRET_KEY \
   -e FPC_OPERATOR_SECRET_KEY \
-  nethermind/aztec-fpc-contract-deployment:local \
-  --accepted-asset 0x<token_address>
+  nethermind/aztec-fpc-contract-deployment:local
 ```
 
 The container:
 
-1. Deploys `Token` (unless `--accepted-asset` is provided) and `FPCMultiAsset` to the target Aztec node.
+1. Deploys `FPCMultiAsset` to the target Aztec node.
 2. Writes a deployment manifest to `deployments/manifest.json`.
 3. Auto-generates service configs from the manifest + `deployments/fpc-config.yaml`.
 
@@ -49,7 +48,7 @@ deployments/
     └── config.yaml              ← generated topup service config
 ```
 
-The generated `attestation/config.yaml` and `topup/config.yaml` have the deployed contract addresses (`fpc_address`, `accepted_asset_address`) injected and are ready to mount into the service containers.
+The generated `attestation/config.yaml` and `topup/config.yaml` have the deployed contract addresses (`fpc_address`) injected and are ready to mount into the service containers.
 
 ## Master config
 
@@ -63,9 +62,6 @@ Key fields:
 
 | Section | Field | Description |
 |---------|-------|-------------|
-| `attestation` | `accepted_asset_name` | Human-readable token name (e.g. `"humanUSDC"`) |
-| `attestation` | `market_rate_num` / `market_rate_den` | Exchange rate: accepted_asset per 1 FeeJuice |
-| `attestation` | `fee_bips` | Operator margin in basis points (200 = 2%) |
 | `attestation` | `quote_validity_seconds` | Quote TTL (default 300) |
 | `attestation` | `quote_auth_mode` | Auth mode: `disabled`, `api_key`, `trusted_header`, etc. |
 | `topup` | `threshold` | Bridge when FPC balance drops below this (wei) |
@@ -90,26 +86,21 @@ All arguments are optional. CLI args take precedence over environment variables.
 | `FPC_DEPLOYER_SECRET_KEY_REF` | Deployer key reference (KMS/secret manager) |
 | `FPC_OPERATOR_SECRET_KEY` | Operator secret key (defaults to deployer key) |
 | `FPC_OPERATOR_SECRET_KEY_REF` | Operator key reference |
-| `FPC_L1_DEPLOYER_KEY` | L1 deployer private key (required when deploying test tokens) |
 
-CLI equivalents (`--deployer-secret-key`, `--operator-secret-key`, `--l1-deployer-key`, etc.) exist but are **not recommended** for the same reason.
+CLI equivalents (`--deployer-secret-key`, `--operator-secret-key`, etc.) exist but are **not recommended** for the same reason.
 
 ### Network
 
 | Argument | Description | Env var |
 |----------|-------------|---------|
 | `--node-url <url>` | Aztec node URL (default: `https://v4-devnet-2.aztec-labs.com/`) | `AZTEC_NODE_URL` |
-| `--l1-rpc-url <url>` | L1 RPC URL (required for `--validate-topup-path`) | `L1_RPC_URL` |
 
 ### Options
 
 | Argument | Description | Env var |
 |----------|-------------|---------|
-| `--accepted-asset <addr>` | Reuse existing token (skip Token deploy) | `FPC_ACCEPTED_ASSET` |
 | `--sponsored-fpc-address <addr>` | Use sponsored FPC payment mode for deployment | `FPC_SPONSORED_FPC_ADDRESS` |
 | `--operator <addr>` | Explicit operator address (default: derived from secret key) | `FPC_OPERATOR` |
-| `--l1-deployer-key <key>` | L1 deployer private key (required when deploying test tokens) | `FPC_L1_DEPLOYER_KEY` |
-| `--validate-topup-path` | Enforce L1 chain-id matching (requires `--l1-rpc-url`) | `FPC_VALIDATE_TOPUP_PATH=1` |
 | `--preflight-only` | Run checks only, do not deploy | `FPC_PREFLIGHT_ONLY=1` |
 
 ### Output
@@ -139,27 +130,11 @@ export FPC_DEPLOYER_SECRET_KEY=0x<your_key>
 export FPC_OPERATOR_SECRET_KEY=0x<your_key>
 ```
 
-### Deploy FPC only (with existing token)
+### Deploy FPC
 
 ```bash
 docker run \
   -e AZTEC_NODE_URL=https://rpc.testnet.aztec-labs.com \
-  -e FPC_DEPLOYER_SECRET_KEY \
-  -e FPC_OPERATOR_SECRET_KEY \
-  -v ./deployments:/app/deployments \
-  nethermind/aztec-fpc-contract-deployment:local \
-  --accepted-asset 0x<token_address>
-```
-
-### Deploy test tokens + FPC
-
-Deploying test tokens also requires an L1 RPC URL and L1 deployer key:
-
-```bash
-docker run \
-  -e AZTEC_NODE_URL=https://rpc.testnet.aztec-labs.com \
-  -e L1_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<your_key> \
-  -e FPC_L1_DEPLOYER_KEY \
   -e FPC_DEPLOYER_SECRET_KEY \
   -e FPC_OPERATOR_SECRET_KEY \
   -v ./deployments:/app/deployments \
@@ -175,7 +150,6 @@ docker run \
   -e FPC_OPERATOR_SECRET_KEY \
   -v ./deployments:/app/deployments \
   nethermind/aztec-fpc-contract-deployment:local \
-  --accepted-asset 0x<token_address> \
   --sponsored-fpc-address 0x<fpc_address>
 ```
 
@@ -251,14 +225,6 @@ Secrets must be exported before running:
 ```bash
 export FPC_DEPLOYER_SECRET_KEY=0x<deployer_key>
 export FPC_OPERATOR_SECRET_KEY=0x<operator_key>
-export FPC_L1_DEPLOYER_KEY=0x<l1_deployer_key>
-```
-
-To deploy FPC against an existing token, also set `FPC_ACCEPTED_ASSET`:
-
-```bash
-export FPC_ACCEPTED_ASSET=0x<token_address>
-DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
 ```
 
 ## Building the image

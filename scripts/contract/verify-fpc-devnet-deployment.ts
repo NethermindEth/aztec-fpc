@@ -71,7 +71,7 @@ function usage(): string {
     "  FPC_DEVNET_VERIFY_NODE_READY_TIMEOUT_MS (default: 45000)",
     "",
     "Checks performed:",
-    "  1) Contract existence on node for accepted_asset and fpc",
+    "  1) Contract existence on node for fpc",
     "  2) FPC immutable initialization hash verification",
     "  3) Contract instance readiness (published + non-zero initialization hash)",
     "  4) Contract class readiness (class publicly registered)",
@@ -299,10 +299,6 @@ async function verifyAttempt(params: {
 
   const contracts = [
     {
-      key: "accepted_asset",
-      address: manifest.contracts.accepted_asset,
-    },
-    {
       key: "fpc",
       address: manifest.contracts.fpc,
     },
@@ -359,7 +355,6 @@ async function verifyAttempt(params: {
   try {
     await verifyFpcImmutablesOnStartup(node, {
       fpcAddress: parsedAddresses.get("fpc") as never,
-      acceptedAsset: parsedAddresses.get("accepted_asset") as never,
       operatorAddress: manifest.operator.address as never,
       operatorPubkeyX: manifest.operator.pubkey_x as never,
       operatorPubkeyY: manifest.operator.pubkey_y as never,
@@ -434,9 +429,7 @@ async function main(): Promise<void> {
       pinoLogger.info(
         `[verify-fpc-devnet] verification passed on attempt ${attempt}/${args.maxAttempts}`,
       );
-      pinoLogger.info(
-        `[verify-fpc-devnet] contracts ready: accepted_asset=${manifest.contracts.accepted_asset} fpc=${manifest.contracts.fpc}`,
-      );
+      pinoLogger.info(`[verify-fpc-devnet] contracts ready: fpc=${manifest.contracts.fpc}`);
       return;
     }
 
