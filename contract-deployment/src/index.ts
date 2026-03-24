@@ -459,8 +459,6 @@ async function main(): Promise<void> {
       rollup_version: nodeInfo.rollupVersion,
     },
     aztec_required_addresses: {
-      l1_contract_addresses: nodeInfo.l1ContractAddresses,
-      protocol_contract_addresses: nodeInfo.protocolContractAddresses,
       ...(args.sponsoredFpcAddress
         ? { sponsored_fpc_address: AztecAddress.fromString(args.sponsoredFpcAddress) }
         : {}),

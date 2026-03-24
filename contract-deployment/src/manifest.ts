@@ -3,7 +3,6 @@ import path from "node:path";
 import { z } from "zod";
 import {
   aztecAddress,
-  ethAddress,
   fieldValue,
   httpUrl,
   isoTimestamp,
@@ -23,21 +22,6 @@ const deployManifestSchema = z.object({
     rollup_version: positiveSafeInt,
   }),
   aztec_required_addresses: z.object({
-    l1_contract_addresses: z.object({
-      registryAddress: ethAddress,
-      rollupAddress: ethAddress,
-      inboxAddress: ethAddress,
-      outboxAddress: ethAddress,
-      feeJuiceAddress: ethAddress,
-      feeJuicePortalAddress: ethAddress,
-      feeAssetHandlerAddress: ethAddress.optional(),
-    }),
-    protocol_contract_addresses: z.object({
-      instanceRegistry: aztecAddress,
-      classRegistry: aztecAddress,
-      multiCallEntrypoint: aztecAddress,
-      feeJuice: aztecAddress,
-    }),
     sponsored_fpc_address: aztecAddress.optional(),
   }),
   deployer_address: aztecAddress,

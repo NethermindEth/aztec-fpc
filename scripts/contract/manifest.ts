@@ -20,21 +20,6 @@ function buildSelfCheckFixture() {
       rollup_version: 615022430,
     },
     aztec_required_addresses: {
-      l1_contract_addresses: {
-        registryAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        rollupAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        inboxAddress: "0xcccccccccccccccccccccccccccccccccccccccc",
-        outboxAddress: "0xdddddddddddddddddddddddddddddddddddddddd",
-        feeJuiceAddress: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-        feeJuicePortalAddress: "0xffffffffffffffffffffffffffffffffffffffff",
-        feeAssetHandlerAddress: "0x1111111111111111111111111111111111111111",
-      },
-      protocol_contract_addresses: {
-        instanceRegistry: "0x0000000000000000000000000000000000000000000000000000000000000002",
-        classRegistry: "0x0000000000000000000000000000000000000000000000000000000000000003",
-        multiCallEntrypoint: "0x0000000000000000000000000000000000000000000000000000000000000004",
-        feeJuice: "0x0000000000000000000000000000000000000000000000000000000000000005",
-      },
       sponsored_fpc_address: "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2",
     },
     deployer_address: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
