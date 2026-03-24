@@ -121,6 +121,10 @@ jobs:
         if: always()
         run: docker compose --profile full logs --timestamps deploy
 
+      - name: Print configure-token logs
+        if: always()
+        run: docker compose --profile full logs --timestamps configure-token
+
       - name: Print attestation logs
         if: always()
         run: docker compose --profile full logs --timestamps attestation

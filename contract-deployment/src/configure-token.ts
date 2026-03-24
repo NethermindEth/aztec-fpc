@@ -232,15 +232,10 @@ async function main(): Promise<void> {
   const tokens = readTokenConfigs(args.configPath);
   pinoLogger.info(`[${LABEL}] loaded ${tokens.length} token(s) from ${args.configPath}`);
 
-  if (args.registration) {
-    await waitForAttestationHealth(
-      args.registration.attestationUrl,
-      args.registration.healthTimeoutMs,
-    );
-  }
-
+  // Phase 1: resolve / deploy all tokens (no attestation dependency)
   const dataDir = process.env.FPC_DATA_DIR ?? "./deployments";
   let deployDeps: TestTokenDeployDeps | undefined;
+  const resolved: { address: AztecAddress; token: TokenConfig }[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     let address: AztecAddress;
@@ -259,7 +254,16 @@ async function main(): Promise<void> {
       address = manifest.contracts.token;
       pinoLogger.info(`[${LABEL}] token[${i}] "${token.name}" — deployed test token at ${address}`);
     }
-    if (args.registration) {
+    resolved.push({ address, token });
+  }
+
+  // Phase 2: wait for attestation and register all tokens
+  if (args.registration) {
+    await waitForAttestationHealth(
+      args.registration.attestationUrl,
+      args.registration.healthTimeoutMs,
+    );
+    for (const { address, token } of resolved) {
       await registerAssetPolicy(
         args.registration.attestationUrl,
         args.registration.adminApiKey,
