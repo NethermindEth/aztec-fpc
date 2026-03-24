@@ -88,11 +88,6 @@ services:
       ADMIN_API_KEY: "${ADMIN_API_KEY}"
     env_file:
       - .env.${DEPLOYMENT}
-    depends_on:
-      deploy:
-        condition: service_completed_successfully
-      attestation:
-        condition: service_healthy
 
   tests-cold-start:
     image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
