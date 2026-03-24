@@ -7,23 +7,7 @@
     "l1_chain_id": 11155111,
     "rollup_version": 4127419662
   },
-  "aztec_required_addresses": {
-    "l1_contract_addresses": {
-      "registryAddress": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba",
-      "rollupAddress": "0xf6d0d42ace06829becb78c74f49879528fc632c1",
-      "inboxAddress": "0xf1bb424ac888aa239f1e658b5bddabc65a1c94e6",
-      "outboxAddress": "0x5fe63c32b7ca20445e813bdb1019f1ffc5f52376",
-      "feeJuiceAddress": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
-      "feeJuicePortalAddress": "0xd3361019e40026ce8a9745c19e67fd3acc10d596",
-      "feeAssetHandlerAddress": "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9"
-    },
-    "protocol_contract_addresses": {
-      "instanceRegistry": "0x0000000000000000000000000000000000000000000000000000000000000002",
-      "classRegistry": "0x0000000000000000000000000000000000000000000000000000000000000003",
-      "multiCallEntrypoint": "0x0000000000000000000000000000000000000000000000000000000000000004",
-      "feeJuice": "0x0000000000000000000000000000000000000000000000000000000000000005"
-    }
-  },
+  "aztec_required_addresses": {},
   "deployer_address": "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
   "contracts": {
     "accepted_asset": "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb",

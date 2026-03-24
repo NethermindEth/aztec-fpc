@@ -8,21 +8,6 @@
     "rollup_version": 615022430
   },
   "aztec_required_addresses": {
-    "l1_contract_addresses": {
-      "registryAddress": "0x52945c29d2788ccb076e910509c0449bfcbe29e6",
-      "rollupAddress": "0xcd1a7be18501092f3ba8d80ce5629501ba178de0",
-      "inboxAddress": "0xef5730d1e07b306aecbe01400630d61e3ccb68af",
-      "outboxAddress": "0x34fc558b6f97e50149bcc140060bbe3f7d04bc59",
-      "feeJuiceAddress": "0x35d0186d1fd53b72996475d965c5ed171d52b986",
-      "feeJuicePortalAddress": "0x516e3f74fd1c19b24da0706d28b5a30578f054ab",
-      "feeAssetHandlerAddress": "0xed9c5557d2e0abcc7c7fca958ee4292199413494"
-    },
-    "protocol_contract_addresses": {
-      "instanceRegistry": "0x0000000000000000000000000000000000000000000000000000000000000002",
-      "classRegistry": "0x0000000000000000000000000000000000000000000000000000000000000003",
-      "multiCallEntrypoint": "0x0000000000000000000000000000000000000000000000000000000000000004",
-      "feeJuice": "0x0000000000000000000000000000000000000000000000000000000000000005"
-    },
     "sponsored_fpc_address": "0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2"
   },
   "deployer_address": "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8",

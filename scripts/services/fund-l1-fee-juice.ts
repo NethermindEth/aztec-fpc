@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { createExtendedL1Client } from "@aztec/ethereum/client";
 import pino from "pino";
@@ -38,7 +38,7 @@ type NodeInfoL1Addresses = {
 type ResolvedFundingTargets = {
   feeJuiceTokenAddress: Address;
   feeAssetHandlerAddress: Address | null;
-  source: "cli" | "node" | "manifest" | "mixed";
+  source: "cli" | "node" | "mixed";
 };
 
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -411,44 +411,6 @@ async function loadNodeInfoL1Addresses(nodeUrl: string): Promise<NodeInfoL1Addre
   };
 }
 
-function loadManifestL1Addresses(manifestPath: string): NodeInfoL1Addresses {
-  let raw: string;
-  try {
-    raw = readFileSync(manifestPath, "utf8");
-  } catch (error) {
-    throw new CliError(`Failed to read deploy manifest at ${manifestPath}: ${String(error)}`);
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch (error) {
-    throw new CliError(`Deploy manifest at ${manifestPath} is not valid JSON: ${String(error)}`);
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    throw new CliError(`Deploy manifest at ${manifestPath} must be a JSON object`);
-  }
-  const root = parsed as Record<string, unknown>;
-
-  const aztecRequired = root.aztec_required_addresses;
-  if (!aztecRequired || typeof aztecRequired !== "object") {
-    return {};
-  }
-  const l1 = (aztecRequired as Record<string, unknown>).l1_contract_addresses;
-  if (!l1 || typeof l1 !== "object") {
-    return {};
-  }
-  const l1Record = l1 as Record<string, unknown>;
-
-  return {
-    feeJuiceAddress:
-      extractAddressCandidate(l1Record, ["feeJuiceAddress", "feeJuice"]) ?? undefined,
-    feeAssetHandlerAddress:
-      extractAddressCandidate(l1Record, ["feeAssetHandlerAddress", "feeAssetHandler"]) ?? undefined,
-  };
-}
-
 async function resolveFundingTargets(args: CliArgs): Promise<ResolvedFundingTargets> {
   const fromCliToken = args.feeJuiceTokenAddress
     ? parseAddress(args.feeJuiceTokenAddress, "--fee-juice-token-address")
@@ -462,26 +424,15 @@ async function resolveFundingTargets(args: CliArgs): Promise<ResolvedFundingTarg
     fromNode = await loadNodeInfoL1Addresses(args.nodeUrl);
   }
 
-  let fromManifest: NodeInfoL1Addresses = {};
-  if (args.manifestPath && existsSync(args.manifestPath)) {
-    fromManifest = loadManifestL1Addresses(args.manifestPath);
-  }
-
   const tokenAddress =
     fromCliToken ??
     (fromNode.feeJuiceAddress
       ? parseAddress(fromNode.feeJuiceAddress, "node_getNodeInfo.feeJuiceAddress")
-      : null) ??
-    (fromManifest.feeJuiceAddress
-      ? parseAddress(
-          fromManifest.feeJuiceAddress,
-          "manifest.aztec_required_addresses.l1_contract_addresses.feeJuiceAddress",
-        )
       : null);
 
   if (!tokenAddress) {
     throw new CliError(
-      "Could not resolve FeeJuice token address. Provide --fee-juice-token-address (or L1_FEE_JUICE_TOKEN_ADDRESS), or provide --node-url / AZTEC_NODE_URL, or a valid deploy manifest.",
+      "Could not resolve FeeJuice token address. Provide --fee-juice-token-address (or L1_FEE_JUICE_TOKEN_ADDRESS), or provide --node-url / AZTEC_NODE_URL.",
     );
   }
 
@@ -489,24 +440,10 @@ async function resolveFundingTargets(args: CliArgs): Promise<ResolvedFundingTarg
     fromCliHandler ??
     (fromNode.feeAssetHandlerAddress
       ? parseAddress(fromNode.feeAssetHandlerAddress, "node_getNodeInfo.feeAssetHandlerAddress")
-      : null) ??
-    (fromManifest.feeAssetHandlerAddress
-      ? parseAddress(
-          fromManifest.feeAssetHandlerAddress,
-          "manifest.aztec_required_addresses.l1_contract_addresses.feeAssetHandlerAddress",
-        )
       : null);
 
   const source: ResolvedFundingTargets["source"] =
-    fromCliToken || fromCliHandler
-      ? fromNode.feeJuiceAddress || fromManifest.feeJuiceAddress
-        ? "mixed"
-        : "cli"
-      : fromNode.feeJuiceAddress
-        ? fromManifest.feeJuiceAddress
-          ? "mixed"
-          : "node"
-        : "manifest";
+    fromCliToken || fromCliHandler ? (fromNode.feeJuiceAddress ? "mixed" : "cli") : "node";
 
   return {
     feeJuiceTokenAddress: tokenAddress,
