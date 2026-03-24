@@ -6,6 +6,14 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
+# Subcommand dispatch
+case "${1:-}" in
+  configure-token)
+    shift
+    exec bun run contract-deployment/dist/configure-token.js "$@"
+    ;;
+esac
+
 if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPCMultiAsset.json ]]; then
   echo "Compiling Aztec workspace artifacts..."
   aztec compile --workspace --force

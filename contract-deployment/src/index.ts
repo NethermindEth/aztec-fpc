@@ -535,17 +535,24 @@ async function main(): Promise<void> {
         "Token deployment requires --l1-deployer-key and --l1-rpc-url for L1 bridge contracts.",
       );
     }
-    testTokenManifest = await deployTestToken({
-      l1DeployerKey: args.l1DeployerKey,
-      l1RpcUrl: args.l1RpcUrl,
-      l1ChainId: nodeInfo.l1ChainId,
-      l1RegistryAddress: nodeInfo.l1ContractAddresses.registryAddress.toString(),
-      wallet,
-      node,
-      operatorAddress,
-      deployOpts,
-      outPath: args.testTokenOut,
-    });
+    testTokenManifest = await deployTestToken(
+      {
+        l1DeployerKey: args.l1DeployerKey,
+        l1RpcUrl: args.l1RpcUrl,
+        l1ChainId: nodeInfo.l1ChainId,
+        l1RegistryAddress: nodeInfo.l1ContractAddresses.registryAddress.toString(),
+        wallet,
+        node,
+        operatorAddress,
+        deployOpts,
+      },
+      {
+        name: "FpcAcceptedAsset",
+        symbol: "FPCA",
+        decimals: 18,
+        outPath: args.testTokenOut,
+      },
+    );
     acceptedAssetAddress = testTokenManifest.contracts.token;
   }
 

@@ -92,7 +92,7 @@ function readFaucetEnvConfig(): FaucetEnvConfig {
  * This is only used for testing/devnet — production deployments should provide
  * an existing --accepted-asset instead.
  */
-export async function deployTestToken(opts: {
+export type TestTokenDeployDeps = {
   l1DeployerKey: string;
   l1RpcUrl: string;
   l1ChainId: number;
@@ -101,12 +101,23 @@ export async function deployTestToken(opts: {
   node: AztecNode;
   operatorAddress: AztecAddress;
   deployOpts: DeployOptions;
+};
+
+export type TestTokenDeployParams = {
+  name: string;
+  symbol: string;
+  decimals: number;
   outPath: string;
-}): Promise<TestTokenManifest> {
+};
+
+export async function deployTestToken(
+  deps: TestTokenDeployDeps,
+  params: TestTokenDeployParams,
+): Promise<TestTokenManifest> {
   const l1WalletClient = createExtendedL1Client(
-    [opts.l1RpcUrl],
-    opts.l1DeployerKey as Hex,
-    extractChain({ chains: Object.values(viemChains) as readonly Chain[], id: opts.l1ChainId }),
+    [deps.l1RpcUrl],
+    deps.l1DeployerKey as Hex,
+    extractChain({ chains: Object.values(viemChains) as readonly Chain[], id: deps.l1ChainId }),
   );
 
   // ── Phase 0: Pre-compute all L2 addresses ──────────────────────────
@@ -114,14 +125,14 @@ export async function deployTestToken(opts: {
 
   const tokenArtifact = loadArtifact(REQUIRED_ARTIFACTS.token);
   const bridgeArtifact = loadArtifact(REQUIRED_ARTIFACTS.tokenBridge);
-  const bridgeDeploy = Contract.deploy(opts.wallet, bridgeArtifact, []);
+  const bridgeDeploy = Contract.deploy(deps.wallet, bridgeArtifact, []);
   const bridgeInstance = await bridgeDeploy.getInstance();
   const bridgeAddress = bridgeInstance.address;
 
   const tokenDeploy = Contract.deploy(
-    opts.wallet,
+    deps.wallet,
     tokenArtifact,
-    ["FpcAcceptedAsset", "FPCA", 18, bridgeAddress, opts.operatorAddress],
+    [params.name, params.symbol, params.decimals, bridgeAddress, deps.operatorAddress],
     "constructor_with_minter",
   );
   const tokenInstance = await tokenDeploy.getInstance();
@@ -129,9 +140,9 @@ export async function deployTestToken(opts: {
 
   const faucetConfig = readFaucetEnvConfig();
   const faucetArtifact = loadArtifact(REQUIRED_ARTIFACTS.faucet);
-  const faucetDeploy = Contract.deploy(opts.wallet, faucetArtifact, [
+  const faucetDeploy = Contract.deploy(deps.wallet, faucetArtifact, [
     tokenAddress,
-    opts.operatorAddress,
+    deps.operatorAddress,
     faucetConfig.dripAmount,
     faucetConfig.cooldownSeconds,
   ]);
@@ -140,9 +151,9 @@ export async function deployTestToken(opts: {
 
   const counterArtifact = loadArtifact(REQUIRED_ARTIFACTS.counter);
   const counterDeploy = Contract.deploy(
-    opts.wallet,
+    deps.wallet,
     counterArtifact,
-    [0, opts.operatorAddress],
+    [0, deps.operatorAddress],
     "initialize",
   );
   const counterInstance = await counterDeploy.getInstance();
@@ -158,7 +169,7 @@ export async function deployTestToken(opts: {
   const l1Erc20Hash = await l1WalletClient.deployContract({
     abi: TestERC20Abi,
     bytecode: TestERC20Bytecode as Hex,
-    args: ["TestToken", "TST", l1WalletClient.account.address],
+    args: [params.name, params.symbol, l1WalletClient.account.address],
   });
   const l1Erc20Receipt = await l1WalletClient.waitForTransactionReceipt({ hash: l1Erc20Hash });
   if (!l1Erc20Receipt.contractAddress) {
@@ -187,7 +198,7 @@ export async function deployTestToken(opts: {
     address: l1TokenPortalAddress as Hex,
     abi: TokenPortalAbi,
     functionName: "initialize",
-    args: [opts.l1RegistryAddress as Hex, l1Erc20Address as Hex, bridgeAddress.toString() as Hex],
+    args: [deps.l1RegistryAddress as Hex, l1Erc20Address as Hex, bridgeAddress.toString() as Hex],
   });
   await l1WalletClient.waitForTransactionReceipt({ hash: initHash });
   logger.info("[deploy-fpc-devnet] l1 token portal initialized");
@@ -218,47 +229,47 @@ export async function deployTestToken(opts: {
   );
 
   // ── Phase 2: L2 batch 1 — bridge deploy + set_config (4 units) ────
-  const bridgeContract = Contract.at(bridgeAddress, bridgeArtifact, opts.wallet);
+  const bridgeContract = Contract.at(bridgeAddress, bridgeArtifact, deps.wallet);
   const bridgeDeployTxHash = await deployContract(
-    opts.wallet,
+    deps.wallet,
     bridgeArtifact,
     bridgeDeploy,
-    opts.deployOpts,
+    deps.deployOpts,
     [bridgeContract.methods.set_config(tokenAddress, EthAddress.fromString(l1TokenPortalAddress))],
   );
   logger.info("[deploy-fpc-devnet] L2 batch 1 completed (bridge deploy + set_config)");
 
   // ── Phase 3: L2 batch 2 — token deploy ─────────────────────────────
   const tokenDeployTxHash = await deployContract(
-    opts.wallet,
+    deps.wallet,
     tokenArtifact,
     tokenDeploy,
-    opts.deployOpts,
+    deps.deployOpts,
   );
   logger.info("[deploy-fpc-devnet] L2 batch 2 completed (token deploy)");
 
   // ── Phase 4: L2 batch 3 — counter deploy ───────────────────────────
   const counterDeployTxHash = await deployContract(
-    opts.wallet,
+    deps.wallet,
     counterArtifact,
     counterDeploy,
-    opts.deployOpts,
+    deps.deployOpts,
   );
   logger.info("[deploy-fpc-devnet] L2 batch 3 completed (counter deploy)");
 
   // ── Phase 5: Wait for L1→L2 message ───────────────────────────────
   const faucetMsgHash = Fr.fromHexString(faucetBridgeClaim.messageHash);
-  await waitForL1ToL2MessageReady(opts.node, faucetMsgHash, {
+  await waitForL1ToL2MessageReady(deps.node, faucetMsgHash, {
     timeoutSeconds: parseEnvPositiveNumber("FPC_BRIDGE_TIMEOUT_SECONDS", 120),
   });
   logger.info("[deploy-fpc-devnet] L1→L2 message ready");
 
   // ── Phase 6: L2 batch 4 — faucet deploy + claim_public (4 units) ──
   const faucetDeployTxHash = await deployContract(
-    opts.wallet,
+    deps.wallet,
     faucetArtifact,
     faucetDeploy,
-    opts.deployOpts,
+    deps.deployOpts,
     [
       bridgeContract.methods.claim_public(
         faucetAddress,
@@ -299,8 +310,8 @@ export async function deployTestToken(opts: {
       l1_token_portal_deploy: l1PortalHash,
     },
   };
-  writeTestTokenManifest(opts.outPath, manifest);
-  logger.info(`[deploy-fpc-devnet] wrote test token manifest to ${opts.outPath}`);
+  writeTestTokenManifest(params.outPath, manifest);
+  logger.info(`[deploy-fpc-devnet] wrote test token manifest to ${params.outPath}`);
 
   return manifest;
 }
