@@ -1,8 +1,7 @@
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { open, type RootDatabase } from "lmdb";
 import type { BridgeResult } from "./bridge.js";
-
-// PID-based singleton lock
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -36,11 +35,6 @@ export async function releaseProcessLock(lockPath: string): Promise<void> {
   await rm(lockPath, { force: true });
 }
 
-interface PersistedBridgeStateFile {
-  version: 1;
-  bridge: PersistedBridgeSubmission;
-}
-
 export interface PersistedBridgeSubmission {
   baselineBalance: string;
   amount: string;
@@ -52,7 +46,7 @@ export interface PersistedBridgeSubmission {
 }
 
 export interface BridgeStateStore {
-  filePath: string;
+  storageLabel: string;
   read(): Promise<PersistedBridgeSubmission | null>;
   write(
     baselineBalance: bigint,
@@ -72,30 +66,30 @@ export interface BridgeStateStore {
 const UINT_DECIMAL_PATTERN = /^(0|[1-9][0-9]*)$/;
 const FIELD_HEX_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-function assertUintString(filePath: string, field: string, value: unknown): string {
+function assertUintString(context: string, field: string, value: unknown): string {
   if (typeof value !== "string" || !UINT_DECIMAL_PATTERN.test(value)) {
     throw new Error(
-      `Bridge state file is malformed at ${filePath}: ${field} must be an unsigned integer string`,
+      `Bridge state is malformed (${context}): ${field} must be an unsigned integer string`,
     );
   }
   return value;
 }
 
-function assertFieldHexString(filePath: string, field: string, value: unknown): string {
+function assertFieldHexString(context: string, field: string, value: unknown): string {
   if (typeof value !== "string" || !FIELD_HEX_PATTERN.test(value)) {
     throw new Error(
-      `Bridge state file is malformed at ${filePath}: ${field} must be a 32-byte 0x-prefixed hex string`,
+      `Bridge state is malformed (${context}): ${field} must be a 32-byte 0x-prefixed hex string`,
     );
   }
   return value;
 }
 
 function assertPersistedBridgeSubmission(
-  filePath: string,
+  context: string,
   value: unknown,
 ): PersistedBridgeSubmission {
   if (!value || typeof value !== "object") {
-    throw new Error(`Bridge state file is malformed at ${filePath}: expected object`);
+    throw new Error(`Bridge state is malformed (${context}): expected object`);
   }
 
   const candidate = value as {
@@ -108,30 +102,28 @@ function assertPersistedBridgeSubmission(
     submittedAtMs?: unknown;
   };
   if (typeof candidate.submittedAtMs !== "number") {
-    throw new Error(`Bridge state file is malformed at ${filePath}: invalid bridge payload`);
+    throw new Error(`Bridge state is malformed (${context}): invalid bridge payload`);
   }
   if (!Number.isInteger(candidate.submittedAtMs) || candidate.submittedAtMs < 0) {
     throw new Error(
-      `Bridge state file is malformed at ${filePath}: submittedAtMs must be a non-negative integer`,
+      `Bridge state is malformed (${context}): submittedAtMs must be a non-negative integer`,
     );
   }
 
-  const baselineBalance = assertUintString(filePath, "baselineBalance", candidate.baselineBalance);
-  const amount = assertUintString(filePath, "amount", candidate.amount);
+  const baselineBalance = assertUintString(context, "baselineBalance", candidate.baselineBalance);
+  const amount = assertUintString(context, "amount", candidate.amount);
   if (BigInt(amount) <= 0n) {
-    throw new Error(
-      `Bridge state file is malformed at ${filePath}: amount must be greater than zero`,
-    );
+    throw new Error(`Bridge state is malformed (${context}): amount must be greater than zero`);
   }
-  const claimSecret = assertFieldHexString(filePath, "claimSecret", candidate.claimSecret);
+  const claimSecret = assertFieldHexString(context, "claimSecret", candidate.claimSecret);
   const claimSecretHash = assertFieldHexString(
-    filePath,
+    context,
     "claimSecretHash",
     candidate.claimSecretHash,
   );
-  const messageHash = assertFieldHexString(filePath, "messageHash", candidate.messageHash);
+  const messageHash = assertFieldHexString(context, "messageHash", candidate.messageHash);
   const messageLeafIndex = assertUintString(
-    filePath,
+    context,
     "messageLeafIndex",
     candidate.messageLeafIndex,
   );
@@ -147,91 +139,23 @@ function assertPersistedBridgeSubmission(
   };
 }
 
-async function writeJsonAtomically(filePath: string, contents: string) {
-  const directory = path.dirname(filePath);
-  await mkdir(directory, { recursive: true });
+const BRIDGE_KEY = "bridge";
 
-  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    await writeFile(tempPath, `${contents}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    await rename(tempPath, filePath);
-  } catch (error) {
-    await rm(tempPath, { force: true }).catch(() => {});
-    throw error;
-  }
+export async function openTopupDatabase(dataDir: string): Promise<RootDatabase> {
+  await mkdir(dataDir, { recursive: true, mode: 0o700 });
+  return open({ path: dataDir, mapSize: 10 * 1024 * 1024 });
 }
 
-const MAX_STATE_FILE_SIZE = 1_048_576; // 1 MiB
-
-async function readBridgeStateFile(filePath: string): Promise<string | null> {
-  let fd: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    fd = await open(filePath, "r");
-    const fileStat = await fd.stat();
-    if (fileStat.size > MAX_STATE_FILE_SIZE) {
-      throw new Error(
-        `Bridge state file at ${filePath} is ${fileStat.size} bytes, exceeding maximum ${MAX_STATE_FILE_SIZE}`,
-      );
-    }
-    return await fd.readFile("utf8");
-  } catch (error) {
-    const maybeNodeError = error as NodeJS.ErrnoException;
-    if (maybeNodeError.code === "ENOENT") {
-      return null;
-    }
-    throw new Error(`Failed reading bridge state file at ${filePath}`, {
-      cause: error,
-    });
-  } finally {
-    await fd?.close();
-  }
-}
-
-function parseBridgeStateFile(filePath: string, raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`Bridge state file is not valid JSON at ${filePath}`, {
-      cause: error,
-    });
-  }
-}
-
-function parsePersistedBridgeSubmission(
-  filePath: string,
-  parsed: unknown,
-): PersistedBridgeSubmission {
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error(`Bridge state file is malformed at ${filePath}: expected root object`);
-  }
-
-  const root = parsed as { version?: unknown; bridge?: unknown };
-  if (root.version !== 1) {
-    throw new Error(`Unsupported bridge state version in ${filePath}: ${String(root.version)}`);
-  }
-
-  return assertPersistedBridgeSubmission(filePath, root.bridge);
-}
-
-async function readPersistedBridgeSubmission(
-  filePath: string,
-): Promise<PersistedBridgeSubmission | null> {
-  const raw = await readBridgeStateFile(filePath);
-  if (raw === null) {
-    return null;
-  }
-  const parsed = parseBridgeStateFile(filePath, raw);
-  return parsePersistedBridgeSubmission(filePath, parsed);
-}
-
-export function createBridgeStateStore(filePath: string): BridgeStateStore {
+export function createLmdbBridgeStateStore(db: RootDatabase, dataDir: string): BridgeStateStore {
+  const storageLabel = `lmdb://${dataDir}`;
   return {
-    filePath,
+    storageLabel,
     read(): Promise<PersistedBridgeSubmission | null> {
-      return readPersistedBridgeSubmission(filePath);
+      const raw = db.get(BRIDGE_KEY);
+      if (raw === undefined) {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(assertPersistedBridgeSubmission(storageLabel, raw));
     },
     async write(
       baselineBalance: bigint,
@@ -245,36 +169,21 @@ export function createBridgeStateStore(filePath: string): BridgeStateStore {
         | "submittedAtMs"
       >,
     ): Promise<void> {
-      // claimSecret is stored in plaintext. This is acceptable because:
-      // 1. The operator's L1 private key (which controls the entire bridge wallet)
-      //    is held in-process memory at the same privilege level — any attacker
-      //    who can read this file can also read the operator key from
-      //    /proc/<pid>/environ or process memory, which is strictly more valuable.
-      // 2. Encrypting with a key derived from the operator key is circular: if the
-      //    attacker has one, they have both.
-      // 3. The file is short-lived (cleared after confirmation), written with
-      //    restrictive permissions (0o600), and protected by a PID-based singleton
-      //    lock — the exposure window is bounded by the confirmation timeout.
-      // 4. If the state file is exposed through a different vector (e.g. backup
-      //    leak, misconfigured volume mount), the claim secret only allows
-      //    front-running a single in-flight L2 claim, not draining the wallet.
-      const payload: PersistedBridgeStateFile = {
-        version: 1,
-        bridge: {
-          baselineBalance: baselineBalance.toString(),
-          amount: bridgeResult.amount.toString(),
-          claimSecret: bridgeResult.claimSecret,
-          claimSecretHash: bridgeResult.claimSecretHash,
-          messageHash: bridgeResult.messageHash,
-          messageLeafIndex: bridgeResult.messageLeafIndex.toString(),
-          submittedAtMs: bridgeResult.submittedAtMs,
-        },
+      const payload: PersistedBridgeSubmission = {
+        baselineBalance: baselineBalance.toString(),
+        amount: bridgeResult.amount.toString(),
+        // Plaintext is acceptable: the operator's L1 private key lives at the same
+        // privilege level, the data dir is 0o700, and the entry is cleared on confirmation.
+        claimSecret: bridgeResult.claimSecret,
+        claimSecretHash: bridgeResult.claimSecretHash,
+        messageHash: bridgeResult.messageHash,
+        messageLeafIndex: bridgeResult.messageLeafIndex.toString(),
+        submittedAtMs: bridgeResult.submittedAtMs,
       };
-
-      await writeJsonAtomically(filePath, JSON.stringify(payload));
+      await db.put(BRIDGE_KEY, payload);
     },
     async clear(): Promise<void> {
-      await rm(filePath, { force: true });
+      await db.remove(BRIDGE_KEY);
     },
   };
 }

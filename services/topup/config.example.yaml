@@ -39,10 +39,9 @@ threshold: "1000000000000000000"
 # Example: 10e18 = 10 FeeJuice units
 top_up_amount: "10000000000000000000"
 
-# Local JSON file used to persist in-flight bridge metadata so restarts can
-# reconcile pending operations before new submissions. If reconciliation times
-# out, this state is retained and retried on the next cycle.
-bridge_state_path: ".topup-bridge-state.json"
+# Directory for LMDB-backed persistent state. Stores in-flight bridge metadata
+# so restarts can reconcile pending operations. Override via TOPUP_DATA_DIR env var.
+data_dir: ".topup-data"
 
 # Ops HTTP server port (health/readiness/metrics).
 ops_port: 3001
@@ -55,15 +54,10 @@ confirmation_timeout_ms: 180000
 confirmation_poll_initial_ms: 1000
 confirmation_poll_max_ms: 15000
 
-# Auto-claim is enabled by default via env:
-#   TOPUP_AUTOCLAIM_ENABLED=1
-# Prefer sponsored auto-claim when available:
-#   TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS=<0x...32-byte-hex Aztec address>
-# Fallback aliases also supported:
-#   FPC_DEVNET_SPONSORED_FPC_ADDRESS or SPONSORED_FPC_ADDRESS
-# Prefer setting a real claimer key for a publicly deployed account (devnet/testnet):
-#   TOPUP_AUTOCLAIM_SECRET_KEY=<0x...32-byte-hex>
-# Require published claimer account by default (set 0 only for local debugging):
-#   TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT=1
-# If unset, it falls back to local-network test account mode:
-#   TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX=0
+# ─── Auto-claim ──────────────────────────────────────────────────────────────
+# After bridging, the service automatically claims tokens on L2.
+# Env vars read by the service (not config file fields):
+#   TOPUP_AUTOCLAIM_ENABLED=1          (default; set 0 to disable)
+#   TOPUP_AUTOCLAIM_SECRET_KEY=<0x...> (claimer account secret key; required in production)
+#   TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS=<0x...> (sponsored FPC for fee-less claims; recommended)
+# In development profile, if no secret key is set, falls back to the first test account.

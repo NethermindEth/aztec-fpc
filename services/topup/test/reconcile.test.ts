@@ -12,7 +12,7 @@ function makeStore(
   value: Awaited<ReturnType<BridgeStateStore["read"]>>,
 ): BridgeStateStore & { clearCalls: number } {
   return {
-    filePath: "/tmp/state.json",
+    storageLabel: "test-store",
     clearCalls: 0,
     read: async () => value,
     write: () => Promise.reject(new Error("not used")),

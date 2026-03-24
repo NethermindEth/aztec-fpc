@@ -43,8 +43,8 @@ const ConfigSchema = z
     threshold: PositiveBigIntString,
     /** Amount to bridge per top-up (bigint string, wei units). */
     top_up_amount: PositiveBigIntString,
-    /** Local durable JSON file for persisting in-flight bridge metadata. */
-    bridge_state_path: z.string().min(1).default(".topup-bridge-state.json"),
+    /** Directory for LMDB-backed persistent state. */
+    data_dir: z.string().min(1).default(".topup-data"),
     ops_port: z.number().int().min(1).max(65535).default(3001),
     check_interval_ms: z.number().int().positive().default(60_000),
     confirmation_timeout_ms: z.number().int().positive().default(180_000),
@@ -126,9 +126,9 @@ function parseIntegerOverride(
   return parsed;
 }
 
-function resolveBridgeStatePath(raw: string): string {
+function resolveDataDir(raw: string): string {
   if (raw.includes("..")) {
-    throw new Error(`Invalid bridge_state_path: path traversal ("..") is not allowed: ${raw}`);
+    throw new Error(`Invalid data_dir: path traversal ("..") is not allowed: ${raw}`);
   }
   return nodePath.resolve(raw);
 }
@@ -164,9 +164,7 @@ export function loadConfig(path: string, options: LoadConfigOptions = {}): Confi
     runtime_profile: runtimeProfile,
     aztec_node_url: aztecNodeUrl,
     l1_rpc_url: l1RpcUrl,
-    bridge_state_path: resolveBridgeStatePath(
-      process.env.TOPUP_BRIDGE_STATE_PATH ?? config.bridge_state_path,
-    ),
+    data_dir: resolveDataDir(process.env.TOPUP_DATA_DIR ?? config.data_dir),
     ops_port: parseIntegerOverride(
       config.ops_port,
       process.env.TOPUP_OPS_PORT,
