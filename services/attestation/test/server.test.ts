@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { rmSync } from "node:fs";
+import { afterEach, describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { MemoryAssetPolicyStore } from "../src/asset-policy-store.js";
 import type { Config } from "../src/config.js";
 import type { OperatorTreasuryPort } from "../src/operator-treasury.js";
 import { buildServer } from "../src/server.js";
@@ -53,7 +53,7 @@ const TEST_CONFIG: Config = {
     apiKey: undefined,
     apiKeyHeader: "x-admin-api-key",
   },
-  asset_policy_state_path: ".attestation-asset-policies.json",
+  asset_policy_state_path: ".attestation-asset-policies",
   treasury_destination_address: undefined,
   quote_auth: {
     mode: "disabled",
@@ -133,6 +133,10 @@ function mockTreasury(overrides: Partial<OperatorTreasuryPort> = {}): OperatorTr
 }
 
 describe("server", () => {
+  afterEach(() => {
+    rmSync(TEST_CONFIG.asset_policy_state_path, { recursive: true, force: true });
+  });
+
   it("returns health status", async () => {
     const app = await buildServer(TEST_CONFIG, mockSigner());
 
@@ -1017,9 +1021,7 @@ describe("server", () => {
       enabled: true,
       apiKey: "admin-secret",
     });
-    const app = await buildServer(adminConfig, mockSigner(), {
-      assetPolicyStore: new MemoryAssetPolicyStore(adminConfig.supported_assets),
-    });
+    const app = await buildServer(adminConfig, mockSigner());
 
     try {
       const upsert = await app.inject({
@@ -1049,13 +1051,13 @@ describe("server", () => {
   });
 
   it("allows admin to remove a supported asset", async () => {
-    const adminConfig = withAdminAuth({
-      enabled: true,
-      apiKey: "admin-secret",
-    });
-    const app = await buildServer(adminConfig, mockSigner(), {
-      assetPolicyStore: new MemoryAssetPolicyStore([
-        ...adminConfig.supported_assets,
+    const adminConfig = {
+      ...withAdminAuth({
+        enabled: true,
+        apiKey: "admin-secret",
+      }),
+      supported_assets: [
+        ...TEST_CONFIG.supported_assets,
         {
           address: SECONDARY_ACCEPTED_ASSET,
           name: "ravenETH",
@@ -1063,8 +1065,9 @@ describe("server", () => {
           market_rate_den: 1000,
           fee_bips: 25,
         },
-      ]),
-    });
+      ],
+    };
+    const app = await buildServer(adminConfig, mockSigner());
 
     try {
       const remove = await app.inject({

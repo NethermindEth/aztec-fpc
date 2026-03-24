@@ -60,10 +60,10 @@ operator_secret_key: "0x00000000000000000000000000000000000000000000000000000000
 # admin_api_key: "replace-with-random-admin-secret"
 # admin_api_key_header: "x-admin-api-key"
 
-# Persistent JSON file storing the effective supported asset policy set.
-# After the first admin asset update/remove, this file becomes the source of
+# Persistent LMDB directory storing the effective supported asset policy set.
+# After the first admin asset update/remove, this directory becomes the source of
 # truth used across restarts.
-asset_policy_state_path: ".attestation-asset-policies.json"
+asset_policy_state_path: ".attestation-asset-policies"
 
 # Optional default destination for manual operator treasury sweeps.
 # treasury_destination_address: "0x1111111111111111111111111111111111111111111111111111111111111111"

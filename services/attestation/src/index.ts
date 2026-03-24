@@ -20,7 +20,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
-import { FileBackedAssetPolicyStore } from "./asset-policy-store.js";
+import { LmdbAssetPolicyStore } from "./asset-policy-store.js";
 import { loadConfig } from "./config.js";
 import { FpcImmutableVerificationError, verifyFpcImmutablesOnStartup } from "./fpc-immutables.js";
 import { OperatorTreasury } from "./operator-treasury.js";
@@ -50,7 +50,7 @@ async function main() {
 
   const node = createAztecNodeClient(config.aztec_node_url);
   await waitForNode(node);
-  const assetPolicyStore = await FileBackedAssetPolicyStore.create(config);
+  const assetPolicyStore = new LmdbAssetPolicyStore(config);
   const treasury = new OperatorTreasury(config);
 
   // Secret resolution happens in config loading. Production mode rejects

@@ -93,8 +93,8 @@ const ConfigSchema = z.object({
   admin_api_key: z.string().optional(),
   /** Header name carrying the admin API key. */
   admin_api_key_header: z.string().default("x-admin-api-key"),
-  /** Durable JSON file storing the effective supported asset policy set. */
-  asset_policy_state_path: z.string().min(1).default(".attestation-asset-policies.json"),
+  /** Durable LMDB directory storing the effective supported asset policy set. */
+  asset_policy_state_path: z.string().min(1).default(".attestation-asset-policies"),
   /** Default recipient for manual treasury sweeps. */
   treasury_destination_address: AztecAddressSchema.optional(),
   /** Quote endpoint access control mode. */

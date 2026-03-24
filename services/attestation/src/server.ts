@@ -3,7 +3,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import rateLimit from "fastify-rate-limit";
-import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
+import { type AssetPolicyStore, LmdbAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
   computeFinalRate,
@@ -957,9 +957,15 @@ export async function buildServer(
     reply.send(error);
   });
 
+  const assetPolicyStore = deps.assetPolicyStore ?? new LmdbAssetPolicyStore(config);
+
+  app.addHook("onClose", async () => {
+    await assetPolicyStore.close();
+  });
+
   const context: ServerContext = {
     app,
-    assetPolicyStore: deps.assetPolicyStore ?? new MemoryAssetPolicyStore(config.supported_assets),
+    assetPolicyStore,
     config,
     fpcAddress: AztecAddress.fromString(config.fpc_address),
     metrics,
