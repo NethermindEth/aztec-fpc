@@ -7,6 +7,20 @@
 #   bun run generate:configs
 # or the deploy script will auto-generate configs if fpc-config.yaml exists.
 
+# ── Tokens ─────────────────────────────────────────────────────────────
+# Tokens to register with the attestation server via admin API.
+# The "configure-token" subcommand reads this section.
+#
+# If address is omitted, a test token is deployed automatically.
+# For production, always provide an explicit address.
+tokens:
+  - name: "FpcAcceptedAsset"
+    symbol: "FPCA"
+    # address: "0x..."   # omit to deploy a test token
+    market_rate_num: 1
+    market_rate_den: 1000
+    fee_bips: 200
+
 attestation:
   # Human-readable name for the accepted asset token
   accepted_asset_name: "humanUSDC"
