@@ -62,7 +62,6 @@ async function main() {
     ? AztecAddress.fromString(config.operator_address)
     : derivedOperatorAddress;
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
-  const acceptedAssetAddress = AztecAddress.fromString(config.accepted_asset_address);
   if (config.operator_address && !operatorAddress.equals(derivedOperatorAddress)) {
     pinoLogger.warn(
       `[startup] operator_address override is set to ${operatorAddress.toString()} (signer-derived with salt=0 is ${derivedOperatorAddress.toString()})`,
@@ -103,9 +102,6 @@ async function main() {
   pinoLogger.info(`Operator pubkey x: ${operatorPubKey.x.toString()}`);
   pinoLogger.info(`Operator pubkey y: ${operatorPubKey.y.toString()}`);
   pinoLogger.info(`FPC address:       ${fpcAddress.toString()}`);
-  pinoLogger.info(
-    `Default asset:     ${config.accepted_asset_name} (${acceptedAssetAddress.toString()})`,
-  );
   pinoLogger.info(`Supported assets:  ${assetPolicyStore.getAll().length}`);
   if (config.admin_auth.enabled) {
     pinoLogger.info("Admin API enabled (authentication header configured)");

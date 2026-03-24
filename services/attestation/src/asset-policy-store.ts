@@ -40,10 +40,6 @@ function normalizeSupportedAssetPolicy(policy: SupportedAssetPolicy): SupportedA
 }
 
 function normalizeSupportedAssetPolicies(policies: SupportedAssetPolicy[]): SupportedAssetPolicy[] {
-  if (policies.length === 0) {
-    throw new Error("supported_assets must contain at least one asset");
-  }
-
   const seen = new Set<string>();
   return policies.map((policy) => {
     const normalized = normalizeSupportedAssetPolicy(policy);

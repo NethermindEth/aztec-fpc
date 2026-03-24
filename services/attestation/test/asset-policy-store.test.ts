@@ -16,8 +16,6 @@ function makeConfig(statePath: string): Config {
     aztec_node_url: "http://localhost:8080",
     quote_validity_seconds: 300,
     port: 3000,
-    accepted_asset_address: "0x0000000000000000000000000000000000000000000000000000000000000002",
-    accepted_asset_name: "humanUSDC",
     supported_assets: [
       {
         address: "0x0000000000000000000000000000000000000000000000000000000000000002",
@@ -27,9 +25,6 @@ function makeConfig(statePath: string): Config {
         fee_bips: 200,
       },
     ],
-    market_rate_num: 1,
-    market_rate_den: 1000,
-    fee_bips: 200,
     quote_format: "amount_quote",
     operator_secret_provider: "auto",
     operator_address: undefined,

@@ -10,10 +10,6 @@ tokens:
     fee_bips: 200
 
 attestation:
-  accepted_asset_name: "humanUSDC"
-  market_rate_num: 1
-  market_rate_den: 1000
-  fee_bips: 200
   port: 3000
   quote_validity_seconds: 1800
   quote_auth_mode: "disabled"

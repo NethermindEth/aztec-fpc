@@ -5,13 +5,10 @@ services:
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data
     environment:
-      FPC_ACCEPTED_ASSET: "${FPC_ACCEPTED_ASSET}"
       FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY}"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
-      FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
       FPC_DATA_DIR: "/app/data"
-      FPC_TEST_TOKEN_OUT: "/app/data/tokens/FpcAcceptedAsset.json"
     env_file:
       - .env.${DEPLOYMENT}
 

@@ -42,7 +42,6 @@ const deployManifestSchema = z.object({
   }),
   deployer_address: aztecAddress,
   contracts: z.object({
-    accepted_asset: aztecAddress,
     fpc: aztecAddress,
   }),
   operator: z.object({

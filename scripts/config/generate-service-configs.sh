@@ -50,9 +50,8 @@ fi
 # ── Read deploy manifest ───────────────────────────────────────────────────────
 
 export FPC_ADDRESS=$(jq -r '.contracts.fpc // .fpc_address // empty' "$FPC_DEPLOY_MANIFEST")
-export ACCEPTED_ASSET=$(jq -r '.contracts.accepted_asset // .accepted_asset // empty' "$FPC_DEPLOY_MANIFEST")
 
-for var in FPC_ADDRESS ACCEPTED_ASSET; do
+for var in FPC_ADDRESS; do
   val="${!var}"
   if [ -z "$val" ] || [ "$val" = "null" ]; then
     echo "ERROR: Required field missing or null in deploy manifest: $var" >&2
@@ -67,7 +66,6 @@ mkdir -p "$(dirname "$FPC_ATTESTATION_CONFIG")"
 yq '.attestation' "$FPC_MASTER_CONFIG" \
   | yq '
     .fpc_address = strenv(FPC_ADDRESS) | .fpc_address style="double"
-    | .accepted_asset_address = strenv(ACCEPTED_ASSET) | .accepted_asset_address style="double"
   ' \
   > "$FPC_ATTESTATION_CONFIG"
 
@@ -88,4 +86,3 @@ echo "  attestation: $FPC_ATTESTATION_CONFIG"
 echo "  topup:       $FPC_TOPUP_CONFIG"
 echo ""
 echo "  fpc_address:     $FPC_ADDRESS"
-echo "  accepted_asset:  $ACCEPTED_ASSET"
