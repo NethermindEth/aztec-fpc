@@ -31,6 +31,10 @@ import {
   type DeployManifest,
   readDeployManifest,
 } from "@aztec-fpc/contract-deployment/src/manifest.ts";
+import {
+  readTestTokenManifest,
+  type TestTokenManifest,
+} from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
 import pino from "pino";
 import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
 import * as viemChains from "viem/chains";
@@ -103,14 +107,15 @@ export async function connectAndCreateWallet(nodeUrl: string, proverEnabled: boo
 export type CoreContracts = {
   token: Contract;
   fpc: Contract;
-  counter?: Contract;
-  faucet?: Contract;
-  bridge?: Contract;
+  counter: Contract;
+  faucet: Contract;
+  bridge: Contract;
 };
 
 export async function registerCoreContracts(
   repoRoot: string,
   manifest: DeployManifest,
+  testTokenManifest: TestTokenManifest,
   node: AztecNode,
   wallet: EmbeddedWallet,
 ): Promise<CoreContracts> {
@@ -119,7 +124,7 @@ export async function registerCoreContracts(
   const token = await registerAndGet(
     node,
     wallet,
-    manifest.contracts.accepted_asset,
+    testTokenManifest.contracts.token,
     path.join(target, "token_contract-Token.json"),
   );
   const fpc = await registerAndGet(
@@ -129,33 +134,24 @@ export async function registerCoreContracts(
     path.join(target, "fpc-FPCMultiAsset.json"),
     Fr.ZERO,
   );
-
-  const counter = manifest.contracts.counter
-    ? await registerAndGet(
-        node,
-        wallet,
-        manifest.contracts.counter,
-        path.join(target, "mock_counter-Counter.json"),
-      )
-    : undefined;
-
-  const faucet = manifest.contracts.faucet
-    ? await registerAndGet(
-        node,
-        wallet,
-        manifest.contracts.faucet,
-        path.join(target, "faucet-Faucet.json"),
-      )
-    : undefined;
-
-  const bridge = manifest.contracts.bridge
-    ? await registerAndGet(
-        node,
-        wallet,
-        manifest.contracts.bridge,
-        path.join(target, "token_bridge_contract-TokenBridge.json"),
-      )
-    : undefined;
+  const counter = await registerAndGet(
+    node,
+    wallet,
+    testTokenManifest.contracts.counter,
+    path.join(target, "mock_counter-Counter.json"),
+  );
+  const faucet = await registerAndGet(
+    node,
+    wallet,
+    testTokenManifest.contracts.faucet,
+    path.join(target, "faucet-Faucet.json"),
+  );
+  const bridge = await registerAndGet(
+    node,
+    wallet,
+    testTokenManifest.contracts.bridge,
+    path.join(target, "token_bridge_contract-TokenBridge.json"),
+  );
 
   return { token, fpc, counter, faucet, bridge };
 }
@@ -257,12 +253,14 @@ export async function setupL1Infrastructure(args: L1InfraArgs): Promise<L1Infra>
 export type SetupArgs = {
   nodeUrl: string;
   manifestPath: string;
+  testTokenManifestPath: string;
   proverEnabled: boolean;
   messageTimeoutSeconds: number;
 };
 
 export type SetupResult = {
   manifest: DeployManifest;
+  testTokenManifest: TestTokenManifest;
   node: AztecNode;
   wallet: EmbeddedWallet;
   operator: AztecAddress;
@@ -278,11 +276,13 @@ export async function setup(
   pinoLogger.info(`[${label}] starting`);
   pinoLogger.info(`[${label}] node_url=${args.nodeUrl}`);
   pinoLogger.info(`[${label}] manifest=${args.manifestPath}`);
+  pinoLogger.info(`[${label}] test_token_manifest=${args.testTokenManifestPath}`);
 
   const manifest = readManifest(args.manifestPath);
+  const testTokenManifest = readTestTokenManifest(args.testTokenManifestPath);
 
   pinoLogger.info(
-    `[${label}] manifest loaded. fpc=${manifest.contracts.fpc} token=${manifest.contracts.accepted_asset}`,
+    `[${label}] manifests loaded. fpc=${manifest.contracts.fpc} token=${testTokenManifest.contracts.token}`,
   );
 
   const { node, wallet } = await connectAndCreateWallet(args.nodeUrl, args.proverEnabled);
@@ -290,11 +290,17 @@ export async function setup(
   const operator = manifest.operator.address;
   pinoLogger.info(`[${label}] operator=${operator.toString()}`);
 
-  const contracts = await registerCoreContracts(repoRoot, manifest, node, wallet);
+  const contracts = await registerCoreContracts(
+    repoRoot,
+    manifest,
+    testTokenManifest,
+    node,
+    wallet,
+  );
 
   const sponsoredFpcAddress = await registerSponsoredFpc(wallet);
 
   await waitForFpcFeeJuice(contracts.fpc.address, node, args.messageTimeoutSeconds, label);
 
-  return { manifest, node, wallet, operator, contracts, sponsoredFpcAddress };
+  return { manifest, testTokenManifest, node, wallet, operator, contracts, sponsoredFpcAddress };
 }

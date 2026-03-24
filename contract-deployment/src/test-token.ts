@@ -18,13 +18,14 @@ import pino from "pino";
 import { type Chain, extractChain, type Hex } from "viem";
 import * as viemChains from "viem/chains";
 import { deployContract, loadArtifact, REQUIRED_ARTIFACTS } from "./deploy-utils.js";
+import { type TestTokenManifest, writeTestTokenManifest } from "./test-token-manifest.js";
 
 const logger = pino();
 
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
 const HEX_FIELD_PATTERN = /^0x[0-9a-fA-F]+$/;
 
-export type FaucetEnvConfig = {
+type FaucetEnvConfig = {
   dripAmount: bigint;
   cooldownSeconds: number;
   initialSupply: bigint;
@@ -84,24 +85,14 @@ function readFaucetEnvConfig(): FaucetEnvConfig {
   return { dripAmount, cooldownSeconds, initialSupply };
 }
 
-export type TestTokenEcosystem = {
-  acceptedAssetAddress: AztecAddress;
-  bridgeAddress: AztecAddress;
-  counterAddress: AztecAddress;
-  l1TokenPortalAddress: string;
-  l1Erc20Address: string;
-  faucetAddress: AztecAddress;
-  faucetConfig: FaucetEnvConfig;
-};
-
 /**
- * Deploy a full test token ecosystem: L1 ERC20 + TokenPortal, L2 TokenBridge +
+ * Deploy a full test token stack: L1 ERC20 + TokenPortal, L2 TokenBridge +
  * Token + Faucet, and fund the faucet via the L1→L2 bridge.
  *
  * This is only used for testing/devnet — production deployments should provide
  * an existing --accepted-asset instead.
  */
-export async function deployTestTokenEcosystem(opts: {
+export async function deployTestToken(opts: {
   l1DeployerKey: string;
   l1RpcUrl: string;
   l1ChainId: number;
@@ -110,7 +101,8 @@ export async function deployTestTokenEcosystem(opts: {
   node: AztecNode;
   operatorAddress: AztecAddress;
   deployOpts: DeployOptions;
-}): Promise<TestTokenEcosystem> {
+  outPath: string;
+}): Promise<TestTokenManifest> {
   const l1WalletClient = createExtendedL1Client(
     [opts.l1RpcUrl],
     opts.l1DeployerKey as Hex,
@@ -260,13 +252,27 @@ export async function deployTestTokenEcosystem(opts: {
     `[deploy-fpc-devnet] L2 batch 4 completed (faucet deploy + claim_public, ${faucetConfig.initialSupply} tokens)`,
   );
 
-  return {
-    acceptedAssetAddress: tokenAddress,
-    bridgeAddress,
-    counterAddress,
-    l1TokenPortalAddress,
-    l1Erc20Address,
-    faucetAddress,
-    faucetConfig,
+  const manifest: TestTokenManifest = {
+    status: "deploy_ok",
+    generated_at: new Date().toISOString(),
+    contracts: {
+      token: tokenAddress,
+      faucet: faucetAddress,
+      counter: counterAddress,
+      bridge: bridgeAddress,
+    },
+    l1_contracts: {
+      token_portal: EthAddress.fromString(l1TokenPortalAddress),
+      erc20: EthAddress.fromString(l1Erc20Address),
+    },
+    faucet_config: {
+      drip_amount: faucetConfig.dripAmount.toString(),
+      cooldown_seconds: faucetConfig.cooldownSeconds,
+      initial_supply: faucetConfig.initialSupply.toString(),
+    },
   };
+  writeTestTokenManifest(opts.outPath, manifest);
+  logger.info(`[deploy-fpc-devnet] wrote test token manifest to ${opts.outPath}`);
+
+  return manifest;
 }

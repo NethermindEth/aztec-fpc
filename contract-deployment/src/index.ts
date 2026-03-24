@@ -6,14 +6,15 @@ import { Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import { EthAddress } from "@aztec/foundation/eth-address";
+
 import { deriveKeys, deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
 import { createPublicClient, http } from "viem";
 import { deployContract, loadArtifact, REQUIRED_ARTIFACTS } from "./deploy-utils.js";
 import { type DeployManifest, writeDeployManifest } from "./manifest.js";
-import { deployTestTokenEcosystem, type FaucetEnvConfig } from "./test-token-ecosystem.js";
+import { deployTestToken } from "./test-token.js";
+import type { TestTokenManifest } from "./test-token-manifest.js";
 
 const pinoLogger = pino();
 
@@ -30,6 +31,7 @@ type CliArgs = {
   acceptedAsset: string | null;
   l1DeployerKey: string | null;
   out: string;
+  testTokenOut: string;
   proverEnabled: boolean;
   preflightOnly: boolean;
 };
@@ -94,6 +96,7 @@ function usage(): string {
     "Outputs:",
     `  --data-dir <dir>                 Data directory for artifacts (default: ${DEVNET_DEFAULT_DATA_DIR}) [env: FPC_DATA_DIR]`,
     "  --out <path.json>                Output manifest path (default: $FPC_DATA_DIR/manifest.json) [env: FPC_OUT]",
+    "  --test-token-out <path.json>     Test token manifest path (default: $FPC_DATA_DIR/test-token-manifest.json) [env: FPC_TEST_TOKEN_OUT]",
     "",
     "  --help, -h                       Show this help",
     "",
@@ -191,6 +194,9 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let dataDir: string = process.env.FPC_DATA_DIR ?? DEVNET_DEFAULT_DATA_DIR;
   let outExplicit = !!process.env.FPC_OUT;
   let out: string = process.env.FPC_OUT ?? path.join(dataDir, "manifest.json");
+  let testTokenOutExplicit = !!process.env.FPC_TEST_TOKEN_OUT;
+  let testTokenOut: string =
+    process.env.FPC_TEST_TOKEN_OUT ?? path.join(dataDir, "test-token-manifest.json");
   let proverEnabled = process.env.PXE_PROVER_ENABLED
     ? parseBooleanFlag(process.env.PXE_PROVER_ENABLED, "PXE_PROVER_ENABLED")
     : true;
@@ -251,6 +257,11 @@ function parseCliArgs(argv: string[]): CliParseResult {
         outExplicit = true;
         i += 1;
         break;
+      case "--test-token-out":
+        testTokenOut = nextArg(argv, i, arg);
+        testTokenOutExplicit = true;
+        i += 1;
+        break;
       case "--pxe-prover-enabled":
         proverEnabled = parseBooleanFlag(nextArg(argv, i, arg), arg);
         i += 1;
@@ -269,6 +280,9 @@ function parseCliArgs(argv: string[]): CliParseResult {
 
   if (!outExplicit) {
     out = path.join(dataDir, "manifest.json");
+  }
+  if (!testTokenOutExplicit) {
+    testTokenOut = path.join(dataDir, "test-token-manifest.json");
   }
 
   if (validateTopupPath && !l1RpcUrl) {
@@ -328,6 +342,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
       acceptedAsset: acceptedAsset ? parseAztecAddress(acceptedAsset, "--accepted-asset") : null,
       l1DeployerKey: l1DeployerKey ? parseHex32(l1DeployerKey, "--l1-deployer-key") : null,
       out,
+      testTokenOut,
       proverEnabled,
       preflightOnly,
     },
@@ -509,12 +524,7 @@ async function main(): Promise<void> {
   }
 
   let acceptedAssetAddress: AztecAddress;
-  let bridgeAddress: AztecAddress | undefined;
-  let counterAddress: AztecAddress | undefined;
-  let l1TokenPortalAddress: string | undefined;
-  let l1Erc20Address: string | undefined;
-  let faucetAddress: AztecAddress | undefined;
-  let faucetConfig: FaucetEnvConfig | undefined;
+  let testTokenManifest: TestTokenManifest | undefined;
 
   if (args.acceptedAsset) {
     acceptedAssetAddress = AztecAddress.fromString(args.acceptedAsset);
@@ -527,7 +537,7 @@ async function main(): Promise<void> {
         "Token deployment requires --l1-deployer-key and --l1-rpc-url for L1 bridge contracts.",
       );
     }
-    const ecosystem = await deployTestTokenEcosystem({
+    testTokenManifest = await deployTestToken({
       l1DeployerKey: args.l1DeployerKey,
       l1RpcUrl: args.l1RpcUrl,
       l1ChainId: nodeInfo.l1ChainId,
@@ -536,14 +546,9 @@ async function main(): Promise<void> {
       node,
       operatorAddress,
       deployOpts,
+      outPath: args.testTokenOut,
     });
-    acceptedAssetAddress = ecosystem.acceptedAssetAddress;
-    bridgeAddress = ecosystem.bridgeAddress;
-    counterAddress = ecosystem.counterAddress;
-    l1TokenPortalAddress = ecosystem.l1TokenPortalAddress;
-    l1Erc20Address = ecosystem.l1Erc20Address;
-    faucetAddress = ecosystem.faucetAddress;
-    faucetConfig = ecosystem.faucetConfig;
+    acceptedAssetAddress = testTokenManifest.contracts.token;
   }
 
   const fpcArtifact = loadArtifact(fpcArtifactPath);
@@ -586,16 +591,18 @@ async function main(): Promise<void> {
     contracts: {
       accepted_asset: acceptedAssetAddress,
       fpc: AztecAddress.fromString(fpcAddress),
-      ...(faucetAddress ? { faucet: faucetAddress } : {}),
-      ...(counterAddress ? { counter: counterAddress } : {}),
-      ...(bridgeAddress ? { bridge: bridgeAddress } : {}),
+      ...(testTokenManifest
+        ? {
+            faucet: testTokenManifest.contracts.faucet,
+            counter: testTokenManifest.contracts.counter,
+            bridge: testTokenManifest.contracts.bridge,
+          }
+        : {}),
     },
-    ...(l1TokenPortalAddress && l1Erc20Address
+    ...(testTokenManifest
       ? {
-          l1_contracts: {
-            token_portal: EthAddress.fromString(l1TokenPortalAddress),
-            erc20: EthAddress.fromString(l1Erc20Address),
-          },
+          l1_contracts: testTokenManifest.l1_contracts,
+          faucet_config: testTokenManifest.faucet_config,
         }
       : {}),
     fpc_artifact: {
@@ -613,15 +620,6 @@ async function main(): Promise<void> {
       counter_deploy: null,
       bridge_deploy: null,
     },
-    ...(faucetConfig
-      ? {
-          faucet_config: {
-            drip_amount: faucetConfig.dripAmount.toString(),
-            cooldown_seconds: faucetConfig.cooldownSeconds,
-            initial_supply: faucetConfig.initialSupply.toString(),
-          },
-        }
-      : {}),
     payment_mode: paymentMode,
   };
   writeDeployManifest(args.out, manifest);

@@ -20,6 +20,7 @@ import { setup as commonSetup } from "../common/setup-helpers.ts";
 type FullE2EConfig = {
   nodeUrl: string;
   manifestPath: string;
+  testTokenManifestPath: string;
   operatorSecretKey: string;
   feeJuiceTimeoutMs: number;
   feeJuicePollMs: number;
@@ -192,6 +193,7 @@ function requireEnv(name: string): string {
 
 function getConfig(): FullE2EConfig {
   const manifestPath = requireEnv("FPC_COLD_START_MANIFEST");
+  const testTokenManifestPath = requireEnv("FPC_TEST_TOKEN_MANIFEST");
   const operatorSecretKey = requireEnv("FPC_OPERATOR_SECRET_KEY");
   assertPrivateKeyHex(operatorSecretKey, "FPC_OPERATOR_SECRET_KEY");
   const feeBips = readEnvPositiveInteger("FPC_FULL_E2E_FEE_BIPS", 200);
@@ -202,6 +204,7 @@ function getConfig(): FullE2EConfig {
   return {
     nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
     manifestPath,
+    testTokenManifestPath,
     operatorSecretKey,
     feeJuiceTimeoutMs: readEnvPositiveInteger("FPC_FULL_E2E_FEE_JUICE_TIMEOUT_MS", 240_000),
     feeJuicePollMs: readEnvPositiveInteger("FPC_FULL_E2E_FEE_JUICE_POLL_MS", 2_000),
@@ -222,6 +225,7 @@ async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRunti
     {
       nodeUrl: config.nodeUrl,
       manifestPath: config.manifestPath,
+      testTokenManifestPath: config.testTokenManifestPath,
       proverEnabled: config.pxeProverEnabled,
       messageTimeoutSeconds: Math.ceil(config.feeJuiceTimeoutMs / 1_000),
     },
@@ -230,9 +234,6 @@ async function setupFromManifest(config: FullE2EConfig): Promise<DeploymentRunti
   );
 
   const { token, fpc, faucet } = contracts;
-  if (!faucet) {
-    throw new Error("Manifest missing contracts.faucet (required for fpc-full-lifecycle-e2e)");
-  }
 
   const sponsoredFeePayment = new SponsoredFeePaymentMethod(sponsoredFpcAddress);
 

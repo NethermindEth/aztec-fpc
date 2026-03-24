@@ -20,6 +20,7 @@ type SameTokenTransferConfig = {
   nodeUrl: string;
   attestationUrl: string;
   manifestPath: string;
+  testTokenManifestPath: string;
   operatorSecretKey: Fr;
   pxeProverEnabled: boolean;
   aaPaymentAmount: bigint;
@@ -82,6 +83,7 @@ function getConfig(): SameTokenTransferConfig {
     nodeUrl: process.env.AZTEC_NODE_URL ?? "http://localhost:8080",
     attestationUrl: requireEnv("FPC_ATTESTATION_URL"),
     manifestPath: requireEnv("FPC_COLD_START_MANIFEST"),
+    testTokenManifestPath: requireEnv("FPC_TEST_TOKEN_MANIFEST"),
     operatorSecretKey: Fr.fromHexString(requireEnv("FPC_OPERATOR_SECRET_KEY")),
     pxeProverEnabled:
       process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
@@ -101,6 +103,7 @@ async function setupFromConfig(config: SameTokenTransferConfig): Promise<SetupRe
     {
       nodeUrl: config.nodeUrl,
       manifestPath: config.manifestPath,
+      testTokenManifestPath: config.testTokenManifestPath,
       proverEnabled: config.pxeProverEnabled,
       messageTimeoutSeconds: config.messageTimeoutSeconds,
     },
@@ -108,13 +111,7 @@ async function setupFromConfig(config: SameTokenTransferConfig): Promise<SetupRe
     "same-token-transfer",
   );
 
-  const { token, fpc, counter, faucet } = contracts;
-  if (!counter) {
-    throw new Error("Manifest missing contracts.counter (required for same-token-transfer)");
-  }
-  if (!faucet) {
-    throw new Error("Manifest missing contracts.faucet (required for same-token-transfer)");
-  }
+  const { token, fpc, faucet } = contracts;
 
   const fpcClient = new FpcClient({
     fpcAddress: fpc.address,

@@ -44,6 +44,7 @@ type ColdStartConfig = {
   l1RpcUrl: string;
   attestationUrl: string;
   manifestPath: string;
+  testTokenManifestPath: string;
   operatorSecretKey: Fr;
   l1DeployerKey: string;
   userL1PrivateKey: string | null;
@@ -98,6 +99,7 @@ function getConfig(): ColdStartConfig {
     l1RpcUrl: requireEnv("L1_RPC_URL"),
     attestationUrl: requireEnv("FPC_ATTESTATION_URL"),
     manifestPath: path.resolve(requireEnv("FPC_COLD_START_MANIFEST")),
+    testTokenManifestPath: path.resolve(requireEnv("FPC_TEST_TOKEN_MANIFEST")),
     operatorSecretKey,
     l1DeployerKey,
     userL1PrivateKey,
@@ -145,7 +147,7 @@ describe("cold-start smoke", () => {
     const repoRoot = path.resolve(import.meta.dirname, "../..");
 
     const {
-      manifest,
+      testTokenManifest,
       node: n,
       wallet: w,
       operator: op,
@@ -155,6 +157,7 @@ describe("cold-start smoke", () => {
       {
         nodeUrl: config.nodeUrl,
         manifestPath: config.manifestPath,
+        testTokenManifestPath: config.testTokenManifestPath,
         proverEnabled: config.proverEnabled,
         messageTimeoutSeconds: config.messageTimeoutSeconds,
       },
@@ -168,10 +171,6 @@ describe("cold-start smoke", () => {
     sponsoredFpcAddress = sfpc;
 
     const { token: t, fpc, counter: c, bridge } = contracts;
-
-    if (!c) throw new Error("Manifest missing contracts.counter");
-    if (!bridge) throw new Error("Manifest missing contracts.bridge");
-    if (!manifest.l1_contracts) throw new Error("Manifest missing l1_contracts");
 
     token = t;
     counter = c;
@@ -191,8 +190,8 @@ describe("cold-start smoke", () => {
       l1RpcUrl: config.l1RpcUrl,
       l1PrivateKey,
       l1DeployerKey: config.l1DeployerKey,
-      l1PortalAddress: manifest.l1_contracts.token_portal,
-      l1Erc20Address: manifest.l1_contracts.erc20,
+      l1PortalAddress: testTokenManifest.l1_contracts.token_portal,
+      l1Erc20Address: testTokenManifest.l1_contracts.erc20,
       node,
       loggerName: "cold-start:bridge",
     });
