@@ -6,7 +6,7 @@ l1_rpc_url: "http://localhost:8545/"
 l1_operator_secret_provider: "auto"
 threshold: "1000000000000000000"
 top_up_amount: "10000000000000000000"
-bridge_state_path: ".topup-bridge-state.json"
+data_dir: ".topup-data"
 ops_port: 3001
 check_interval_ms: 60000
 confirmation_timeout_ms: 180000

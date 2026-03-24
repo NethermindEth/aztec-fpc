@@ -1,4 +1,3 @@
-import { rename } from "node:fs/promises";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import { waitForFeeJuiceBridgeConfirmation } from "./confirm.js";
@@ -44,18 +43,11 @@ export async function reconcilePersistedBridgeState(
   try {
     persistedBridge = await options.stateStore.read();
   } catch (error) {
-    logger.warn(
-      `Failed to read persisted bridge state: ${String(error)}. Quarantining corrupted state file.`,
-    );
+    logger.warn(`Failed to read persisted bridge state: ${String(error)}. Clearing corrupt entry.`);
     try {
-      const quarantinePath = `${options.stateStore.filePath}.corrupt-${Date.now()}`;
-      await rename(options.stateStore.filePath, quarantinePath);
-      logger.warn(`Quarantined corrupted state file to ${quarantinePath}`);
-    } catch (renameError) {
       await options.stateStore.clear();
-      logger.warn(
-        `Cleared corrupted state file (quarantine rename failed: ${String(renameError)})`,
-      );
+    } catch {
+      // Already logged the root cause above; clearing is best-effort.
     }
     return "none";
   }

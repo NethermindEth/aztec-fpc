@@ -343,8 +343,8 @@ l1_operator_secret_provider: "env"             # reads L1_OPERATOR_PRIVATE_KEY e
 threshold: "1000000000000000000"               # 1 FeeJuice — bridge when below this
 top_up_amount: "10000000000000000000"          # 10 FeeJuice — amount to bridge each time
 
-# Persist in-flight bridge state across restarts (important for crash recovery)
-bridge_state_path: ".topup-bridge-state.json"
+# LMDB-backed persistent state directory for crash recovery
+data_dir: ".topup-data"
 
 # Polling
 check_interval_ms: 60000                       # check every 60s
@@ -362,14 +362,11 @@ After the top-up service bridges Fee Juice from L1, the tokens must be claimed o
 
 | Env var | Description |
 |---------|-------------|
-| `TOPUP_AUTOCLAIM_ENABLED=1` | Enable auto-claim (enabled by default) |
-| `TOPUP_AUTOCLAIM_SECRET_KEY` | L2 secret key for the claimer account |
-| `TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY` | When `1`, falls back to `OPERATOR_SECRET_KEY` if no explicit claimer key is set |
-| `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | Use a sponsored FPC to pay claim tx fees (recommended). Falls back to `FPC_DEVNET_SPONSORED_FPC_ADDRESS` then `SPONSORED_FPC_ADDRESS` |
-| `TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT` | Require claimer account to be published (default: `true`; set `0` only for local debugging) |
-| `TOPUP_AUTOCLAIM_TEST_ACCOUNT_INDEX` | Test account index when no explicit key is provided (default: `0`) |
+| `TOPUP_AUTOCLAIM_ENABLED` | Enable auto-claim (default: `1`; set `0` to disable) |
+| `TOPUP_AUTOCLAIM_SECRET_KEY` | L2 secret key for the claimer account (required in production) |
+| `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | Use a sponsored FPC to pay claim tx fees (recommended) |
 
-If `TOPUP_AUTOCLAIM_SECRET_KEY` is not set, falls back to `OPERATOR_SECRET_KEY` (when `TOPUP_AUTOCLAIM_USE_OPERATOR_SECRET_KEY=1`) or local test accounts.
+In `development` profile, if `TOPUP_AUTOCLAIM_SECRET_KEY` is not set, the service falls back to the first test account from `@aztec/accounts/testing`. In `production`, an explicit secret key is required.
 
 #### Run
 
@@ -758,7 +755,7 @@ Example: if `market_rate_num=1`, `market_rate_den=1000`, `fee_bips=200` (2%):
 | Tx reverts with "invalid quote" | Quote expired or wrong FPC/token address | Check `valid_until` vs current block timestamp; verify addresses match the deployed contract |
 | Tx reverts with authwit error | Auth-witness mismatch | Ensure the nonce and transfer call match exactly what the FPC expects |
 | Top-up service not bridging | Balance above threshold | Check `GET <TOPUP_URL>/metrics` for `topup_balance_checks_total`; lower `threshold` if needed |
-| Top-up bridge stuck | L1 tx pending or L2 message not yet available | Check `bridge_state_path` JSON for in-flight state; check L1 tx status |
+| Top-up bridge stuck | L1 tx pending or L2 message not yet available | Check `data_dir` LMDB store for in-flight state; check L1 tx status |
 | Cold start fails | Claim details don't match L1→L2 message | Verify `claimSecret`, `claimSecretHash`, and `messageLeafIndex` from the bridge tx |
 | `PUBLISHED_ACCOUNT_REQUIRED` | User account not deployed on L2 | Deploy the user's account contract first, or use cold-start which doesn't require it |
 

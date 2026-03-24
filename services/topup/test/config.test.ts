@@ -74,7 +74,7 @@ describe("topup config secret providers", () => {
         FPC_RUNTIME_PROFILE: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: undefined,
-        TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_DATA_DIR: undefined,
         TOPUP_OPS_PORT: undefined,
       },
       () => {
@@ -103,7 +103,7 @@ describe("topup config secret providers", () => {
         FPC_RUNTIME_PROFILE: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: undefined,
-        TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_DATA_DIR: undefined,
         TOPUP_OPS_PORT: undefined,
       },
       () => {
@@ -126,7 +126,7 @@ describe("topup config secret providers", () => {
         FPC_RUNTIME_PROFILE: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: VALID_PRIVATE_KEY,
-        TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_DATA_DIR: undefined,
         TOPUP_OPS_PORT: undefined,
       },
       () => {
@@ -156,7 +156,7 @@ describe("topup config secret providers", () => {
         FPC_RUNTIME_PROFILE: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
         L1_OPERATOR_PRIVATE_KEY: VALID_PRIVATE_KEY,
-        TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_DATA_DIR: undefined,
         TOPUP_OPS_PORT: undefined,
       },
       () => {
@@ -182,7 +182,7 @@ describe("topup config secret providers", () => {
       {
         L1_OPERATOR_PRIVATE_KEY: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
-        TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_DATA_DIR: undefined,
         TOPUP_OPS_PORT: undefined,
       },
       () => {
@@ -202,14 +202,14 @@ describe("topup config secret providers", () => {
     cleanupConfig(configPath);
   });
 
-  it("supports bridge state path override via env", () => {
+  it("supports data dir override via env", () => {
     const configPath = writeConfig(
       baseConfigYaml(
         [
           "runtime_profile: development",
           "l1_operator_secret_provider: auto",
           `l1_operator_private_key: "${VALID_PRIVATE_KEY}"`,
-          'bridge_state_path: "./state-from-config.json"',
+          'data_dir: "./data-from-config"',
         ].join("\n"),
       ),
     );
@@ -218,12 +218,12 @@ describe("topup config secret providers", () => {
       {
         L1_OPERATOR_PRIVATE_KEY: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
-        TOPUP_BRIDGE_STATE_PATH: "./state-from-env.json",
+        TOPUP_DATA_DIR: "./data-from-env",
         TOPUP_OPS_PORT: undefined,
       },
       () => {
         const config = loadConfig(configPath);
-        assert.equal(config.bridge_state_path, path.resolve("./state-from-env.json"));
+        assert.equal(config.data_dir, path.resolve("./data-from-env"));
       },
     );
 
@@ -246,7 +246,7 @@ describe("topup config secret providers", () => {
       {
         L1_OPERATOR_PRIVATE_KEY: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
-        TOPUP_BRIDGE_STATE_PATH: undefined,
+        TOPUP_DATA_DIR: undefined,
         TOPUP_OPS_PORT: "3100",
       },
       () => {
@@ -258,7 +258,7 @@ describe("topup config secret providers", () => {
     cleanupConfig(configPath);
   });
 
-  it("rejects bridge_state_path with path traversal", () => {
+  it("rejects data_dir with path traversal", () => {
     const configPath = writeConfig(
       baseConfigYaml(
         [
@@ -273,7 +273,7 @@ describe("topup config secret providers", () => {
       {
         L1_OPERATOR_PRIVATE_KEY: undefined,
         L1_OPERATOR_SECRET_PROVIDER: undefined,
-        TOPUP_BRIDGE_STATE_PATH: "../../../etc/shadow",
+        TOPUP_DATA_DIR: "../../../etc/shadow",
         TOPUP_OPS_PORT: undefined,
       },
       () => {

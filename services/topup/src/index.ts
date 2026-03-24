@@ -10,8 +10,10 @@
  *   node dist/index.js [--config path/to/config.yaml]
  */
 
+import nodePath from "node:path";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import type { RootDatabase } from "lmdb";
 import pino from "pino";
 import { createTopupAutoClaimer, type TopupAutoClaimer } from "./autoclaim.js";
 import { bridgeFeeJuice } from "./bridge.js";
@@ -25,7 +27,8 @@ import { reconcilePersistedBridgeState } from "./reconcile.js";
 import {
   acquireProcessLock,
   type BridgeStateStore,
-  createBridgeStateStore,
+  createLmdbBridgeStateStore,
+  openTopupDatabase,
   releaseProcessLock,
 } from "./state.js";
 
@@ -195,7 +198,7 @@ function logStartupDetails(context: StartupLogContext): void {
   }
   pinoLogger.info(`  Threshold:     ${context.threshold} wei`);
   pinoLogger.info(`  Top-up amount: ${context.topUpAmount} wei`);
-  pinoLogger.info(`  Bridge state file: ${context.bridgeStateStore.filePath}`);
+  pinoLogger.info(`  Bridge state store: ${context.bridgeStateStore.storageLabel}`);
   pinoLogger.info(`  Check interval: ${context.config.check_interval_ms}ms`);
   pinoLogger.info(`  L1 chain id:   ${context.l1ChainId}`);
   pinoLogger.info(`  L1 portal:     ${context.feeJuicePortalAddress.toString()}`);
@@ -382,6 +385,7 @@ function registerShutdownHandlers(args: {
   loopState: TopupLoopState;
   opsServer: TopupOpsServer;
   lockPath: string;
+  db: RootDatabase;
 }): void {
   const requestShutdown = (signal: NodeJS.Signals) => {
     if (args.shutdownController.signal.aborted) {
@@ -403,6 +407,7 @@ function registerShutdownHandlers(args: {
         pinoLogger.error({ err: error }, "Failed to stop top-up ops server cleanly:");
       } finally {
         await releaseProcessLock(args.lockPath).catch(() => {});
+        await args.db.close().catch(() => {});
         pinoLogger.info("Top-up service stopped");
         args.loopState.shutdownResolve?.();
       }
@@ -535,8 +540,9 @@ async function main(): Promise<void> {
   const topUpAmount = BigInt(config.top_up_amount);
   const logClaimSecret = config.runtime_profile === "development";
   const autoClaimEnabled = process.env.TOPUP_AUTOCLAIM_ENABLED !== "0";
-  const bridgeStateStore = createBridgeStateStore(config.bridge_state_path);
-  const lockPath = `${config.bridge_state_path}.lock`;
+  const db = await openTopupDatabase(config.data_dir);
+  const bridgeStateStore = createLmdbBridgeStateStore(db, config.data_dir);
+  const lockPath = nodePath.join(config.data_dir, ".topup.lock");
   await acquireProcessLock(lockPath);
 
   // Everything between lock acquisition and shutdown handler registration
@@ -602,6 +608,7 @@ async function main(): Promise<void> {
     loopState = createLoopState();
   } catch (error) {
     await releaseProcessLock(lockPath).catch(() => {});
+    await db.close().catch(() => {});
     throw error;
   }
 
@@ -612,6 +619,7 @@ async function main(): Promise<void> {
     loopState,
     opsServer,
     lockPath,
+    db,
   });
 
   const runReconciliation = createReconciliationRunner({

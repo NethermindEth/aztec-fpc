@@ -23,7 +23,7 @@ At startup, the service:
 
 On each cycle, it:
 
-1. Reconciles any persisted in-flight bridge state from `bridge_state_path`.
+1. Reconciles any persisted in-flight bridge state from `data_dir`.
    - If reconciliation times out, it preserves state and skips submitting a new bridge in that cycle.
 2. Reads current Fee Juice balance of `fpc_address`.
 3. If `balance < threshold`, submits bridge of `top_up_amount`.
@@ -112,10 +112,16 @@ Includes:
 - `fpc_address`: contract address whose Fee Juice balance is monitored and topped up.
 - `threshold`: minimum Fee Juice balance; bridge triggers below this value.
 - `top_up_amount`: amount bridged per trigger.
-- `bridge_state_path`: local durable JSON for in-flight bridge metadata.
+- `data_dir`: LMDB-backed directory for persistent state. Created automatically with `0o700` permissions. Contains:
+  - LMDB data files for in-flight bridge metadata (claim secret, message hash, baseline balance).
+  - `.topup.lock` PID lock file (prevents concurrent instances).
 - `check_interval_ms`: polling/check cadence.
-- `confirmation_timeout_ms`, `confirmation_poll_initial_ms`, `confirmation_poll_max_ms`: bridge confirmation polling controls.
+- `confirmation_timeout_ms`, `confirmation_poll_initial_ms`, `confirmation_poll_max_ms`: bridge confirmation polling with exponential backoff (starts at `initial`, doubles up to `max`, total capped at `timeout`).
 - `l1_operator_secret_provider` + secret fields: L1 signer key source.
+
+Validation constraints enforced at startup:
+- `confirmation_poll_initial_ms <= confirmation_poll_max_ms <= confirmation_timeout_ms`
+- `top_up_amount >= threshold`
 
 Useful env overrides:
 
@@ -123,7 +129,7 @@ Useful env overrides:
 - `AZTEC_NODE_URL`
 - `L1_RPC_URL`
 - `L1_OPERATOR_PRIVATE_KEY`
-- `TOPUP_BRIDGE_STATE_PATH`
+- `TOPUP_DATA_DIR`
 - `TOPUP_OPS_PORT`
 - `TOPUP_FEE_JUICE_RECIPIENT_ADDRESS` (overrides bridge target; defaults to `fpc_address`)
 - `TOPUP_AUTOCLAIM_ENABLED` (`0` to disable auto-claim)
@@ -131,6 +137,18 @@ Useful env overrides:
 - `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` (sponsored FPC for fee-less claims)
 
 Claim secrets are logged automatically in `development` profile and never in `test`/`production`.
+
+## Crash Recovery
+
+Bridge metadata (including claim secrets) is persisted to an LMDB database in `data_dir`. If the service crashes or restarts while a bridge is in-flight:
+
+1. On startup, the service reads any persisted bridge state from LMDB.
+2. It polls for bridge confirmation (balance increase + L1→L2 message readiness).
+3. On confirmation, persisted state is cleared and the service resumes normal operation.
+4. On timeout, state is preserved for the next cycle's reconciliation attempt.
+5. Persisted bridges older than 24 hours are evicted with a `CRITICAL` log to prevent deadlock. Funds from evicted bridges may require manual recovery.
+
+In containerized deployments, `data_dir` should be backed by a persistent volume so state survives container restarts.
 
 ## Minimal Local Run
 
