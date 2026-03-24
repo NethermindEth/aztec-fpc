@@ -86,7 +86,7 @@ function getConfig(): SameTokenTransferConfig {
     testTokenManifestPath: requireEnv("FPC_TEST_TOKEN_MANIFEST"),
     operatorSecretKey: Fr.fromHexString(requireEnv("FPC_OPERATOR_SECRET_KEY")),
     pxeProverEnabled:
-      process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
+      process.env.PXE_PROVER_ENABLED === "1" || process.env.PXE_PROVER_ENABLED === "true",
     aaPaymentAmount: readEnvPositiveBigInt("FPC_COLD_START_AA_PAYMENT_AMOUNT", 1_000_000_000n),
     messageTimeoutSeconds: readEnvPositiveInteger("FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS", 120),
   };

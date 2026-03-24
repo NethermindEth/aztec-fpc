@@ -77,7 +77,7 @@ function getConfig(): AlwaysRevertConfig {
     testTokenManifestPath: requireEnv("FPC_TEST_TOKEN_MANIFEST"),
     operatorSecretKey: Fr.fromHexString(requireEnv("FPC_OPERATOR_SECRET_KEY")),
     proverEnabled:
-      process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
+      process.env.PXE_PROVER_ENABLED === "1" || process.env.PXE_PROVER_ENABLED === "true",
     messageTimeoutSeconds: readEnvPositiveInteger("FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS", 120),
     iterations: readEnvPositiveInteger("FPC_SMOKE_ITERATIONS", 3),
   };

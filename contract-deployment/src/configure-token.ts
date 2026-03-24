@@ -197,7 +197,7 @@ async function initDeployDeps(): Promise<TestTokenDeployDeps> {
   const l1DeployerKey = requireEnv("FPC_L1_DEPLOYER_KEY");
   const deployerSecretKey = requireEnv("FPC_DEPLOYER_SECRET_KEY");
   const proverEnabled =
-    process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false";
+    process.env.PXE_PROVER_ENABLED === "1" || process.env.PXE_PROVER_ENABLED === "true";
 
   const node = createAztecNodeClient(nodeUrl);
   await waitForNode(node);

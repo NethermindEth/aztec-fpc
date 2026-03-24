@@ -78,7 +78,7 @@ function usage(): string {
     "Options:",
     "  --operator <aztec_address>       Operator address (default: derived from key) [env: FPC_OPERATOR]",
     "  --sponsored-fpc-address <addr>   Use sponsored FPC payment mode [env: FPC_SPONSORED_FPC_ADDRESS]",
-    "  --pxe-prover-enabled <bool>      Enable PXE prover (default: true) [env: PXE_PROVER_ENABLED]",
+    "  --pxe-prover-enabled <bool>      Enable PXE prover (default: false) [env: PXE_PROVER_ENABLED]",
     "  --preflight-only                 Run checks only, do not deploy [env: FPC_PREFLIGHT_ONLY=1]",
     "",
     "Outputs:",
@@ -178,7 +178,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
   let out: string = process.env.FPC_OUT ?? path.join(dataDir, "manifest.json");
   let proverEnabled = process.env.PXE_PROVER_ENABLED
     ? parseBooleanFlag(process.env.PXE_PROVER_ENABLED, "PXE_PROVER_ENABLED")
-    : true;
+    : false;
   let preflightOnly = process.env.FPC_PREFLIGHT_ONLY === "1";
 
   for (let i = 0; i < argv.length; i += 1) {

@@ -74,7 +74,7 @@ function getConfig(): ConcurrentConfig {
     claimAmount,
     messageTimeoutSeconds,
     proverEnabled:
-      process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
+      process.env.PXE_PROVER_ENABLED === "1" || process.env.PXE_PROVER_ENABLED === "true",
     l1PrivateKey: l1KeyRaw ? (l1KeyRaw as Hex) : null,
     l1DeployerKey: requireEnv("FPC_L1_DEPLOYER_KEY"),
   };

@@ -7,7 +7,7 @@ services:
     environment:
       FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY}"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
-      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-}"
       FPC_DATA_DIR: "/app/data"
     env_file:
       - .env.${DEPLOYMENT}
@@ -80,7 +80,7 @@ services:
       - ./deployments/${DEPLOYMENT}:/app/data
     command: ["configure-token"]
     environment:
-      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-}"
       FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
       FPC_DATA_DIR: "/app/data"
@@ -108,7 +108,7 @@ services:
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
       FPC_L1_USER_KEY: "${FPC_L1_USER_KEY}"
-      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:
@@ -131,7 +131,7 @@ services:
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
       FPC_TEST_TOKEN_MANIFEST: "/app/data/tokens/FpcAcceptedAsset.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
-      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:
@@ -154,7 +154,7 @@ services:
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
       FPC_TEST_TOKEN_MANIFEST: "/app/data/tokens/FpcAcceptedAsset.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
-      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:

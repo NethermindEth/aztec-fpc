@@ -106,7 +106,7 @@ function getConfig(): ColdStartConfig {
     claimAmount: readEnvPositiveBigInt("FPC_COLD_START_CLAIM_AMOUNT", "10000000000000000"),
     aaPaymentAmount: readEnvPositiveBigInt("FPC_COLD_START_AA_PAYMENT_AMOUNT", "1000000000"),
     proverEnabled:
-      process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
+      process.env.PXE_PROVER_ENABLED === "1" || process.env.PXE_PROVER_ENABLED === "true",
     messageTimeoutSeconds: readEnvNonNegativeInt("FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS", 120),
   };
 }

@@ -54,8 +54,6 @@ jobs:
     needs: [changes]
     if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
-    env:
-      PXE_PROVER_ENABLED: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6

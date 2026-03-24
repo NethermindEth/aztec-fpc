@@ -214,7 +214,7 @@ function getConfig(): FullE2EConfig {
     daGasLimit: readEnvPositiveInteger("FPC_FULL_E2E_DA_GAS_LIMIT", 200_000),
     l2GasLimit: readEnvPositiveInteger("FPC_FULL_E2E_L2_GAS_LIMIT", 1_000_000),
     pxeProverEnabled:
-      process.env.PXE_PROVER_ENABLED !== "0" && process.env.PXE_PROVER_ENABLED !== "false",
+      process.env.PXE_PROVER_ENABLED === "1" || process.env.PXE_PROVER_ENABLED === "true",
   };
 }
 
