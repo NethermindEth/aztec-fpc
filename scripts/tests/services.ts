@@ -6,8 +6,11 @@ import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { Point } from "@aztec/foundation/curves/grumpkin";
 import { readTestTokenManifest } from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
-import { sleep } from "../common/managed-process.ts";
 import { readManifest, waitForFpcFeeJuice } from "../common/setup-helpers.ts";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // ---------------------------------------------------------------------------
 // Constants

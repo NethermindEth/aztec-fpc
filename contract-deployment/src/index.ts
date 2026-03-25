@@ -3,10 +3,10 @@ import path from "node:path";
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
+import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-
 import { deriveKeys, deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
@@ -416,7 +416,6 @@ async function main(): Promise<void> {
 
   let deployOpts: DeployOptions;
   if (args.sponsoredFpcAddress) {
-    const { SponsoredFeePaymentMethod } = await import("@aztec/aztec.js/fee");
     deployOpts = {
       from: deployerAddress,
       fee: {
