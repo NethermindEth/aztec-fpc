@@ -391,7 +391,7 @@ async function main(): Promise<void> {
 
   // --- JS API wallet setup for contract deployments ---
   const wallet = await EmbeddedWallet.create(node, {
-    pxeConfig: { proverEnabled: args.proverEnabled },
+    pxeConfig: { proverEnabled: args.proverEnabled, syncChainTip: "checkpointed" },
   });
 
   const deployerSecretFr = Fr.fromHexString(args.deployerSecretKey);
