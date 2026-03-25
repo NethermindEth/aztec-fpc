@@ -1,8 +1,107 @@
-# FPC Contracts
+# FPC: Fee Payment Contracts for Aztec
 
-Operator-run fee payment contracts for Aztec L2. Pay transaction fees in any supported token via private transfer to the operator.
+## Why FPC Exists
 
-Current contract surface: `FPCMultiAsset`.
+Every transaction on Aztec L2 costs gas, paid in the native **Fee Juice** token (more in the [docs](https://docs.aztec.network/developers/docs/foundational-topics/fees)). Fee Juice creates two problems for users:
+
+1. **Cold start**: Users arrive on Aztec by bridging assets like USDC or ETH from Ethereum — they have no Fee Juice and may not even have a deployed account contract. You need Fee Juice to do anything, but getting Fee Juice *is* doing something.
+2. **Ongoing UX friction**: Even after onboarding, users don't want to keep buying and bridging small amounts of Fee Juice just to run transactions. They already hold tokens — they should be able to pay with those.
+
+**This FPC implementation solves both.** Users pay fees in whatever token the operator accepts (e.g., USDC/ETH/...); the FPC pays the actual gas in Fee Juice on their behalf.
+
+## How It Works
+
+The FPC system has following components:
+
+| Component | Role |
+|---|---|
+| **FPC contract** (`FPCMultiAsset`) | Smart contract on Aztec L2 that sits between the user and the protocol — it accepts the user's token payment, pays the gas on their behalf, and delivers the remaining tokens to the user |
+| **Attestation service** | Pricing API the wallet calls before each transaction — returns a signed price quote telling the user exactly how much token they'll pay for a given amount of gas |
+| **Top-up service** | Background daemon that watches the FPC's gas balance and automatically tops it up by bridging Fee Juice from Ethereum L1, so the FPC always has gas to cover user transactions |
+
+## Token Flow
+
+There are two transaction paths. Both are fully private*.
+
+
+### Cold Start (`cold_start_entrypoint`)
+
+For users who just bridged tokens from L1 — no L2 balance, no deployed account:
+
+```
+┌──────────────┐                         ┌──────────────────┐
+│ Ethereum L1  │  User deposits tokens   │   Aztec Bridge   │
+│  (e.g. USDC) │ ──────────────────────► │   (L1 portal)    │
+└──────────────┘                         └────────┬─────────┘
+                                                  │ L1→L2 message
+                                                  ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Aztec L2 — cold_start_entrypoint (this IS the tx, no account    │
+│             entrypoint needed)                                   │
+│                                                                  │
+│  Setup phase:                                                    │
+│    Perform verifications & guards                                │
+│    FPC declares itself fee_payer                                 │
+│                                                                  │
+│  App phase:                                                      │
+│    1. Claim bridged tokens INTO FPC's private balance            │
+│       (not the user's — avoids needing authwit or deployed acct) │
+│    2. Transfer (claim - fee) → user's address (remainder)        │
+│    3. Transfer fee → operator's address (exact token payment)    │
+│                                                                  │
+│  Fee deduction:                                                  │
+│    Protocol deducts gas cost from FPC's Fee Juice                │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+The operator is reimbursed in the accepted token. The FPC itself never holds tokens — it is a pass-through. Unused Fee Juice stays in the FPC's balance.
+
+
+### Normal Payment (`fee_entrypoint`)
+
+For users who already have an L2 account and token balance:
+
+```
+┌──────────┐  1. GET /quote   ┌─────────────────┐
+│  Wallet  │ ───────────────► │  Attestation Svc│
+│  (SDK)   │ ◄─────────────── │  (signs quote)  │
+└────┬─────┘  signed quote    └─────────────────┘
+     │
+     │  2. Submit tx: fee_entrypoint(quote_sig, amounts, ...)
+     ▼
+┌──────────────────────────────────────────────────────────┐
+│  Aztec L2                                                │
+│                                                          │
+│  Setup phase:                                            │
+│    Perform verifications & guards                        │
+│    User transfers exact token payment → operator         │
+│    (no refund — user calculates the precise amount       │
+│     based on estimated gas and quoted rate)              │
+│    FPC declares itself fee_payer                         │
+│                                                          │
+│  App phase:                                              │
+│    User's actual transaction logic runs                  │
+│                                                          │
+│  Fee deduction:                                          │
+│    Protocol deducts gas cost from FPC's Fee Juice        │
+└──────────────────────────────────────────────────────────┘
+```
+
+### How Fee Juice Gets Into the FPC
+
+```
+┌─────────────┐  monitors FPC   ┌─────────────┐  bridges when   ┌──────────────┐
+│  Top-up Svc │ ──────────────► │  FPC on L2  │  balance < thr  │ Ethereum L1  │
+│             │ ◄────────────── │  (Fee Juice │ ◄────────────── │ (Fee Juice   │
+│             │  balance check  │   balance)  │  L1→L2 bridge   │  ERC-20)     │
+└─────────────┘                 └─────────────┘                 └──────────────┘
+```
+
+The top-up service holds an L1 wallet key with ETH + Fee Juice. It polls the FPC's L2 balance and bridges via the Fee Juice portal when it drops below a threshold.
+
+\* The cold start path claims bridged tokens via `Token::mint_to_private`, which enqueues a public call to update the token's total supply — so the minted amount is visible on-chain. User identity and balances remain private. This is an inherent property of Aztec's `mint_to_private` design, not specific to the FPC.
+
+See [docs/spec/protocol-spec.md](docs/spec/protocol-spec.md) for the full protocol specification, quote format, and security model.
 
 ---
 
@@ -306,26 +405,6 @@ git submodule sync --recursive
 git submodule update --init --recursive
 aztec compile --workspace --force
 ```
-
----
-
-## Payment Flows
-
-Fully private entry-points:
-
-| Entry-point | Source | Destination | Quote |
-|---|---|---|---|
-| `fee_entrypoint` | User private balance | Operator private balance | User-specific |
-
-```
-User private token balance →[transfer_private_to_private]→ Operator private token balance
-```
-
-- Signed quote flows return exact amounts: `fj_amount` and `aa_payment_amount`.
-- Quote binds to `msg_sender` and is nullified after first use.
-- `FPC.fee_entrypoint` pays directly with token each transaction.
-
-See [docs/spec/protocol-spec.md](docs/spec/protocol-spec.md) for the base quote/topup/fee design and security considerations.
 
 ---
 
