@@ -154,5 +154,6 @@ jobs:
             -e FPC_ACCEPTED_ASSET \
             -e AZTEC_NODE_URL \
             -e FPC_SKIP_CONFIG_GEN=1 \
+            -e PXE_SYNC_CHAIN_TIP=checkpointed \
             -v ${{ github.workspace }}/deployments:/app/data \
             nethermind/aztec-fpc-contract-deployment:local
