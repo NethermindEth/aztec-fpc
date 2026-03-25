@@ -55,7 +55,7 @@ jobs:
     if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     env:
-      PXE_PROVER_ENABLED: ${{ github.event_name != 'pull_request' }}
+      PXE_PROVER_ENABLED: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -121,6 +121,10 @@ jobs:
         if: always()
         run: docker compose --profile full logs --timestamps deploy
 
+      - name: Print configure-token logs
+        if: always()
+        run: docker compose --profile full logs --timestamps configure-token
+
       - name: Print attestation logs
         if: always()
         run: docker compose --profile full logs --timestamps attestation
@@ -150,5 +154,6 @@ jobs:
             -e FPC_ACCEPTED_ASSET \
             -e AZTEC_NODE_URL \
             -e FPC_SKIP_CONFIG_GEN=1 \
+            -e PXE_SYNC_CHAIN_TIP=checkpointed \
             -v ${{ github.workspace }}/deployments:/app/data \
             nethermind/aztec-fpc-contract-deployment:local

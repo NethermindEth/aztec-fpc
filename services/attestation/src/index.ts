@@ -20,7 +20,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
-import { FileBackedAssetPolicyStore } from "./asset-policy-store.js";
+import { LmdbAssetPolicyStore } from "./asset-policy-store.js";
 import { loadConfig } from "./config.js";
 import { FpcImmutableVerificationError, verifyFpcImmutablesOnStartup } from "./fpc-immutables.js";
 import { OperatorTreasury } from "./operator-treasury.js";
@@ -50,7 +50,7 @@ async function main() {
 
   const node = createAztecNodeClient(config.aztec_node_url);
   await waitForNode(node);
-  const assetPolicyStore = await FileBackedAssetPolicyStore.create(config);
+  const assetPolicyStore = new LmdbAssetPolicyStore(config);
   const treasury = new OperatorTreasury(config);
 
   // Secret resolution happens in config loading. Production mode rejects
@@ -62,7 +62,6 @@ async function main() {
     ? AztecAddress.fromString(config.operator_address)
     : derivedOperatorAddress;
   const fpcAddress = AztecAddress.fromString(config.fpc_address);
-  const acceptedAssetAddress = AztecAddress.fromString(config.accepted_asset_address);
   if (config.operator_address && !operatorAddress.equals(derivedOperatorAddress)) {
     pinoLogger.warn(
       `[startup] operator_address override is set to ${operatorAddress.toString()} (signer-derived with salt=0 is ${derivedOperatorAddress.toString()})`,
@@ -75,7 +74,6 @@ async function main() {
   try {
     await verifyFpcImmutablesOnStartup(node, {
       fpcAddress,
-      acceptedAsset: acceptedAssetAddress,
       operatorAddress,
       operatorPubkeyX: Fr.fromString(operatorPubKey.x.toString()),
       operatorPubkeyY: Fr.fromString(operatorPubKey.y.toString()),
@@ -104,9 +102,6 @@ async function main() {
   pinoLogger.info(`Operator pubkey x: ${operatorPubKey.x.toString()}`);
   pinoLogger.info(`Operator pubkey y: ${operatorPubKey.y.toString()}`);
   pinoLogger.info(`FPC address:       ${fpcAddress.toString()}`);
-  pinoLogger.info(
-    `Default asset:     ${config.accepted_asset_name} (${acceptedAssetAddress.toString()})`,
-  );
   pinoLogger.info(`Supported assets:  ${assetPolicyStore.getAll().length}`);
   if (config.admin_auth.enabled) {
     pinoLogger.info("Admin API enabled (authentication header configured)");

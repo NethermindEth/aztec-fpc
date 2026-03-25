@@ -54,27 +54,13 @@ const AztecAddressSchema = z
       });
     }
   });
-const SupportedAssetSchema = z
-  .object({
-    address: AztecAddressSchema,
-    name: z.string().trim().min(1),
-    market_rate_num: z.number().int().positive().optional(),
-    market_rate_den: z.number().int().positive().optional(),
-    fee_bips: z.number().int().min(0).max(10000).optional(),
-  })
-  .superRefine((asset, context) => {
-    const providedPricingFields =
-      Number(asset.market_rate_num !== undefined) +
-      Number(asset.market_rate_den !== undefined) +
-      Number(asset.fee_bips !== undefined);
-    if (providedPricingFields > 0 && providedPricingFields < 3) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "supported_assets pricing overrides must provide market_rate_num, market_rate_den, and fee_bips together",
-      });
-    }
-  });
+const SupportedAssetSchema = z.object({
+  address: AztecAddressSchema,
+  name: z.string().trim().min(1),
+  market_rate_num: z.number().int().positive(),
+  market_rate_den: z.number().int().positive(),
+  fee_bips: z.number().int().min(0).max(10000),
+});
 const AdminApiKeySchema = z.string().trim().min(1);
 
 const ConfigSchema = z.object({
@@ -89,16 +75,8 @@ const ConfigSchema = z.object({
   aztec_node_url: AztecNodeUrlSchema.optional(),
   quote_validity_seconds: z.number().int().positive().max(MAX_QUOTE_VALIDITY_SECONDS).default(300),
   port: z.number().int().positive().default(3000),
-  /** The single token contract address this FPC accepts. Must match accepted_asset in the deployed contract. */
-  accepted_asset_address: AztecAddressSchema,
-  accepted_asset_name: z.string(),
-  /** Optional supported asset list. Each entry may optionally override pricing. */
-  supported_assets: z.array(SupportedAssetSchema).nonempty().optional(),
-  /** Baseline exchange rate: accepted_asset units per 1 FeeJuice. */
-  market_rate_num: z.number().int().positive(),
-  market_rate_den: z.number().int().positive(),
-  /** Operator margin in basis points (100 = 1%). Applied on top of market rate. */
-  fee_bips: z.number().int().min(0).max(10000),
+  /** Supported asset list. Each entry defines an accepted token with pricing. */
+  supported_assets: z.array(SupportedAssetSchema).optional(),
   /** Quote preimage format used for signature generation. */
   quote_format: QuoteFormatSchema.default("amount_quote"),
   /** Secret provider strategy for operator key. */
@@ -115,8 +93,8 @@ const ConfigSchema = z.object({
   admin_api_key: z.string().optional(),
   /** Header name carrying the admin API key. */
   admin_api_key_header: z.string().default("x-admin-api-key"),
-  /** Durable JSON file storing the effective supported asset policy set. */
-  asset_policy_state_path: z.string().min(1).default(".attestation-asset-policies.json"),
+  /** Durable LMDB directory storing the effective supported asset policy set. */
+  asset_policy_state_path: z.string().min(1).default(".attestation-asset-policies"),
   /** Default recipient for manual treasury sweeps. */
   treasury_destination_address: AztecAddressSchema.optional(),
   /** Quote endpoint access control mode. */
@@ -503,21 +481,12 @@ function resolveAdminAuthConfig(config: ParsedConfig): AdminAuthConfig {
 }
 
 function resolveSupportedAssets(config: ParsedConfig): SupportedAssetPolicy[] {
-  const defaultAssetAddress = normalizeAddress(config.accepted_asset_address);
-  const fallbackAsset: SupportedAssetPolicy = {
-    address: defaultAssetAddress,
-    name: config.accepted_asset_name,
-    market_rate_num: config.market_rate_num,
-    market_rate_den: config.market_rate_den,
-    fee_bips: config.fee_bips,
-  };
   if (!config.supported_assets) {
-    return [fallbackAsset];
+    return [];
   }
 
   const resolvedAssets: SupportedAssetPolicy[] = [];
   const seenAddresses = new Set<string>();
-  let includesDefaultAcceptedAsset = false;
 
   for (const asset of config.supported_assets) {
     const normalizedAddress = normalizeAddress(asset.address);
@@ -525,22 +494,14 @@ function resolveSupportedAssets(config: ParsedConfig): SupportedAssetPolicy[] {
       throw new Error(`Duplicate supported asset address in config: ${normalizedAddress}`);
     }
     seenAddresses.add(normalizedAddress);
-    includesDefaultAcceptedAsset =
-      includesDefaultAcceptedAsset || normalizedAddress === defaultAssetAddress;
 
     resolvedAssets.push({
       address: normalizedAddress,
       name: asset.name,
-      market_rate_num: asset.market_rate_num ?? config.market_rate_num,
-      market_rate_den: asset.market_rate_den ?? config.market_rate_den,
-      fee_bips: asset.fee_bips ?? config.fee_bips,
+      market_rate_num: asset.market_rate_num,
+      market_rate_den: asset.market_rate_den,
+      fee_bips: asset.fee_bips,
     });
-  }
-
-  if (!includesDefaultAcceptedAsset) {
-    throw new Error(
-      "accepted_asset_address must be listed in supported_assets when supported_assets is configured",
-    );
   }
 
   return resolvedAssets;

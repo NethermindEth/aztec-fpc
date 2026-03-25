@@ -5,10 +5,8 @@ services:
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data
     environment:
-      FPC_ACCEPTED_ASSET: "${FPC_ACCEPTED_ASSET}"
       FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY}"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
-      FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
       FPC_DATA_DIR: "/app/data"
     env_file:
@@ -23,6 +21,7 @@ services:
       - ./deployments/${DEPLOYMENT}:/app/data:ro
     environment:
       FPC_DEVNET_SMOKE_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/tokens/FpcAcceptedAsset.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       L1_OPERATOR_PRIVATE_KEY: "${FPC_L1_DEPLOYER_KEY}"
     env_file:
@@ -43,6 +42,7 @@ services:
       OPERATOR_SECRET_PROVIDER: "${OPERATOR_SECRET_PROVIDER:-env}"
       OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       QUOTE_AUTH_MODE: "${QUOTE_AUTH_MODE:-disabled}"
+      ADMIN_API_KEY: "${ADMIN_API_KEY}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:
@@ -66,13 +66,28 @@ services:
       TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS: "${TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS:-}"
       TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT: "${TOPUP_AUTOCLAIM_REQUIRE_PUBLISHED_ACCOUNT:-0}"
       TOPUP_OPS_PORT: "${TOPUP_OPS_PORT:-3001}"
-      TOPUP_BRIDGE_STATE_PATH: "${TOPUP_BRIDGE_STATE_PATH:-/tmp/.topup-bridge-state.json}"
+      TOPUP_DATA_DIR: "${TOPUP_DATA_DIR:-/tmp/.topup-data}"
       TOPUP_AUTOCLAIM_ENABLED: "${TOPUP_AUTOCLAIM_ENABLED:-1}"
     env_file:
       - .env.${DEPLOYMENT}
     depends_on:
       deploy:
         condition: service_completed_successfully
+
+  configure-token:
+    image: "${DEPLOY_IMAGE:-nethermind/aztec-fpc-contract-deployment:local}"
+    volumes:
+      - ./deployments/${DEPLOYMENT}:/app/data
+    command: ["configure-token"]
+    environment:
+      PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
+      FPC_DEPLOYER_SECRET_KEY: "${FPC_DEPLOYER_SECRET_KEY}"
+      FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
+      FPC_DATA_DIR: "/app/data"
+      FPC_ATTESTATION_URL: "http://attestation:3000"
+      ADMIN_API_KEY: "${ADMIN_API_KEY}"
+    env_file:
+      - .env.${DEPLOYMENT}
 
   tests-cold-start:
     image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
@@ -84,6 +99,7 @@ services:
     environment:
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/tokens/FpcAcceptedAsset.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       FPC_L1_DEPLOYER_KEY: "${FPC_L1_DEPLOYER_KEY}"
       FPC_L1_USER_KEY: "${FPC_L1_USER_KEY}"
@@ -95,6 +111,8 @@ services:
         condition: service_healthy
       topup:
         condition: service_healthy
+      configure-token:
+        condition: service_completed_successfully
 
   tests-same-token-transfer:
     image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
@@ -106,6 +124,7 @@ services:
     environment:
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/tokens/FpcAcceptedAsset.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
     env_file:
@@ -115,6 +134,8 @@ services:
         condition: service_healthy
       topup:
         condition: service_healthy
+      configure-token:
+        condition: service_completed_successfully
 
   tests-always-revert:
     image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
@@ -126,6 +147,7 @@ services:
     environment:
       FPC_ATTESTATION_URL: "http://attestation:3000"
       FPC_COLD_START_MANIFEST: "/app/data/manifest.json"
+      FPC_TEST_TOKEN_MANIFEST: "/app/data/tokens/FpcAcceptedAsset.json"
       FPC_OPERATOR_SECRET_KEY: "${FPC_OPERATOR_SECRET_KEY}"
       PXE_PROVER_ENABLED: "${PXE_PROVER_ENABLED:-true}"
     env_file:
@@ -135,3 +157,5 @@ services:
         condition: service_healthy
       topup:
         condition: service_healthy
+      configure-token:
+        condition: service_completed_successfully

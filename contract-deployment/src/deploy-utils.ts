@@ -8,6 +8,9 @@
  * already published before each attempt.
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import {
   BatchCall,
@@ -18,12 +21,41 @@ import {
   getContractClassFromArtifact,
 } from "@aztec/aztec.js/contracts";
 import type { Wallet } from "@aztec/aztec.js/wallet";
+import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
+import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import pino from "pino";
 
 const pinoLogger = pino();
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 3000;
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(SCRIPT_DIR, "../..");
+
+export const REQUIRED_ARTIFACTS = {
+  fpc: path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
+  token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
+  tokenBridge: path.join(REPO_ROOT, "target", "token_bridge_contract-TokenBridge.json"),
+  faucet: path.join(REPO_ROOT, "target", "faucet-Faucet.json"),
+  counter: path.join(REPO_ROOT, "target", "mock_counter-Counter.json"),
+} as const;
+
+export function loadArtifact(artifactPath: string): ContractArtifact {
+  const raw = readFileSync(artifactPath, "utf8");
+  const parsed = JSON.parse(raw) as NoirCompiledContract;
+  try {
+    return loadContractArtifact(parsed);
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message.includes("Contract's public bytecode has not been transpiled")
+    ) {
+      return loadContractArtifactForPublic(parsed);
+    }
+    throw err;
+  }
+}
 
 /**
  * Deploy a contract with automatic retry on class publication races.
@@ -40,7 +72,7 @@ export async function deployContract(
   deployMethod: DeployMethod<Contract>,
   sendOptions: DeployOptions,
   extraCalls?: ContractFunctionInteraction[],
-): Promise<void> {
+): Promise<string> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const opts = { ...sendOptions };
@@ -54,16 +86,22 @@ export async function deployContract(
 
       if (extraCalls && extraCalls.length > 0) {
         const batch = new BatchCall(wallet, [deployMethod, ...extraCalls]);
-        await batch.send(opts);
-        return;
+        const { receipt } = await batch.send(opts);
+        return receipt.txHash.toString();
       }
 
-      await deployMethod.send(opts);
-      return;
+      const { receipt } = await deployMethod.send(opts);
+      return receipt.txHash.toString();
     } catch (error) {
-      if (isClassPublicationRace(error) && attempt < MAX_RETRIES) {
+      if (
+        (isClassPublicationRace(error) || isTransientBlockError(error)) &&
+        attempt < MAX_RETRIES
+      ) {
+        const reason = isClassPublicationRace(error)
+          ? "class publication race"
+          : "transient block error";
         pinoLogger.info(
-          `Contract class publication race detected (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying after ${RETRY_DELAY_MS}ms`,
+          `${reason} detected (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying after ${RETRY_DELAY_MS}ms`,
         );
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
         continue;
@@ -82,4 +120,9 @@ function isClassPublicationRace(error: unknown): boolean {
     msg.includes("Existing nullifier") ||
     msg.includes("dropped by P2P node")
   );
+}
+
+function isTransientBlockError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes("not found when querying world state");
 }

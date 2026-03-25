@@ -7,20 +7,31 @@
 #   bun run generate:configs
 # or the deploy script will auto-generate configs if fpc-config.yaml exists.
 
+# ── Tokens ─────────────────────────────────────────────────────────────
+# Tokens to register with the attestation server via admin API.
+# The "configure-token" subcommand reads this section.
+#
+# If address is omitted, a test token is deployed automatically.
+# For production, always provide an explicit address.
+tokens:
+  - name: "FpcAcceptedAsset"
+    symbol: "FPCA"
+    # address: "0x..."   # omit to deploy a test token
+    market_rate_num: 1
+    market_rate_den: 1000
+    fee_bips: 200
+
 attestation:
-  # Human-readable name for the accepted asset token
-  accepted_asset_name: "humanUSDC"
-
-  # Exchange rate: market_rate_num / market_rate_den = accepted_asset per 1 FeeJuice
-  # Example: 1 FeeJuice = 0.001 USDC -> num=1, den=1000
-  market_rate_num: 1
-  market_rate_den: 1000
-
-  # Operator margin in basis points (100 = 1%)
-  fee_bips: 200
-
   # HTTP port the attestation service listens on
   port: 3000
+
+  # Supported assets with pricing. Required unless using the admin API.
+  # supported_assets:
+  #   - address: "0x..."
+  #     name: "humanUSDC"
+  #     market_rate_num: 1
+  #     market_rate_den: 1000
+  #     fee_bips: 200
 
   # How long (seconds) each signed quote is valid
   quote_validity_seconds: 300

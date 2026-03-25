@@ -244,7 +244,4 @@ jq . deployments/devnet-manifest-v2.json
 
 Check non-zero:
 
-- `contracts.accepted_asset`
 - `contracts.fpc`
-- `aztec_required_addresses.l1_contract_addresses.*`
-- `aztec_required_addresses.protocol_contract_addresses.*`

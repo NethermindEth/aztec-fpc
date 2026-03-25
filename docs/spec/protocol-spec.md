@@ -164,7 +164,7 @@ Returns wallet discovery metadata for this attestation instance.
   "endpoints": {
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
-    "asset": "/asset",
+    "accepted_assets": "/accepted-assets",
     "quote": "/quote"
   },
   "supported_assets": [{ "address": "0x...", "name": "humanUSDC" }]
@@ -177,11 +177,14 @@ Use HTTPS for `quote_base_url` in production; HTTP is acceptable for local devel
 #### `GET /health`
 Returns `{ status: "ok" }`. Use for liveness probes.
 
-#### `GET /asset`
-Returns the default configured asset name and address (`accepted_asset_*`), kept for backward compatibility.
+#### `GET /accepted-assets`
+Returns the supported accepted-assets list.
 
 ```json
-{ "name": "humanUSDC", "address": "0x..." }
+[
+  { "name": "humanUSDC", "address": "0x..." },
+  { "name": "ravenETH", "address": "0x..." }
+]
 ```
 
 #### `GET /quote?user=<address>&accepted_asset=<address>&fj_amount=<positive_u128_decimal>`

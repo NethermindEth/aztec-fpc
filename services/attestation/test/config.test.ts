@@ -77,11 +77,12 @@ function baseConfigYaml(extra: string): string {
     'aztec_node_url: "http://127.0.0.1:8080"',
     "quote_validity_seconds: 300",
     "port: 3000",
-    'accepted_asset_address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
-    'accepted_asset_name: "humanUSDC"',
-    "market_rate_num: 1",
-    "market_rate_den: 1000",
-    "fee_bips: 200",
+    "supported_assets:",
+    '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
+    '    name: "humanUSDC"',
+    "    market_rate_num: 1",
+    "    market_rate_den: 1000",
+    "    fee_bips: 200",
     extra,
   ].join("\n");
 }
@@ -218,11 +219,12 @@ describe("attestation config secret providers", () => {
         'aztec_node_url: "http://127.0.0.1:8080"',
         "quote_validity_seconds: 300",
         "port: 3000",
-        'accepted_asset_address: "still_not_an_aztec_address"',
-        'accepted_asset_name: "humanUSDC"',
-        "market_rate_num: 1",
-        "market_rate_den: 1000",
-        "fee_bips: 200",
+        "supported_assets:",
+        '  - address: "still_not_an_aztec_address"',
+        '    name: "humanUSDC"',
+        "    market_rate_num: 1",
+        "    market_rate_den: 1000",
+        "    fee_bips: 200",
         "operator_secret_provider: auto",
         `operator_secret_key: "${VALID_SECRET}"`,
       ].join("\n"),
@@ -243,11 +245,12 @@ describe("attestation config secret providers", () => {
         'aztec_node_url: "http://127.0.0.1:8080"',
         "quote_validity_seconds: 300",
         "port: 3000",
-        'accepted_asset_address: "0x0000000000000000000000000000000000000000000000000000000000000000"',
-        'accepted_asset_name: "humanUSDC"',
-        "market_rate_num: 1",
-        "market_rate_den: 1000",
-        "fee_bips: 200",
+        "supported_assets:",
+        '  - address: "0x0000000000000000000000000000000000000000000000000000000000000000"',
+        '    name: "humanUSDC"',
+        "    market_rate_num: 1",
+        "    market_rate_den: 1000",
+        "    fee_bips: 200",
         "operator_secret_provider: auto",
         `operator_secret_key: "${VALID_SECRET}"`,
       ].join("\n"),
@@ -260,23 +263,28 @@ describe("attestation config secret providers", () => {
     cleanupConfig(configPath);
   });
 
-  it("resolves supported asset pricing overrides", () => {
+  it("resolves supported asset pricing from supported_assets entries", () => {
     const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: development",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-          "supported_assets:",
-          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
-          '    name: "humanUSDC"',
-          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000003"',
-          '    name: "ravenETH"',
-          "    market_rate_num: 3",
-          "    market_rate_den: 1000",
-          "    fee_bips: 50",
-        ].join("\n"),
-      ),
+      [
+        'fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac"',
+        'aztec_node_url: "http://127.0.0.1:8080"',
+        "quote_validity_seconds: 300",
+        "port: 3000",
+        "runtime_profile: development",
+        "operator_secret_provider: auto",
+        `operator_secret_key: "${VALID_SECRET}"`,
+        "supported_assets:",
+        '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
+        '    name: "humanUSDC"',
+        "    market_rate_num: 1",
+        "    market_rate_den: 1000",
+        "    fee_bips: 200",
+        '  - address: "0x0000000000000000000000000000000000000000000000000000000000000003"',
+        '    name: "ravenETH"',
+        "    market_rate_num: 3",
+        "    market_rate_den: 1000",
+        "    fee_bips: 50",
+      ].join("\n"),
     );
 
     withAttestationEnv({}, () => {
@@ -301,44 +309,28 @@ describe("attestation config secret providers", () => {
     cleanupConfig(configPath);
   });
 
-  it("fails fast when supported_assets excludes accepted_asset_address", () => {
-    const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: development",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-          "supported_assets:",
-          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000003"',
-          '    name: "ravenETH"',
-        ].join("\n"),
-      ),
-    );
-
-    withAttestationEnv({}, () => {
-      assert.throws(
-        () => loadConfig(configPath),
-        /accepted_asset_address must be listed in supported_assets/,
-      );
-    });
-
-    cleanupConfig(configPath);
-  });
-
   it("fails fast when supported_assets contains duplicate addresses", () => {
     const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: development",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-          "supported_assets:",
-          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
-          '    name: "humanUSDC"',
-          '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
-          '    name: "humanUSDC-duplicate"',
-        ].join("\n"),
-      ),
+      [
+        'fpc_address: "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac"',
+        'aztec_node_url: "http://127.0.0.1:8080"',
+        "quote_validity_seconds: 300",
+        "port: 3000",
+        "runtime_profile: development",
+        "operator_secret_provider: auto",
+        `operator_secret_key: "${VALID_SECRET}"`,
+        "supported_assets:",
+        '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
+        '    name: "humanUSDC"',
+        "    market_rate_num: 1",
+        "    market_rate_den: 1000",
+        "    fee_bips: 200",
+        '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
+        '    name: "humanUSDC-duplicate"',
+        "    market_rate_num: 1",
+        "    market_rate_den: 1000",
+        "    fee_bips: 200",
+      ].join("\n"),
     );
 
     withAttestationEnv({}, () => {

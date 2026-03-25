@@ -1,12 +1,16 @@
 import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
 import { Fr } from "@aztec/aztec.js/fields";
 import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { Point } from "@aztec/foundation/curves/grumpkin";
-import { sleep } from "../common/managed-process.ts";
+import { readTestTokenManifest } from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
 import { readManifest, waitForFpcFeeJuice } from "../common/setup-helpers.ts";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -26,6 +30,7 @@ type SmokeConfig = {
   attestationBaseUrl: string;
   topupOpsBaseUrl: string;
   manifestPath: string;
+  testTokenManifestPath: string;
   httpTimeoutMs: number;
   messageTimeoutSeconds: number;
   daGasLimit: number;
@@ -93,6 +98,7 @@ function getConfig(): SmokeConfig {
     attestationBaseUrl: requireEnvOrThrow("FPC_ATTESTATION_URL").replace(/\/$/, ""),
     topupOpsBaseUrl: requireEnvOrThrow("FPC_TOPUP_OPS_URL").replace(/\/$/, ""),
     manifestPath: requireEnvOrThrow("FPC_COLD_START_MANIFEST"),
+    testTokenManifestPath: requireEnvOrThrow("FPC_TEST_TOKEN_MANIFEST"),
     httpTimeoutMs: readEnvNumber("FPC_SMOKE_HTTP_TIMEOUT_MS", 30_000),
     messageTimeoutSeconds: readEnvNumber("FPC_SMOKE_MESSAGE_TIMEOUT_SECONDS", 120),
     daGasLimit: readEnvNumber("FPC_SMOKE_DA_GAS_LIMIT", 200_000),
@@ -187,22 +193,22 @@ async function fetchQuote(
   throw new Error(`Timed out requesting quote. Last error: ${lastError}`);
 }
 
-async function fetchAsset(assetUrl: string, timeoutMs: number): Promise<AssetResponse> {
+async function fetchAcceptedAssets(url: string, timeoutMs: number): Promise<AssetResponse[]> {
   const deadline = Date.now() + timeoutMs;
   let lastError: string | undefined;
 
   while (Date.now() <= deadline) {
     try {
-      const response = await fetch(assetUrl);
+      const response = await fetch(url);
       const bodyText = await response.text();
       if (!response.ok) {
         lastError = `HTTP ${response.status}: ${bodyText}`;
       } else {
-        const parsed = JSON.parse(bodyText) as AssetResponse;
-        if (typeof parsed.name === "string" && typeof parsed.address === "string") {
+        const parsed = JSON.parse(bodyText) as AssetResponse[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
-        lastError = `Invalid asset payload: ${bodyText}`;
+        lastError = `Invalid accepted-assets payload: ${bodyText}`;
       }
     } catch (error) {
       lastError = (error as Error).message;
@@ -211,7 +217,7 @@ async function fetchAsset(assetUrl: string, timeoutMs: number): Promise<AssetRes
     await sleep(500);
   }
 
-  throw new Error(`Timed out requesting asset metadata. Last error: ${lastError}`);
+  throw new Error(`Timed out requesting accepted-assets. Last error: ${lastError}`);
 }
 
 async function fetchMetrics(metricsUrl: string, timeoutMs: number): Promise<string> {
@@ -349,19 +355,16 @@ async function verifyQuoteSignature(
 
 async function setupFromConfig(config: SmokeConfig): Promise<SmokeRuntimeResult> {
   const manifest = readManifest(config.manifestPath);
+  const testTokenManifest = readTestTokenManifest(config.testTokenManifestPath);
 
-  const fpcAddress = AztecAddress.fromString(manifest.contracts.fpc);
-  const tokenAddress = AztecAddress.fromString(manifest.contracts.accepted_asset);
+  const fpcAddress = manifest.contracts.fpc;
+  const tokenAddress = testTokenManifest.contracts.token;
 
   const node = createAztecNodeClient(config.nodeUrl);
   await waitForNode(node);
 
-  const operator = AztecAddress.fromString(manifest.operator.address);
-  const operatorPubKey = new Point(
-    Fr.fromHexString(manifest.operator.pubkey_x),
-    Fr.fromHexString(manifest.operator.pubkey_y),
-    false,
-  );
+  const operator = manifest.operator.address;
+  const operatorPubKey = new Point(manifest.operator.pubkey_x, manifest.operator.pubkey_y, false);
 
   await waitForFpcFeeJuice(fpcAddress, node, config.messageTimeoutSeconds, "fpc-services-smoke");
 
@@ -414,13 +417,16 @@ describe("fpc services smoke", () => {
       expect(response.status).toBe(400);
     });
 
-    it("asset endpoint returns matching token address", async () => {
-      const asset = await fetchAsset(
-        `${ctx.config.attestationBaseUrl}/asset`,
+    it("accepted-assets endpoint includes configured token", async () => {
+      const assets = await fetchAcceptedAssets(
+        `${ctx.config.attestationBaseUrl}/accepted-assets`,
         ctx.config.httpTimeoutMs,
       );
-      expect(asset.name.trim().length).toBeGreaterThan(0);
-      expect(asset.address.toLowerCase()).toBe(ctx.tokenAddress.toString().toLowerCase());
+      const match = assets.find(
+        (a) => a.address.toLowerCase() === ctx.tokenAddress.toString().toLowerCase(),
+      );
+      expect(match).toBeDefined();
+      expect(match?.name.trim().length).toBeGreaterThan(0);
     });
 
     it("returns valid quote with correct signature", async () => {

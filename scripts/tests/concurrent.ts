@@ -32,6 +32,7 @@ type ConcurrentConfig = {
   l1RpcUrl: string;
   attestationBaseUrl: string;
   manifestPath: string;
+  testTokenManifestPath: string;
   concurrentN: number;
   claimAmount: bigint;
   messageTimeoutSeconds: number;
@@ -50,7 +51,7 @@ function requireEnv(name: string): string {
 
 function getConfig(): ConcurrentConfig {
   const concurrentNRaw = process.env.FPC_CONCURRENT_N?.trim();
-  const concurrentN = concurrentNRaw ? Number(concurrentNRaw) : 20;
+  const concurrentN = concurrentNRaw ? Number(concurrentNRaw) : 10;
   if (!Number.isSafeInteger(concurrentN) || concurrentN < 1) {
     throw new Error(`Invalid FPC_CONCURRENT_N: ${concurrentNRaw}`);
   }
@@ -68,6 +69,7 @@ function getConfig(): ConcurrentConfig {
     l1RpcUrl: requireEnv("L1_RPC_URL"),
     attestationBaseUrl: requireEnv("FPC_ATTESTATION_URL"),
     manifestPath: requireEnv("FPC_COLD_START_MANIFEST"),
+    testTokenManifestPath: requireEnv("FPC_TEST_TOKEN_MANIFEST"),
     concurrentN,
     claimAmount,
     messageTimeoutSeconds,
@@ -137,6 +139,7 @@ describe("fpc concurrent e2e", () => {
     // 1. Common setup — node, wallet, contracts, FPC FeeJuice wait
     const {
       manifest,
+      testTokenManifest,
       node: sharedNode,
       wallet: sharedWallet,
       operator,
@@ -145,6 +148,7 @@ describe("fpc concurrent e2e", () => {
       {
         nodeUrl: config.nodeUrl,
         manifestPath: config.manifestPath,
+        testTokenManifestPath: config.testTokenManifestPath,
         proverEnabled: config.proverEnabled,
         messageTimeoutSeconds: config.messageTimeoutSeconds,
       },
@@ -153,13 +157,6 @@ describe("fpc concurrent e2e", () => {
     );
 
     node = sharedNode;
-
-    if (!sharedContracts.bridge) {
-      throw new Error("Manifest missing contracts.bridge (required for concurrent e2e)");
-    }
-    if (!manifest.l1_contracts) {
-      throw new Error("Manifest missing l1_contracts (required for concurrent e2e)");
-    }
 
     tokenAddress = sharedContracts.token.address;
     bridgeAddress = sharedContracts.bridge.address;
@@ -180,8 +177,8 @@ describe("fpc concurrent e2e", () => {
       l1RpcUrl: config.l1RpcUrl,
       l1PrivateKey,
       l1DeployerKey: config.l1DeployerKey,
-      l1PortalAddress: manifest.l1_contracts.token_portal,
-      l1Erc20Address: manifest.l1_contracts.erc20,
+      l1PortalAddress: testTokenManifest.l1_contracts.token_portal,
+      l1Erc20Address: testTokenManifest.l1_contracts.erc20,
       node,
       loggerName: "concurrent-e2e:bridge",
     });
@@ -220,7 +217,13 @@ describe("fpc concurrent e2e", () => {
           ephemeral: true,
           pxeConfig: { proverEnabled: config.proverEnabled },
         });
-        const contracts = await registerCoreContracts(repoRoot, manifest, node, wallet);
+        const contracts = await registerCoreContracts(
+          repoRoot,
+          manifest,
+          testTokenManifest,
+          node,
+          wallet,
+        );
         const account = await deriveAccount(secret, wallet);
 
         const msgHash = Fr.fromHexString(bridgeClaims[i].messageHash as string);

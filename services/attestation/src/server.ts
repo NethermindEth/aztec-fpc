@@ -3,7 +3,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import rateLimit from "fastify-rate-limit";
-import { type AssetPolicyStore, MemoryAssetPolicyStore } from "./asset-policy-store.js";
+import { type AssetPolicyStore, LmdbAssetPolicyStore } from "./asset-policy-store.js";
 import {
   type Config,
   computeFinalRate,
@@ -663,7 +663,6 @@ function registerPublicRoutes(context: ServerContext): void {
       discovery: "/.well-known/fpc.json",
       health: "/health",
       accepted_assets: "/accepted-assets",
-      asset: "/asset",
       quote: "/quote",
       cold_start_quote: "/cold-start-quote",
     },
@@ -677,14 +676,6 @@ function registerPublicRoutes(context: ServerContext): void {
       .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
       .send(metrics.renderPrometheus()),
   );
-
-  app.get("/asset", NO_RATE_LIMIT, () => {
-    const primaryAsset = assetPolicyStore.getPrimaryAsset();
-    return {
-      name: primaryAsset.name,
-      address: primaryAsset.address,
-    };
-  });
 
   app.get("/accepted-assets", NO_RATE_LIMIT, () =>
     buildSupportedAssetsForDiscovery(assetPolicyStore),
@@ -966,14 +957,15 @@ export async function buildServer(
     reply.send(error);
   });
 
+  const assetPolicyStore = deps.assetPolicyStore ?? new LmdbAssetPolicyStore(config);
+
+  app.addHook("onClose", async () => {
+    await assetPolicyStore.close();
+  });
+
   const context: ServerContext = {
     app,
-    assetPolicyStore:
-      deps.assetPolicyStore ??
-      new MemoryAssetPolicyStore(
-        config.supported_assets,
-        normalizeAztecAddress(config.accepted_asset_address),
-      ),
+    assetPolicyStore,
     config,
     fpcAddress: AztecAddress.fromString(config.fpc_address),
     metrics,

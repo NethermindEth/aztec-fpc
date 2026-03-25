@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { rmSync } from "node:fs";
+import { afterEach, describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { MemoryAssetPolicyStore } from "../src/asset-policy-store.js";
 import type { Config } from "../src/config.js";
 import type { OperatorTreasuryPort } from "../src/operator-treasury.js";
 import { buildServer } from "../src/server.js";
@@ -33,8 +33,6 @@ const TEST_CONFIG: Config = {
   aztec_node_url: "http://localhost:8080",
   quote_validity_seconds: 300,
   port: 3000,
-  accepted_asset_address: DEFAULT_ACCEPTED_ASSET,
-  accepted_asset_name: "humanUSDC",
   supported_assets: [
     {
       address: DEFAULT_ACCEPTED_ASSET,
@@ -44,9 +42,6 @@ const TEST_CONFIG: Config = {
       fee_bips: 200,
     },
   ],
-  market_rate_num: 1,
-  market_rate_den: 1000,
-  fee_bips: 200,
   operator_secret_provider: "auto",
   operator_account_salt: undefined,
   operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001",
@@ -58,7 +53,7 @@ const TEST_CONFIG: Config = {
     apiKey: undefined,
     apiKeyHeader: "x-admin-api-key",
   },
-  asset_policy_state_path: ".attestation-asset-policies.json",
+  asset_policy_state_path: ".attestation-asset-policies",
   treasury_destination_address: undefined,
   quote_auth: {
     mode: "disabled",
@@ -138,6 +133,10 @@ function mockTreasury(overrides: Partial<OperatorTreasuryPort> = {}): OperatorTr
 }
 
 describe("server", () => {
+  afterEach(() => {
+    rmSync(TEST_CONFIG.asset_policy_state_path, { recursive: true, force: true });
+  });
+
   it("returns health status", async () => {
     const app = await buildServer(TEST_CONFIG, mockSigner());
 
@@ -173,14 +172,13 @@ describe("server", () => {
           discovery: "/.well-known/fpc.json",
           health: "/health",
           accepted_assets: "/accepted-assets",
-          asset: "/asset",
           quote: "/quote",
           cold_start_quote: "/cold-start-quote",
         },
         supported_assets: [
           {
-            address: TEST_CONFIG.accepted_asset_address,
-            name: TEST_CONFIG.accepted_asset_name,
+            address: TEST_CONFIG.supported_assets[0].address,
+            name: TEST_CONFIG.supported_assets[0].name,
           },
         ],
       });
@@ -278,21 +276,6 @@ describe("server", () => {
     }
   });
 
-  it("returns accepted asset metadata", async () => {
-    const app = await buildServer(TEST_CONFIG, mockSigner());
-
-    try {
-      const response = await app.inject({ method: "GET", url: "/asset" });
-      assert.equal(response.statusCode, 200);
-      assert.deepEqual(response.json(), {
-        name: TEST_CONFIG.accepted_asset_name,
-        address: TEST_CONFIG.accepted_asset_address,
-      });
-    } finally {
-      await app.close();
-    }
-  });
-
   it("exposes baseline quote metrics on /metrics", async () => {
     const app = await buildServer(TEST_CONFIG, mockSigner());
 
@@ -355,7 +338,7 @@ describe("server", () => {
         rate_num?: string;
         rate_den?: string;
       };
-      assert.equal(body.accepted_asset, TEST_CONFIG.accepted_asset_address);
+      assert.equal(body.accepted_asset, TEST_CONFIG.supported_assets[0].address);
       assert.equal(body.fj_amount, VALID_FJ_AMOUNT);
       assert.equal(body.aa_payment_amount, "1020");
       assert.equal(body.signature, "0xabc123");
@@ -368,7 +351,7 @@ describe("server", () => {
 
       const expectedHash = await computeQuoteHash({
         fpcAddress: AztecAddress.fromString(TEST_CONFIG.fpc_address),
-        acceptedAsset: AztecAddress.fromString(TEST_CONFIG.accepted_asset_address),
+        acceptedAsset: AztecAddress.fromString(TEST_CONFIG.supported_assets[0].address),
         fjFeeAmount: BigInt(VALID_FJ_AMOUNT),
         aaPaymentAmount: 1020n,
         validUntil,
@@ -1038,12 +1021,7 @@ describe("server", () => {
       enabled: true,
       apiKey: "admin-secret",
     });
-    const app = await buildServer(adminConfig, mockSigner(), {
-      assetPolicyStore: new MemoryAssetPolicyStore(
-        adminConfig.supported_assets,
-        adminConfig.accepted_asset_address,
-      ),
-    });
+    const app = await buildServer(adminConfig, mockSigner());
 
     try {
       const upsert = await app.inject({
@@ -1073,25 +1051,23 @@ describe("server", () => {
   });
 
   it("allows admin to remove a supported asset", async () => {
-    const adminConfig = withAdminAuth({
-      enabled: true,
-      apiKey: "admin-secret",
-    });
-    const app = await buildServer(adminConfig, mockSigner(), {
-      assetPolicyStore: new MemoryAssetPolicyStore(
-        [
-          ...adminConfig.supported_assets,
-          {
-            address: SECONDARY_ACCEPTED_ASSET,
-            name: "ravenETH",
-            market_rate_num: 3,
-            market_rate_den: 1000,
-            fee_bips: 25,
-          },
-        ],
-        adminConfig.accepted_asset_address,
-      ),
-    });
+    const adminConfig = {
+      ...withAdminAuth({
+        enabled: true,
+        apiKey: "admin-secret",
+      }),
+      supported_assets: [
+        ...TEST_CONFIG.supported_assets,
+        {
+          address: SECONDARY_ACCEPTED_ASSET,
+          name: "ravenETH",
+          market_rate_num: 3,
+          market_rate_den: 1000,
+          fee_bips: 25,
+        },
+      ],
+    };
+    const app = await buildServer(adminConfig, mockSigner());
 
     try {
       const remove = await app.inject({

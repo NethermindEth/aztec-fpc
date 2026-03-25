@@ -7,7 +7,7 @@ This service is the quote signer for fee payment flows. It exposes HTTP endpoint
 At startup, the service:
 
 1. Loads config from `config.yaml` plus env overrides.
-2. Loads the effective asset policy set from `asset_policy_state_path` (or seeds it from config on first boot).
+2. Opens the LMDB asset policy store at `asset_policy_state_path` (seeds from config on first boot).
 3. Resolves operator secret key (`env`, `config`, `kms`, or `hsm` mode).
 4. Derives the operator signing public key.
 5. Verifies on-chain constructor immutables for the configured contract address:
@@ -60,7 +60,7 @@ Each attestation instance is bound to one contract address (`fpc_address`) and c
 
 - Use one instance per deployed `FPC` address.
 - Configure `supported_assets` with the initial wallet-facing asset set.
-- Runtime admin changes persist to `asset_policy_state_path`; after the first admin mutation that file becomes the authoritative supported-asset source across restarts.
+- Runtime admin changes persist to the LMDB store at `asset_policy_state_path`; after the first admin mutation it becomes the authoritative supported-asset source across restarts.
 - Optional per-asset pricing overrides are read from each `supported_assets` entry (`market_rate_num`, `market_rate_den`, `fee_bips`).
 
 ## Admin Capabilities
@@ -167,7 +167,6 @@ Response:
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
     "accepted_assets": "/accepted-assets",
-    "asset": "/asset",
     "quote": "/quote"
   },
   "supported_assets": [{ "address": "0x...", "name": "humanUSDC" }]
@@ -244,19 +243,6 @@ Request body:
 ### `DELETE /admin/asset-policies/:assetAddress`
 
 Requires the configured admin API key header.
-
-### `GET /asset` (legacy compatibility)
-
-Returns configured accepted asset metadata.
-
-Response:
-
-```json
-{
-  "name": "humanUSDC",
-  "address": "0x..."
-}
-```
 
 ### `GET /quote?user=<aztec_address>&accepted_asset=<aztec_address>&fj_amount=<positive_u128_decimal>`
 
@@ -352,7 +338,7 @@ Example checks:
 ```bash
 curl http://localhost:3000/.well-known/fpc.json
 curl http://localhost:3000/health
-curl http://localhost:3000/asset
+curl http://localhost:3000/accepted-assets
 curl "http://localhost:3000/quote?user=<aztec_address>&accepted_asset=<asset_address>&fj_amount=1000000"
 curl -H "x-admin-api-key: <admin-key>" http://localhost:3000/admin/asset-policies
 ```

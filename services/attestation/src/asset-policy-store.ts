@@ -1,12 +1,6 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { open, type RootDatabase } from "lmdb";
 import type { Config, SupportedAssetPolicy } from "./config.js";
 import { normalizeAztecAddress } from "./config.js";
-
-interface PersistedAssetPolicyStateFile {
-  version: 1;
-  supported_assets: SupportedAssetPolicy[];
-}
 
 function assertPositiveInteger(value: number, label: string): void {
   if (!Number.isInteger(value) || value <= 0) {
@@ -40,10 +34,6 @@ function normalizeSupportedAssetPolicy(policy: SupportedAssetPolicy): SupportedA
 }
 
 function normalizeSupportedAssetPolicies(policies: SupportedAssetPolicy[]): SupportedAssetPolicy[] {
-  if (policies.length === 0) {
-    throw new Error("supported_assets must contain at least one asset");
-  }
-
   const seen = new Set<string>();
   return policies.map((policy) => {
     const normalized = normalizeSupportedAssetPolicy(policy);
@@ -55,185 +45,64 @@ function normalizeSupportedAssetPolicies(policies: SupportedAssetPolicy[]): Supp
   });
 }
 
-async function writeJsonAtomically(filePath: string, contents: string): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    await writeFile(tempPath, `${contents}\n`, { encoding: "utf8", mode: 0o600 });
-    await rename(tempPath, filePath);
-  } catch (error) {
-    await rm(tempPath, { force: true }).catch(() => {});
-    throw error;
-  }
-}
-
-async function readStateFile(filePath: string): Promise<PersistedAssetPolicyStateFile | null> {
-  let raw: string;
-  try {
-    raw = await readFile(filePath, "utf8");
-  } catch (error) {
-    const maybeNodeError = error as NodeJS.ErrnoException;
-    if (maybeNodeError.code === "ENOENT") {
-      return null;
-    }
-    throw new Error(`Failed reading asset policy state file at ${filePath}`, { cause: error });
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`Asset policy state file is not valid JSON at ${filePath}`, { cause: error });
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error(`Asset policy state file is malformed at ${filePath}: expected root object`);
-  }
-
-  const root = parsed as { version?: unknown; supported_assets?: unknown };
-  if (root.version !== 1) {
-    throw new Error(
-      `Unsupported asset policy state version in ${filePath}: ${String(root.version)}`,
-    );
-  }
-  if (!Array.isArray(root.supported_assets)) {
-    throw new Error(
-      `Asset policy state file is malformed at ${filePath}: supported_assets must be an array`,
-    );
-  }
-
-  return {
-    version: 1,
-    supported_assets: normalizeSupportedAssetPolicies(
-      root.supported_assets as SupportedAssetPolicy[],
-    ),
-  };
-}
-
 export interface AssetPolicyStore {
   getAll(): SupportedAssetPolicy[];
-  getPrimaryAsset(): SupportedAssetPolicy;
   upsert(policy: SupportedAssetPolicy): Promise<SupportedAssetPolicy>;
   remove(address: string): Promise<SupportedAssetPolicy>;
+  close(): Promise<void>;
 }
 
-export class MemoryAssetPolicyStore implements AssetPolicyStore {
-  private supportedAssets: SupportedAssetPolicy[];
+export class LmdbAssetPolicyStore implements AssetPolicyStore {
+  private readonly db: RootDatabase<SupportedAssetPolicy, string>;
 
-  constructor(
-    initialPolicies: SupportedAssetPolicy[],
-    private readonly primaryAddressHint: string,
-  ) {
-    this.supportedAssets = normalizeSupportedAssetPolicies(initialPolicies);
+  constructor(config: Config) {
+    this.db = open<SupportedAssetPolicy, string>({
+      path: config.asset_policy_state_path,
+    });
+
+    if (this.db.getKeysCount() === 0) {
+      const normalized = normalizeSupportedAssetPolicies(config.supported_assets);
+      for (const policy of normalized) {
+        this.db.putSync(policy.address, policy);
+      }
+    }
   }
 
   getAll(): SupportedAssetPolicy[] {
-    return this.supportedAssets.map((asset) => ({ ...asset }));
-  }
-
-  getPrimaryAsset(): SupportedAssetPolicy {
-    const hinted = this.supportedAssets.find((asset) => asset.address === this.primaryAddressHint);
-    return { ...(hinted ?? this.supportedAssets[0]) };
-  }
-
-  upsert(policy: SupportedAssetPolicy): Promise<SupportedAssetPolicy> {
-    const normalized = normalizeSupportedAssetPolicy(policy);
-    const index = this.supportedAssets.findIndex((asset) => asset.address === normalized.address);
-    if (index >= 0) {
-      this.supportedAssets[index] = normalized;
-    } else {
-      this.supportedAssets = [...this.supportedAssets, normalized];
+    const entries: SupportedAssetPolicy[] = [];
+    for (const { value } of this.db.getRange()) {
+      entries.push({ ...value });
     }
-    this.supportedAssets.sort((left, right) => left.name.localeCompare(right.name));
-    return Promise.resolve({ ...normalized });
-  }
-
-  remove(address: string): Promise<SupportedAssetPolicy> {
-    if (this.supportedAssets.length === 1) {
-      throw new Error("Cannot remove the last supported asset");
-    }
-
-    const normalizedAddress = normalizeAztecAddress(address);
-    const index = this.supportedAssets.findIndex((asset) => asset.address === normalizedAddress);
-    if (index < 0) {
-      throw new Error(`Supported asset not found: ${normalizedAddress}`);
-    }
-
-    const [removed] = this.supportedAssets.splice(index, 1);
-    return Promise.resolve(removed);
-  }
-}
-
-export class FileBackedAssetPolicyStore implements AssetPolicyStore {
-  private supportedAssets: SupportedAssetPolicy[];
-
-  private constructor(
-    private readonly filePath: string,
-    initialPolicies: SupportedAssetPolicy[],
-    private readonly primaryAddressHint: string,
-  ) {
-    this.supportedAssets = normalizeSupportedAssetPolicies(initialPolicies);
-  }
-
-  static async create(config: Config): Promise<FileBackedAssetPolicyStore> {
-    const storedState = await readStateFile(config.asset_policy_state_path);
-    const initialPolicies = storedState?.supported_assets ?? config.supported_assets;
-    const store = new FileBackedAssetPolicyStore(
-      config.asset_policy_state_path,
-      initialPolicies,
-      normalizeAztecAddress(config.accepted_asset_address),
-    );
-
-    if (!storedState) {
-      await store.persist();
-    }
-
-    return store;
-  }
-
-  getAll(): SupportedAssetPolicy[] {
-    return this.supportedAssets.map((asset) => ({ ...asset }));
-  }
-
-  getPrimaryAsset(): SupportedAssetPolicy {
-    const hinted = this.supportedAssets.find((asset) => asset.address === this.primaryAddressHint);
-    return { ...(hinted ?? this.supportedAssets[0]) };
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    return entries;
   }
 
   async upsert(policy: SupportedAssetPolicy): Promise<SupportedAssetPolicy> {
     const normalized = normalizeSupportedAssetPolicy(policy);
-    const index = this.supportedAssets.findIndex((asset) => asset.address === normalized.address);
-    if (index >= 0) {
-      this.supportedAssets[index] = normalized;
-    } else {
-      this.supportedAssets = [...this.supportedAssets, normalized];
-    }
-    this.supportedAssets.sort((left, right) => left.name.localeCompare(right.name));
-    await this.persist();
+    await this.db.put(normalized.address, normalized);
     return { ...normalized };
   }
 
   async remove(address: string): Promise<SupportedAssetPolicy> {
-    if (this.supportedAssets.length === 1) {
+    if (this.db.getKeysCount() <= 1) {
       throw new Error("Cannot remove the last supported asset");
     }
 
     const normalizedAddress = normalizeAztecAddress(address);
-    const index = this.supportedAssets.findIndex((asset) => asset.address === normalizedAddress);
-    if (index < 0) {
+    const existing = this.db.get(normalizedAddress);
+    if (!existing) {
       throw new Error(`Supported asset not found: ${normalizedAddress}`);
     }
 
-    const [removed] = this.supportedAssets.splice(index, 1);
-    await this.persist();
-    return removed;
+    const removed = await this.db.remove(normalizedAddress);
+    if (!removed) {
+      throw new Error(`Failed to remove supported asset: ${normalizedAddress}`);
+    }
+
+    return existing;
   }
 
-  private async persist(): Promise<void> {
-    const payload: PersistedAssetPolicyStateFile = {
-      version: 1,
-      supported_assets: this.supportedAssets,
-    };
-    await writeJsonAtomically(this.filePath, JSON.stringify(payload, null, 2));
+  async close(): Promise<void> {
+    await this.db.close();
   }
 }

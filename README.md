@@ -113,18 +113,14 @@ Deploy the FPC contract and run the full operator stack with a single Docker Com
 export FPC_DEPLOYER_SECRET_KEY=0x<deployer_key>
 export FPC_OPERATOR_SECRET_KEY=0x<operator_key>
 export FPC_L1_DEPLOYER_KEY=0x<l1_deployer_key>
+export ADMIN_API_KEY=<admin_secret>
 
 DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
 ```
 
-This deploys contracts, generates service configs, and starts the attestation and topup services. Output goes to `deployments/testnet/`.
+This deploys the FPC contract, starts the attestation and topup services, then deploys/registers tokens via the `configure-token` step. Output goes to `deployments/testnet/`.
 
-To deploy FPC against an existing token (skip test token deployment):
-
-```bash
-export FPC_ACCEPTED_ASSET=0x<token_address>
-DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
-```
+To use existing tokens instead of deploying test tokens, set explicit `address` values in the `tokens` section of `deployments/testnet/fpc-config.yaml` before running compose.
 
 **[Full deployment & integration guide](docs/aztec-deployer-user-guide.md)** — deployer setup, service configuration, SDK integration, API reference, and troubleshooting.
 
@@ -452,7 +448,7 @@ cp config.example.yaml config.yaml
 # Edit config.yaml — set fpc_address, aztec_node_url, l1_rpc_url
 # l1_chain_id and fee juice L1 addresses are auto-discovered from nodeInfo
 # Bridge confirmation uses L1->L2 message readiness plus Fee Juice balance-delta fallback
-# In-flight bridge metadata is persisted to bridge_state_path (or TOPUP_BRIDGE_STATE_PATH)
+# In-flight bridge metadata is persisted to data_dir (or TOPUP_DATA_DIR)
 # so restarts reconcile pending bridges before submitting new ones.
 # If reconciliation times out, the state is retained and bridge submissions are deferred
 # until a later reconciliation attempt succeeds.
@@ -560,7 +556,7 @@ Environment variables take precedence over values in the config file:
 | `QUOTE_RATE_LIMIT_WINDOW_SECONDS` | attestation | `60` |
 | `QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS` | attestation | `10000` |
 | `L1_OPERATOR_PRIVATE_KEY` | topup | — |
-| `TOPUP_BRIDGE_STATE_PATH` | topup | `.topup-bridge-state.json` |
+| `TOPUP_DATA_DIR` | topup | `.topup-data` |
 | `TOPUP_OPS_PORT` | topup | `3001` |
 
 Pass them via a `.env` file or inline:
