@@ -93,8 +93,13 @@ export async function deployContract(
       const { receipt } = await deployMethod.send(opts);
       return receipt.txHash.toString();
     } catch (error) {
-      if ((isClassPublicationRace(error) || isTransientBlockError(error)) && attempt < MAX_RETRIES) {
-        const reason = isClassPublicationRace(error) ? "class publication race" : "transient block error";
+      if (
+        (isClassPublicationRace(error) || isTransientBlockError(error)) &&
+        attempt < MAX_RETRIES
+      ) {
+        const reason = isClassPublicationRace(error)
+          ? "class publication race"
+          : "transient block error";
         pinoLogger.info(
           `${reason} detected (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying after ${RETRY_DELAY_MS}ms`,
         );
