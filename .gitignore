@@ -146,6 +146,7 @@ wallet_data*
 pxe_data*
 tmp/
 configs/
+.attestation-asset-policies/
 .topup-bridge-state.json
 artifacts/
 

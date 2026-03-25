@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { FileBackedAssetPolicyStore } from "../src/asset-policy-store.js";
+import { LmdbAssetPolicyStore } from "../src/asset-policy-store.js";
 import type { Config } from "../src/config.js";
 
 function makeConfig(statePath: string): Config {
@@ -60,11 +60,11 @@ function makeConfig(statePath: string): Config {
 describe("asset policy store", () => {
   it("persists admin-managed supported asset state", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "asset-policy-store-test-"));
-    const statePath = path.join(dir, "assets.json");
+    const dbPath = path.join(dir, "assets-db");
 
     try {
-      const config = makeConfig(statePath);
-      const store = await FileBackedAssetPolicyStore.create(config);
+      const config = makeConfig(dbPath);
+      const store = new LmdbAssetPolicyStore(config);
       await store.upsert({
         address: "0x0000000000000000000000000000000000000000000000000000000000000003",
         name: "ravenETH",
@@ -72,10 +72,12 @@ describe("asset policy store", () => {
         market_rate_den: 1000,
         fee_bips: 50,
       });
+      await store.close();
 
-      const reloaded = await FileBackedAssetPolicyStore.create(config);
+      const reloaded = new LmdbAssetPolicyStore(config);
       assert.equal(reloaded.getAll().length, 2);
-      assert.match(readFileSync(statePath, "utf8"), /ravenETH/);
+      assert.ok(reloaded.getAll().some((a) => a.name === "ravenETH"));
+      await reloaded.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
