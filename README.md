@@ -188,195 +188,53 @@ bun run ci
 
 - `build-contract.yml`: noir format + compile + `aztec test --package fpc`
 - `ts-packages.yml`: biome + typecheck + TS build/tests
+- `docker-build-ci.yml`: builds all Docker images, deploys locally via compose, runs the full integration test suite
 
-- `spec-deploy-smoke.yml`: local deploy smoke for `deploy-fpc-local` output validation
-- `spec-full-lifecycle-compose.yml`: compose-backed full lifecycle suite for `FPC`, with uploaded diagnostics artifacts
+### 5. Run integration tests (Docker Compose)
 
-### 5. Run fee-entrypoint negative-path smoke test
-
-Negative-path smoke test that verifies `fee_entrypoint` cannot be called as a root-level transaction outside the setup phase. Uses pre-deployed contracts from a deployment manifest and fetches a real quote from the attestation service via the SDK. Run via docker compose (`smoke` or `full` profile) or directly:
+The full integration test suite runs via Docker Compose. This is the same flow CI uses:
 
 ```bash
-FPC_COLD_START_MANIFEST=path/to/manifest.json \
-FPC_ATTESTATION_URL=http://localhost:3000 \
-  bun run smoke:fee-entrypoint
+# Build all images
+docker buildx bake
+
+# Run deploy + services + all tests
+docker compose --profile full up wait --wait
 ```
 
-Required:
+This starts the full stack (anvil, aztec-node, deploy, configure-token, attestation, topup) and runs all test services under the `full` profile:
 
-- `FPC_COLD_START_MANIFEST` — path to deployment manifest
-- `FPC_ATTESTATION_URL` — attestation service base URL
+| Test service | Description |
+|-------------|-------------|
+| `tests-services` | Service health, API, and quote flow validation |
+| `tests-cold-start` | Cold-start flow (L1 bridge + claim + FPC payment) |
+| `tests-fee-entrypoint-validation` | Verifies fee_entrypoint cannot be called outside setup phase |
+| `tests-concurrent` | Concurrent transaction stress test |
+| `tests-same-token-transfer` | Same-token transfer flow |
+| `tests-always-revert` | Revert behavior validation |
 
-Optional overrides:
+The `wait` service gates on all tests completing successfully.
 
-- `AZTEC_NODE_URL` (default `http://localhost:8080`)
-- `L1_RPC_URL` (default `http://127.0.0.1:8545`)
-
-### 6. Run local-devnet services smoke test (attestation + topup + contract flows)
-
-This script implements Step 8 from the services plan:
-
-1. builds both services,
-2. deploys `Token` + `FPC`,
-3. starts attestation and topup with generated test configs,
-4. requests `/quote?user=<address>&fj_amount=<u128>`,
-5. submits transactions using quote fields (`fj_amount`, `aa_payment_amount`, `valid_until`, `signature`),
-6. confirms topup behavior and successful fee flows.
+To tear down after running:
 
 ```bash
-bun run smoke:services:compose
-```
-- `FPC_SERVICES_SMOKE_RESET_LOCAL_STATE` (default `1`)
-- `FPC_SERVICES_SMOKE_L1_PRIVATE_KEY` (default local anvil key)
-- `FPC_SERVICES_SMOKE_TOPUP_WEI`, `FPC_SERVICES_SMOKE_THRESHOLD_WEI`
-- `FPC_SERVICES_SMOKE_ATTESTATION_PORT` (default `3300`)
-- `FPC_SERVICES_SMOKE_TOPUP_OPS_PORT` (default `3401`)
-
-### 7. Deploy contracts (recommended)
-
-Use the local deploy wrapper (deploys `Token` and `FPC`):
-
-For `aztec start --local-network`, FeeJuice L1 contracts are bootstrap-provisioned and discovered from node info; local deploy scripts should only deploy L2 contracts (`Token`, `FPC`) and consume node-reported L1 addresses.
-
-```bash
-bun run deploy:fpc:local
+docker compose --profile full down -v --remove-orphans
 ```
 
-Useful overrides:
-
-- `AZTEC_NODE_URL` (default `http://127.0.0.1:8080`)
-- `L1_RPC_URL` (default `http://127.0.0.1:8545`)
-- `FPC_LOCAL_OPERATOR` (default local `test0` Aztec address)
-- `FPC_LOCAL_OUT` (default `./tmp/deploy-fpc-local.json`)
-
-Pass through extra deploy args when needed (for example reuse mode):
-
-```bash
-bun run deploy:fpc:local -- --reuse
-```
-
-### 9. Run local deploy smoke (deploy output + relay claim validation)
-
-This smoke flow:
-1. runs `deploy:fpc:local`,
-2. validates deploy output addresses for `FPC`,
-3. bridges Fee Juice from L1 to the deployed FPC,
-4. runs relay-aware L1->L2 claim checks against the deployed FPC.
-
-```bash
-bun run smoke:deploy:fpc:local
-```
-
-Useful overrides:
-
-- `FPC_DEPLOY_SMOKE_START_LOCAL_NETWORK` (default `1`)
-- `FPC_DEPLOY_SMOKE_RESET_LOCAL_STATE` (default: `1` only when smoke starts local-network, otherwise `0`)
-- `FPC_DEPLOY_SMOKE_DEPLOY_OUTPUT` (default temp path under `/tmp`)
-- `FPC_DEPLOY_SMOKE_TOPUP_WEI` (default `1000000`)
-
-### Devnet deployment and validation (live network)
-
-For the current devnet deployment flow, see [devnet-deployment-how-to.md](docs/ops/devnet-deployment-how-to.md).
-
-Canonical command sequence:
-
-```bash
-cd <repo-root>
-
-# Load your local env file if used by your setup
-set -a; source .env; set +a
-
-# 1) Deploy Token/FPC and write canonical manifest
-bun run deploy:fpc:devnet
-
-# 2) Verify deployed contracts and FPC immutables from manifest
-bun run verify:deploy:fpc:devnet
-
-# 3) Generate attestation/topup configs from manifest + master config
-bun run generate:configs
-
-# 4) Execute post-deploy runtime smoke
-bun run smoke:deploy:fpc:devnet
-```
-
-Manifest secret-handling warning:
-
-- `deployments/devnet-manifest-v2.json` can contain raw private keys if you use `FPC_DEVNET_DEPLOYER_SECRET_KEY` or `L1_OPERATOR_PRIVATE_KEY`.
-- Treat the manifest as secret material and do not commit it to public repos.
-- Prefer key reference inputs (`*_SECRET_KEY_REF`, `*_SECRET_REF`) where supported.
-
-### 10. Deploy contracts manually (alternative)
-
-```bash
-# operator = your Aztec account (receives fees, signs quotes)
-# operator_pubkey_x/y = Schnorr signing public key coordinates for quote signatures
-# accepted_asset is selected per quote/request (not constructor-bound)
-aztec deploy \
-  --artifact target/fpc-FPCMultiAsset.json \
-  --args <operator_address> <operator_pubkey_x> <operator_pubkey_y>
-```
-
-Record the deployed address.
-
-### 11. Configure and start the attestation service
-
-```bash
-cd services/attestation
-cp config.example.yaml config.yaml
-# Edit config.yaml — set fpc_address, accepted_asset_*, rates
-# Default runtime_profile is development (config secrets allowed).
-# In production, set runtime_profile=production and provide OPERATOR_SECRET_KEY
-# and remove config.operator_secret_key from config.yaml
-# (any plaintext config secret material is rejected at startup).
-# /quote auth:
-# - development/test: quote_auth_mode can stay "disabled"
-# - production: quote_auth_mode must be one of
-#   api_key, trusted_header, api_key_or_trusted_header, api_key_and_trusted_header
-#   and required auth fields must be configured.
-# /quote rate limiting:
-# - fixed-window throttling is enabled by default
-# - identity is valid API key (when api-key auth mode is active), otherwise remote IP
-# - behind reverse proxies, ensure the service sees real client IPs if using IP-based limits
-# - tune with quote_rate_limit_* config keys or QUOTE_RATE_LIMIT_* env overrides
-bun install && bun run build && bun run start
-```
-
-### 12. Configure and start the top-up service
-
-```bash
-cd services/topup
-cp config.example.yaml config.yaml
-# Edit config.yaml — set fpc_address, aztec_node_url, l1_rpc_url
-# l1_chain_id and fee juice L1 addresses are auto-discovered from nodeInfo
-# Bridge confirmation uses L1->L2 message readiness plus Fee Juice balance-delta fallback
-# In-flight bridge metadata is persisted to data_dir (or TOPUP_DATA_DIR)
-# so restarts reconcile pending bridges before submitting new ones.
-# If reconciliation times out, the state is retained and bridge submissions are deferred
-# until a later reconciliation attempt succeeds.
-# Top-up exposes ops endpoints on ops_port (default 3001):
-# - /health (liveness)
-# - /ready (readiness)
-# - /metrics (Prometheus format)
-# Default runtime_profile is development (config secrets allowed).
-# In production, set runtime_profile=production and provide L1_OPERATOR_PRIVATE_KEY
-# and remove config.l1_operator_private_key from config.yaml
-# (any plaintext config secret material is rejected at startup).
-bun install && bun run build && bun run start
-```
-
-### 13. Docker
+### 6. Docker
 
 #### Building images
 
-Both service images are built with [Docker Buildx Bake](https://docs.docker.com/build/bake/) via `docker-bake.hcl`. The bake file uses a two-stage build: `Dockerfile.common` produces a shared runtime base, then each service's Dockerfile adds its entrypoint and healthcheck.
+All images are built with [Docker Buildx Bake](https://docs.docker.com/build/bake/) via `docker-bake.hcl`:
 
 ```bash
-# Build both images (attestation + topup)
+# Build all images
 docker buildx bake
 
 # Build a single target
 docker buildx bake attestation
 docker buildx bake topup
+docker buildx bake deploy
 
 # Custom tag / registry
 TAG=v0.1.0 docker buildx bake
@@ -386,56 +244,31 @@ REGISTRY=ghcr.io/ TAG=v0.1.0 docker buildx bake
 GIT_SHA=$(git rev-parse HEAD) docker buildx bake
 ```
 
-Or via the workspace scripts:
-
-```bash
-bun run docker:build
-bun run docker:build:attestation
-bun run docker:build:topup
-```
-
 #### Running with Docker Compose
 
-The compose stack (`docker-compose.yaml`) includes:
+The compose stack (`docker-compose.yaml`) runs the full local environment:
 
 | Service | Description | Port |
 |---------|-------------|------|
 | `anvil` | Local L1 chain (Foundry) | 8545 |
 | `aztec-node` | Aztec sandbox node | 8080 |
+| `deploy` | FPC contract deployment | — |
+| `configure-token` | Test token deployment + attestation registration | — |
 | `attestation` | FPC attestation service | 3000 |
-| `topup` | FPC Fee Juice top-up daemon + ops probe server | 3001 |
-| `tests-fee-entrypoint-validation` (profile `full`) | Fee entrypoint validation test runner | — |
+| `topup` | FPC Fee Juice top-up daemon | 3001 |
+| `block-producer` | Local block producer | — |
 
-Each service reads a `config.yaml` mounted into the container. By default these are `config.example.yaml`:
-
-```
-services/attestation/config.yaml -> config.example.yaml
-services/topup/config.yaml       -> config.example.yaml
-```
-
-Run compose in mode-based flows:
+Service dependency chain: `anvil` + `aztec-node` → `deploy` → `attestation` + `topup` → `configure-token` → tests.
 
 ```bash
 # Infra only (no tests)
-bun run compose:infra
-
-# Full mode (deployment + smoke tests, exits with smoke status)
-bun run compose:full
-
-# Or directly with docker compose for infra-only
 docker compose up
-```
 
-Run compose-backed full lifecycle suite:
+# Full suite (deploy + services + all tests)
+docker compose --profile full up wait --wait
 
-```bash
-bun run e2e:full-lifecycle:fpc:compose
-```
-
-Compose full-lifecycle artifacts are persisted under:
-
-```text
-artifacts/compose-e2e/fpc
+# Tear down
+docker compose --profile full down -v --remove-orphans
 ```
 
 #### Environment variable overrides
@@ -460,33 +293,6 @@ Environment variables take precedence over values in the config file:
 | `TOPUP_DATA_DIR` | topup | `.topup-data` |
 | `TOPUP_OPS_PORT` | topup | `3001` |
 
-Pass them via a `.env` file or inline:
-
-```bash
-OPERATOR_SECRET_KEY=0x... \
-QUOTE_AUTH_MODE=api_key \
-QUOTE_AUTH_API_KEY=replace-with-random-secret \
-L1_OPERATOR_PRIVATE_KEY=0x... \
-docker compose up
-```
-
-### 14. Verify
-
-```bash
-curl http://localhost:3000/health
-curl http://localhost:3000/metrics
-curl http://localhost:3000/asset
-# quote_auth_mode=disabled
-curl "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
-# quote_auth_mode=api_key
-curl -H "x-api-key: <your_api_key>" "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
-# quote_auth_mode=trusted_header
-curl -H "x-internal-attestation: allow" "http://localhost:3000/quote?user=<your_aztec_address>&fj_amount=1000000"
-curl http://localhost:3001/health
-curl http://localhost:3001/ready
-curl http://localhost:3001/metrics
-```
-
 ### Troubleshooting
 
 If you see errors like:
@@ -499,7 +305,6 @@ run:
 git submodule sync --recursive
 git submodule update --init --recursive
 aztec compile --workspace --force
-aztec test --package fpc
 ```
 
 ---
