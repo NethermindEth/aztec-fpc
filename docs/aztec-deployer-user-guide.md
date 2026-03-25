@@ -28,10 +28,11 @@ VERSION=4.1.0-nightly.20260312.2 bash -i <(curl -sL https://install.aztec.networ
 2. [Architecture](#architecture)
 3. [For Deployers](#for-deployers)
    - [Prerequisites](#deployer-prerequisites)
-   - [1. Deploy Contracts](#1-deploy-contracts)
+   - [1. Deploy FPC Contract](#1-deploy-fpc-contract)
    - [2. Configure & Start the Attestation Service](#2-configure--start-the-attestation-service)
-   - [3. Configure & Start the Top-up Service](#3-configure--start-the-top-up-service)
-   - [4. Verify the Deployment](#4-verify-the-deployment)
+   - [3. Configure Tokens](#3-configure-tokens)
+   - [4. Configure & Start the Top-up Service](#4-configure--start-the-top-up-service)
+   - [5. Verify the Deployment](#5-verify-the-deployment)
    - [Docker Compose (All-in-One)](#docker-compose-all-in-one)
 4. [For Users (SDK Integration)](#for-users-sdk-integration)
    - [Prerequisites](#user-prerequisites)
@@ -95,9 +96,11 @@ Aztec Network
 - An operator L2 secret key (or same as deployer)
 - An L1 private key (for the top-up service and optional test-token deploy)
 
-### 1. Deploy Contracts
+### 1. Deploy FPC Contract
 
 The `nethermind/aztec-fpc-contract-deployment` Docker image ships pre-compiled artifacts — no local Noir/Bun needed.
+
+Deployment is a two-phase process. This step deploys the FPC contract only. Token deployment and registration happen separately in [step 3](#3-configure-tokens), after the attestation service is running.
 
 #### Docker Image Tags
 
@@ -118,7 +121,7 @@ Available images: `nethermind/aztec-fpc-contract-deployment`, `nethermind/aztec-
 
 Replace `:local` with the appropriate tag if using pre-built images from a registry.
 
-#### Deploy FPC with an existing token
+#### Deploy FPC
 
 ```bash
 export FPC_DEPLOYER_SECRET_KEY=0x<deployer_hex32>
@@ -128,22 +131,6 @@ mkdir -p deployments
 
 docker run \
   -e AZTEC_NODE_URL=<AZTEC_NODE_URL> \
-  -e FPC_DEPLOYER_SECRET_KEY \
-  -e FPC_OPERATOR_SECRET_KEY \
-  -v ./deployments:/app/deployments \
-  nethermind/aztec-fpc-contract-deployment:local \
-  --accepted-asset <TOKEN_ADDRESS>
-```
-
-#### Deploy test tokens + FPC (for staging)
-
-```bash
-export FPC_L1_DEPLOYER_KEY=0x<l1_key>
-
-docker run \
-  -e AZTEC_NODE_URL=<AZTEC_NODE_URL> \
-  -e L1_RPC_URL=<L1_RPC_URL> \
-  -e FPC_L1_DEPLOYER_KEY \
   -e FPC_DEPLOYER_SECRET_KEY \
   -e FPC_OPERATOR_SECRET_KEY \
   -v ./deployments:/app/deployments \
@@ -159,22 +146,29 @@ docker run \
   -e FPC_OPERATOR_SECRET_KEY \
   -v ./deployments:/app/deployments \
   nethermind/aztec-fpc-contract-deployment:local \
-  --accepted-asset <TOKEN_ADDRESS> \
   --sponsored-fpc-address <EXISTING_FPC_ADDRESS>
 ```
 
 #### Output
 
-After deployment, `./deployments/` contains:
+After FPC deployment, `./deployments/` contains:
 
 ```
 deployments/
-├── manifest.json                ← deployment manifest (TREAT AS SECRET)
+├── manifest.json                ← FPC deployment manifest (TREAT AS SECRET)
 ├── fpc-config.yaml              ← master config (your copy)
 ├── attestation/
 │   └── config.yaml              ← generated attestation config
 └── topup/
     └── config.yaml              ← generated topup config
+```
+
+After token configuration ([step 3](#3-configure-tokens)), a `tokens/` directory is added:
+
+```
+deployments/
+└── tokens/
+    └── FpcAcceptedAsset.json    ← test token manifest (one per deployed token)
 ```
 
 > **Note:** If you provide a `fpc-config.yaml` before deploying, the container auto-generates per-service configs. Otherwise, deployment succeeds but config generation is skipped.
@@ -191,11 +185,11 @@ Key fields:
 
 | Section | Field | Description |
 |---------|-------|-------------|
-| `attestation` | `accepted_asset_name` | Human-readable token name (e.g. `"humanUSDC"`) |
-| `attestation` | `market_rate_num` / `market_rate_den` | Exchange rate: accepted_asset per 1 FeeJuice |
-| `attestation` | `fee_bips` | Operator margin in basis points (200 = 2%) |
+| `tokens` | `name` / `symbol` | Token identity (used for test token deployment and attestation registration) |
+| `tokens` | `address` | Existing token address (omit to deploy a test token) |
+| `tokens` | `market_rate_num` / `market_rate_den` | Exchange rate: accepted_asset per 1 FeeJuice |
+| `tokens` | `fee_bips` | Operator margin in basis points (200 = 2%) |
 | `attestation` | `quote_validity_seconds` | Quote TTL (default 300) |
-| `attestation` | `quote_format` | `amount_quote` (default) or `rate_quote`; changes response shape |
 | `attestation` | `quote_auth_mode` | Auth mode: `disabled`, `api_key`, `trusted_header`, etc. |
 | `topup` | `threshold` | Bridge when FPC balance drops below this (wei) |
 | `topup` | `top_up_amount` | Amount to bridge each time (wei) |
@@ -306,7 +300,75 @@ curl "http://localhost:3000/quote?user=<USER_ADDRESS>&accepted_asset=<TOKEN_ADDR
 
 ---
 
-### 3. Configure & Start the Top-up Service
+### 3. Configure Tokens
+
+Once the attestation service is running, use the `configure-token` subcommand to deploy test tokens (if needed) and register them with the attestation service.
+
+The `configure-token` subcommand reads the `tokens` section from `fpc-config.yaml`. For each token:
+- If `address` is provided, it registers the existing token with the attestation service.
+- If `address` is omitted, it first deploys a full test token stack (L1 ERC20 + L2 Token + Bridge + Faucet), then registers it.
+
+#### Configure tokens (deploy test tokens + register)
+
+```bash
+export FPC_DEPLOYER_SECRET_KEY=0x<deployer_hex32>
+export FPC_L1_DEPLOYER_KEY=0x<l1_key>
+export ADMIN_API_KEY=<admin_secret>
+
+docker run \
+  -e AZTEC_NODE_URL=<AZTEC_NODE_URL> \
+  -e L1_RPC_URL=<L1_RPC_URL> \
+  -e FPC_DEPLOYER_SECRET_KEY \
+  -e FPC_L1_DEPLOYER_KEY \
+  -e FPC_ATTESTATION_URL=<ATTESTATION_URL> \
+  -e ADMIN_API_KEY \
+  -v ./deployments:/app/deployments \
+  nethermind/aztec-fpc-contract-deployment:local \
+  configure-token
+```
+
+> If the attestation service is on `localhost`, add `--network host` so the container can reach the host network.
+
+#### Register existing tokens only
+
+If all tokens in `fpc-config.yaml` have explicit `address` values, no L1/L2 deployment keys are needed:
+
+```bash
+export ADMIN_API_KEY=<admin_secret>
+
+docker run \
+  -e FPC_ATTESTATION_URL=<ATTESTATION_URL> \
+  -e ADMIN_API_KEY \
+  -v ./deployments:/app/deployments \
+  nethermind/aztec-fpc-contract-deployment:local \
+  configure-token
+```
+
+#### Deploy tokens without registration
+
+Deploy test tokens only, skipping attestation registration (useful when attestation is not yet running):
+
+```bash
+docker run \
+  -e AZTEC_NODE_URL=<AZTEC_NODE_URL> \
+  -e L1_RPC_URL=<L1_RPC_URL> \
+  -e FPC_DEPLOYER_SECRET_KEY \
+  -e FPC_L1_DEPLOYER_KEY \
+  -v ./deployments:/app/deployments \
+  nethermind/aztec-fpc-contract-deployment:local \
+  configure-token --skip-registration
+```
+
+#### Output
+
+Test token manifests are written to `deployments/tokens/<TokenName>.json` and contain:
+- L2 addresses: token, bridge, faucet, counter
+- L1 addresses: ERC20, token portal
+- Faucet configuration and deployment tx hashes
+
+---
+
+### 4. Configure & Start the Top-up Service
 
 The top-up service monitors the FPC's Fee Juice balance and bridges from L1 when it drops below a threshold.
 
@@ -395,7 +457,7 @@ curl http://localhost:3001/metrics
 
 ---
 
-### 4. Verify the Deployment
+### 5. Verify the Deployment
 
 Run the post-deploy smoke test to confirm the full flow works end-to-end.
 
@@ -419,14 +481,18 @@ For testnet deployments, use the public compose file:
 export FPC_DEPLOYER_SECRET_KEY=0x<deployer_key>
 export FPC_OPERATOR_SECRET_KEY=0x<operator_key>
 export FPC_L1_DEPLOYER_KEY=0x<l1_key>
-
-# Optional: reuse existing token
-export FPC_ACCEPTED_ASSET=<TOKEN_ADDRESS>
+export ADMIN_API_KEY=<admin_secret>
 
 DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
 ```
 
-This reads network defaults from `.env.testnet` and outputs everything to `deployments/testnet/`.
+The compose file reads network defaults from `.env.testnet` and mounts `deployments/${DEPLOYMENT}/` as the data directory. The service dependency chain is:
+
+1. `deploy` — deploys the FPC contract, writes manifest and service configs.
+2. `attestation` + `topup` — start once deploy completes.
+3. `configure-token` — deploys test tokens (if needed) and registers them with the running attestation service.
+
+After the run, all output lives in `deployments/testnet/`.
 
 ---
 
@@ -617,7 +683,7 @@ console.log(`Token charged: ${result.aaPaymentAmount}`);
 3. Builds the `cold_start_entrypoint` call that atomically claims bridged tokens and pays the FPC fee
 4. Proves, sends, and waits for the tx — returns the result once mined
 
-> **Where to find `<BRIDGE_ADDRESS>`:** The token bridge address is recorded in the deployment manifest (`manifest.json`) after contract deployment. If you deployed test tokens, the bridge was deployed alongside them. If you used an existing token (`--accepted-asset`), obtain the bridge address from the token's deployment records or the operator.
+> **Where to find `<BRIDGE_ADDRESS>`:** If test tokens were deployed via `configure-token`, the bridge address is recorded in the token manifest (`tokens/<TokenName>.json`). For production tokens with an existing address, obtain the bridge address from the token's deployment records or the operator.
 
 ---
 
@@ -814,13 +880,13 @@ docker run -v ./deployments:/app/deployments \
 [ ] Aztec node accessible at <AZTEC_NODE_URL>
 [ ] L1 RPC accessible at <L1_RPC_URL>
 [ ] Deployer and operator keys generated and secured
-[ ] Accepted token deployed (or address known)
-[ ] Master config (fpc-config.yaml) edited with correct exchange rates
+[ ] Master config (fpc-config.yaml) edited with tokens and exchange rates
 [ ] Docker images built or pulled (docker buildx bake or use registry tag)
-[ ] Contract deployed; manifest.json generated
+[ ] FPC contract deployed; manifest.json generated
 [ ] L1 operator account funded with ETH + Fee Juice tokens
 [ ] Attestation service running and /health returns 200
 [ ] quote_base_url set if behind a reverse proxy
+[ ] Tokens configured (configure-token completed; token manifests in tokens/)
 [ ] Top-up service running and /ready returns 200
 [ ] Auto-claim configured (TOPUP_AUTOCLAIM_SECRET_KEY set)
 [ ] Smoke test passing (docker compose smoke profile)
@@ -830,5 +896,5 @@ docker run -v ./deployments:/app/deployments \
     [ ] OPERATOR_ADDRESS: <OPERATOR_ADDRESS>
     [ ] TOKEN_ADDRESS: <TOKEN_ADDRESS>
     [ ] AZTEC_NODE_URL: <AZTEC_NODE_URL>
-    [ ] BRIDGE_ADDRESS: <BRIDGE_ADDRESS> (from manifest.json; required for cold-start)
+    [ ] BRIDGE_ADDRESS: <BRIDGE_ADDRESS> (from tokens/<TokenName>.json; required for cold-start)
 ```

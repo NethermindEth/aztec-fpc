@@ -14,18 +14,14 @@ Deploy the FPC contract and run the full operator stack with a single Docker Com
 export FPC_DEPLOYER_SECRET_KEY=0x<deployer_key>
 export FPC_OPERATOR_SECRET_KEY=0x<operator_key>
 export FPC_L1_DEPLOYER_KEY=0x<l1_deployer_key>
+export ADMIN_API_KEY=<admin_secret>
 
 DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
 ```
 
-This deploys contracts, generates service configs, and starts the attestation and topup services. Output goes to `deployments/testnet/`.
+This deploys the FPC contract, starts the attestation and topup services, then deploys/registers tokens via the `configure-token` step. Output goes to `deployments/testnet/`.
 
-To deploy FPC against an existing token (skip test token deployment):
-
-```bash
-export FPC_ACCEPTED_ASSET=0x<token_address>
-DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
-```
+To use existing tokens instead of deploying test tokens, set explicit `address` values in the `tokens` section of `deployments/testnet/fpc-config.yaml` before running compose.
 
 **[Full deployment & integration guide](docs/aztec-deployer-user-guide.md)** — deployer setup, service configuration, SDK integration, API reference, and troubleshooting.
 
