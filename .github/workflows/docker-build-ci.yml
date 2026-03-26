@@ -53,7 +53,7 @@ jobs:
   docker-build-ci:
     needs: [changes]
     if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     env:
       PXE_PROVER_ENABLED: false
     steps:
