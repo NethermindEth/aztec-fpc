@@ -214,7 +214,7 @@ aztec-fpc/
 
 ### Prerequisites
 
-- Bun `1.3.9`
+- Bun `1.3.11`
 - Aztec CLI
 
 ```bash
