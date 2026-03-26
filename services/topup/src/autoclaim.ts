@@ -210,7 +210,7 @@ export async function createTopupAutoClaimer(
 ): Promise<TopupAutoClaimer> {
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: true,
-    pxeConfig: { proverEnabled: true },
+    pxeConfig: { proverEnabled: true, syncChainTip: "checkpointed" },
   });
   const explicitSecretKey = resolveAutoClaimSecretKeyFromEnv(process.env);
   const sponsoredFpcAddress = resolveAutoClaimSponsoredFpcFromEnv(process.env);

@@ -210,6 +210,7 @@ export class OperatorTreasury implements OperatorTreasuryPort {
       ephemeral: !this.config.pxe_data_directory,
       pxeConfig: {
         proverEnabled: true,
+        syncChainTip: "checkpointed",
         ...(this.config.pxe_data_directory
           ? { dataDirectory: this.config.pxe_data_directory }
           : {}),

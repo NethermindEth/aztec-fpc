@@ -41,10 +41,6 @@ import * as viemChains from "viem/chains";
 
 const pinoLogger = pino();
 
-// ---------------------------------------------------------------------------
-// Contract registration
-// ---------------------------------------------------------------------------
-
 export async function registerAndGet(
   node: AztecNode,
   wallet: EmbeddedWallet,
@@ -75,10 +71,6 @@ export async function registerAndGet(
   return Contract.at(address, artifact, wallet);
 }
 
-// ---------------------------------------------------------------------------
-// Manifest
-// ---------------------------------------------------------------------------
-
 export function readManifest(manifestPath: string): DeployManifest {
   if (!existsSync(manifestPath)) {
     throw new Error(`Manifest not found: ${manifestPath}`);
@@ -86,24 +78,15 @@ export function readManifest(manifestPath: string): DeployManifest {
   return readDeployManifest(manifestPath);
 }
 
-// ---------------------------------------------------------------------------
-// Node + wallet
-// ---------------------------------------------------------------------------
-
 export async function connectAndCreateWallet(nodeUrl: string, proverEnabled: boolean) {
   const node = createAztecNodeClient(nodeUrl);
   await waitForNode(node);
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: true,
-    pxeConfig: { proverEnabled },
+    pxeConfig: { proverEnabled, syncChainTip: "checkpointed" },
   });
   return { node, wallet };
 }
-
-// ---------------------------------------------------------------------------
-// Core contract registration (token + FPC + counter)
-// ---------------------------------------------------------------------------
-
 export type CoreContracts = {
   token: Contract;
   fpc: Contract;
@@ -156,10 +139,6 @@ export async function registerCoreContracts(
   return { token, fpc, counter, faucet, bridge };
 }
 
-// ---------------------------------------------------------------------------
-// SponsoredFPC registration
-// ---------------------------------------------------------------------------
-
 export async function registerSponsoredFpc(wallet: EmbeddedWallet) {
   const sponsoredFpcInstance = await getContractInstanceFromInstantiationParams(
     SponsoredFPCContractArtifact,
@@ -168,10 +147,6 @@ export async function registerSponsoredFpc(wallet: EmbeddedWallet) {
   await wallet.registerContract(sponsoredFpcInstance, SponsoredFPCContractArtifact);
   return sponsoredFpcInstance.address;
 }
-
-// ---------------------------------------------------------------------------
-// FeeJuice balance polling
-// ---------------------------------------------------------------------------
 
 export async function waitForFpcFeeJuice(
   fpcAddress: AztecAddress,
@@ -199,9 +174,43 @@ export async function waitForFpcFeeJuice(
   return balance;
 }
 
-// ---------------------------------------------------------------------------
-// L1 infrastructure
-// ---------------------------------------------------------------------------
+/**
+ * Mint L1 ERC20 tokens, retrying on nonce collisions.
+ *
+ * Multiple test containers share the same deployer key for minting (the
+ * TestERC20 owner).  When they run in parallel, separate viem clients
+ * independently query anvil for the next nonce, and one of them loses the
+ * race.  A short backoff + retry lets the winner's tx confirm so the loser
+ * picks up the incremented nonce on the next attempt.
+ */
+export async function mintL1Erc20WithRetry(
+  l1Erc20: L1Infra["l1Erc20"],
+  l1Client: ExtendedViemWalletClient,
+  to: `0x${string}`,
+  amount: bigint,
+  maxRetries = 3,
+): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const hash = await l1Erc20.write.mint([to, amount]);
+      const receipt = await l1Client.waitForTransactionReceipt({ hash });
+      if (receipt.status === "reverted") {
+        throw new Error("L1 ERC20 mint transaction reverted");
+      }
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/nonce|already known|replacement/i.test(msg) && attempt < maxRetries) {
+        pinoLogger.warn(
+          `L1 mint attempt ${attempt}/${maxRetries} hit nonce error, retrying in ${attempt}s`,
+        );
+        await new Promise((r) => setTimeout(r, 1_000 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 export type L1InfraArgs = {
   l1RpcUrl: string;
@@ -215,7 +224,7 @@ export type L1InfraArgs = {
 
 export type L1Infra = {
   l1WalletClient: ExtendedViemWalletClient;
-  l1Erc20: GetContractReturnType;
+  l1Erc20: GetContractReturnType<typeof TestERC20Abi, ExtendedViemWalletClient>;
   portalManager: L1ToL2TokenPortalManager;
 };
 
@@ -245,10 +254,6 @@ export async function setupL1Infrastructure(args: L1InfraArgs): Promise<L1Infra>
 
   return { l1WalletClient, l1Erc20, portalManager };
 }
-
-// ---------------------------------------------------------------------------
-// Common setup
-// ---------------------------------------------------------------------------
 
 export type SetupArgs = {
   nodeUrl: string;

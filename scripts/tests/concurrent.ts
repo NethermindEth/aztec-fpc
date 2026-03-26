@@ -16,6 +16,7 @@ import { type AccountData, deriveAccount } from "../common/script-credentials.ts
 import {
   type CoreContracts,
   setup as commonSetup,
+  mintL1Erc20WithRetry,
   registerCoreContracts,
   setupL1Infrastructure,
 } from "../common/setup-helpers.ts";
@@ -185,8 +186,12 @@ describe("fpc concurrent e2e", () => {
 
     // 3. Mint total ERC20 on L1
     const totalClaimAmount = config.claimAmount * BigInt(config.concurrentN);
-    const mintHash = await l1Erc20.write.mint([l1WalletClient.account.address, totalClaimAmount]);
-    await l1WalletClient.waitForTransactionReceipt({ hash: mintHash });
+    await mintL1Erc20WithRetry(
+      l1Erc20,
+      l1WalletClient,
+      l1WalletClient.account.address,
+      totalClaimAmount,
+    );
     pinoLogger.info(`[${LABEL}] minted ${totalClaimAmount} ERC20 on L1`);
 
     // 4. Derive N account addresses (using shared wallet) and bridge sequentially
@@ -215,7 +220,7 @@ describe("fpc concurrent e2e", () => {
       secrets.map(async (secret, i) => {
         const wallet = await EmbeddedWallet.create(node, {
           ephemeral: true,
-          pxeConfig: { proverEnabled: config.proverEnabled },
+          pxeConfig: { proverEnabled: config.proverEnabled, syncChainTip: "checkpointed" },
         });
         const contracts = await registerCoreContracts(
           repoRoot,

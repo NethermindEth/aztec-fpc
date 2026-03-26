@@ -810,7 +810,9 @@ async function runSmoke(args: CliArgs): Promise<void> {
       ),
     ),
   ]);
-  const wallet = await deps.EmbeddedWallet.create(node);
+  const wallet = await deps.EmbeddedWallet.create(node, {
+    pxeConfig: { syncChainTip: "checkpointed" },
+  });
   const operatorAccount = await wallet.createSchnorrAccount(
     operatorSecret,
     deps.Fr.ZERO,

@@ -507,7 +507,7 @@ async function setupClaimWallet(
 }> {
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: true,
-    pxeConfig: { proverEnabled: true },
+    pxeConfig: { proverEnabled: true, syncChainTip: "checkpointed" },
   });
   const feePayerAddress = await createWalletAccountFromSecret(wallet, feePayerSecretKey);
   if (!claimerSecretKey || claimerSecretKey === feePayerSecretKey) {

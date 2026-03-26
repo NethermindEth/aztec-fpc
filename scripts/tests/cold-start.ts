@@ -28,12 +28,9 @@ import {
 import {
   setup as commonSetup,
   type L1Infra,
+  mintL1Erc20WithRetry,
   setupL1Infrastructure,
 } from "../common/setup-helpers.ts";
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
 
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
@@ -111,10 +108,7 @@ function getConfig(): ColdStartConfig {
   };
 }
 
-// ---------------------------------------------------------------------------
 // Shared test state
-// ---------------------------------------------------------------------------
-
 const E2E_TIMEOUT_MS = 600_000;
 setDefaultTimeout(E2E_TIMEOUT_MS);
 
@@ -137,10 +131,7 @@ let user: AztecAddress;
 let userBalance: PrivateBalanceTracker;
 let operatorBalance: PrivateBalanceTracker;
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
-
 describe("cold-start smoke", () => {
   beforeAll(async () => {
     config = getConfig();
@@ -227,8 +218,7 @@ describe("cold-start smoke", () => {
 
     // Bridge tokens L1->L2 for the user (private)
     const l1Account = l1WalletClient.account;
-    const mintHash = await l1Erc20.write.mint([l1Account.address, config.claimAmount]);
-    await l1WalletClient.waitForTransactionReceipt({ hash: mintHash });
+    await mintL1Erc20WithRetry(l1Erc20, l1WalletClient, l1Account.address, config.claimAmount);
 
     const bridgeClaim = await portalManager.bridgeTokensPrivate(user, config.claimAmount, false);
     const bridgeMsgHash = Fr.fromHexString(bridgeClaim.messageHash as string);
@@ -415,8 +405,7 @@ describe("cold-start smoke", () => {
 
     // Mint tiny amount and bridge L1→L2
     const l1Account = l1WalletClient.account;
-    const mintHash = await l1Erc20.write.mint([l1Account.address, tinyClaimAmount]);
-    await l1WalletClient.waitForTransactionReceipt({ hash: mintHash });
+    await mintL1Erc20WithRetry(l1Erc20, l1WalletClient, l1Account.address, tinyClaimAmount);
 
     const tinyClaim = await portalManager.bridgeTokensPrivate(negUser, tinyClaimAmount, false);
     const tinyMsgHash = Fr.fromHexString(tinyClaim.messageHash as string);
