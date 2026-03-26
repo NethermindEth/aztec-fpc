@@ -278,7 +278,6 @@ export default class ColdStartBenchmark {
       'TST',
       18,
       bridgeAddress,
-      AztecAddress.ZERO,
     ], 'constructor_with_minter').send({ from: userAddress });
     const tokenAddress = tokenDeploy.address;
     pinoLogger.info(`Token: ${tokenAddress.toString()}`);

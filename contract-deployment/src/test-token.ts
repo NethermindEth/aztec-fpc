@@ -132,7 +132,7 @@ export async function deployTestToken(
   const tokenDeploy = Contract.deploy(
     deps.wallet,
     tokenArtifact,
-    [params.name, params.symbol, params.decimals, bridgeAddress, deps.operatorAddress],
+    [params.name, params.symbol, params.decimals, bridgeAddress],
     "constructor_with_minter",
   );
   const tokenInstance = await tokenDeploy.getInstance();

@@ -415,7 +415,6 @@ export default class FPCBenchmark {
       'TST',
       18,
       userAddress,
-      AztecAddress.ZERO,
     ], 'constructor_with_minter').send({ from: userAddress });
     const tokenAddress = tokenDeploy.address;
     pinoLogger.info(`Token: ${tokenAddress.toString()}`);
