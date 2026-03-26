@@ -3,7 +3,7 @@ services:
   anvil:
     image: ghcr.io/foundry-rs/foundry:v1.4.1
     entrypoint: ["anvil"]
-    command: ["--host", "0.0.0.0", "--silent"]
+    command: ["--host", "0.0.0.0"]
     ports:
       - "8545:8545"
     healthcheck:
@@ -47,7 +47,7 @@ services:
       start_period: 30s
 
   deploy:
-    image: nethermind/aztec-fpc-contract-deployment:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-contract-deployment:${TAG:-local}
     volumes:
       - ./deployments/local:/app/data
     environment:
@@ -75,7 +75,7 @@ services:
         condition: service_healthy
 
   attestation:
-    image: nethermind/aztec-fpc-attestation:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-attestation:${TAG:-local}
     ports:
       - "3000:3000"
     volumes:
@@ -90,7 +90,7 @@ services:
         condition: service_completed_successfully
 
   topup:
-    image: nethermind/aztec-fpc-topup:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-topup:${TAG:-local}
     ports:
       - "3001:3001"
     volumes:
@@ -112,7 +112,7 @@ services:
         condition: service_completed_successfully
 
   block-producer:
-    image: nethermind/aztec-fpc-contract-artifact:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-contract-artifact:${TAG:-local}
     entrypoint: ["bash", "/app/scripts/services/block-producer.sh"]
     volumes:
       - ./scripts:/app/scripts:ro
@@ -123,7 +123,7 @@ services:
         condition: service_healthy
 
   configure-token:
-    image: nethermind/aztec-fpc-contract-deployment:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-contract-deployment:${TAG:-local}
     volumes:
       - ./deployments/local:/app/data
     command: ["configure-token"]
@@ -141,7 +141,7 @@ services:
         condition: service_completed_successfully
 
   postdeploy:
-    image: nethermind/aztec-fpc-test:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-test:${TAG:-local}
     profiles: ["postdeploy"]
     entrypoint: ["bun", "run", "--sequential"]
     command:
@@ -161,7 +161,7 @@ services:
         condition: service_completed_successfully
 
   tests-services:
-    image: nethermind/aztec-fpc-test:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-test:${TAG:-local}
     profiles: ["full"]
     command:
       - "./scripts/tests/services.ts"
@@ -186,7 +186,7 @@ services:
         condition: service_healthy
 
   tests-cold-start:
-    image: nethermind/aztec-fpc-test:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-test:${TAG:-local}
     profiles: ["full"]
     command:
       - "./scripts/tests/cold-start.ts"
@@ -214,7 +214,7 @@ services:
         condition: service_healthy
 
   tests-fee-entrypoint-validation:
-    image: nethermind/aztec-fpc-test:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-test:${TAG:-local}
     profiles: ["full"]
     command:
       - "./scripts/tests/fee-entrypoint-validation.ts"
@@ -237,7 +237,7 @@ services:
         condition: service_healthy
 
   tests-concurrent:
-    image: nethermind/aztec-fpc-test:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-test:${TAG:-local}
     profiles: ["full"]
     command:
       - "./scripts/tests/concurrent.ts"
@@ -265,7 +265,7 @@ services:
         condition: service_healthy
 
   tests-same-token-transfer:
-    image: nethermind/aztec-fpc-test:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-test:${TAG:-local}
     profiles: ["full"]
     command:
       - "./scripts/tests/same-token-transfer.ts"
@@ -291,7 +291,7 @@ services:
         condition: service_healthy
 
   tests-always-revert:
-    image: nethermind/aztec-fpc-test:local
+    image: ${REGISTRY:-nethermind/}aztec-fpc-test:${TAG:-local}
     profiles: ["full"]
     command:
       - "./scripts/tests/always-revert.ts"

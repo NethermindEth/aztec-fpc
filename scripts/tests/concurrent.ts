@@ -1,6 +1,4 @@
-import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import path from "node:path";
-
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { L2AmountClaim } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
@@ -11,6 +9,7 @@ import { FpcClient } from "@aztec-fpc/sdk";
 import pino from "pino";
 import type { Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { beforeAll, describe, expect, it } from "#test";
 
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
 import {
@@ -121,8 +120,6 @@ type UserContext = {
 // ---------------------------------------------------------------------------
 // Test
 // ---------------------------------------------------------------------------
-
-setDefaultTimeout(900_000);
 
 let users: UserContext[];
 let fpcClient: FpcClient;

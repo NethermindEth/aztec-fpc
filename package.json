@@ -7,7 +7,14 @@
     "@types/bun": "^1.3.11",
     "@types/node": "^20.0.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.2"
+  },
+  "imports": {
+    "#test": {
+      "bun": "bun:test",
+      "default": "vitest"
+    }
   },
   "description": "",
   "keywords": [],
@@ -27,12 +34,10 @@
     "release:sdk:publish:dry-run": "npm publish --workspace @aztec-fpc/sdk --dry-run --access public",
     "build": "bun run --workspaces --if-present build",
     "typecheck": "bun run --workspaces --if-present typecheck",
-
     "test": "bun run test:contracts && bun run test:ts",
     "test:ts": "bun run --filter @aztec-fpc/attestation --if-present test && bun run --filter @aztec-fpc/topup --if-present test && bun run --filter @aztec-fpc/sdk --if-present test",
     "test:services": "bun run test:ts",
     "test:contracts": "aztec compile --workspace --force && aztec test --package fpc",
-
     "attestation:build": "bun run --filter @aztec-fpc/attestation build",
     "attestation:dev": "bun run --filter @aztec-fpc/attestation dev",
     "attestation:start": "bun run --filter @aztec-fpc/attestation start",
@@ -40,7 +45,6 @@
     "topup:build": "bun run --filter @aztec-fpc/topup build",
     "topup:dev": "bun run --filter @aztec-fpc/topup dev",
     "topup:start": "bun run --filter @aztec-fpc/topup start",
-
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down -v --remove-orphans",
     "docker:logs": "docker compose logs --follow",
@@ -54,7 +58,6 @@
     "compose:full": "bash scripts/services/compose-mode.sh full",
     "compose:services:devnet": "bash scripts/services/compose-mode.sh services-devnet",
     "compose:teardown": "docker compose down -v --remove-orphans || true",
-
     "generate:configs": "bash scripts/config/generate-service-configs.sh",
     "generate:configs:devnet": "FPC_DEPLOY_MANIFEST=./deployments/devnet-manifest-v2.json bash scripts/config/generate-service-configs.sh",
     "bootstrap:topup:autoclaim-account": "bunx tsx scripts/services/bootstrap-topup-autoclaim-account.ts",
@@ -66,11 +69,9 @@
     "verify:deploy:fpc:devnet:v2": "bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts --manifest ./deployments/devnet-manifest-v2.json",
     "smoke:deploy:fpc:devnet": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/manifest.json",
     "smoke:deploy:fpc:devnet:v2": "bash scripts/contract/devnet-postdeploy-smoke.sh --manifest ./deployments/devnet-manifest-v2.json",
-
     "smoke:deploy:fpc:local": "bash scripts/contract/deploy-smoke-local.sh",
     "smoke:services:compose": "docker compose --profile full up wait --wait",
     "e2e:full-lifecycle:fpc:compose": "bash scripts/services/full-lifecycle-compose.sh",
-
     "teardown": "pkill -f '[a]ztec' || true"
   },
   "workspaces": [

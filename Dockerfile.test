@@ -1,7 +1,7 @@
-FROM common
+FROM common AS test-base
 
-# ── TypeScript config ──
-COPY tsconfig.base.json ./
+# ── TypeScript & vitest config ──
+COPY tsconfig.base.json vitest.config.ts ./
 COPY services/attestation/tsconfig.json services/attestation/
 COPY services/topup/tsconfig.json services/topup/
 
@@ -33,4 +33,16 @@ RUN bun run --filter @aztec-fpc/sdk --if-present build && \
 ENV NODE_ENV=development
 ENV FORCE_COLOR=1
 
-ENTRYPOINT ["bun", "test"]
+# ── AMD64: Bun test runner ──
+FROM test-base AS test-amd64
+ENTRYPOINT ["bun", "test", "--timeout", "900000"]
+
+# ── ARM64: Node.js + vitest (workaround for Bun NAPI crash on ARM64) ──
+# See services/ARM64_RUNTIME.md
+FROM test-base AS test-arm64
+COPY --from=node:24-trixie-slim /usr/local/bin/node /usr/local/bin/node
+ENTRYPOINT ["node", "node_modules/.bin/vitest", "run", "--testTimeout", "900000", "--hookTimeout", "900000"]
+
+# ── Select stage based on architecture ──
+ARG TARGETARCH
+FROM test-${TARGETARCH}

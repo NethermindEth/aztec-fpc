@@ -7,6 +7,8 @@ These packages can't be bundled because they need runtime filesystem access:
 - **`@aztec/bb.js`** — loads `.wasm.gz` binaries and worker scripts via `__dirname`
 - **`pino`** — spawns worker threads (`thread-stream`) that load transport modules dynamically
 - **`pino-pretty`** — loaded by pino's worker thread via `require('pino-pretty')`
+- **`ordered-binary`** — bundling with `--target=node` breaks key deserialization in `@aztec/kv-store`'s LMDB backend (see [`ARM64_RUNTIME.md`](ARM64_RUNTIME.md))
+- **`lmdb`** — depends on `ordered-binary`; externalised for consistency
 
 The Dockerfile copies this file as `package.json` into the `external-deps` stage to install
 only these packages into the final image (instead of the full ~840 MB `node_modules`).

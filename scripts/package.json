@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#test": {
+      "bun": "bun:test",
+      "default": "vitest"
+    }
+  },
   "dependencies": {
     "@aztec/accounts": "4.1.0-rc.4",
     "@aztec/aztec.js": "4.1.0-rc.4",

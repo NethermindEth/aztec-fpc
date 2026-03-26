@@ -1,6 +1,4 @@
-import { beforeAll, describe, it, setDefaultTimeout } from "bun:test";
 import path from "node:path";
-
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { BatchCall, type Contract } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
@@ -8,6 +6,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@aztec-fpc/sdk";
+import { beforeAll, describe, it } from "#test";
 import { PrivateBalanceTracker, PublicBalanceTracker } from "../common/balance-tracker.ts";
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
 import { setup } from "../common/setup-helpers.ts";
@@ -144,9 +143,6 @@ async function setupFromConfig(config: SameTokenTransferConfig): Promise<SetupRe
 // ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
-
-const E2E_TIMEOUT_MS = 600_000;
-setDefaultTimeout(E2E_TIMEOUT_MS);
 
 let config: SameTokenTransferConfig;
 let s: SetupResult;

@@ -1,4 +1,3 @@
-import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
 import { Fr } from "@aztec/aztec.js/fields";
@@ -6,6 +5,7 @@ import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { Point } from "@aztec/foundation/curves/grumpkin";
 import { readTestTokenManifest } from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
+import { beforeAll, describe, expect, it } from "#test";
 import { readManifest, waitForFpcFeeJuice } from "../common/setup-helpers.ts";
 
 function sleep(ms: number): Promise<void> {
@@ -391,9 +391,6 @@ async function setupFromConfig(config: SmokeConfig): Promise<SmokeRuntimeResult>
 // Test suite
 // ---------------------------------------------------------------------------
 
-const E2E_TIMEOUT_MS = 300_000;
-setDefaultTimeout(E2E_TIMEOUT_MS);
-
 let ctx: SmokeRuntimeResult;
 
 describe("fpc services smoke", () => {
@@ -511,56 +508,64 @@ describe("fpc services smoke", () => {
         const params = baseParams();
         delete params.user;
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
 
       it("rejects missing fj_amount param", async () => {
         const params = baseParams();
         delete params.fj_amount;
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
 
       it("rejects fj_amount=0", async () => {
         const params = baseParams();
         params.fj_amount = "0";
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
 
       it("rejects negative fj_amount", async () => {
         const params = baseParams();
         params.fj_amount = "-1";
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
 
       it("rejects non-numeric fj_amount", async () => {
         const params = baseParams();
         params.fj_amount = "notanumber";
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
 
       it("rejects fj_amount exceeding u128 max", async () => {
         const params = baseParams();
         params.fj_amount = (U128_MAX + 1n).toString();
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
 
       it("rejects malformed user address", async () => {
         const params = baseParams();
         params.user = "not_an_address";
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
 
       it("rejects SQL injection in user param", async () => {
         const params = baseParams();
         params.user = "' OR '1'='1";
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
 
       it("does not return 5xx for u128_max fj_amount", async () => {
@@ -574,7 +579,8 @@ describe("fpc services smoke", () => {
         const params = baseParams();
         params.user = "0x0000000000000000000000000000000000000000000000000000000000000000";
         const response = await fetch(quoteUrl(params));
-        expect(response.status).toBeWithin(400, 500);
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
       });
     });
 

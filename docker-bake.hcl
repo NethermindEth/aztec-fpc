@@ -1,5 +1,5 @@
 variable "REGISTRY" {
-  default = ""
+  default = "nethermind/"
 }
 
 variable "TAG" {
@@ -57,8 +57,8 @@ target "attestation" {
   contexts   = { common = "target:attestation-base" }
   platforms  = PLATFORMS
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-attestation:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-attestation:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+    "${REGISTRY}aztec-fpc-attestation:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}aztec-fpc-attestation:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
 
@@ -69,8 +69,8 @@ target "topup" {
   contexts   = { common = "target:topup-base" }
   platforms  = PLATFORMS
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-topup:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-topup:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+    "${REGISTRY}aztec-fpc-topup:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}aztec-fpc-topup:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
 
@@ -92,10 +92,10 @@ target "deps" {
 target "contract" {
   context    = "."
   dockerfile = "scripts/contract/Dockerfile.contract"
-  platforms  = ["linux/amd64"]
+  platforms  = PLATFORMS
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-contract-artifact:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-artifact:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+    "${REGISTRY}aztec-fpc-contract-artifact:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}aztec-fpc-contract-artifact:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
 
@@ -109,8 +109,8 @@ target "deploy" {
   }
   platforms  = PLATFORMS
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-contract-deployment:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-deployment:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+    "${REGISTRY}aztec-fpc-contract-deployment:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}aztec-fpc-contract-deployment:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }
 
@@ -124,7 +124,7 @@ target "test" {
   }
   platforms  = PLATFORMS
   tags = compact([
-    "${REGISTRY}nethermind/aztec-fpc-test:${TAG}${PLATFORM_SUFFIX}",
-    GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-test:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
+    "${REGISTRY}aztec-fpc-test:${TAG}${PLATFORM_SUFFIX}",
+    GIT_SHA != "" ? "${REGISTRY}aztec-fpc-test:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
   ])
 }

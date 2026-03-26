@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "bun build src/index.ts src/configure-token.ts --outdir=dist --target=bun --external @aztec/bb.js --external @aztec/noir-noirc_abi --external @aztec/noir-acvm_js --external pino",
+    "build": "bun build src/index.ts src/configure-token.ts --outdir=dist --target=${BUILD_TARGET:-bun} --external @aztec/bb.js --external @aztec/noir-noirc_abi --external @aztec/noir-acvm_js --external pino --external lmdb --external ordered-binary",
     "typecheck": "tsc --noEmit",
     "start": "bun run dist/index.js"
   },

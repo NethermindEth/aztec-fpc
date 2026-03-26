@@ -8,7 +8,6 @@
  * All configuration is read from environment variables.
  */
 
-import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import path from "node:path";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Contract } from "@aztec/aztec.js/contracts";
@@ -19,6 +18,7 @@ import type { AztecNode } from "@aztec/aztec.js/node";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@aztec-fpc/sdk";
 import type { Hex } from "viem";
+import { beforeAll, describe, expect, it } from "#test";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
 import {
   type AccountData,
@@ -109,9 +109,6 @@ function getConfig(): ColdStartConfig {
 }
 
 // Shared test state
-const E2E_TIMEOUT_MS = 600_000;
-setDefaultTimeout(E2E_TIMEOUT_MS);
-
 let config: ColdStartConfig;
 let node: AztecNode;
 let wallet: EmbeddedWallet;
