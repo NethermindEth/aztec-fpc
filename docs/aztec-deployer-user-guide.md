@@ -9,7 +9,7 @@
 | Dependency | Version |
 |------------|---------|
 | Aztec | `4.1.0-rc.4` |
-| Bun | `1.3.9` |
+| Bun | `1.3.11` |
 | `@aztec/*` npm packages | Match the Aztec version above |
 
 Install the required Aztec CLI:
