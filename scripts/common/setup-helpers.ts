@@ -78,12 +78,17 @@ export function readManifest(manifestPath: string): DeployManifest {
   return readDeployManifest(manifestPath);
 }
 
+// Note: we intentionally do NOT set syncChainTip: "checkpointed" here.
+// Tests claim privately-bridged L1→L2 messages right after bridging.
+// A checkpointed anchor lags behind the proposed tip, so the PXE may
+// not yet see the message in its merkle tree, causing "Message not in
+// state" failures during private simulation.
 export async function connectAndCreateWallet(nodeUrl: string, proverEnabled: boolean) {
   const node = createAztecNodeClient(nodeUrl);
   await waitForNode(node);
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: true,
-    pxeConfig: { proverEnabled, syncChainTip: "checkpointed" },
+    pxeConfig: { proverEnabled },
   });
   return { node, wallet };
 }

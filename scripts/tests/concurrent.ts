@@ -218,9 +218,10 @@ describe("fpc concurrent e2e", () => {
     pinoLogger.info(`[${LABEL}] starting concurrent L2 setup for ${config.concurrentN} users`);
     users = await Promise.all(
       secrets.map(async (secret, i) => {
+        // No syncChainTip: "checkpointed" — see comment in setup-helpers.ts connectAndCreateWallet
         const wallet = await EmbeddedWallet.create(node, {
           ephemeral: true,
-          pxeConfig: { proverEnabled: config.proverEnabled, syncChainTip: "checkpointed" },
+          pxeConfig: { proverEnabled: config.proverEnabled },
         });
         const contracts = await registerCoreContracts(
           repoRoot,
