@@ -31,7 +31,6 @@ pub unconstrained fn setup_with_cooldown(
         "TT00000000000000000000000000000",
         18,
         admin,
-        admin,
     );
     let token_address =
         env.deploy("@token_contract/Token").with_public_initializer(admin, token_initializer);

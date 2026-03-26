@@ -178,7 +178,6 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress, Az
         "TT00000000000000000000000000000",
         18,
         bridge_address,
-        AztecAddress::zero(),
     );
     let token_address =
         env.deploy("@token_contract/Token").with_public_initializer(operator, token_initializer);

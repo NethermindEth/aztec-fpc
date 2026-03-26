@@ -25,11 +25,11 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@aztec/accounts": "4.1.0-nightly.20260312.2",
-    "@aztec/aztec.js": "4.1.0-nightly.20260312.2",
-    "@aztec/entrypoints": "4.1.0-nightly.20260312.2",
-    "@aztec/stdlib": "4.1.0-nightly.20260312.2",
-    "@aztec/wallets": "4.1.0-nightly.20260312.2"
+    "@aztec/accounts": "4.1.0-rc.4",
+    "@aztec/aztec.js": "4.1.0-rc.4",
+    "@aztec/entrypoints": "4.1.0-rc.4",
+    "@aztec/stdlib": "4.1.0-rc.4",
+    "@aztec/wallets": "4.1.0-rc.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",

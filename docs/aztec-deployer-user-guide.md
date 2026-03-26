@@ -8,14 +8,14 @@
 
 | Dependency | Version |
 |------------|---------|
-| Aztec | `4.1.0-nightly.20260312.2` |
+| Aztec | `4.1.0-rc.4` |
 | Bun | `1.3.9` |
 | `@aztec/*` npm packages | Match the Aztec version above |
 
 Install the required Aztec CLI:
 
 ```bash
-VERSION=4.1.0-nightly.20260312.2 bash -i <(curl -sL https://install.aztec.network/$VERSION)
+VERSION=4.1.0-rc.4 bash -i <(curl -sL https://install.aztec.network/$VERSION)
 ```
 
 > Your `@aztec/*` SDK dependencies (e.g. `@aztec/aztec.js`, `@aztec/entrypoints`) must match this version. Mismatched versions will cause serialisation or ABI errors at runtime.
@@ -876,7 +876,7 @@ docker run -v ./deployments:/app/deployments \
 ## Deployment Checklist
 
 ```
-[ ] Aztec version 4.1.0-nightly.20260312.2 installed (or matching node version)
+[ ] Aztec version 4.1.0-rc.4 installed (or matching node version)
 [ ] Aztec node accessible at <AZTEC_NODE_URL>
 [ ] L1 RPC accessible at <L1_RPC_URL>
 [ ] Deployer and operator keys generated and secured
