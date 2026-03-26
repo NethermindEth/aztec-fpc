@@ -53,7 +53,11 @@ jobs:
   docker-build-ci:
     needs: [changes]
     if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
     env:
       PXE_PROVER_ENABLED: false
     steps:
