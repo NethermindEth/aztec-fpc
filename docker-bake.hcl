@@ -92,7 +92,7 @@ target "deps" {
 target "contract" {
   context    = "."
   dockerfile = "scripts/contract/Dockerfile.contract"
-  platforms  = ["linux/amd64"]
+  platforms  = PLATFORMS
   tags = compact([
     "${REGISTRY}nethermind/aztec-fpc-contract-artifact:${TAG}${PLATFORM_SUFFIX}",
     GIT_SHA != "" ? "${REGISTRY}nethermind/aztec-fpc-contract-artifact:${GIT_SHA}${PLATFORM_SUFFIX}" : "",
