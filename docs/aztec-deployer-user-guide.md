@@ -33,7 +33,6 @@ VERSION=4.1.0-rc.4 bash -i <(curl -sL https://install.aztec.network/$VERSION)
    - [3. Configure Tokens](#3-configure-tokens)
    - [4. Configure & Start the Top-up Service](#4-configure--start-the-top-up-service)
    - [5. Verify the Deployment](#5-verify-the-deployment)
-   - [Docker Compose (All-in-One)](#docker-compose-all-in-one)
 4. [For Users (SDK Integration)](#for-users-sdk-integration)
    - [Prerequisites](#user-prerequisites)
    - [Install the SDK](#install-the-sdk)
@@ -95,6 +94,8 @@ Aztec Network
 - A deployer L2 secret key
 - An operator L2 secret key (or same as deployer)
 - An L1 private key (for the top-up service and optional test-token deploy)
+
+> **Looking for the fastest path?** The [Deploy FPC](../README.md#deploy-fpc-testnet) section in the README covers testnet deployment in a few commands.
 
 ### 1. Deploy FPC Contract
 
@@ -470,29 +471,6 @@ FPC_COLD_START_MANIFEST=path/to/manifest.json FPC_ATTESTATION_URL=http://localho
 # Services smoke (attestation + topup + contract, via docker compose)
 bun run smoke:services:compose
 ```
-
----
-
-### Docker Compose (All-in-One)
-
-For testnet deployments, use the public compose file:
-
-```bash
-export FPC_DEPLOYER_SECRET_KEY=0x<deployer_key>
-export FPC_OPERATOR_SECRET_KEY=0x<operator_key>
-export FPC_L1_DEPLOYER_KEY=0x<l1_key>
-export ADMIN_API_KEY=<admin_secret>
-
-DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
-```
-
-The compose file reads network defaults from `.env.testnet` and mounts `deployments/${DEPLOYMENT}/` as the data directory. The service dependency chain is:
-
-1. `deploy` — deploys the FPC contract, writes manifest and service configs.
-2. `attestation` + `topup` — start once deploy completes.
-3. `configure-token` — deploys test tokens (if needed) and registers them with the running attestation service.
-
-After the run, all output lives in `deployments/testnet/`.
 
 ---
 
