@@ -540,7 +540,7 @@ async function deployWithAztecJsFallback(params: {
   await waitForNode(node);
   const wallet = await EmbeddedWallet.create(node, {
     ephemeral: true,
-    pxeConfig: { proverEnabled: true },
+    pxeConfig: { proverEnabled: true, syncChainTip: "checkpointed" },
   });
 
   const secret = Fr.fromHexString(params.secretKey);

@@ -204,7 +204,7 @@ async function initDeployDeps(): Promise<TestTokenDeployDeps> {
   const nodeInfo = await node.getNodeInfo();
 
   const wallet = await EmbeddedWallet.create(node, {
-    pxeConfig: { proverEnabled },
+    pxeConfig: { proverEnabled, syncChainTip: "checkpointed" },
   });
 
   const deployerSecretFr = Fr.fromHexString(deployerSecretKey);
