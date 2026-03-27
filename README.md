@@ -214,11 +214,11 @@ aztec-fpc/
 
 ### Prerequisites
 
-- Bun `1.3.9`
+- Bun `1.3.11`
 - Aztec CLI
 
 ```bash
-VERSION=4.1.0-nightly.20260312.2 bash -i <(curl -sL https://install.aztec.network/4.1.0-nightly.20260312.2)
+VERSION=4.1.0-rc.4 bash -i <(curl -sL https://install.aztec.network/4.1.0-rc.4)
 ```
 
 ### 1. Clone the repository with submodules (required)

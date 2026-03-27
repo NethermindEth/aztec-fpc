@@ -13,7 +13,7 @@ in `profiling/benchmarks/` plus human-readable console summaries.
 
 ## Prerequisites
 
-- **Aztec CLI** — version from `.aztecrc` (currently `4.1.0-nightly.20260312.2`)
+- **Aztec CLI** — version from `.aztecrc` (currently `4.1.0-rc.4`)
 
 ```bash
 VERSION=$(cat .aztecrc) bash -i <(curl -sL https://install.aztec.network/$VERSION)
