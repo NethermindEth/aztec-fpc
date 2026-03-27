@@ -2,6 +2,18 @@
 # Shared fields (fpc_address, accepted_asset, aztec_node_url, l1_rpc_url)
 # are injected from the deploy output at generation time.
 
+# Tokens to register with the attestation service.
+# By default, configure-token auto-deploys a test token stack
+# (L1 ERC20 + L2 Token + Bridge + Faucet).
+# To use an existing token, uncomment and set the address field:
+#   address: "0x<existing_token_address>"
+tokens:
+  - name: "FpcAcceptedAsset"
+    symbol: "FPCA"
+    market_rate_num: 1
+    market_rate_den: 1000
+    fee_bips: 200
+
 attestation:
   accepted_asset_name: "FpcAcceptedAsset"
   market_rate_num: 1

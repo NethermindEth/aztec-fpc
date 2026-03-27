@@ -105,24 +105,72 @@ See [docs/spec/protocol-spec.md](docs/spec/protocol-spec.md) for the full protoc
 
 ---
 
-## Deploy FPC
+## Deploy FPC (Testnet)
 
-Deploy the FPC contract and run the full operator stack with a single Docker Compose command. No local toolchain required — the images ship with pre-compiled contract artifacts.
+Deploy the FPC contract and run the full operator stack with Docker Compose. No local toolchain required — the images ship with pre-compiled contract artifacts.
+
+#### 1. Build images
+
+```bash
+docker buildx bake
+```
+
+#### 2. Review the master config
+
+The repo ships `deployments/testnet/fpc-config.yaml` with sensible defaults — no changes needed for a standard testnet deployment. See the [full guide](docs/aztec-deployer-user-guide.md#master-config) for customization options.
+
+#### 3. Required keys
+
+| Env var | Layer | Used for |
+|---------|-------|----------|
+| `FPC_DEPLOYER_SECRET_KEY` | L2 | Deploys the FPC contract and test tokens |
+| `FPC_OPERATOR_SECRET_KEY` | L2 | Signs fee quotes, receives token payments |
+| `FPC_L1_DEPLOYER_KEY` | L1 | Bridges Fee Juice (topup) and deploys test token L1 contracts |
+| `ADMIN_API_KEY` | — | Authenticates admin requests to the attestation service |
+
+> For a minimal setup, you can use the same L2 key for both deployer and operator, and a single L1 key.
+
+#### 4. Fund accounts
+
+| Account | What's needed | How to get it |
+|---------|---------------|---------------|
+| L1 (`FPC_L1_DEPLOYER_KEY`) | Sepolia ETH | Sepolia faucet |
+| L1 (`FPC_L1_DEPLOYER_KEY`) | Fee Juice ERC-20 token | `bun run fund:l1:fee-juice` (mints it) |
+| L2 (`FPC_DEPLOYER_SECRET_KEY`) | Fee Juice | Aztec faucet or `aztec bridge-erc20` — needed to pay for the FPC deployment tx |
+
+**Fund L1 Fee Juice:**
+
+```bash
+export AZTEC_NODE_URL=https://rpc.testnet.aztec-labs.com
+export L1_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+export L1_OPERATOR_PRIVATE_KEY=0x<l1_key>  # same key as FPC_L1_DEPLOYER_KEY
+bun run fund:l1:fee-juice
+```
+
+> The L1 Fee Juice is used by the topup service to bridge into the FPC's L2 balance. The L2 Fee Juice is needed only once — to pay gas for the initial FPC contract deployment.
+
+#### 5. Deploy and start
 
 ```bash
 export FPC_DEPLOYER_SECRET_KEY=0x<deployer_key>
 export FPC_OPERATOR_SECRET_KEY=0x<operator_key>
-export FPC_L1_DEPLOYER_KEY=0x<l1_deployer_key>
+export FPC_L1_DEPLOYER_KEY=0x<l1_key>
 export ADMIN_API_KEY=<admin_secret>
 
 DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
 ```
 
-This deploys the FPC contract, starts the attestation and topup services, then deploys/registers tokens via the `configure-token` step. Output goes to `deployments/testnet/`.
+This deploys the FPC contract, generates service configs, starts attestation + topup, and deploys/registers tokens via `configure-token`. Output goes to `deployments/testnet/`.
 
-To use existing tokens instead of deploying test tokens, set explicit `address` values in the `tokens` section of `deployments/testnet/fpc-config.yaml` before running compose.
+#### 6. Verify
 
-**[Full deployment & integration guide](docs/aztec-deployer-user-guide.md)** — deployer setup, service configuration, SDK integration, API reference, and troubleshooting.
+```bash
+curl http://localhost:3000/health          # attestation
+curl http://localhost:3001/ready           # topup
+curl http://localhost:3000/accepted-assets # registered tokens
+```
+
+For manual step-by-step deployment, custom configuration, SDK integration, and API reference, see the **[Full Deployer & User Guide](docs/aztec-deployer-user-guide.md)**.
 
 ---
 
@@ -166,7 +214,7 @@ const coldStart = await client.executeColdStart({
 
 | Document | Description |
 |----------|-------------|
-| **[docs/aztec-deployer-user-guide.md](docs/aztec-deployer-user-guide.md)** | **Main guide** — deployment, services, SDK integration, API reference |
+| **[docs/aztec-deployer-user-guide.md](docs/aztec-deployer-user-guide.md)** | **Full guide** — manual deployment, custom config, SDK integration, API reference |
 | [sdk/README.md](sdk/README.md) | SDK integration guide |
 | [docs/ops/docker-deployment-guide.md](docs/ops/docker-deployment-guide.md) | Docker image CLI arguments, config generation, Compose examples |
 | [docs/ops/devnet-deployment-how-to.md](docs/ops/devnet-deployment-how-to.md) | Non-Docker devnet deployment via `bun run deploy:fpc` |
