@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, it } from "node:test";
+import { describe, it } from "#test";
 import { loadConfig } from "../src/config.js";
 
 const VALID_SECRET = "0x0000000000000000000000000000000000000000000000000000000000000001";

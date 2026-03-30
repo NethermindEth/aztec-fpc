@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import type { createExtendedL1Client } from "@aztec/ethereum/client";
 import { createLogger } from "@aztec/foundation/log";
 import type { Chain } from "viem";
+import { describe, it } from "#test";
 import type { BridgeDeps } from "../src/bridge.js";
 import { bridgeFeeJuice, isNonceTooLowError, isRetryableNonceError } from "../src/bridge.js";
 
@@ -192,7 +192,7 @@ describe("bridge", () => {
       /already known/,
     );
     assert.equal(attempts, 3);
-  });
+  }, 15_000);
 
   it("classifies nonce errors correctly", () => {
     assert.equal(isNonceTooLowError(new Error("nonce too low")), true);

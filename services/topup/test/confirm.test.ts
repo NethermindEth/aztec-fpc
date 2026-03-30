@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
+import { describe, it } from "#test";
 import { waitForFeeJuiceBridgeConfirmation } from "../src/confirm.js";
 
 const FPC = AztecAddress.fromString(

@@ -8,7 +8,6 @@ import {
   type Config,
   computeFinalRate,
   modeNeedsApiKey,
-  normalizeAztecAddress,
   type SupportedAssetPolicy,
 } from "./config.js";
 import { AttestationMetrics, type QuoteOutcome } from "./metrics.js";
@@ -275,16 +274,8 @@ function parseRequiredNonZeroAztecAddress(
   return { ok: true, value: parsedAddress };
 }
 
-function resolveSelectedAssetPolicy(
-  supportedAssets: SupportedAssetPolicy[],
-  selectedAcceptedAssetAddress: string,
-): SupportedAssetPolicy | undefined {
-  const selectedAddress = normalizeAztecAddress(selectedAcceptedAssetAddress);
-  return supportedAssets.find((asset) => asset.address === selectedAddress);
-}
-
 function parseQuoteRequest(
-  supportedAssets: SupportedAssetPolicy[],
+  assetPolicyStore: AssetPolicyStore,
   query: QuoteRequestQuery,
 ): QuoteRequestParseResult {
   const parsedUserAddress = parseRequiredNonZeroAztecAddress(
@@ -305,10 +296,7 @@ function parseQuoteRequest(
     return parsedAcceptedAsset;
   }
 
-  const selectedAssetPolicy = resolveSelectedAssetPolicy(
-    supportedAssets,
-    parsedAcceptedAsset.value.toString(),
-  );
+  const selectedAssetPolicy = assetPolicyStore.get(parsedAcceptedAsset.value.toString());
   if (!selectedAssetPolicy) {
     return { ok: false, message: "Unsupported accepted_asset" };
   }
@@ -354,10 +342,10 @@ function parseRequiredHexField(
 }
 
 function parseColdStartQuoteRequest(
-  supportedAssets: SupportedAssetPolicy[],
+  assetPolicyStore: AssetPolicyStore,
   query: ColdStartQuoteRequestQuery,
 ): ColdStartQuoteRequestParseResult {
-  const baseResult = parseQuoteRequest(supportedAssets, query);
+  const baseResult = parseQuoteRequest(assetPolicyStore, query);
   if (!baseResult.ok) {
     return baseResult;
   }
@@ -614,7 +602,7 @@ function parseAdminSweepRequest(
   if (!acceptedAsset) {
     throw new Error("Missing required field: accepted_asset");
   }
-  if (!resolveSelectedAssetPolicy(assetPolicyStore.getAll(), acceptedAsset)) {
+  if (!assetPolicyStore.get(acceptedAsset)) {
     throw new Error("Unsupported accepted_asset");
   }
 
@@ -713,7 +701,7 @@ function registerQuoteRoute(context: ServerContext): void {
       return reply.code(401).send(unauthorized());
     }
 
-    const parsedRequest = parseQuoteRequest(assetPolicyStore.getAll(), req.query);
+    const parsedRequest = parseQuoteRequest(assetPolicyStore, req.query);
     if (!parsedRequest.ok) {
       observe("bad_request");
       return reply.code(400).send(badRequest(parsedRequest.message));
@@ -1013,7 +1001,7 @@ function registerColdStartQuoteRoute(context: ServerContext): void {
       return reply.code(401).send(unauthorized());
     }
 
-    const parsedRequest = parseColdStartQuoteRequest(assetPolicyStore.getAll(), req.query);
+    const parsedRequest = parseColdStartQuoteRequest(assetPolicyStore, req.query);
     if (!parsedRequest.ok) {
       observe("bad_request");
       return reply.code(400).send(badRequest(parsedRequest.message));

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it } from "#test";
 import { createTopupChecker } from "../src/checker.js";
 
 const HASH = `0x${"ab".repeat(32)}` as `0x${string}`;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, it } from "node:test";
+import { describe, it } from "#test";
 import { LmdbAssetPolicyStore } from "../src/asset-policy-store.js";
 import type { Config } from "../src/config.js";
 
@@ -58,6 +58,27 @@ function makeConfig(statePath: string): Config {
 }
 
 describe("asset policy store", () => {
+  it("looks up a single asset by address", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "asset-policy-store-test-"));
+    const dbPath = path.join(dir, "assets-db");
+
+    try {
+      const config = makeConfig(dbPath);
+      const store = new LmdbAssetPolicyStore(config);
+
+      const seededAddress = "0x0000000000000000000000000000000000000000000000000000000000000002";
+      assert.equal(store.get(seededAddress)?.name, "humanUSDC");
+      assert.equal(
+        store.get("0x0000000000000000000000000000000000000000000000000000000000000099"),
+        undefined,
+      );
+
+      await store.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("persists admin-managed supported asset state", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "asset-policy-store-test-"));
     const dbPath = path.join(dir, "assets-db");

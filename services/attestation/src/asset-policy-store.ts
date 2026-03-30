@@ -46,6 +46,7 @@ function normalizeSupportedAssetPolicies(policies: SupportedAssetPolicy[]): Supp
 }
 
 export interface AssetPolicyStore {
+  get(address: string): SupportedAssetPolicy | undefined;
   getAll(): SupportedAssetPolicy[];
   upsert(policy: SupportedAssetPolicy): Promise<SupportedAssetPolicy>;
   remove(address: string): Promise<SupportedAssetPolicy>;
@@ -66,6 +67,12 @@ export class LmdbAssetPolicyStore implements AssetPolicyStore {
         this.db.putSync(policy.address, policy);
       }
     }
+  }
+
+  get(address: string): SupportedAssetPolicy | undefined {
+    const normalizedAddress = normalizeAztecAddress(address);
+    const policy = this.db.get(normalizedAddress);
+    return policy ? { ...policy } : undefined;
   }
 
   getAll(): SupportedAssetPolicy[] {

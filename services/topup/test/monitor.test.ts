@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
 import type { AztecNode } from "@aztec/aztec.js/node";
+import { describe, it } from "#test";
 import { createGetFeeJuiceBalance } from "../src/monitor.js";
 
 describe("monitor", () => {
