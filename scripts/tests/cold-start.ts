@@ -30,6 +30,7 @@ import {
   type L1Infra,
   mintL1Erc20WithRetry,
   setupL1Infrastructure,
+  waitForNextBlock,
 } from "../common/setup-helpers.ts";
 
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -223,6 +224,11 @@ describe("cold-start smoke", () => {
       timeoutSeconds: config.messageTimeoutSeconds,
     });
 
+    // waitForL1ToL2MessageReady only checks the node/archiver — the PXE's
+    // anchor block may not yet include the message tree update.  Wait for
+    // one more block so the BlockSynchronizer processes the blocks-added event.
+    await waitForNextBlock(node);
+
     // Execute cold-start via SDK
     const coldStartResult = await fpcClient.executeColdStart({
       wallet,
@@ -409,6 +415,7 @@ describe("cold-start smoke", () => {
     await waitForL1ToL2MessageReady(node, tinyMsgHash, {
       timeoutSeconds: config.messageTimeoutSeconds,
     });
+    await waitForNextBlock(node);
 
     // Attempt cold-start — should fail at quote stage
     await expect(

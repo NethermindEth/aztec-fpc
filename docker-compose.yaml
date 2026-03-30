@@ -29,6 +29,16 @@ services:
       DEPLOY_AZTEC_CONTRACTS_SALT: 1
       L1_CHAIN_ID: 31337
       ETHEREUM_HOSTS: "http://anvil:8545"
+      # Effectively disable epoch pruning for local/CI test runs.
+      # The default AZTEC_PROOF_SUBMISSION_EPOCHS is 1, which combined
+      # with a small AZTEC_EPOCH_DURATION gives only a few slots before
+      # unproven blocks are pruned — too tight for slow CI (ARM64).
+      # No real proving happens here, so a larger value is safe.
+      # Aztec's own e2e tests use a similar approach.
+      AZTEC_PROOF_SUBMISSION_EPOCHS: 100
+      # Concurrent tests with many simultaneous deployments can exceed the
+      # default RPC_MAX_BODY_SIZE of 1mb.
+      RPC_MAX_BODY_SIZE: "5mb"
     depends_on:
       anvil:
         condition: service_healthy
