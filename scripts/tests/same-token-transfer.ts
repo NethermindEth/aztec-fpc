@@ -224,6 +224,9 @@ describe("same-token-transfer", () => {
       from: s.user,
       fee: { estimateGas: true },
     });
+    if (!transferSim.estimatedGas) {
+      throw new Error("Expected estimatedGas from simulate with estimateGas: true");
+    }
     const transferFpc = await s.fpcClient.createPaymentMethod({
       wallet: s.wallet,
       user: s.user,
@@ -255,6 +258,9 @@ describe("same-token-transfer", () => {
       from: s.user,
       fee: { estimateGas: true },
     });
+    if (!publicTransferSim.estimatedGas) {
+      throw new Error("Expected estimatedGas from simulate with estimateGas: true");
+    }
     const publicTransferFpc = await s.fpcClient.createPaymentMethod({
       wallet: s.wallet,
       user: s.user,

@@ -226,8 +226,8 @@ async function loadAztecDeps(): Promise<AztecDeps> {
   return {
     createAztecNodeClient: createAztecNodeClient as AztecDeps["createAztecNodeClient"],
     waitForNode: waitForNode as AztecDeps["waitForNode"],
-    AztecAddress: AztecAddress as AztecDeps["AztecAddress"],
-    Fr: Fr as AztecDeps["Fr"],
+    AztecAddress: AztecAddress as unknown as AztecDeps["AztecAddress"],
+    Fr: Fr as unknown as AztecDeps["Fr"],
   };
 }
 
@@ -353,7 +353,7 @@ async function verifyAttempt(params: {
   }
 
   try {
-    await verifyFpcImmutablesOnStartup(node, {
+    await verifyFpcImmutablesOnStartup(node as never, {
       fpcAddress: parsedAddresses.get("fpc") as never,
       operatorAddress: manifest.operator.address as never,
       operatorPubkeyX: manifest.operator.pubkey_x as never,

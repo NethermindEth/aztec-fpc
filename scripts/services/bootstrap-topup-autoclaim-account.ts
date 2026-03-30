@@ -406,9 +406,9 @@ function registerSponsoredFpc(nodeUrl: string, sponsoredFpcAddress: string): voi
   );
 }
 
-function deriveAddress(secretKey: string): AztecAddress {
+async function deriveAddress(secretKey: string): Promise<AztecAddress> {
   const secretFr = Fr.fromHexString(secretKey);
-  return getSchnorrAccountContractAddress(secretFr, Fr.ZERO);
+  return await getSchnorrAccountContractAddress(secretFr, Fr.ZERO);
 }
 
 async function isPublished(nodeUrl: string, address: AztecAddress): Promise<boolean> {
@@ -596,8 +596,7 @@ async function deployWithAztecJsFallback(params: {
       }
       failures.push(`${mode}: ${message}`);
       pinoLogger.warn(
-        `${LOG_PREFIX} aztec.js fallback deployment failed with mode=${mode}`,
-        message,
+        `${LOG_PREFIX} aztec.js fallback deployment failed with mode=${mode}: ${message}`,
       );
     }
   }
@@ -655,8 +654,7 @@ async function main(): Promise<void> {
   } catch (error) {
     walletBootstrapError = String(error);
     pinoLogger.warn(
-      `${LOG_PREFIX} aztec-wallet bootstrap path failed; will attempt aztec.js fallback`,
-      walletBootstrapError,
+      `${LOG_PREFIX} aztec-wallet bootstrap path failed; will attempt aztec.js fallback: ${walletBootstrapError}`,
     );
   }
 

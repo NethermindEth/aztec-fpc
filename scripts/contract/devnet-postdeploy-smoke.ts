@@ -42,7 +42,7 @@ type AztecAddressLike = {
 };
 
 type ContractMethodLike = {
-  send: (opts: unknown) => Promise<unknown>;
+  send: (opts: unknown) => Promise<{ transactionFee: bigint }>;
   simulate: (opts: unknown) => Promise<unknown>;
   getFunctionCall: () => Promise<unknown>;
 };
@@ -74,7 +74,9 @@ type NodeLike = {
 
 type L1PublicClientLike = {
   getChainId: () => Promise<number>;
-  waitForTransactionReceipt: (args: { hash: string }) => Promise<unknown>;
+  waitForTransactionReceipt: (args: { hash: string }) => Promise<{
+    logs: ReadonlyArray<{ address: string; data: string; topics: string[] }>;
+  }>;
 };
 
 type L1WalletClientLike = {
@@ -134,7 +136,10 @@ type AztecDeps = {
     account: unknown,
     chain?: unknown,
   ) => L1WalletClientLike & L1PublicClientLike;
-  decodeEventLog: (config: { abi: unknown; data: string; topics: string[] }) => unknown;
+  decodeEventLog: (config: { abi: unknown; data: string; topics: string[] }) => {
+    eventName: string;
+    args: Record<string, unknown>;
+  };
   http: (url: string) => unknown;
   parseAbi: (abi: string[]) => unknown;
   extractChain: (args: { chains: unknown[]; id: number }) => unknown;
