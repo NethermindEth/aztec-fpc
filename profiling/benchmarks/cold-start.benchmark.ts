@@ -25,6 +25,8 @@ const pinoLogger = pino({
  *   L1_RPC_URL      — L1 (anvil) endpoint (default http://127.0.0.1:8545)
  */
 
+import { FeeJuiceArtifact } from '@aztec/protocol-contracts/fee-juice';
+import { ProtocolContractAddress } from '@aztec/protocol-contracts';
 import { createAztecNodeClient } from '@aztec/aztec.js/node';
 import { Contract } from '@aztec/aztec.js/contracts';
 import { L1FeeJuicePortalManager, L1ToL2TokenPortalManager } from '@aztec/aztec.js/ethereum';
@@ -203,6 +205,7 @@ interface ColdStartBenchmarkContext {
   userAddress: any;
   operatorAddress: any;
   fpcAddress: any;
+  _coldStartAction?: ColdStartAction;
 }
 
 export default class ColdStartBenchmark {
@@ -504,7 +507,7 @@ export default class ColdStartBenchmark {
   }
 
   getMethods(context: ColdStartBenchmarkContext) {
-    const action = (context as any)._coldStartAction;
+    const action = context._coldStartAction;
     if (!action) {
       throw new Error('ColdStartAction not found in context — was setup() called?');
     }
@@ -694,13 +697,7 @@ async function fundFpcWithFeeJuice(
 
   await mineL1Blocks(l1Client, 5);
 
-  const { FeeJuiceArtifact } = await import('@aztec/protocol-contracts/fee-juice');
-  const { ProtocolContractAddress } = await import('@aztec/protocol-contracts');
-  const feeJuice = Contract.at(
-    ProtocolContractAddress.FeeJuice,
-    FeeJuiceArtifact,
-    wallet,
-  );
+  const feeJuice = Contract.at(ProtocolContractAddress.FeeJuice, FeeJuiceArtifact, wallet);
   const MAX_ATTEMPTS = 30;
 
   function isRetryable(msg: string) {

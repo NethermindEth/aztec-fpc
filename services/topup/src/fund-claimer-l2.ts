@@ -451,7 +451,7 @@ async function setupBridgePortal(
 
   const l1Wallet = createL1WalletClient(l1RpcUrl, l1ChainId, l1PrivateKey);
   const bridgeLogger = createLogger("fund-claimer-l2:bridge");
-  const portalManager = await L1FeeJuicePortalManager.new(node, l1Wallet as never, bridgeLogger);
+  const portalManager = await L1FeeJuicePortalManager.new(node, l1Wallet, bridgeLogger);
   return { node, portalManager };
 }
 

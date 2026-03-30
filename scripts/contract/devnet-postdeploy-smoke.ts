@@ -1,13 +1,35 @@
 import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
+import { Contract } from "@aztec/aztec.js/contracts";
+import { Fr } from "@aztec/aztec.js/fields";
+import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
+import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import { FeeJuiceContract, ProtocolContractAddress } from "@aztec/aztec.js/protocol";
+import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
+import { Schnorr } from "@aztec/foundation/crypto/schnorr";
+import {
+  type ContractArtifact,
+  loadContractArtifact,
+  loadContractArtifactForPublic,
+} from "@aztec/stdlib/abi";
+import { GasSettings } from "@aztec/stdlib/gas";
+import { computeSecretHash } from "@aztec/stdlib/hash";
+import { deriveSigningKey } from "@aztec/stdlib/keys";
+import type { NoirCompiledContract } from "@aztec/stdlib/noir";
+import { ExecutionPayload } from "@aztec/stdlib/tx";
+import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import {
   type DeployManifest,
   readDeployManifest,
 } from "@aztec-fpc/contract-deployment/src/manifest.ts";
 import { readTestTokenManifest } from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
 import pino from "pino";
+import { type Chain, createPublicClient, decodeEventLog, extractChain, http, parseAbi } from "viem";
+import * as viemChains from "viem/chains";
 
 const pinoLogger = pino();
 
@@ -35,116 +57,6 @@ type CliParseResult =
       kind: "args";
       args: CliArgs;
     };
-
-type AztecAddressLike = {
-  toString: () => string;
-  toField: () => unknown;
-};
-
-type ContractMethodLike = {
-  send: (opts: unknown) => Promise<{ transactionFee: bigint }>;
-  simulate: (opts: unknown) => Promise<unknown>;
-  getFunctionCall: () => Promise<unknown>;
-};
-
-type ContractLike = {
-  address: AztecAddressLike;
-  methods: Record<string, (...args: unknown[]) => ContractMethodLike>;
-};
-
-type WalletLike = {
-  createSchnorrAccount: (
-    secret: unknown,
-    salt: unknown,
-    signingKey: unknown,
-  ) => Promise<{ address: AztecAddressLike }>;
-  createAuthWit: (authorizer: AztecAddressLike, intent: unknown) => Promise<unknown>;
-  registerContract: (instance: unknown, artifact?: unknown) => Promise<unknown>;
-};
-
-type NodeLike = {
-  getNodeInfo: () => Promise<{ l1ContractAddresses: Record<string, unknown> }>;
-  getCurrentMinFees: () => Promise<{
-    feePerDaGas: bigint;
-    feePerL2Gas: bigint;
-  }>;
-  getBlock: (blockTag: string) => Promise<{ timestamp: bigint } | null>;
-  getContract: (address: AztecAddressLike) => Promise<unknown | undefined>;
-};
-
-type L1PublicClientLike = {
-  getChainId: () => Promise<number>;
-  waitForTransactionReceipt: (args: { hash: string }) => Promise<{
-    logs: ReadonlyArray<{ address: string; data: string; topics: string[] }>;
-  }>;
-};
-
-type L1WalletClientLike = {
-  writeContract: (args: unknown) => Promise<string>;
-};
-
-type SchnorrLike = {
-  computePublicKey: (signingKey: unknown) => Promise<{
-    x: { toString: () => string };
-    y: { toString: () => string };
-  }>;
-  constructSignature: (
-    payload: Uint8Array,
-    signingKey: unknown,
-  ) => Promise<{ toBuffer: () => Uint8Array }>;
-};
-
-type FrLike = {
-  toString: () => string;
-  toBuffer: () => Buffer;
-};
-
-type FrFactory = {
-  new (value: unknown): FrLike;
-  ZERO: FrLike;
-  random: () => FrLike;
-  fromHexString: (value: string) => FrLike;
-};
-
-type AztecDeps = {
-  createAztecNodeClient: (url: string) => NodeLike;
-  waitForNode: (node: NodeLike) => Promise<void>;
-  waitForL1ToL2MessageReady: (
-    node: NodeLike,
-    messageHash: unknown,
-    opts: { timeoutSeconds: number },
-  ) => Promise<void>;
-  AztecAddress: { fromString: (value: string) => AztecAddressLike };
-  Contract: {
-    at: (address: AztecAddressLike, artifact: unknown, wallet: WalletLike) => ContractLike;
-  };
-  Fr: FrFactory;
-  computeInnerAuthWitHash: (values: unknown[]) => Promise<FrLike>;
-  FeeJuiceContract: { at: (wallet: WalletLike) => ContractLike };
-  ProtocolContractAddress: { FeeJuice: unknown };
-  getFeeJuiceBalance: (address: AztecAddressLike, node: NodeLike) => Promise<bigint>;
-  Schnorr: new () => SchnorrLike;
-  loadContractArtifact: (compiled: unknown) => unknown;
-  loadContractArtifactForPublic: (compiled: unknown) => unknown;
-  computeSecretHash: (secret: FrLike) => Promise<FrLike>;
-  deriveSigningKey: (secret: FrLike) => unknown;
-  ExecutionPayload: new (...args: unknown[]) => unknown;
-  EmbeddedWallet: { create: (node: NodeLike) => Promise<WalletLike> };
-  createPublicClient: (config: { transport: unknown }) => L1PublicClientLike;
-  createExtendedL1Client: (
-    rpcUrls: string[],
-    account: unknown,
-    chain?: unknown,
-  ) => L1WalletClientLike & L1PublicClientLike;
-  decodeEventLog: (config: { abi: unknown; data: string; topics: string[] }) => {
-    eventName: string;
-    args: Record<string, unknown>;
-  };
-  http: (url: string) => unknown;
-  parseAbi: (abi: string[]) => unknown;
-  extractChain: (args: { chains: unknown[]; id: number }) => unknown;
-  viemChains: unknown[];
-};
 
 class CliError extends Error {
   constructor(message: string) {
@@ -442,137 +354,17 @@ function parseManifestFromDisk(manifestPath: string): DeployManifest {
   }
 }
 
-async function importWithWorkspaceFallback(moduleId: string): Promise<Record<string, unknown>> {
-  const errors: string[] = [];
-  try {
-    return (await import(moduleId)) as Record<string, unknown>;
-  } catch (error) {
-    errors.push(`direct import failed: ${String(error)}`);
-  }
-
-  const fallbackPackageJsons = [
-    path.join(REPO_ROOT, "services", "attestation", "package.json"),
-    path.join(REPO_ROOT, "services", "topup", "package.json"),
-  ];
-
-  for (const packageJsonPath of fallbackPackageJsons) {
-    try {
-      const requireFromWorkspace = createRequire(packageJsonPath);
-      const resolved = requireFromWorkspace.resolve(moduleId);
-      return (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
-    } catch (error) {
-      errors.push(`workspace import failed via ${packageJsonPath}: ${String(error)}`);
-    }
-  }
-
-  throw new CliError(`Failed to load ${moduleId}.\n${errors.join("\n")}`);
-}
-
-async function loadDeps(): Promise<AztecDeps> {
-  const [
-    nodeApi,
-    messagingApi,
-    addressApi,
-    contractsApi,
-    fieldsApi,
-    authorizationApi,
-    protocolApi,
-    utilsApi,
-    schnorrApi,
-    abiApi,
-    hashApi,
-    keysApi,
-    txApi,
-    embeddedApi,
-    ethereumClientApi,
-    viemApi,
-    viemChainsApi,
-  ] = await Promise.all([
-    importWithWorkspaceFallback("@aztec/aztec.js/node"),
-    importWithWorkspaceFallback("@aztec/aztec.js/messaging"),
-    importWithWorkspaceFallback("@aztec/aztec.js/addresses"),
-    importWithWorkspaceFallback("@aztec/aztec.js/contracts"),
-    importWithWorkspaceFallback("@aztec/aztec.js/fields"),
-    importWithWorkspaceFallback("@aztec/aztec.js/authorization"),
-    importWithWorkspaceFallback("@aztec/aztec.js/protocol"),
-    importWithWorkspaceFallback("@aztec/aztec.js/utils"),
-    importWithWorkspaceFallback("@aztec/foundation/crypto/schnorr"),
-    importWithWorkspaceFallback("@aztec/stdlib/abi"),
-    importWithWorkspaceFallback("@aztec/stdlib/hash"),
-    importWithWorkspaceFallback("@aztec/stdlib/keys"),
-    importWithWorkspaceFallback("@aztec/stdlib/tx"),
-    importWithWorkspaceFallback("@aztec/wallets/embedded"),
-    importWithWorkspaceFallback("@aztec/ethereum/client"),
-    importWithWorkspaceFallback("viem"),
-    importWithWorkspaceFallback("viem/chains"),
-  ]);
-
-  const deps: AztecDeps = {
-    createAztecNodeClient: nodeApi.createAztecNodeClient as AztecDeps["createAztecNodeClient"],
-    waitForNode: nodeApi.waitForNode as AztecDeps["waitForNode"],
-    waitForL1ToL2MessageReady:
-      messagingApi.waitForL1ToL2MessageReady as AztecDeps["waitForL1ToL2MessageReady"],
-    AztecAddress: addressApi.AztecAddress as AztecDeps["AztecAddress"],
-    Contract: contractsApi.Contract as AztecDeps["Contract"],
-    Fr: fieldsApi.Fr as AztecDeps["Fr"],
-    computeInnerAuthWitHash:
-      authorizationApi.computeInnerAuthWitHash as AztecDeps["computeInnerAuthWitHash"],
-    FeeJuiceContract: protocolApi.FeeJuiceContract as AztecDeps["FeeJuiceContract"],
-    ProtocolContractAddress:
-      protocolApi.ProtocolContractAddress as AztecDeps["ProtocolContractAddress"],
-    getFeeJuiceBalance: utilsApi.getFeeJuiceBalance as AztecDeps["getFeeJuiceBalance"],
-    Schnorr: schnorrApi.Schnorr as AztecDeps["Schnorr"],
-    loadContractArtifact: abiApi.loadContractArtifact as AztecDeps["loadContractArtifact"],
-    loadContractArtifactForPublic:
-      abiApi.loadContractArtifactForPublic as AztecDeps["loadContractArtifactForPublic"],
-    computeSecretHash: hashApi.computeSecretHash as AztecDeps["computeSecretHash"],
-    deriveSigningKey: keysApi.deriveSigningKey as AztecDeps["deriveSigningKey"],
-    ExecutionPayload: txApi.ExecutionPayload as AztecDeps["ExecutionPayload"],
-    EmbeddedWallet: embeddedApi.EmbeddedWallet as AztecDeps["EmbeddedWallet"],
-    createPublicClient: viemApi.createPublicClient as AztecDeps["createPublicClient"],
-    createExtendedL1Client:
-      ethereumClientApi.createExtendedL1Client as AztecDeps["createExtendedL1Client"],
-    decodeEventLog: viemApi.decodeEventLog as AztecDeps["decodeEventLog"],
-    http: viemApi.http as AztecDeps["http"],
-    parseAbi: viemApi.parseAbi as AztecDeps["parseAbi"],
-    extractChain: viemApi.extractChain as AztecDeps["extractChain"],
-    viemChains: Object.values(viemChainsApi),
-  };
-
-  const requiredFunctions: Array<[string, unknown]> = [
-    ["createAztecNodeClient", deps.createAztecNodeClient],
-    ["waitForNode", deps.waitForNode],
-    ["waitForL1ToL2MessageReady", deps.waitForL1ToL2MessageReady],
-    ["computeInnerAuthWitHash", deps.computeInnerAuthWitHash],
-    ["getFeeJuiceBalance", deps.getFeeJuiceBalance],
-    ["computeSecretHash", deps.computeSecretHash],
-    ["deriveSigningKey", deps.deriveSigningKey],
-    ["createPublicClient", deps.createPublicClient],
-    ["createExtendedL1Client", deps.createExtendedL1Client],
-    ["decodeEventLog", deps.decodeEventLog],
-    ["http", deps.http],
-    ["parseAbi", deps.parseAbi],
-  ];
-  for (const [name, value] of requiredFunctions) {
-    if (typeof value !== "function") {
-      throw new CliError(`Loaded dependency missing function ${name}`);
-    }
-  }
-
-  return deps;
-}
-
-function loadArtifact(deps: AztecDeps, artifactPath: string): unknown {
+function loadArtifact(artifactPath: string): ContractArtifact {
   const raw = readFileSync(artifactPath, "utf8");
-  const parsed = JSON.parse(raw) as unknown;
+  const parsed = JSON.parse(raw) as NoirCompiledContract;
   try {
-    return deps.loadContractArtifact(parsed);
+    return loadContractArtifact(parsed);
   } catch (error) {
     if (
       error instanceof Error &&
       error.message.includes("Contract's public bytecode has not been transpiled")
     ) {
-      return deps.loadContractArtifactForPublic(parsed);
+      return loadContractArtifactForPublic(parsed);
     }
     throw error;
   }
@@ -621,9 +413,8 @@ function normalizeEthAddress(value: unknown, fieldName: string): string {
 }
 
 async function waitForFeeJuiceBalanceAtLeast(
-  deps: AztecDeps,
-  node: NodeLike,
-  feePayerAddress: AztecAddressLike,
+  node: ReturnType<typeof createAztecNodeClient>,
+  feePayerAddress: AztecAddress,
   minimum: bigint,
   timeoutMs: number,
   pollMs: number,
@@ -631,7 +422,7 @@ async function waitForFeeJuiceBalanceAtLeast(
   const deadline = Date.now() + timeoutMs;
   let latest = 0n;
   while (Date.now() <= deadline) {
-    const balance = await deps.getFeeJuiceBalance(feePayerAddress, node);
+    const balance = await getFeeJuiceBalance(feePayerAddress, node);
     latest = balance;
     if (balance >= minimum) {
       return balance;
@@ -644,19 +435,17 @@ async function waitForFeeJuiceBalanceAtLeast(
 }
 
 async function topUpFeePayer(params: {
-  deps: AztecDeps;
   args: CliArgs;
-  node: NodeLike;
-  wallet: WalletLike;
-  operatorAddress: AztecAddressLike;
-  l1PublicClient: L1PublicClientLike;
-  l1WalletClient: L1WalletClientLike;
-  feePayerAddress: AztecAddressLike;
+  node: ReturnType<typeof createAztecNodeClient>;
+  wallet: Awaited<ReturnType<typeof EmbeddedWallet.create>>;
+  operatorAddress: AztecAddress;
+  l1PublicClient: ReturnType<typeof createPublicClient>;
+  l1WalletClient: ReturnType<typeof createExtendedL1Client>;
+  feePayerAddress: AztecAddress;
   amount: bigint;
   label: string;
 }): Promise<bigint> {
   const {
-    deps,
     args,
     node,
     wallet,
@@ -668,10 +457,8 @@ async function topUpFeePayer(params: {
     label,
   } = params;
 
-  const ERC20_ABI = deps.parseAbi([
-    "function approve(address spender, uint256 amount) returns (bool)",
-  ]);
-  const FEE_JUICE_PORTAL_ABI = deps.parseAbi([
+  const ERC20_ABI = parseAbi(["function approve(address spender, uint256 amount) returns (bool)"]);
+  const FEE_JUICE_PORTAL_ABI = parseAbi([
     "function depositToAztecPublic(bytes32 to, uint256 amount, bytes32 secretHash) returns (bytes32, uint256)",
     "event DepositToAztecPublic(bytes32 indexed to, uint256 amount, bytes32 secretHash, bytes32 key, uint256 index)",
   ]);
@@ -692,16 +479,16 @@ async function topUpFeePayer(params: {
     "feeJuicePortalAddress",
   );
 
-  const initialBalance = await deps.getFeeJuiceBalance(feePayerAddress, node);
-  const claimSecret = deps.Fr.random();
-  const claimSecretHash = await deps.computeSecretHash(claimSecret);
+  const initialBalance = await getFeeJuiceBalance(feePayerAddress, node);
+  const claimSecret = Fr.random();
+  const claimSecretHash = await computeSecretHash(claimSecret);
 
   try {
     const approveTxHash = await l1WalletClient.writeContract({
-      address: feeJuiceAddress,
+      address: feeJuiceAddress as `0x${string}`,
       abi: ERC20_ABI,
       functionName: "approve",
-      args: [feeJuicePortalAddress, amount],
+      args: [feeJuicePortalAddress as `0x${string}`, amount],
     });
     await l1PublicClient.waitForTransactionReceipt({ hash: approveTxHash });
     pinoLogger.info(
@@ -710,10 +497,14 @@ async function topUpFeePayer(params: {
 
     const recipientBytes32 = `0x${feePayerAddress.toString().replace("0x", "").padStart(64, "0")}`;
     const bridgeTxHash = await l1WalletClient.writeContract({
-      address: feeJuicePortalAddress,
+      address: feeJuicePortalAddress as `0x${string}`,
       abi: FEE_JUICE_PORTAL_ABI,
       functionName: "depositToAztecPublic",
-      args: [recipientBytes32, amount, claimSecretHash.toString()],
+      args: [
+        recipientBytes32 as `0x${string}`,
+        amount,
+        claimSecretHash.toString() as `0x${string}`,
+      ],
     });
     const bridgeReceipt = await l1PublicClient.waitForTransactionReceipt({
       hash: bridgeTxHash,
@@ -721,13 +512,13 @@ async function topUpFeePayer(params: {
     pinoLogger.info(`[devnet-postdeploy-smoke] ${label} bridge_tx=${bridgeTxHash}`);
 
     let messageLeafIndex: bigint | undefined;
-    let l1ToL2MessageHash: unknown | undefined;
+    let l1ToL2MessageHash: Fr | undefined;
     for (const log of bridgeReceipt.logs) {
       if (log.address.toLowerCase() !== feeJuicePortalAddress.toLowerCase()) {
         continue;
       }
       try {
-        const decoded = deps.decodeEventLog({
+        const decoded = decodeEventLog({
           abi: FEE_JUICE_PORTAL_ABI,
           data: log.data,
           topics: log.topics,
@@ -735,8 +526,8 @@ async function topUpFeePayer(params: {
         if (decoded.eventName !== "DepositToAztecPublic") {
           continue;
         }
-        messageLeafIndex = decoded.args.index as bigint;
-        l1ToL2MessageHash = deps.Fr.fromHexString(decoded.args.key as string);
+        messageLeafIndex = decoded.args.index;
+        l1ToL2MessageHash = Fr.fromHexString(decoded.args.key as string);
         break;
       } catch {
         // Ignore non-matching logs.
@@ -748,17 +539,16 @@ async function topUpFeePayer(params: {
       );
     }
 
-    await deps.waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
+    await waitForL1ToL2MessageReady(node, l1ToL2MessageHash, {
       timeoutSeconds: Math.max(1, Math.floor(args.bridgeWaitTimeoutMs / 1000)),
     });
 
-    const feeJuice = deps.FeeJuiceContract.at(wallet);
+    const feeJuice = FeeJuiceContract.at(wallet);
     await feeJuice.methods
-      .claim(feePayerAddress, amount, claimSecret, new deps.Fr(messageLeafIndex))
+      .claim(feePayerAddress, amount, claimSecret, new Fr(messageLeafIndex))
       .send({ from: operatorAddress, wait: { timeout: 180 } });
 
     return waitForFeeJuiceBalanceAtLeast(
-      deps,
       node,
       feePayerAddress,
       initialBalance + amount,
@@ -774,7 +564,6 @@ async function topUpFeePayer(params: {
 }
 
 async function runSmoke(args: CliArgs): Promise<void> {
-  const deps = await loadDeps();
   const manifest = parseManifestFromDisk(args.manifestPath);
   const testTokenManifest = readTestTokenManifest(args.testTokenManifestPath);
 
@@ -784,10 +573,10 @@ async function runSmoke(args: CliArgs): Promise<void> {
 
   const operatorSecretKeyHex = resolveOperatorSecretKey(args);
   const l1OperatorPrivateKeyHex = resolveL1OperatorPrivateKey(args);
-  const operatorSecret = deps.Fr.fromHexString(operatorSecretKeyHex);
-  const operatorSigningKey = deps.deriveSigningKey(operatorSecret);
+  const operatorSecret = Fr.fromHexString(operatorSecretKeyHex);
+  const operatorSigningKey = deriveSigningKey(operatorSecret);
 
-  const schnorr = new deps.Schnorr();
+  const schnorr = new Schnorr();
   const derivedPubkey = await schnorr.computePublicKey(operatorSigningKey);
   const derivedX = BigInt(derivedPubkey.x.toString());
   const derivedY = BigInt(derivedPubkey.y.toString());
@@ -800,9 +589,9 @@ async function runSmoke(args: CliArgs): Promise<void> {
     );
   }
 
-  const node = deps.createAztecNodeClient(manifest.network.node_url);
+  const node = createAztecNodeClient(manifest.network.node_url);
   await Promise.race([
-    deps.waitForNode(node),
+    waitForNode(node),
     new Promise((_, reject) =>
       setTimeout(
         () =>
@@ -815,13 +604,13 @@ async function runSmoke(args: CliArgs): Promise<void> {
       ),
     ),
   ]);
-  const wallet = await deps.EmbeddedWallet.create(node);
+  const wallet = await EmbeddedWallet.create(node);
   const operatorAccount = await wallet.createSchnorrAccount(
     operatorSecret,
-    deps.Fr.ZERO,
+    Fr.ZERO,
     operatorSigningKey,
   );
-  const operatorAddress = deps.AztecAddress.fromString(operatorAccount.address.toString());
+  const operatorAddress = AztecAddress.fromString(operatorAccount.address.toString());
   if (
     operatorAddress.toString().toLowerCase() !== manifest.operator.address.toString().toLowerCase()
   ) {
@@ -830,8 +619,8 @@ async function runSmoke(args: CliArgs): Promise<void> {
     );
   }
 
-  const l1PublicClient = deps.createPublicClient({
-    transport: deps.http(args.l1RpcUrl),
+  const l1PublicClient = createPublicClient({
+    transport: http(args.l1RpcUrl),
   });
   const l1ChainId = await l1PublicClient.getChainId();
   if (l1ChainId !== manifest.network.l1_chain_id) {
@@ -840,18 +629,14 @@ async function runSmoke(args: CliArgs): Promise<void> {
     );
   }
 
-  const l1Chain = deps.extractChain({ chains: deps.viemChains, id: l1ChainId });
-  const l1WalletClient = deps.createExtendedL1Client(
-    [args.l1RpcUrl],
-    l1OperatorPrivateKeyHex,
-    l1Chain,
-  );
+  const l1Chain = extractChain({
+    chains: Object.values(viemChains) as unknown as readonly [Chain, ...Chain[]],
+    id: l1ChainId,
+  });
+  const l1WalletClient = createExtendedL1Client([args.l1RpcUrl], l1OperatorPrivateKeyHex, l1Chain);
 
-  const tokenArtifact = loadArtifact(
-    deps,
-    path.join(REPO_ROOT, "target", "token_contract-Token.json"),
-  );
-  const selectedFpcArtifact = loadArtifact(deps, FPC_ARTIFACT_PATH);
+  const tokenArtifact = loadArtifact(path.join(REPO_ROOT, "target", "token_contract-Token.json"));
+  const selectedFpcArtifact = loadArtifact(FPC_ARTIFACT_PATH);
 
   const tokenAddress = testTokenManifest.contracts.token;
   const fpcAddress = manifest.contracts.fpc;
@@ -870,18 +655,18 @@ async function runSmoke(args: CliArgs): Promise<void> {
   }
   await wallet.registerContract(fpcInstance, selectedFpcArtifact);
 
-  const token = deps.Contract.at(tokenAddress, tokenArtifact, wallet);
-  const fpc = deps.Contract.at(fpcAddress, selectedFpcArtifact, wallet);
+  const token = Contract.at(tokenAddress, tokenArtifact, wallet);
+  const fpc = Contract.at(fpcAddress, selectedFpcArtifact, wallet);
 
   // Register faucet contract for dripping tokens (bridge is the minter, not operator)
   const faucetAddress = testTokenManifest.contracts.faucet;
-  const faucetArtifact = loadArtifact(deps, path.join(REPO_ROOT, "target", "faucet-Faucet.json"));
+  const faucetArtifact = loadArtifact(path.join(REPO_ROOT, "target", "faucet-Faucet.json"));
   const faucetInstance = await node.getContract(faucetAddress);
   if (!faucetInstance) {
     throw new CliError(`Faucet contract not found on node at ${faucetAddress}`);
   }
   await wallet.registerContract(faucetInstance, faucetArtifact);
-  const faucet = deps.Contract.at(faucetAddress, faucetArtifact, wallet);
+  const faucet = Contract.at(faucetAddress, faucetArtifact, wallet);
 
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas as bigint;
@@ -904,7 +689,6 @@ async function runSmoke(args: CliArgs): Promise<void> {
   pinoLogger.info(`[devnet-postdeploy-smoke] topup target fpc=${fpcTopupAmount}`);
 
   const fpcFeeJuiceBalance = await topUpFeePayer({
-    deps,
     args,
     node,
     wallet,
@@ -917,7 +701,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
   });
   pinoLogger.info(`[devnet-postdeploy-smoke] fpc_fee_juice_balance=${fpcFeeJuiceBalance}`);
 
-  const QUOTE_DOMAIN_SEPARATOR = deps.Fr.fromHexString("0x465043");
+  const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
   const fpcExpectedCharge = ceilDiv(maxGasCostNoTeardown * args.fpcRateNum, args.fpcRateDen);
   const fpcFjAmount = maxGasCostNoTeardown;
   const fpcAaAmount = fpcExpectedCharge;
@@ -938,18 +722,18 @@ async function runSmoke(args: CliArgs): Promise<void> {
     throw new Error("Could not read latest block while creating FPC quote");
   }
   const fpcValidUntil = latestBlock.timestamp + args.quoteTtlSeconds;
-  const fpcQuoteHash = await deps.computeInnerAuthWitHash([
+  const fpcQuoteHash = await computeInnerAuthWitHash([
     QUOTE_DOMAIN_SEPARATOR,
     fpc.address.toField(),
     token.address.toField(),
-    new deps.Fr(fpcFjAmount),
-    new deps.Fr(fpcAaAmount),
-    new deps.Fr(fpcValidUntil),
+    new Fr(fpcFjAmount),
+    new Fr(fpcAaAmount),
+    new Fr(fpcValidUntil),
     operatorAddress.toField(),
   ]);
   const fpcQuoteSig = await schnorr.constructSignature(fpcQuoteHash.toBuffer(), operatorSigningKey);
   const fpcQuoteSigBytes = Array.from(fpcQuoteSig.toBuffer());
-  const fpcAuthwitNonce = deps.Fr.random();
+  const fpcAuthwitNonce = Fr.random();
   const fpcTransferCall = token.methods.transfer_private_to_private(
     operatorAddress,
     operatorAddress,
@@ -958,7 +742,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
   );
   const fpcTransferAuthwit = await wallet.createAuthWit(operatorAddress, {
     caller: fpc.address,
-    action: fpcTransferCall,
+    call: await fpcTransferCall.getFunctionCall(),
   });
   const fpcFeeEntrypointCall = await fpc.methods
     .fee_entrypoint(
@@ -971,28 +755,29 @@ async function runSmoke(args: CliArgs): Promise<void> {
     )
     .getFunctionCall();
   const fpcPaymentMethod = {
-    getAsset: async () => deps.ProtocolContractAddress.FeeJuice,
+    getAsset: async () => ProtocolContractAddress.FeeJuice,
     getExecutionPayload: async () =>
-      new deps.ExecutionPayload([fpcFeeEntrypointCall], [fpcTransferAuthwit], [], [], fpc.address),
+      new ExecutionPayload([fpcFeeEntrypointCall], [fpcTransferAuthwit], [], [], fpc.address),
     getFeePayer: async () => fpc.address,
     getGasSettings: () => undefined,
   };
   const fpcReceipt = await token.methods
-    .transfer_public_to_public(operatorAddress, operatorAddress, 1n, deps.Fr.random())
+    .transfer_public_to_public(operatorAddress, operatorAddress, 1n, Fr.random())
     .send({
       from: operatorAddress,
       fee: {
         paymentMethod: fpcPaymentMethod,
-        gasSettings: {
+        gasSettings: GasSettings.from({
           gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
           teardownGasLimits: { daGas: 0, l2Gas: 0 },
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
-        },
+          maxPriorityFeesPerGas: { feePerDaGas: 0n, feePerL2Gas: 0n },
+        }),
       },
       wait: { timeout: 180 },
     });
   pinoLogger.info(
-    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
+    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.receipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
   );
   pinoLogger.info(`[devnet-postdeploy-smoke] PASS variant=${"FPCMultiAsset"} successful_txs=1`);
 }

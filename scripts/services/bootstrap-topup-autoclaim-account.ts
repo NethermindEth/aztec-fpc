@@ -1,8 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import pino from "pino";
 
 const pinoLogger = pino();
@@ -12,6 +10,7 @@ import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 
@@ -490,25 +489,6 @@ async function registerSponsoredFpcInEmbeddedWallet(
   sponsoredFpcAddress: string,
   wallet: EmbeddedWallet,
 ): Promise<AztecAddress> {
-  const moduleId = "@aztec/noir-contracts.js/SponsoredFPC";
-  let sponsoredFpcArtifact: unknown;
-  try {
-    const imported = (await import(moduleId)) as {
-      SponsoredFPCContractArtifact?: unknown;
-    };
-    sponsoredFpcArtifact = imported.SponsoredFPCContractArtifact;
-  } catch {
-    const requireFromTopup = createRequire(path.resolve("services/topup/package.json"));
-    const resolved = requireFromTopup.resolve(moduleId);
-    const imported = (await import(pathToFileURL(resolved).href)) as {
-      SponsoredFPCContractArtifact?: unknown;
-    };
-    sponsoredFpcArtifact = imported.SponsoredFPCContractArtifact;
-  }
-  if (!sponsoredFpcArtifact) {
-    throw new CliError("Failed to load SponsoredFPC artifact for embedded-wallet registration");
-  }
-
   const node = createAztecNodeClient(nodeUrl);
   await waitForNode(node);
   const sponsorAddress = AztecAddress.fromString(sponsoredFpcAddress);
@@ -518,10 +498,7 @@ async function registerSponsoredFpcInEmbeddedWallet(
       `Sponsored FPC contract ${sponsoredFpcAddress} is not available on node ${nodeUrl}`,
     );
   }
-  await wallet.registerContract(
-    sponsorInstance,
-    sponsoredFpcArtifact as Parameters<EmbeddedWallet["registerContract"]>[1],
-  );
+  await wallet.registerContract(sponsorInstance, SponsoredFPCContractArtifact);
   return sponsorAddress;
 }
 

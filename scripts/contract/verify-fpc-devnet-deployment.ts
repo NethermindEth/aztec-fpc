@@ -1,6 +1,6 @@
-import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import {
   type DeployManifest,
   readDeployManifest,
@@ -28,21 +28,6 @@ type CliParseResult =
       kind: "args";
       args: CliArgs;
     };
-
-type AztecDeps = {
-  createAztecNodeClient: (url: string) => {
-    getContract: (address: unknown) => Promise<unknown>;
-    getContractClass: (classId: unknown) => Promise<unknown>;
-  };
-  waitForNode: (node: unknown) => Promise<void>;
-  AztecAddress: {
-    fromString: (value: string) => unknown;
-  };
-  Fr: {
-    fromString: (value: string) => unknown;
-    fromHexString: (value: string) => unknown;
-  };
-};
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
@@ -159,78 +144,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function importWithWorkspaceFallback(moduleId: string): Promise<Record<string, unknown>> {
-  const errors: string[] = [];
-  try {
-    return (await import(moduleId)) as Record<string, unknown>;
-  } catch (error) {
-    errors.push(`direct import failed: ${String(error)}`);
-  }
-
-  const fallbackPackageJsons = [
-    path.join(REPO_ROOT, "services", "attestation", "package.json"),
-    path.join(REPO_ROOT, "services", "topup", "package.json"),
-  ];
-
-  for (const packageJsonPath of fallbackPackageJsons) {
-    try {
-      const requireFromWorkspace = createRequire(packageJsonPath);
-      const resolved = requireFromWorkspace.resolve(moduleId);
-      return (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
-    } catch (error) {
-      errors.push(`workspace import failed via ${packageJsonPath}: ${String(error)}`);
-    }
-  }
-
-  throw new CliError(`Failed to load ${moduleId}.\n${errors.join("\n")}`);
-}
-
-async function loadAztecDeps(): Promise<AztecDeps> {
-  const [nodeApi, addressApi, fieldsApi] = await Promise.all([
-    importWithWorkspaceFallback("@aztec/aztec.js/node"),
-    importWithWorkspaceFallback("@aztec/aztec.js/addresses"),
-    importWithWorkspaceFallback("@aztec/aztec.js/fields"),
-  ]);
-
-  const createAztecNodeClient = nodeApi.createAztecNodeClient;
-  const waitForNode = nodeApi.waitForNode;
-  const AztecAddress = addressApi.AztecAddress;
-  const Fr = fieldsApi.Fr;
-
-  if (typeof createAztecNodeClient !== "function") {
-    throw new CliError("Loaded @aztec/aztec.js/node, but createAztecNodeClient is unavailable");
-  }
-  if (typeof waitForNode !== "function") {
-    throw new CliError("Loaded @aztec/aztec.js/node, but waitForNode is unavailable");
-  }
-  if (
-    !AztecAddress ||
-    typeof AztecAddress !== "function" ||
-    typeof (AztecAddress as { fromString?: unknown }).fromString !== "function"
-  ) {
-    throw new CliError(
-      "Loaded @aztec/aztec.js/addresses, but AztecAddress.fromString is unavailable",
-    );
-  }
-  if (
-    !Fr ||
-    typeof Fr !== "function" ||
-    typeof (Fr as { fromString?: unknown }).fromString !== "function" ||
-    typeof (Fr as { fromHexString?: unknown }).fromHexString !== "function"
-  ) {
-    throw new CliError(
-      "Loaded @aztec/aztec.js/fields, but Fr.fromString/fromHexString are unavailable",
-    );
-  }
-
-  return {
-    createAztecNodeClient: createAztecNodeClient as AztecDeps["createAztecNodeClient"],
-    waitForNode: waitForNode as AztecDeps["waitForNode"],
-    AztecAddress: AztecAddress as unknown as AztecDeps["AztecAddress"],
-    Fr: Fr as unknown as AztecDeps["Fr"],
-  };
-}
-
 function formatCheckIssues(issues: string[]): string {
   if (issues.length === 0) {
     return "<none>";
@@ -288,11 +201,7 @@ function isZeroFieldLike(value: string): boolean {
 
 async function verifyAttempt(params: {
   manifest: DeployManifest;
-  deps: AztecDeps;
-  node: {
-    getContract: (address: unknown) => Promise<unknown>;
-    getContractClass: (classId: unknown) => Promise<unknown>;
-  };
+  node: AztecNode;
 }): Promise<string[]> {
   const { manifest, node } = params;
   const issues: string[] = [];
@@ -304,17 +213,8 @@ async function verifyAttempt(params: {
     },
   ] as const;
 
-  const parsedAddresses = new Map<string, unknown>();
   for (const contract of contracts) {
-    parsedAddresses.set(contract.key, contract.address);
-  }
-
-  for (const contract of contracts) {
-    const address = parsedAddresses.get(contract.key);
-    if (!address) {
-      issues.push(`address parsing failed for ${contract.key}`);
-      continue;
-    }
+    const address = contract.address;
 
     const deployed = await node.getContract(address);
     if (!deployed) {
@@ -346,18 +246,20 @@ async function verifyAttempt(params: {
       issues.push(`missing current contract class id for ${contract.key}`);
       continue;
     }
-    const classPayload = await node.getContractClass(classId);
+    const classPayload = await node.getContractClass(
+      classId as Parameters<AztecNode["getContractClass"]>[0],
+    );
     if (!classPayload) {
       issues.push(`contract class not publicly registered: ${contract.key}`);
     }
   }
 
   try {
-    await verifyFpcImmutablesOnStartup(node as never, {
-      fpcAddress: parsedAddresses.get("fpc") as never,
-      operatorAddress: manifest.operator.address as never,
-      operatorPubkeyX: manifest.operator.pubkey_x as never,
-      operatorPubkeyY: manifest.operator.pubkey_y as never,
+    await verifyFpcImmutablesOnStartup(node, {
+      fpcAddress: manifest.contracts.fpc,
+      operatorAddress: manifest.operator.address,
+      operatorPubkeyX: manifest.operator.pubkey_x,
+      operatorPubkeyY: manifest.operator.pubkey_y,
     });
   } catch (error) {
     if (error instanceof FpcImmutableVerificationError && error.reason === "IMMUTABLE_MISMATCH") {
@@ -386,11 +288,10 @@ async function main(): Promise<void> {
     `[verify-fpc-devnet] loaded manifest for node=${manifest.network.node_url} fpc=${manifest.contracts.fpc}`,
   );
 
-  const deps = await loadAztecDeps();
-  const node = deps.createAztecNodeClient(manifest.network.node_url);
+  const node = createAztecNodeClient(manifest.network.node_url);
 
   await Promise.race([
-    deps.waitForNode(node),
+    waitForNode(node),
     new Promise((_, reject) =>
       setTimeout(
         () =>
@@ -409,7 +310,6 @@ async function main(): Promise<void> {
     try {
       lastIssues = await verifyAttempt({
         manifest,
-        deps,
         node,
       });
     } catch (error) {

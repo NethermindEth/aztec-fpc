@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { describe, it } from "#test";
-import { reconcilePersistedBridgeState } from "../src/reconcile.js";
+import {
+  type ReconcileBridgeStateOptions,
+  reconcilePersistedBridgeState,
+} from "../src/reconcile.js";
 import type { BridgeStateStore } from "../src/state.js";
+
+function stubNode(): ReconcileBridgeStateOptions["node"] {
+  return {} as ReconcileBridgeStateOptions["node"];
+}
 
 const FPC = AztecAddress.fromString(
   "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
@@ -30,7 +37,7 @@ describe("reconcile", () => {
       {
         stateStore: store,
         getBalance: async () => 0n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,
@@ -59,7 +66,7 @@ describe("reconcile", () => {
       {
         stateStore: store,
         getBalance: async () => 10n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,
@@ -101,7 +108,7 @@ describe("reconcile", () => {
       {
         stateStore: store,
         getBalance: async () => 10n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,
@@ -143,7 +150,7 @@ describe("reconcile", () => {
       {
         stateStore: store,
         getBalance: async () => 0n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,
@@ -173,7 +180,7 @@ describe("reconcile", () => {
       {
         stateStore: store,
         getBalance: async () => 11n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,
@@ -215,7 +222,7 @@ describe("reconcile", () => {
       {
         stateStore: store,
         getBalance: async () => 10n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,
