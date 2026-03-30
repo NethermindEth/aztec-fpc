@@ -60,7 +60,7 @@ jobs:
       - name: Build all images
         uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6.10.0
         env:
-          REGISTRY: ${{ env.DOCKER_REGISTRY }}/
+          REGISTRY: ${{ env.DOCKER_REGISTRY }}/nethermind/
           TAG: ${{ env.TAG }}
           GIT_SHA: ${{ github.sha }}
           PLATFORMS: 'linux/amd64,linux/arm64'
