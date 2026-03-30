@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { describe, it } from "#test";
-import { reconcilePersistedBridgeState } from "../src/reconcile.js";
+import {
+  type ReconcileBridgeStateOptions,
+  reconcilePersistedBridgeState,
+} from "../src/reconcile.js";
 import {
   acquireProcessLock,
   createLmdbBridgeStateStore,
@@ -16,6 +19,10 @@ const HASH = `0x${"ab".repeat(32)}` as `0x${string}`;
 const FPC = AztecAddress.fromString(
   "0x27e0f62fe6edf34f850dd7c1cc7cd638f7ec38ed3eb5ae4bd8c0c941c78e67ac",
 );
+
+function stubNode(): ReconcileBridgeStateOptions["node"] {
+  return {} as ReconcileBridgeStateOptions["node"];
+}
 
 function makeTempDir() {
   const dir = mkdtempSync(path.join(tmpdir(), "topup-state-test-"));
@@ -216,7 +223,7 @@ describe("crash recovery", () => {
       {
         stateStore: store2,
         getBalance: async () => 105n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,
@@ -271,7 +278,7 @@ describe("crash recovery", () => {
       {
         stateStore: store2,
         getBalance: async () => 100n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,
@@ -323,7 +330,7 @@ describe("crash recovery", () => {
       {
         stateStore: store,
         getBalance: async () => 0n,
-        node: {} as never,
+        node: stubNode(),
         fpcAddress: FPC,
         timeoutMs: 1,
         initialPollMs: 1,

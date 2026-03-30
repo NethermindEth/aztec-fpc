@@ -25,7 +25,7 @@ export interface BridgeResult {
 
 type ExtendedWalletClient = Parameters<typeof L1FeeJuicePortalManager.new>[1];
 
-interface FeeJuicePortalManagerLike {
+export interface FeeJuicePortalManagerLike {
   bridgeTokensPublic(to: AztecAddress, amount: bigint): Promise<L2AmountClaim>;
 }
 

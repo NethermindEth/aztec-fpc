@@ -2,11 +2,10 @@ import assert from "node:assert/strict";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
-import type { createExtendedL1Client } from "@aztec/ethereum/client";
 import { createLogger } from "@aztec/foundation/log";
 import type { Chain } from "viem";
 import { describe, it } from "#test";
-import type { BridgeDeps } from "../src/bridge.js";
+import type { BridgeDeps, FeeJuicePortalManagerLike } from "../src/bridge.js";
 import { bridgeFeeJuice, isNonceTooLowError, isRetryableNonceError } from "../src/bridge.js";
 
 const MESSAGE_HASH = `0x${"ab".repeat(32)}` as `0x${string}`;
@@ -19,20 +18,23 @@ function makeNode(): AztecNode {
   return {} as AztecNode;
 }
 
+function stubL1Client(): BridgeDeps["createExtendedL1Client"] {
+  return (() => ({})) as unknown as BridgeDeps["createExtendedL1Client"];
+}
+
 function makeDeps(overrides: Partial<BridgeDeps> = {}): BridgeDeps {
   return {
-    createExtendedL1Client: (() => ({})) as never as typeof createExtendedL1Client,
-    createPortalManager: async () =>
-      ({
-        bridgeTokensPublic: (_to: AztecAddress, amount: bigint) =>
-          Promise.resolve({
-            claimAmount: amount,
-            claimSecret: new Fr(1n),
-            claimSecretHash: new Fr(2n),
-            messageHash: MESSAGE_HASH,
-            messageLeafIndex: 7n,
-          }),
-      }) as never,
+    createExtendedL1Client: stubL1Client(),
+    createPortalManager: async (): Promise<FeeJuicePortalManagerLike> => ({
+      bridgeTokensPublic: (_to: AztecAddress, amount: bigint) =>
+        Promise.resolve({
+          claimAmount: amount,
+          claimSecret: new Fr(1n),
+          claimSecretHash: new Fr(2n),
+          messageHash: MESSAGE_HASH,
+          messageLeafIndex: 7n,
+        }),
+    }),
     createLogger: () => createLogger("topup:test"),
     chains: [
       {
@@ -59,21 +61,20 @@ describe("bridge", () => {
       createExtendedL1Client: ((_rpcUrls: string[], _account: unknown, chain?: { id: number }) => {
         capturedChainId = chain?.id;
         return {};
-      }) as never,
-      createPortalManager: async () =>
-        ({
-          bridgeTokensPublic: (to: AztecAddress, amount: bigint) => {
-            capturedTo = to;
-            capturedAmount = amount;
-            return Promise.resolve({
-              claimAmount: amount,
-              claimSecret: new Fr(1n),
-              claimSecretHash: new Fr(2n),
-              messageHash: MESSAGE_HASH,
-              messageLeafIndex: 7n,
-            });
-          },
-        }) as never,
+      }) as unknown as BridgeDeps["createExtendedL1Client"],
+      createPortalManager: async (): Promise<FeeJuicePortalManagerLike> => ({
+        bridgeTokensPublic: (to: AztecAddress, amount: bigint) => {
+          capturedTo = to;
+          capturedAmount = amount;
+          return Promise.resolve({
+            claimAmount: amount,
+            claimSecret: new Fr(1n),
+            claimSecretHash: new Fr(2n),
+            messageHash: MESSAGE_HASH,
+            messageLeafIndex: 7n,
+          });
+        },
+      }),
     });
 
     const result = await bridgeFeeJuice(
@@ -123,22 +124,21 @@ describe("bridge", () => {
   it("retries bridge submission on retryable nonce conflicts", async () => {
     let attempts = 0;
     const deps = makeDeps({
-      createPortalManager: async () =>
-        ({
-          bridgeTokensPublic: (_to: AztecAddress, amount: bigint) => {
-            attempts += 1;
-            if (attempts === 1) {
-              return Promise.reject(new Error("already known"));
-            }
-            return Promise.resolve({
-              claimAmount: amount,
-              claimSecret: new Fr(11n),
-              claimSecretHash: new Fr(22n),
-              messageHash: MESSAGE_HASH,
-              messageLeafIndex: 99n,
-            });
-          },
-        }) as never,
+      createPortalManager: async (): Promise<FeeJuicePortalManagerLike> => ({
+        bridgeTokensPublic: (_to: AztecAddress, amount: bigint) => {
+          attempts += 1;
+          if (attempts === 1) {
+            return Promise.reject(new Error("already known"));
+          }
+          return Promise.resolve({
+            claimAmount: amount,
+            claimSecret: new Fr(11n),
+            claimSecretHash: new Fr(22n),
+            messageHash: MESSAGE_HASH,
+            messageLeafIndex: 99n,
+          });
+        },
+      }),
     });
 
     const result = await bridgeFeeJuice(
@@ -159,13 +159,12 @@ describe("bridge", () => {
   it("fails immediately on nonce-too-low without retry", async () => {
     let attempts = 0;
     const deps = makeDeps({
-      createPortalManager: async () =>
-        ({
-          bridgeTokensPublic: () => {
-            attempts += 1;
-            return Promise.reject(new Error("nonce too low"));
-          },
-        }) as never,
+      createPortalManager: async (): Promise<FeeJuicePortalManagerLike> => ({
+        bridgeTokensPublic: () => {
+          attempts += 1;
+          return Promise.reject(new Error("nonce too low"));
+        },
+      }),
     });
 
     await assert.rejects(
@@ -178,13 +177,12 @@ describe("bridge", () => {
   it("fails after exhausting retryable nonce conflict retries", async () => {
     let attempts = 0;
     const deps = makeDeps({
-      createPortalManager: async () =>
-        ({
-          bridgeTokensPublic: () => {
-            attempts += 1;
-            return Promise.reject(new Error("already known"));
-          },
-        }) as never,
+      createPortalManager: async (): Promise<FeeJuicePortalManagerLike> => ({
+        bridgeTokensPublic: () => {
+          attempts += 1;
+          return Promise.reject(new Error("already known"));
+        },
+      }),
     });
 
     await assert.rejects(

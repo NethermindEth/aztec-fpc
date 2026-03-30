@@ -1,5 +1,7 @@
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import type { AztecNode } from "@aztec/aztec.js/node";
 import { ProtocolContractAddress } from "@aztec/aztec.js/protocol";
+import type { Wallet as AccountWallet } from "@aztec/aztec.js/wallet";
 import { Gas, GasFees, GasSettings } from "@aztec/stdlib/gas";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -91,7 +93,7 @@ function createClient(nodeOverride?: ReturnType<typeof createMockNode>) {
   return new FpcClient({
     fpcAddress: FPC_ADDRESS,
     operator: OPERATOR,
-    node: (nodeOverride ?? createMockNode()) as never,
+    node: (nodeOverride ?? createMockNode()) as unknown as AztecNode,
     attestationBaseUrl: "https://example.com/v2",
   });
 }
@@ -117,11 +119,11 @@ describe("FpcClient", () => {
 
   it("builds payment method with correct fee payer, asset, and gas settings", async () => {
     const wallet = createMockWallet();
-    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as never;
+    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as unknown as typeof fetch;
 
     const client = createClient();
     const result = await client.createPaymentMethod({
-      wallet: wallet as never,
+      wallet: wallet as unknown as AccountWallet,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
       ...DEFAULT_GAS_INPUT,
@@ -142,11 +144,11 @@ describe("FpcClient", () => {
   it("computes fjAmount from node gas fees and gas limits", async () => {
     const wallet = createMockWallet();
     const node = createMockNode();
-    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as never;
+    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as unknown as typeof fetch;
 
     const client = createClient(node);
     const result = await client.createPaymentMethod({
-      wallet: wallet as never,
+      wallet: wallet as unknown as AccountWallet,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
       ...DEFAULT_GAS_INPUT,
@@ -159,11 +161,11 @@ describe("FpcClient", () => {
   it("constructs correct quote URL", async () => {
     const wallet = createMockWallet();
     const mockFetch = mockFetchOk(QUOTE_RESPONSE);
-    globalThis.fetch = mockFetch as never;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
 
     const client = createClient();
     await client.createPaymentMethod({
-      wallet: wallet as never,
+      wallet: wallet as unknown as AccountWallet,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
       ...DEFAULT_GAS_INPUT,
@@ -179,11 +181,11 @@ describe("FpcClient", () => {
 
   it("returns full quote response", async () => {
     const wallet = createMockWallet();
-    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as never;
+    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as unknown as typeof fetch;
 
     const client = createClient();
     const result = await client.createPaymentMethod({
-      wallet: wallet as never,
+      wallet: wallet as unknown as AccountWallet,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
       ...DEFAULT_GAS_INPUT,
@@ -194,11 +196,11 @@ describe("FpcClient", () => {
 
   it("calls wallet.createAuthWit with correct args", async () => {
     const wallet = createMockWallet();
-    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as never;
+    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as unknown as typeof fetch;
 
     const client = createClient();
     await client.createPaymentMethod({
-      wallet: wallet as never,
+      wallet: wallet as unknown as AccountWallet,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
       ...DEFAULT_GAS_INPUT,
@@ -213,11 +215,11 @@ describe("FpcClient", () => {
 
   it("registers contracts with wallet before use", async () => {
     const wallet = createMockWallet();
-    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as never;
+    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as unknown as typeof fetch;
 
     const client = createClient();
     await client.createPaymentMethod({
-      wallet: wallet as never,
+      wallet: wallet as unknown as AccountWallet,
       user: USER,
       tokenAddress: TOKEN_ADDRESS,
       ...DEFAULT_GAS_INPUT,
@@ -232,12 +234,12 @@ describe("FpcClient", () => {
       ok: false,
       status: 500,
       text: async () => "Internal Server Error",
-    })) as never;
+    })) as unknown as typeof fetch;
 
     const client = createClient();
     await expect(
       client.createPaymentMethod({
-        wallet: wallet as never,
+        wallet: wallet as unknown as AccountWallet,
         user: USER,
         tokenAddress: TOKEN_ADDRESS,
         ...DEFAULT_GAS_INPUT,
@@ -247,7 +249,7 @@ describe("FpcClient", () => {
 
   it("throws when contract not found on node", async () => {
     const wallet = createMockWallet();
-    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as never;
+    globalThis.fetch = mockFetchOk(QUOTE_RESPONSE) as unknown as typeof fetch;
 
     const node = createMockNode();
     node.getContract.mockResolvedValue(null);
@@ -255,7 +257,7 @@ describe("FpcClient", () => {
     const client = createClient(node);
     await expect(
       client.createPaymentMethod({
-        wallet: wallet as never,
+        wallet: wallet as unknown as AccountWallet,
         user: USER,
         tokenAddress: TOKEN_ADDRESS,
         ...DEFAULT_GAS_INPUT,
