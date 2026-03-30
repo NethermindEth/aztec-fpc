@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { describe, it } from "#test";
 import { reconcilePersistedBridgeState } from "../src/reconcile.js";
 import type { BridgeStateStore } from "../src/state.js";
 

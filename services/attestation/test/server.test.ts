@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
-import { afterEach, describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { afterEach, describe, it } from "#test";
 import type { Config } from "../src/config.js";
 import type { OperatorTreasuryPort } from "../src/operator-treasury.js";
 import { buildServer } from "../src/server.js";

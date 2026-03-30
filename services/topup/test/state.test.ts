@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, it } from "node:test";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { describe, it } from "#test";
 import { reconcilePersistedBridgeState } from "../src/reconcile.js";
 import {
   acquireProcessLock,
