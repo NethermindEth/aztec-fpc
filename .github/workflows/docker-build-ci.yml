@@ -50,45 +50,101 @@ jobs:
               - "tsconfig*.json"
               - ".github/workflows/docker-build-ci.yml"
 
-  docker-build-ci:
+  docker-build:
     needs: [changes]
     if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    outputs:
+      ci-tag: ${{ steps.ci-tag.outputs.tag }}
     env:
       PXE_PROVER_ENABLED: false
     steps:
+      - name: Compute CI tag
+        id: ci-tag
+        run: |
+          sha="${{ github.sha }}"
+          short="${sha:0:7}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "tag=pr-${{ github.event.pull_request.number }}-${short}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}-${short}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
-      # Pull + start anvil & aztec-node in the background while images build.
-      # The two use external images unaffected by bake, so they can start early
-      # and save ~2 min of pull + node-init wait time.
-      - name: Start infrastructure (background)
-        run: docker compose up -d anvil aztec-node &
+      - name: Pull images to warm up cache
+        env:
+          TAG: latest
+        run: docker compose pull
 
-      - name: Build all images
+      - name: Build and push all images
         uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6.10.0
+        env:
+          PLATFORMS: linux/amd64,linux/arm64
+          TAG: ${{ steps.ci-tag.outputs.tag }}
+          REGISTRY: ghcr.io/nethermindeth/
         with:
           source: .
-          load: true
+          push: true
           set: |
             *.cache-from=type=gha
             *.cache-to=type=gha,mode=max
 
-      # Ensure background infra is healthy before starting the rest
-      - name: Wait for infrastructure
-        run: docker compose up -d --wait anvil aztec-node
+  docker-test:
+    needs: [docker-build]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      packages: read
+    env:
+      PXE_PROVER_ENABLED: false
+      TAG: ${{ needs.docker-build.outputs.ci-tag }}
+      REGISTRY: ghcr.io/nethermindeth/
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
       - name: Run services and tests
         run: docker compose --profile full up wait --wait
@@ -156,4 +212,4 @@ jobs:
             -e FPC_SKIP_CONFIG_GEN=1 \
             -e PXE_SYNC_CHAIN_TIP=checkpointed \
             -v ${{ github.workspace }}/deployments:/app/data \
-            nethermind/aztec-fpc-contract-deployment:local
+            ${REGISTRY}aztec-fpc-contract-deployment:${TAG}

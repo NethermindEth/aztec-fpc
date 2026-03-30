@@ -5,7 +5,7 @@
   "description": "Background service that keeps the MultiAssetFPC funded with Fee Juice",
   "main": "dist/index.js",
   "scripts": {
-    "build": "bun build src/index.ts --outdir=dist --target=bun --external @aztec/bb.js --external @aztec/noir-noirc_abi --external @aztec/noir-acvm_js --external lmdb --external pino",
+    "build": "bun build src/index.ts --outdir=dist --target=${BUILD_TARGET:-bun} --external @aztec/bb.js --external @aztec/noir-noirc_abi --external @aztec/noir-acvm_js --external pino --external lmdb --external ordered-binary",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "fund:claimer:l2": "tsx src/fund-claimer-l2.ts",

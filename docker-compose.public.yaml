@@ -1,7 +1,7 @@
 name: aztec-fpc-public
 services:
   deploy:
-    image: "${DEPLOY_IMAGE:-nethermind/aztec-fpc-contract-deployment:local}"
+    image: nethermind/aztec-fpc-contract-deployment:${TAG:-latest}
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data
     environment:
@@ -13,7 +13,7 @@ services:
       - .env.${DEPLOYMENT}
 
   postdeploy:
-    image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
+    image: nethermind/aztec-fpc-test:${TAG:-latest}
     entrypoint: ["bun", "run", "--sequential"]
     command:
       - "scripts/contract/devnet-postdeploy-smoke.ts"
@@ -31,7 +31,7 @@ services:
         condition: service_completed_successfully
 
   attestation:
-    image: "${ATTESTATION_IMAGE:-nethermind/aztec-fpc-attestation:local}"
+    image: nethermind/aztec-fpc-attestation:${TAG:-latest}
     ports:
       - "${ATTESTATION_PORT:-3000}:3000"
     volumes:
@@ -50,7 +50,7 @@ services:
         condition: service_completed_successfully
 
   topup:
-    image: "${TOPUP_IMAGE:-nethermind/aztec-fpc-topup:local}"
+    image: nethermind/aztec-fpc-topup:${TAG:-latest}
     ports:
       - "${TOPUP_OPS_PORT:-3001}:3001"
     volumes:
@@ -74,7 +74,7 @@ services:
         condition: service_completed_successfully
 
   configure-token:
-    image: "${DEPLOY_IMAGE:-nethermind/aztec-fpc-contract-deployment:local}"
+    image: nethermind/aztec-fpc-contract-deployment:${TAG:-latest}
     volumes:
       - ./deployments/${DEPLOYMENT}:/app/data
     command: ["configure-token"]
@@ -89,7 +89,7 @@ services:
       - .env.${DEPLOYMENT}
 
   tests-cold-start:
-    image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
+    image: nethermind/aztec-fpc-test:${TAG:-latest}
     profiles: ["full"]
     command:
       - "./scripts/tests/cold-start.ts"
@@ -114,7 +114,7 @@ services:
         condition: service_completed_successfully
 
   tests-same-token-transfer:
-    image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
+    image: nethermind/aztec-fpc-test:${TAG:-latest}
     profiles: ["full"]
     command:
       - "./scripts/tests/same-token-transfer.ts"
@@ -137,7 +137,7 @@ services:
         condition: service_completed_successfully
 
   tests-always-revert:
-    image: "${TEST_IMAGE:-nethermind/aztec-fpc-test:local}"
+    image: nethermind/aztec-fpc-test:${TAG:-latest}
     profiles: ["full"]
     command:
       - "./scripts/tests/always-revert.ts"

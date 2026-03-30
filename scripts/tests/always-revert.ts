@@ -1,6 +1,4 @@
-import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import path from "node:path";
-
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { BatchCall, type Contract } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
@@ -11,6 +9,7 @@ import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Gas } from "@aztec/stdlib/gas";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@aztec-fpc/sdk";
+import { beforeAll, describe, expect, it } from "#test";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
 import { setup as commonSetup } from "../common/setup-helpers.ts";
@@ -133,9 +132,6 @@ async function setupFromManifest(config: AlwaysRevertConfig): Promise<SetupResul
     dripAmount,
   };
 }
-
-const E2E_TIMEOUT_MS = 600_000;
-setDefaultTimeout(E2E_TIMEOUT_MS);
 
 let config: AlwaysRevertConfig;
 let ctx: SetupResult;

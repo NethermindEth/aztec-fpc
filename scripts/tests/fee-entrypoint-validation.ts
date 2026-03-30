@@ -1,6 +1,4 @@
-import { beforeAll, describe, expect, it, setDefaultTimeout } from "bun:test";
 import path from "node:path";
-
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { BatchCall, type Contract, type TxSendResultMined } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
@@ -14,6 +12,7 @@ import { Gas, GasFees } from "@aztec/stdlib/gas";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { ExecutionPayload, type TxReceipt } from "@aztec/stdlib/tx";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { beforeAll, describe, expect, it } from "#test";
 import { deriveAccount } from "../common/script-credentials.ts";
 import { setup as commonSetup } from "../common/setup-helpers.ts";
 
@@ -329,9 +328,6 @@ async function signQuote(
   };
 }
 
-const E2E_TIMEOUT_MS = 600_000;
-setDefaultTimeout(E2E_TIMEOUT_MS);
-
 let config: FullE2EConfig;
 let result: DeploymentRuntimeResult;
 let node: AztecNode;
@@ -350,7 +346,7 @@ describe("fpc full lifecycle e2e", () => {
     const fpcBalance = await getFeeJuiceBalance(result.fpc.address, node);
     expect(quote.fjAmount).toBeGreaterThan(fpcBalance);
 
-    await expect(() => executeFeePaidTx(result, quote, { maxFeesPerGas })).toThrow(
+    return expect(executeFeePaidTx(result, quote, { maxFeesPerGas })).rejects.toThrow(
       /Invalid tx: Insufficient fee payer balance/,
     );
   });
@@ -359,7 +355,9 @@ describe("fpc full lifecycle e2e", () => {
     const quote = await signQuote(config, result, node);
     await executeFeePaidTx(result, quote);
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(/Invalid tx: Existing nullifier/);
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
+      /Invalid tx: Existing nullifier/,
+    );
   });
 
   it("rejects expired quote", async () => {
@@ -368,7 +366,7 @@ describe("fpc full lifecycle e2e", () => {
       validUntil: latestTimestamp - 1n,
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Assertion failed: quote expired 'anchor_ts <= valid_until'/,
     );
   });
@@ -379,7 +377,7 @@ describe("fpc full lifecycle e2e", () => {
       validUntil: latestTimestamp + BigInt(MAX_QUOTE_VALIDITY_SECONDS * 2),
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Assertion failed: quote ttl too large 'quote_ttl <= MAX_QUOTE_TTL_SECONDS'/,
     );
   });
@@ -389,7 +387,7 @@ describe("fpc full lifecycle e2e", () => {
       payer: result.otherUser,
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
     );
   });
@@ -399,7 +397,7 @@ describe("fpc full lifecycle e2e", () => {
       fpcAddress: result.faucet.address,
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
     );
   });
@@ -409,7 +407,7 @@ describe("fpc full lifecycle e2e", () => {
       tokenAddress: result.faucet.address,
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
     );
   });
@@ -431,7 +429,7 @@ describe("fpc full lifecycle e2e", () => {
       call: transferCall,
     });
 
-    await expect(() =>
+    return expect(
       result.fpc.methods
         .fee_entrypoint(
           result.token.address,
@@ -446,7 +444,7 @@ describe("fpc full lifecycle e2e", () => {
           authWitnesses: [transferAuthwit],
           wait: { timeout: 180 },
         }),
-    ).toThrow(
+    ).rejects.toThrow(
       /Assertion failed: fee_entrypoint must run in setup phase '!self\.context\.in_revertible_phase\(\)'/,
     );
   });
@@ -458,7 +456,7 @@ describe("fpc full lifecycle e2e", () => {
     const tampered = [...quote.quoteSigBytes];
     tampered[0] = tampered[0] ^ 0xff;
 
-    await expect(() => executeFeePaidTx(result, { ...quote, quoteSigBytes: tampered })).toThrow(
+    return expect(executeFeePaidTx(result, { ...quote, quoteSigBytes: tampered })).rejects.toThrow(
       /is not a valid grumpkin scalar/,
     );
   });
@@ -469,7 +467,7 @@ describe("fpc full lifecycle e2e", () => {
       fjAmount: realFj + 1n,
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
     );
   });
@@ -482,7 +480,7 @@ describe("fpc full lifecycle e2e", () => {
       aaPaymentAmount: realAa + 1n,
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Cannot satisfy constraint 'result\[i] == signature\[32 \+ i]'/,
     );
   });
@@ -494,7 +492,7 @@ describe("fpc full lifecycle e2e", () => {
     );
     const quote = await signQuote(config, result, node, { maxFeesPerGas: halved });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Assertion failed: quoted fee amount mismatch 'fj_fee_amount == max_fee'/,
     );
   });
@@ -504,7 +502,7 @@ describe("fpc full lifecycle e2e", () => {
       rateNum: 1_000_000_000_000n,
     });
 
-    await expect(() => executeFeePaidTx(result, quote)).toThrow(
+    return expect(executeFeePaidTx(result, quote)).rejects.toThrow(
       /Assertion failed: Balance too low 'subtracted > 0'/,
     );
   });
@@ -512,7 +510,7 @@ describe("fpc full lifecycle e2e", () => {
   it("rejects authwit nonce mismatch", async () => {
     const quote = await signQuote(config, result, node);
 
-    await expect(() => executeFeePaidTx(result, quote, { authwitNonce: Fr.random() })).toThrow(
+    return expect(executeFeePaidTx(result, quote, { authwitNonce: Fr.random() })).rejects.toThrow(
       /Unknown auth witness for message hash/,
     );
   });
@@ -520,18 +518,18 @@ describe("fpc full lifecycle e2e", () => {
   it("rejects authwit amount mismatch", async () => {
     const quote = await signQuote(config, result, node);
 
-    await expect(() =>
+    return expect(
       executeFeePaidTx(result, quote, {
         authwitAmount: quote.aaPaymentAmount + 1n,
       }),
-    ).toThrow(/Unknown auth witness for message hash/);
+    ).rejects.toThrow(/Unknown auth witness for message hash/);
   });
 
   it("rejects signature with wrong length", async () => {
     const quote = await signQuote(config, result, node);
     const truncated = quote.quoteSigBytes.slice(0, 63);
 
-    await expect(() => executeFeePaidTx(result, { ...quote, quoteSigBytes: truncated })).toThrow(
+    return expect(executeFeePaidTx(result, { ...quote, quoteSigBytes: truncated })).rejects.toThrow(
       /Undefined argument quote_sig\[63] of type integer/,
     );
   });

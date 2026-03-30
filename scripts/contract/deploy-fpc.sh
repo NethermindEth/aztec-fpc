@@ -6,11 +6,18 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
+# Detect JS runtime: bun on amd64 images, node on arm64 (see services/ARM64_RUNTIME.md)
+if command -v bun &>/dev/null; then
+  ENTRYPOINT=bun
+else
+  ENTRYPOINT=node
+fi
+
 # Subcommand dispatch
 case "${1:-}" in
   configure-token)
     shift
-    exec bun run contract-deployment/dist/configure-token.js "$@"
+    exec "$ENTRYPOINT" contract-deployment/dist/configure-token.js "$@"
     ;;
 esac
 
@@ -19,7 +26,7 @@ if [[ ! -f target/token_contract-Token.json || ! -f target/fpc-FPCMultiAsset.jso
   aztec compile --workspace --force
 fi
 
-bun run contract-deployment/dist/index.js "$@"
+"$ENTRYPOINT" contract-deployment/dist/index.js "$@"
 
 # Generate service configs if manifest was written (skipped for preflight-only).
 # Set FPC_SKIP_CONFIG_GEN=1 to handle config generation externally.
