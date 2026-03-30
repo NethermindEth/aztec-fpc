@@ -492,7 +492,7 @@ async function tryDirectMint(params: {
           abi: ERC20_MINT_ABI,
           functionName: "mint",
           args: [params.recipient, params.amount],
-          nonce,
+          nonce: Number(nonce),
         }),
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -558,7 +558,7 @@ async function mintViaFeeAssetHandler(params: {
           abi: FEE_ASSET_HANDLER_ABI,
           functionName: "mint",
           args: [params.recipient],
-          nonce,
+          nonce: Number(nonce),
         }),
     });
     nextNonce = mintTx.nextNonce;

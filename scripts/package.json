@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "format": "biome format --write common config contract services tests package.json tsconfig.json",
+    "lint": "biome lint common config contract services tests package.json tsconfig.json"
+  },
   "imports": {
     "#test": {
       "bun": "bun:test",
