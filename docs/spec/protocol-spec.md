@@ -298,7 +298,7 @@ cp config.example.yaml config.yaml
 # Edit config.yaml: set fpc_address, accepted_asset_*, rates
 # For multi-asset, set supported_assets entries and optional per-asset pricing overrides.
 # Optionally set discovery identity fields (network_id, contract_variant, quote_base_url)
-# Provide operator key via OPERATOR_SECRET_KEY (recommended) or config.operator_secret_key
+# Provide operator key via OPERATOR_SECRET_KEY env var
 bun install
 bun run build
 bun run start

@@ -11,4 +11,4 @@ market_rate_den: 1000
 fee_bips: 200
 operator_secret_provider: "auto"
 operator_address: "0x18a15b90bea06cea7cbd06b3940533952aa9e5f94c157000c727321644d07af8"
-operator_secret_key: "0x1111111111111111111111111111111111111111111111111111111111111111"
+# operator_secret_key: set via OPERATOR_SECRET_KEY env var

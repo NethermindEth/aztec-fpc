@@ -38,7 +38,7 @@ function withAttestationEnv(overrides: Record<string, string | undefined>, fn: (
       AZTEC_NODE_URL: undefined,
       FPC_RUNTIME_PROFILE: undefined,
       OPERATOR_SECRET_PROVIDER: undefined,
-      OPERATOR_SECRET_KEY: undefined,
+      OPERATOR_SECRET_KEY: VALID_SECRET,
       OPERATOR_SECRET_REF: undefined,
       OPERATOR_ACCOUNT_SALT: undefined,
       ADMIN_API_KEY: undefined,
@@ -88,7 +88,19 @@ function baseConfigYaml(extra: string): string {
 }
 
 describe("attestation config secret providers", () => {
-  it("allows plaintext config secret in development profile", () => {
+  it("fails fast when OPERATOR_SECRET_KEY env var is missing", () => {
+    const configPath = writeConfig(
+      baseConfigYaml(["runtime_profile: development", "operator_secret_provider: auto"].join("\n")),
+    );
+
+    withAttestationEnv({ OPERATOR_SECRET_KEY: undefined }, () => {
+      assert.throws(() => loadConfig(configPath), /Missing operator secret key/);
+    });
+
+    cleanupConfig(configPath);
+  });
+
+  it("ignores operator_secret_key in config file and requires env var", () => {
     const configPath = writeConfig(
       baseConfigYaml(
         [
@@ -99,28 +111,22 @@ describe("attestation config secret providers", () => {
       ),
     );
 
-    withAttestationEnv({}, () => {
-      const config = loadConfig(configPath);
-      assert.equal(config.runtime_profile, "development");
-      assert.equal(config.operator_secret_key_source, "config");
+    withAttestationEnv({ OPERATOR_SECRET_KEY: undefined }, () => {
+      assert.throws(() => loadConfig(configPath), /Missing operator secret key/);
     });
 
     cleanupConfig(configPath);
   });
 
-  it("fails fast in production profile when secret resolves from plaintext config", () => {
+  it("resolves env-sourced secret in development profile", () => {
     const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: production",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-        ].join("\n"),
-      ),
+      baseConfigYaml(["runtime_profile: development", "operator_secret_provider: auto"].join("\n")),
     );
 
     withAttestationEnv({}, () => {
-      assert.throws(() => loadConfig(configPath), /plaintext config secrets are not allowed/);
+      const config = loadConfig(configPath);
+      assert.equal(config.runtime_profile, "development");
+      assert.equal(config.operator_secret_key_source, "env");
     });
 
     cleanupConfig(configPath);
@@ -133,14 +139,13 @@ describe("attestation config secret providers", () => {
           "runtime_profile: production",
           "operator_secret_provider: auto",
           "quote_auth_mode: api_key",
-          `quote_auth_api_key: "${QUOTE_API_KEY}"`,
         ].join("\n"),
       ),
     );
 
     withAttestationEnv(
       {
-        OPERATOR_SECRET_KEY: VALID_SECRET,
+        QUOTE_AUTH_API_KEY: QUOTE_API_KEY,
       },
       () => {
         const config = loadConfig(configPath);
@@ -148,29 +153,6 @@ describe("attestation config secret providers", () => {
         assert.equal(config.operator_secret_key_source, "env");
         assert.equal(config.operator_secret_key, VALID_SECRET);
         assert.equal(config.quote_auth.mode, "api_key");
-      },
-    );
-
-    cleanupConfig(configPath);
-  });
-
-  it("fails in production when config secret is present even if env secret is set", () => {
-    const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: production",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-        ].join("\n"),
-      ),
-    );
-
-    withAttestationEnv(
-      {
-        OPERATOR_SECRET_KEY: VALID_SECRET,
-      },
-      () => {
-        assert.throws(() => loadConfig(configPath), /plaintext config secrets are not allowed/);
       },
     );
 
@@ -185,7 +167,6 @@ describe("attestation config secret providers", () => {
           "operator_secret_provider: kms",
           'operator_secret_ref: "kms://operator/secret-key"',
           "quote_auth_mode: api_key",
-          `quote_auth_api_key: "${QUOTE_API_KEY}"`,
         ].join("\n"),
       ),
     );
@@ -193,6 +174,7 @@ describe("attestation config secret providers", () => {
     withAttestationEnv(
       {
         OPERATOR_SECRET_KEY: undefined,
+        QUOTE_AUTH_API_KEY: QUOTE_API_KEY,
       },
       () => {
         const config = loadConfig(configPath, {
@@ -226,7 +208,6 @@ describe("attestation config secret providers", () => {
         "    market_rate_den: 1000",
         "    fee_bips: 200",
         "operator_secret_provider: auto",
-        `operator_secret_key: "${VALID_SECRET}"`,
       ].join("\n"),
     );
 
@@ -252,7 +233,6 @@ describe("attestation config secret providers", () => {
         "    market_rate_den: 1000",
         "    fee_bips: 200",
         "operator_secret_provider: auto",
-        `operator_secret_key: "${VALID_SECRET}"`,
       ].join("\n"),
     );
 
@@ -272,7 +252,6 @@ describe("attestation config secret providers", () => {
         "port: 3000",
         "runtime_profile: development",
         "operator_secret_provider: auto",
-        `operator_secret_key: "${VALID_SECRET}"`,
         "supported_assets:",
         '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
         '    name: "humanUSDC"',
@@ -318,7 +297,6 @@ describe("attestation config secret providers", () => {
         "port: 3000",
         "runtime_profile: development",
         "operator_secret_provider: auto",
-        `operator_secret_key: "${VALID_SECRET}"`,
         "supported_assets:",
         '  - address: "0x0000000000000000000000000000000000000000000000000000000000000002"',
         '    name: "humanUSDC"',
@@ -347,7 +325,6 @@ describe("attestation config secret providers", () => {
         [
           "runtime_profile: development",
           "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
           `operator_address: "${operatorAddress}"`,
         ].join("\n"),
       ),
@@ -370,9 +347,7 @@ describe("attestation config secret providers", () => {
         [
           "runtime_profile: development",
           "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
           `operator_account_salt: "${operatorSalt}"`,
-          'admin_api_key: "admin-secret"',
           'admin_api_key_header: "X-Attestation-Admin"',
           'asset_policy_state_path: "./tmp/attestation-assets.json"',
           `treasury_destination_address: "${treasuryDestination}"`,
@@ -380,7 +355,7 @@ describe("attestation config secret providers", () => {
       ),
     );
 
-    withAttestationEnv({}, () => {
+    withAttestationEnv({ ADMIN_API_KEY: "admin-secret" }, () => {
       const config = loadConfig(configPath);
       assert.equal(config.operator_account_salt, operatorSalt);
       assert.equal(config.admin_auth.enabled, true);
@@ -395,13 +370,7 @@ describe("attestation config secret providers", () => {
 
   it("validates AZTEC_NODE_URL env override as URL", () => {
     const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: development",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-        ].join("\n"),
-      ),
+      baseConfigYaml(["runtime_profile: development", "operator_secret_provider: auto"].join("\n")),
     );
 
     withAttestationEnv(
@@ -445,7 +414,6 @@ describe("attestation config secret providers", () => {
         [
           "runtime_profile: development",
           "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
           "quote_auth_mode: api_key",
         ].join("\n"),
       ),
@@ -464,7 +432,6 @@ describe("attestation config secret providers", () => {
         [
           "runtime_profile: development",
           "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
           "quote_auth_mode: trusted_header",
           'quote_auth_trusted_header_name: "x-internal-attestation"',
         ].join("\n"),
@@ -484,15 +451,13 @@ describe("attestation config secret providers", () => {
         [
           "runtime_profile: development",
           "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
           "quote_auth_mode: api_key",
-          `quote_auth_api_key: "${QUOTE_API_KEY}"`,
           'quote_auth_api_key_header: "X-Custom-Key"',
         ].join("\n"),
       ),
     );
 
-    withAttestationEnv({}, () => {
+    withAttestationEnv({ QUOTE_AUTH_API_KEY: QUOTE_API_KEY }, () => {
       const config = loadConfig(configPath);
       assert.equal(config.quote_auth.mode, "api_key");
       assert.equal(config.quote_auth.apiKey, QUOTE_API_KEY);
@@ -508,22 +473,25 @@ describe("attestation config secret providers", () => {
         [
           "runtime_profile: development",
           "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
           "quote_auth_mode: api_key_and_trusted_header",
-          `quote_auth_api_key: "${QUOTE_API_KEY}"`,
           'quote_auth_api_key_header: "x-shared-auth"',
           'quote_auth_trusted_header_name: "x-shared-auth"',
-          'quote_auth_trusted_header_value: "allow"',
         ].join("\n"),
       ),
     );
 
-    withAttestationEnv({}, () => {
-      assert.throws(
-        () => loadConfig(configPath),
-        /quote_auth_api_key_header and quote_auth_trusted_header_name must differ/,
-      );
-    });
+    withAttestationEnv(
+      {
+        QUOTE_AUTH_API_KEY: QUOTE_API_KEY,
+        QUOTE_AUTH_TRUSTED_HEADER_VALUE: "allow",
+      },
+      () => {
+        assert.throws(
+          () => loadConfig(configPath),
+          /quote_auth_api_key_header and quote_auth_trusted_header_name must differ/,
+        );
+      },
+    );
 
     cleanupConfig(configPath);
   });
@@ -534,7 +502,6 @@ describe("attestation config secret providers", () => {
         [
           "runtime_profile: development",
           "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
           "quote_auth_mode: disabled",
         ].join("\n"),
       ),
@@ -559,13 +526,7 @@ describe("attestation config secret providers", () => {
 
   it("applies default quote rate limit settings", () => {
     const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: development",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-        ].join("\n"),
-      ),
+      baseConfigYaml(["runtime_profile: development", "operator_secret_provider: auto"].join("\n")),
     );
 
     withAttestationEnv({}, () => {
@@ -585,7 +546,6 @@ describe("attestation config secret providers", () => {
         [
           "runtime_profile: development",
           "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
           "quote_rate_limit_enabled: true",
           "quote_rate_limit_max_requests: 20",
           "quote_rate_limit_window_seconds: 120",
@@ -615,13 +575,7 @@ describe("attestation config secret providers", () => {
 
   it("fails fast when quote rate limit env override is invalid", () => {
     const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: development",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-        ].join("\n"),
-      ),
+      baseConfigYaml(["runtime_profile: development", "operator_secret_provider: auto"].join("\n")),
     );
 
     withAttestationEnv(
@@ -638,13 +592,7 @@ describe("attestation config secret providers", () => {
 
   it("fails fast when quote rate limit enabled override is not a boolean", () => {
     const configPath = writeConfig(
-      baseConfigYaml(
-        [
-          "runtime_profile: development",
-          "operator_secret_provider: auto",
-          `operator_secret_key: "${VALID_SECRET}"`,
-        ].join("\n"),
-      ),
+      baseConfigYaml(["runtime_profile: development", "operator_secret_provider: auto"].join("\n")),
     );
 
     withAttestationEnv(

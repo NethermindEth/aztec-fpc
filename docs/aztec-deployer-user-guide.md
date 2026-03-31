@@ -240,7 +240,7 @@ fee_bips: <FEE_BIPS>                           # e.g. 200 (= 2%)
 
 # Auth (required for production)
 quote_auth_mode: "api_key"                     # or "trusted_header", etc.
-# quote_auth_api_key: set via env or fill here for dev
+# quote_auth_api_key: set via QUOTE_AUTH_API_KEY env var
 
 # Rate limiting
 quote_rate_limit_enabled: true
@@ -702,11 +702,12 @@ console.log(`Token charged: ${result.aaPaymentAmount}`);
 
 ### Admin Endpoints
 
-Admin endpoints are **disabled by default**. Enable them by setting `admin_api_key` in the attestation config. All admin requests require the configured API key header.
+Admin endpoints are **disabled by default**. Enable them by setting the `ADMIN_API_KEY` env var. All admin requests require the configured API key header.
 
-```yaml
-admin_api_key: "<ADMIN_SECRET>"
-admin_api_key_header: "x-admin-api-key"    # default header name
+```bash
+export ADMIN_API_KEY="<ADMIN_SECRET>"
+# Optional: override default header name (default: x-admin-api-key)
+# export ADMIN_API_KEY_HEADER="x-admin-api-key"
 ```
 
 | Method | Path | Description |

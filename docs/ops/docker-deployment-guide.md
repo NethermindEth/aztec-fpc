@@ -136,7 +136,7 @@ CLI equivalents (`--deployer-secret-key`, `--operator-secret-key`, etc.) exist b
 
 | Argument | Description | Env var |
 |----------|-------------|---------|
-| `--node-url <url>` | Aztec node URL (default: `https://v4-devnet-2.aztec-labs.com/`) | `AZTEC_NODE_URL` |
+| `--node-url <url>` | Aztec node URL (required) | `AZTEC_NODE_URL` |
 
 ### Options
 

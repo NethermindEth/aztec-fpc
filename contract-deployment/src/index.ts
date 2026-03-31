@@ -47,10 +47,7 @@ const AZTEC_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_AZTEC_ADDRESS_PATTERN = /^0x0{64}$/i;
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-const DEVNET_DEFAULT_NODE_URL = "https://v4-devnet-2.aztec-labs.com/";
 const DEVNET_DEFAULT_DATA_DIR = "./deployments";
-const DEVNET_DEFAULT_TEST_KEY =
-  "0x1111111111111111111111111111111111111111111111111111111111111111";
 
 class CliError extends Error {
   constructor(message: string) {
@@ -67,13 +64,13 @@ function usage(): string {
     "All arguments are optional. CLI args take precedence over env vars.",
     "",
     "Credentials (prefer env vars to avoid leaking secrets in shell history):",
-    "  --deployer-secret-key <hex32>   Deployer secret key (default: devnet test key) [env: FPC_DEPLOYER_SECRET_KEY]",
+    "  --deployer-secret-key <hex32>   Deployer secret key (required) [env: FPC_DEPLOYER_SECRET_KEY]",
     "  --deployer-secret-key-ref <ref> Deployer key reference [env: FPC_DEPLOYER_SECRET_KEY_REF]",
     "  --operator-secret-key <hex32>    Operator secret key (default: deployer key) [env: FPC_OPERATOR_SECRET_KEY]",
     "  --operator-secret-key-ref <ref>  Operator key reference [env: FPC_OPERATOR_SECRET_KEY_REF]",
     "",
     "Network:",
-    `  --node-url <url>                 Aztec node URL (default: ${DEVNET_DEFAULT_NODE_URL}) [env: AZTEC_NODE_URL]`,
+    "  --node-url <url>                 Aztec node URL (required) [env: AZTEC_NODE_URL]",
     "",
     "Options:",
     "  --operator <aztec_address>       Operator address (default: derived from key) [env: FPC_OPERATOR]",
@@ -166,7 +163,7 @@ function parseSecretPair(
 }
 
 function parseCliArgs(argv: string[]): CliParseResult {
-  let nodeUrl: string = process.env.AZTEC_NODE_URL ?? DEVNET_DEFAULT_NODE_URL;
+  let nodeUrl: string | null = process.env.AZTEC_NODE_URL ?? null;
   let sponsoredFpcAddress: string | null = process.env.FPC_SPONSORED_FPC_ADDRESS ?? null;
   let deployerSecretKey: string | null = process.env.FPC_DEPLOYER_SECRET_KEY ?? null;
   let deployerSecretKeyRef: string | null = process.env.FPC_DEPLOYER_SECRET_KEY_REF ?? null;
@@ -255,16 +252,20 @@ function parseCliArgs(argv: string[]): CliParseResult {
   );
 
   if (!parsedDeployer.value && !parsedDeployer.ref) {
-    pinoLogger.warn("WARN: No deployer key provided. Using default devnet test key.");
-    parsedDeployer.value = DEVNET_DEFAULT_TEST_KEY;
-  }
-  if (!parsedOperatorSecret.value && !parsedOperatorSecret.ref) {
-    parsedOperatorSecret.value = parsedDeployer.value ?? DEVNET_DEFAULT_TEST_KEY;
-    pinoLogger.warn(
-      "WARN: No operator key provided. Using deployer key as operator key for devnet.",
+    throw new CliError(
+      "Missing deployer key: provide --deployer-secret-key or --deployer-secret-key-ref (or set FPC_DEPLOYER_SECRET_KEY / FPC_DEPLOYER_SECRET_KEY_REF env var)",
     );
   }
+  if (!parsedOperatorSecret.value && !parsedOperatorSecret.ref) {
+    parsedOperatorSecret.value = parsedDeployer.value ?? null;
+    if (parsedOperatorSecret.value) {
+      pinoLogger.warn("WARN: No operator key provided. Using deployer key as operator key.");
+    }
+  }
 
+  if (!nodeUrl) {
+    throw new CliError("Missing node URL: provide --node-url or set AZTEC_NODE_URL env var");
+  }
   const parsedNodeUrl = parseHttpUrl(nodeUrl, "--node-url");
   const parsedOperator = operator !== null ? parseAztecAddress(operator, "--operator") : null;
 
