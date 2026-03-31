@@ -5,7 +5,7 @@ import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import { beforeAll, describe, it } from "#test";
 import { PrivateBalanceTracker, PublicBalanceTracker } from "../common/balance-tracker.ts";
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";

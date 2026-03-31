@@ -4,7 +4,7 @@ import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec
 import {
   type DeployManifest,
   readDeployManifest,
-} from "@aztec-fpc/contract-deployment/src/manifest.ts";
+} from "@nethermindeth/aztec-fpc-contract-deployment/src/manifest.ts";
 import pino from "pino";
 import {
   FpcImmutableVerificationError,

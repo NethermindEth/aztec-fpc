@@ -1,5 +1,5 @@
 {
-  "name": "@aztec-fpc/topup",
+  "name": "@nethermindeth/aztec-fpc-topup",
   "version": "0.1.0",
   "type": "module",
   "description": "Background service that keeps the MultiAssetFPC funded with Fee Juice",

@@ -16,7 +16,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import type { Hex } from "viem";
 import { beforeAll, describe, expect, it } from "#test";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
