@@ -45,7 +45,7 @@ const TEST_CONFIG: Config = {
   operator_secret_provider: "auto",
   operator_account_salt: undefined,
   operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001",
-  operator_secret_key_source: "config",
+  operator_secret_key_source: "env",
   operator_secret_key_provider: "auto",
   operator_secret_key_dual_source: false,
   admin_auth: {

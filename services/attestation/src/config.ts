@@ -87,10 +87,7 @@ const ConfigSchema = z.object({
   operator_address: AztecAddressSchema.optional(),
   /** Operator account salt required when reconstructing the deployed operator wallet. */
   operator_account_salt: FrHexSchema.optional(),
-  /** Optional when OPERATOR_SECRET_KEY is provided via env. */
-  operator_secret_key: z.string().optional(),
-  /** Shared API key for authenticated admin asset/sweep endpoints. */
-  admin_api_key: z.string().optional(),
+  /** Shared API key for authenticated admin asset/sweep endpoints — set via ADMIN_API_KEY env var. */
   /** Header name carrying the admin API key. */
   admin_api_key_header: z.string().default("x-admin-api-key"),
   /** Durable LMDB directory storing the effective supported asset policy set. */
@@ -99,14 +96,12 @@ const ConfigSchema = z.object({
   treasury_destination_address: AztecAddressSchema.optional(),
   /** Quote endpoint access control mode. */
   quote_auth_mode: QuoteAuthModeSchema.default("disabled"),
-  /** Shared API key value for /quote when mode includes api_key. */
-  quote_auth_api_key: z.string().optional(),
+  /** Shared API key value for /quote — set via QUOTE_AUTH_API_KEY env var. */
   /** Header name containing the API key. */
   quote_auth_api_key_header: z.string().default("x-api-key"),
   /** Trusted upstream marker header name when mode includes trusted_header. */
   quote_auth_trusted_header_name: z.string().optional(),
-  /** Expected trusted upstream marker header value. */
-  quote_auth_trusted_header_value: z.string().optional(),
+  /** Expected trusted upstream marker header value — set via QUOTE_AUTH_TRUSTED_HEADER_VALUE env var. */
   /** Optional directory for local PXE persistent state (LMDB).
    *  When set, the service spins up a local PXE so it can call
    *  registerSender() and discover private fee-payment notes. */
@@ -176,16 +171,12 @@ export interface RatePolicy {
 
 export type Config = Omit<
   ParsedConfig,
-  | "operator_secret_key"
   | "aztec_node_url"
   | "supported_assets"
-  | "admin_api_key"
   | "admin_api_key_header"
   | "quote_auth_mode"
-  | "quote_auth_api_key"
   | "quote_auth_api_key_header"
   | "quote_auth_trusted_header_name"
-  | "quote_auth_trusted_header_value"
   | "quote_rate_limit_enabled"
   | "quote_rate_limit_max_requests"
   | "quote_rate_limit_window_seconds"
@@ -317,7 +308,7 @@ interface QuoteAuthInputs {
 
 function resolveQuoteAuthInputs(config: ParsedConfig): QuoteAuthInputs {
   const mode = parseQuoteAuthMode(config.quote_auth_mode, process.env.QUOTE_AUTH_MODE);
-  const apiKey = normalizeOptional(process.env.QUOTE_AUTH_API_KEY ?? config.quote_auth_api_key);
+  const apiKey = normalizeOptional(process.env.QUOTE_AUTH_API_KEY);
   const apiKeyHeader = normalizeHeaderName(
     process.env.QUOTE_AUTH_API_KEY_HEADER ?? config.quote_auth_api_key_header,
     "quote auth api key",
@@ -325,9 +316,7 @@ function resolveQuoteAuthInputs(config: ParsedConfig): QuoteAuthInputs {
   const trustedHeaderNameRaw = normalizeOptional(
     process.env.QUOTE_AUTH_TRUSTED_HEADER_NAME ?? config.quote_auth_trusted_header_name,
   );
-  const trustedHeaderValue = normalizeOptional(
-    process.env.QUOTE_AUTH_TRUSTED_HEADER_VALUE ?? config.quote_auth_trusted_header_value,
-  );
+  const trustedHeaderValue = normalizeOptional(process.env.QUOTE_AUTH_TRUSTED_HEADER_VALUE);
   const trustedHeaderName = trustedHeaderNameRaw
     ? normalizeHeaderName(trustedHeaderNameRaw, "quote auth trusted upstream")
     : undefined;
@@ -458,7 +447,7 @@ export function normalizeAztecAddress(value: string): string {
 }
 
 function resolveAdminAuthConfig(config: ParsedConfig): AdminAuthConfig {
-  const apiKey = normalizeOptional(process.env.ADMIN_API_KEY ?? config.admin_api_key);
+  const apiKey = normalizeOptional(process.env.ADMIN_API_KEY);
   const apiKeyHeader = normalizeHeaderName(
     process.env.ADMIN_API_KEY_HEADER ?? config.admin_api_key_header,
     "admin api key",
@@ -526,7 +515,7 @@ export function loadConfig(path: string, options: LoadConfigOptions = {}): Confi
     runtimeProfile,
     envVarName: "OPERATOR_SECRET_KEY",
     envValue: process.env.OPERATOR_SECRET_KEY,
-    configValue: config.operator_secret_key,
+    configValue: undefined,
     secretRef: process.env.OPERATOR_SECRET_REF ?? config.operator_secret_ref,
     adapters: options.secretAdapters,
   });
@@ -540,14 +529,10 @@ export function loadConfig(path: string, options: LoadConfigOptions = {}): Confi
   const quoteAuth = resolveQuoteAuthConfig(config, runtimeProfile);
   const quoteRateLimit = resolveQuoteRateLimitConfig(config);
   const {
-    operator_secret_key: _configuredOperatorSecretKey,
-    admin_api_key: _adminApiKey,
     admin_api_key_header: _adminApiKeyHeader,
     quote_auth_mode: _quoteAuthMode,
-    quote_auth_api_key: _quoteAuthApiKey,
     quote_auth_api_key_header: _quoteAuthApiKeyHeader,
     quote_auth_trusted_header_name: _quoteAuthTrustedHeaderName,
-    quote_auth_trusted_header_value: _quoteAuthTrustedHeaderValue,
     quote_rate_limit_enabled: _quoteRateLimitEnabled,
     quote_rate_limit_max_requests: _quoteRateLimitMaxRequests,
     quote_rate_limit_window_seconds: _quoteRateLimitWindowSeconds,

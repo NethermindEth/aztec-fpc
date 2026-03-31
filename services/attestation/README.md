@@ -65,7 +65,7 @@ Each attestation instance is bound to one contract address (`fpc_address`) and c
 
 ## Admin Capabilities
 
-Authenticated admin endpoints are guarded by `admin_api_key` / `admin_api_key_header`.
+Authenticated admin endpoints are guarded by the `ADMIN_API_KEY` env var and the `admin_api_key_header` config field.
 
 - `GET /admin/asset-policies`
   - Returns the effective persisted asset-policy set.
@@ -82,14 +82,14 @@ Authenticated admin endpoints are guarded by `admin_api_key` / `admin_api_key_he
 
 ## Admin Authentication
 
-Admin endpoints are disabled unless `admin_api_key` is configured.
+Admin endpoints are disabled unless the `ADMIN_API_KEY` env var is set.
 
 How it works:
 
-- Every admin request must include the configured `admin_api_key_header`.
-- The header value must exactly match the configured `admin_api_key`.
+- Every admin request must include the configured `admin_api_key_header` header.
+- The header value must exactly match the `ADMIN_API_KEY` env var.
 - The service compares the presented value using constant-time digest comparison.
-- If `admin_api_key` is not configured, admin endpoints return `503` and are unavailable.
+- If `ADMIN_API_KEY` is not set, admin endpoints return `503` and are unavailable.
 
 What this protects:
 
@@ -104,16 +104,16 @@ What this does not provide:
 
 Operational guidance:
 
-- Treat `admin_api_key` like any production secret.
+- Treat `ADMIN_API_KEY` like any production secret.
 - Serve the service only behind HTTPS or another encrypted trusted hop.
 - Do not commit the key to git.
-- Prefer injecting the key through deployment secrets rather than storing plaintext on disk.
+- Inject the key through environment variables or deployment secrets.
 
 ### Generating an Admin API Key
 
 Generate a long random secret offline and provision the same value to:
 
-- the service configuration
+- the `ADMIN_API_KEY` env var on the service
 - the trusted admin client or operator tooling
 
 Examples:
@@ -126,11 +126,12 @@ openssl rand -hex 32
 python -c 'import secrets; print(secrets.token_hex(32))'
 ```
 
-Example config:
+Example env setup:
 
-```yaml
-admin_api_key: "replace-with-random-secret"
-admin_api_key_header: "x-admin-api-key"
+```bash
+export ADMIN_API_KEY="replace-with-random-secret"
+# Optional: override header name (default: x-admin-api-key)
+# export ADMIN_API_KEY_HEADER="x-admin-api-key"
 ```
 
 Example request:

@@ -47,8 +47,8 @@ operator_secret_provider: "auto"
 # operator_address: "0x089323ce9a610e9f013b661ce80dde444b554e9f6ed9f5167adb234668f0af72"
 # Required for treasury sweeps when operator_address was deployed with non-zero salt.
 # operator_account_salt: "0x0000000000000000000000000000000000000000000000000000000000000007"
-# Optional when OPERATOR_SECRET_KEY is set.
-operator_secret_key: "0x0000000000000000000000000000000000000000000000000000000000000001"
+# Operator secret key: set via OPERATOR_SECRET_KEY env var (never in config file).
+# operator_secret_key is not accepted in config — use env var or KMS/HSM provider.
 
 # Optional embedded-wallet PXE store. When set, the service registers quoted
 # senders so operator-held private payment notes can be rediscovered later for
@@ -56,8 +56,8 @@ operator_secret_key: "0x00000000000000000000000000000000000000000000000000000000
 # pxe_data_directory: "./.attestation-pxe"
 
 # ─── Admin endpoint auth / treasury ops ──────────────────────────────────────
-# Admin endpoints are disabled unless admin_api_key is configured.
-# admin_api_key: "replace-with-random-admin-secret"
+# Admin endpoints are disabled unless ADMIN_API_KEY env var is set.
+# admin_api_key is not accepted in config — use ADMIN_API_KEY env var.
 # admin_api_key_header: "x-admin-api-key"
 
 # Persistent LMDB directory storing the effective supported asset policy set.
@@ -78,10 +78,10 @@ asset_policy_state_path: ".attestation-asset-policies"
 #
 # runtime_profile=production requires quote_auth_mode != disabled.
 quote_auth_mode: "disabled"
-# quote_auth_api_key: "replace-with-random-secret"
+# quote_auth_api_key: set via QUOTE_AUTH_API_KEY env var (not accepted in config)
 # quote_auth_api_key_header: "x-api-key"
 # quote_auth_trusted_header_name: "x-internal-attestation"
-# quote_auth_trusted_header_value: "allow"
+# quote_auth_trusted_header_value: set via QUOTE_AUTH_TRUSTED_HEADER_VALUE env var (not accepted in config)
 
 # ─── Quote rate limiting (recommended in all environments) ───────────────────
 # Fixed-window throttling is applied per identity:

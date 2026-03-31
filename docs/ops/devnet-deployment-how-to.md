@@ -39,13 +39,16 @@ FPC_PREFLIGHT_ONLY=1 bun run deploy:fpc
 
 If unset, wrapper defaults are:
 
-- `AZTEC_NODE_URL=https://v4-devnet-2.aztec-labs.com/`
 - `FPC_SPONSORED_FPC_ADDRESS=0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2`
 - `FPC_OUT=./deployments/devnet-manifest-v2.json`
 
-Key behavior when key env vars are unset:
+Required env vars (no defaults — deployment fails if missing):
 
-- uses default devnet test key `0x1111111111111111111111111111111111111111111111111111111111111111`
+- `AZTEC_NODE_URL` — Aztec node URL
+- `FPC_DEPLOYER_SECRET_KEY` (or `FPC_DEPLOYER_SECRET_KEY_REF`) — deployer secret key
+
+Key behavior when operator key env vars are unset:
+
 - sets operator key equal to deployer key
 
 Artifact behavior:
