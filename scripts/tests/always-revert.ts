@@ -8,7 +8,7 @@ import { TxExecutionResult } from "@aztec/aztec.js/tx";
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { Gas } from "@aztec/stdlib/gas";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { FpcClient } from "@aztec-fpc/sdk";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import { beforeAll, describe, expect, it } from "#test";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";

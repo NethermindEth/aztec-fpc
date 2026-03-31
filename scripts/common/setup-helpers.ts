@@ -30,11 +30,11 @@ import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import {
   type DeployManifest,
   readDeployManifest,
-} from "@aztec-fpc/contract-deployment/src/manifest.ts";
+} from "@nethermindeth/aztec-fpc-contract-deployment/src/manifest.ts";
 import {
   readTestTokenManifest,
   type TestTokenManifest,
-} from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
+} from "@nethermindeth/aztec-fpc-contract-deployment/src/test-token-manifest.ts";
 import pino from "pino";
 import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
 import * as viemChains from "viem/chains";

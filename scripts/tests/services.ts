@@ -4,7 +4,7 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr, SchnorrSignature } from "@aztec/foundation/crypto/schnorr";
 import { Point } from "@aztec/foundation/curves/grumpkin";
-import { readTestTokenManifest } from "@aztec-fpc/contract-deployment/src/test-token-manifest.ts";
+import { readTestTokenManifest } from "@nethermindeth/aztec-fpc-contract-deployment/src/test-token-manifest.ts";
 import { beforeAll, describe, expect, it } from "#test";
 import { readManifest, waitForFpcFeeJuice } from "../common/setup-helpers.ts";
 

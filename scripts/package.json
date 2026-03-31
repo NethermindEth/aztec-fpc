@@ -1,5 +1,5 @@
 {
-  "name": "@aztec-fpc/scripts",
+  "name": "@nethermindeth/aztec-fpc-scripts",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -28,7 +28,7 @@
     "@aztec/wallets": "4.1.0-rc.4",
     "viem": "npm:@aztec/viem@2.38.2",
     "pino": "^10.3.1",
-    "@aztec-fpc/contract-deployment": "workspace:*",
-    "@aztec-fpc/sdk": "workspace:*"
+    "@nethermindeth/aztec-fpc-contract-deployment": "workspace:*",
+    "@nethermindeth/aztec-fpc-sdk": "workspace:*"
   }
 }

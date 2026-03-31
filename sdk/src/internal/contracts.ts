@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   type ContractArtifact,
@@ -10,7 +9,7 @@ import {
 } from "@aztec/aztec.js/abi";
 
 const currentDir =
-  typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+  typeof __dirname !== "undefined" ? __dirname : path.dirname(new URL(import.meta.url).pathname);
 
 type DefaultArtifactLabel = "token" | "fpc" | "bridge";
 
