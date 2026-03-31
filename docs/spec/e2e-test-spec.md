@@ -104,8 +104,9 @@ Use this runbook when local E2E fails with address or wiring symptoms.
 ## Coverage Findings And Test Tiering
 Current script coverage in this repository is intentionally split:
 - `scripts/contract/deploy-fpc-local.ts` and `scripts/contract/deploy-fpc-local-smoke.ts` are deployment/relay usability checks, not quote-security or negative-behavior tests.
-- `scripts/tests/services.ts` tests deployed service HTTP endpoints (attestation quotes, topup health, metrics).
+- `scripts/tests/services.ts` tests deployed service HTTP endpoints (attestation quotes including `/cold-start-quote`, topup health, metrics).
 - `scripts/tests/same-token-transfer.ts` is the happy-path integration test covering FPC-paid transactions across multiple transfer types.
+- `scripts/tests/cold-start-validation.ts` is the negative-scenario test for the `cold_start_entrypoint`, mirroring `fee-entrypoint-validation.ts` patterns for the cold-start flow (9-field quote preimage, L1 bridge claim, claim-amount validation).
 
 This document is the source of truth for full FPC e2e negative-scenario requirements. Happy-path coverage is defined by the same-token-transfer test.
 
