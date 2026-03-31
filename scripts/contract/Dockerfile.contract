@@ -19,4 +19,12 @@ COPY contracts/ contracts/
 COPY mock/counter/ mock/counter/
 COPY vendor/ vendor/
 
-RUN aztec compile --workspace --force
+# bb segfaults under QEMU arm64 emulation during VK generation.
+# Skip compilation on arm64 — artifacts are platform-independent JSON
+# and are cross-copied from the amd64 variant by Dockerfile.deploy.
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+      aztec compile --workspace --force; \
+    else \
+      mkdir -p /app/target; \
+    fi
