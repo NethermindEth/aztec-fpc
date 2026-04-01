@@ -20,7 +20,6 @@ import {
   type L1Infra,
   mintL1Erc20WithRetry,
   setupL1Infrastructure,
-  waitForNextBlock,
 } from "../common/setup-helpers.ts";
 
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
@@ -387,7 +386,6 @@ async function setupFromManifest(config: ColdStartValidationConfig): Promise<Run
   await waitForL1ToL2MessageReady(node, bridgeMsgHash, {
     timeoutSeconds: config.messageTimeoutSeconds,
   });
-  await waitForNextBlock(node);
 
   const minFees = await node.getCurrentMinFees();
   const gasLimits = COLD_START_GAS_LIMITS;

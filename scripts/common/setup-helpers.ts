@@ -93,37 +93,6 @@ export async function connectAndCreateWallet(nodeUrl: string, proverEnabled: boo
   return { node, wallet };
 }
 
-/**
- * Wait until a new L2 block is produced after the current tip.
- *
- * `waitForL1ToL2MessageReady` only checks the *node/archiver* - the PXE's
- * anchor block may still lag by one block.  Waiting for one additional block
- * gives the PXE's `BlockSynchronizer` time to process the `blocks-added`
- * event that includes the message tree update, avoiding "Message not in
- * state" simulation failures.
- *
- * Call this after `waitForL1ToL2MessageReady` and before submitting a tx
- * that consumes the message.
- */
-export async function waitForNextBlock(node: AztecNode, timeoutSeconds = 30): Promise<void> {
-  const currentBlock = await node.getBlock("latest");
-  if (!currentBlock) return;
-  const currentBlockNumber = currentBlock.header.getBlockNumber();
-
-  const POLL_MS = 500;
-  const deadline = Date.now() + timeoutSeconds * 1_000;
-  while (Date.now() < deadline) {
-    const latest = await node.getBlock("latest");
-    if (latest && latest.header.getBlockNumber() > currentBlockNumber) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-  }
-  pinoLogger.warn(
-    `No new block produced after block ${currentBlockNumber} within ${timeoutSeconds}s — proceeding anyway`,
-  );
-}
-
 export type CoreContracts = {
   token: Contract;
   fpc: Contract;
