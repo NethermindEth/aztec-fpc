@@ -14,7 +14,7 @@ services:
       start_period: 5s
 
   aztec-node:
-    image: aztecprotocol/aztec:4.1.0-rc.4
+    image: aztecprotocol/aztec:4.2.0-aztecnr-rc.2
     command: ["start", "--local-network"]
     ports:
       - "8080:8080"

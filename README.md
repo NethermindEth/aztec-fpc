@@ -266,7 +266,7 @@ aztec-fpc/
 - Aztec CLI
 
 ```bash
-VERSION=4.1.0-rc.4 bash -i <(curl -sL https://install.aztec.network/4.1.0-rc.4)
+VERSION=4.2.0-aztecnr-rc.2 bash -i <(curl -sL https://install.aztec.network/$VERSION)
 ```
 
 ### 1. Clone the repository with submodules (required)
