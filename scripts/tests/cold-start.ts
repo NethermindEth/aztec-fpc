@@ -17,7 +17,6 @@ import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
-import pino from "pino";
 import type { Hex } from "viem";
 import { beforeAll, describe, expect, it } from "#test";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
@@ -31,10 +30,8 @@ import {
   type L1Infra,
   mintL1Erc20WithRetry,
   setupL1Infrastructure,
-  waitForNextBlock,
 } from "../common/setup-helpers.ts";
 
-const logger = pino();
 const HEX_32_BYTE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 const DECIMAL_UINT_PATTERN = /^(0|[1-9][0-9]*)$/;
@@ -226,40 +223,14 @@ describe("cold-start smoke", () => {
       timeoutSeconds: config.messageTimeoutSeconds,
     });
 
-    // waitForL1ToL2MessageReady only checks the node/archiver — the PXE's
-    // anchor block may not yet include the message tree update.  Wait for
-    // one more block so the BlockSynchronizer processes the blocks-added event.
-    await waitForNextBlock(node);
-
-    // Execute cold-start via SDK.  Retry on "Message not in state" —
-    // the PXE syncs inside proveTx via L2BlockStream, but that stream's
-    // work() swallows errors silently.  On slow runners (arm64) the sync
-    // can fail, leaving the anchor block stale.  Each retry triggers a
-    // fresh sync attempt.
-    const MAX_COLD_START_ATTEMPTS = 3;
-    let coldStartResult!: Awaited<ReturnType<typeof fpcClient.executeColdStart>>;
-    for (let attempt = 1; attempt <= MAX_COLD_START_ATTEMPTS; attempt++) {
-      try {
-        coldStartResult = await fpcClient.executeColdStart({
-          wallet,
-          userAddress: user,
-          tokenAddress,
-          bridgeAddress,
-          bridgeClaim,
-        });
-        break;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("Message not in state") && attempt < MAX_COLD_START_ATTEMPTS) {
-          logger.warn(
-            `Cold-start attempt ${attempt}/${MAX_COLD_START_ATTEMPTS} failed with "Message not in state", retrying after next block`,
-          );
-          await waitForNextBlock(node);
-          continue;
-        }
-        throw err;
-      }
-    }
+    // Execute cold-start via SDK (retries "Message not in state" internally)
+    const coldStartResult = await fpcClient.executeColdStart({
+      wallet,
+      userAddress: user,
+      tokenAddress,
+      bridgeAddress,
+      bridgeClaim,
+    });
 
     // Verify balances after cold-start
     await userBalance.change(config.claimAmount - coldStartResult.aaPaymentAmount);
@@ -438,7 +409,6 @@ describe("cold-start smoke", () => {
     await waitForL1ToL2MessageReady(node, tinyMsgHash, {
       timeoutSeconds: config.messageTimeoutSeconds,
     });
-    await waitForNextBlock(node);
 
     // Attempt cold-start — should fail at quote stage
     await expect(

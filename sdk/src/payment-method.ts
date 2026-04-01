@@ -25,6 +25,7 @@ import type {
   QuoteResponse,
 } from "./types";
 
+const COLD_START_MAX_ATTEMPTS = 3;
 const GAS_BUFFER = new Gas(5_000, 100_000);
 // Cold start uses fixed gas limits because simulation is not possible:
 // 1. The user may not have a deployed account, so the PXE cannot simulate
@@ -152,14 +153,30 @@ export class FpcClient {
       teardownGasLimits: Gas.empty(),
     });
 
-    const receipt = await proveAndSendTx(
-      wallet,
-      node,
-      payload,
-      gasSettings,
-      [userAddress, operator, fpcAddress],
-      timeoutMs,
-    );
+    // Retry on "Message not in state" — the PXE syncs inside proveTx via
+    // L2BlockStream, but that stream's work() swallows errors silently.
+    // On slow runners the sync can fail, leaving the anchor block stale.
+    // Each retry triggers a fresh sync attempt.
+    let receipt!: TxReceipt;
+    for (let attempt = 1; attempt <= COLD_START_MAX_ATTEMPTS; attempt++) {
+      try {
+        receipt = await proveAndSendTx(
+          wallet,
+          node,
+          payload,
+          gasSettings,
+          [userAddress, operator, fpcAddress],
+          timeoutMs,
+        );
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("Message not in state") && attempt < COLD_START_MAX_ATTEMPTS) {
+          continue;
+        }
+        throw err;
+      }
+    }
 
     return {
       txHash: receipt.txHash.toString(),
