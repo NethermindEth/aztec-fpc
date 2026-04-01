@@ -69,6 +69,26 @@ else
 fi
 ```
 
+## Contract compilation (amd64-only)
+
+The Barretenberg `bb` backend segfaults under QEMU arm64 emulation during
+verification key generation (`cycle_group: Point is not on curve` / signal 11).
+Contract artifacts are platform-independent JSON (ACIR bytecode + verification
+keys), so they only need to be compiled once on amd64.
+
+The `contract` bake target (`Dockerfile.contract`) builds for both platforms
+but skips `aztec compile` on arm64 via a `TARGETARCH` guard:
+
+- **amd64**: full compilation — Aztec CLI + compiled artifacts in `/app/target/`
+- **arm64**: Aztec CLI only — `/app/target/` is an empty directory
+
+The `block-producer` compose service uses this image for `aztec-wallet` on
+arm64 (CLI works fine on native arm64, the crash is only under QEMU emulation).
+
+`Dockerfile.deploy` uses `FROM --platform=linux/amd64 contract` to always
+cross-copy the compiled artifacts from the amd64 variant, since artifacts are
+platform-independent JSON.
+
 ## Removing this workaround
 
 If Bun fixes the ARM64 NAPI crash, revert to a single `oven/bun` runtime image:

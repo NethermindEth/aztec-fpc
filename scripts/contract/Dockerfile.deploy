@@ -1,3 +1,8 @@
+# Always use the amd64 contract image for artifacts — the arm64 variant
+# skips compilation (bb segfaults under QEMU) and has an empty target dir.
+# Artifacts are platform-independent JSON, so cross-copy is safe.
+FROM --platform=linux/amd64 contract AS contract-amd64
+
 FROM common
 
 # Start as root so the entrypoint can fix bind-mount ownership, then drop to app
@@ -6,8 +11,8 @@ USER root
 # yq for config generation
 COPY --from=mikefarah/yq:4.45.4 /usr/bin/yq /usr/local/bin/yq
 
-# Contract artifacts from compile stage
-COPY --from=contract /app/target/ target/
+# Contract artifacts from compile stage (always amd64)
+COPY --from=contract-amd64 /app/target/ target/
 
 # Shell entrypoint + config generation script
 COPY scripts/contract/deploy-fpc.sh scripts/contract/
