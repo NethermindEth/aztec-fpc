@@ -165,6 +165,10 @@ jobs:
         if: always()
         run: docker compose --profile full logs --timestamps tests-cold-start
 
+      - name: Print tests-cold-start-validation logs
+        if: always()
+        run: docker compose --profile full logs --timestamps tests-cold-start-validation
+
       - name: Print tests-fee-entrypoint-validation logs
         if: always()
         run: docker compose --profile full logs --timestamps tests-fee-entrypoint-validation

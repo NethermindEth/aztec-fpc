@@ -17,9 +17,13 @@ function sleep(ms: number): Promise<void> {
 // ---------------------------------------------------------------------------
 
 const QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x465043");
+const COLD_START_QUOTE_DOMAIN_SEPARATOR = Fr.fromHexString("0x46504373");
 const U128_MAX = 2n ** 128n - 1n;
 const SENTINEL_USER = "0x0000000000000000000000000000000000000000000000000000000000000001";
 const SENTINEL_FJ_AMOUNT = "1000000";
+const SENTINEL_CLAIM_AMOUNT = "100000000000000000";
+const SENTINEL_CLAIM_SECRET_HASH =
+  "0x0000000000000000000000000000000000000000000000000000000000abcdef";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +50,11 @@ type QuoteResponse = {
   aa_payment_amount: string;
   valid_until: string;
   signature: string;
+};
+
+type ColdStartQuoteResponse = QuoteResponse & {
+  claim_amount: string;
+  claim_secret_hash: string;
 };
 
 type AssetResponse = {
@@ -191,6 +200,45 @@ async function fetchQuote(
   }
 
   throw new Error(`Timed out requesting quote. Last error: ${lastError}`);
+}
+
+async function fetchColdStartQuote(
+  quoteUrl: string,
+  timeoutMs: number,
+  headers?: Record<string, string>,
+): Promise<ColdStartQuoteResponse> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: string | undefined;
+
+  while (Date.now() <= deadline) {
+    try {
+      const response = await fetch(quoteUrl, headers ? { headers } : undefined);
+      const bodyText = await response.text();
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}: ${bodyText}`;
+      } else {
+        const parsed = JSON.parse(bodyText) as ColdStartQuoteResponse;
+        if (
+          typeof parsed.accepted_asset === "string" &&
+          typeof parsed.fj_amount === "string" &&
+          typeof parsed.aa_payment_amount === "string" &&
+          typeof parsed.valid_until === "string" &&
+          typeof parsed.signature === "string" &&
+          typeof parsed.claim_amount === "string" &&
+          typeof parsed.claim_secret_hash === "string"
+        ) {
+          return parsed;
+        }
+        lastError = `Invalid cold-start quote payload: ${bodyText}`;
+      }
+    } catch (error) {
+      lastError = (error as Error).message;
+    }
+
+    await sleep(500);
+  }
+
+  throw new Error(`Timed out requesting cold-start quote. Last error: ${lastError}`);
 }
 
 async function fetchAcceptedAssets(url: string, timeoutMs: number): Promise<AssetResponse[]> {
@@ -344,6 +392,34 @@ async function verifyQuoteSignature(
     new Fr(aaPaymentAmount),
     new Fr(validUntil),
     user.toField(),
+  ]);
+  const signature = SchnorrSignature.fromBuffer(Buffer.from(quoteSigBytes));
+  return schnorr.verifySignature(quoteHash.toBuffer(), operatorPubKey, signature);
+}
+
+async function verifyColdStartQuoteSignature(
+  schnorr: Schnorr,
+  operatorPubKey: Point,
+  feePayerAddress: AztecAddress,
+  tokenAddress: AztecAddress,
+  user: AztecAddress,
+  fjAmount: bigint,
+  aaPaymentAmount: bigint,
+  validUntil: bigint,
+  claimAmount: bigint,
+  claimSecretHash: Fr,
+  quoteSigBytes: number[],
+): Promise<boolean> {
+  const quoteHash = await computeInnerAuthWitHash([
+    COLD_START_QUOTE_DOMAIN_SEPARATOR,
+    feePayerAddress.toField(),
+    tokenAddress.toField(),
+    new Fr(fjAmount),
+    new Fr(aaPaymentAmount),
+    new Fr(validUntil),
+    user.toField(),
+    new Fr(claimAmount),
+    claimSecretHash,
   ]);
   const signature = SchnorrSignature.fromBuffer(Buffer.from(quoteSigBytes));
   return schnorr.verifySignature(quoteHash.toBuffer(), operatorPubKey, signature);
@@ -637,6 +713,244 @@ describe("fpc services smoke", () => {
 
     it("accepts request with correct auth key", async () => {
       const response = await fetch(quoteUrlWithDefaults(), {
+        headers: buildAuthHeaders(ctx.config),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(200);
+      expect(response.status).toBeLessThan(300);
+    });
+  });
+
+  describe("cold-start quote", () => {
+    function coldStartQuoteUrl(params: Record<string, string>): string {
+      const qs = new URLSearchParams(params).toString();
+      return `${ctx.config.attestationBaseUrl}/cold-start-quote?${qs}`;
+    }
+
+    function coldStartBaseParams(): Record<string, string> {
+      return {
+        user: SENTINEL_USER,
+        fj_amount: SENTINEL_FJ_AMOUNT,
+        accepted_asset: ctx.tokenAddress.toString(),
+        claim_amount: SENTINEL_CLAIM_AMOUNT,
+        claim_secret_hash: SENTINEL_CLAIM_SECRET_HASH,
+      };
+    }
+
+    it("rejects bare /cold-start-quote request with 400", async () => {
+      const response = await fetch(`${ctx.config.attestationBaseUrl}/cold-start-quote`);
+      expect(response.status).toBe(400);
+    });
+
+    it("returns valid cold-start quote with correct signature", async () => {
+      const chainNowBefore = await getCurrentChainUnixSeconds(ctx.node);
+      const authHeaders = buildAuthHeaders(ctx.config);
+      const quote = await fetchColdStartQuote(
+        coldStartQuoteUrl({
+          user: ctx.operator.toString(),
+          accepted_asset: ctx.tokenAddress.toString(),
+          fj_amount: ctx.quoteFjAmount.toString(),
+          claim_amount: SENTINEL_CLAIM_AMOUNT,
+          claim_secret_hash: SENTINEL_CLAIM_SECRET_HASH,
+        }),
+        ctx.config.httpTimeoutMs,
+        authHeaders,
+      );
+      const chainNowAfter = await getCurrentChainUnixSeconds(ctx.node);
+
+      const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace("0x", ""), "hex"));
+      const fjAmount = BigInt(quote.fj_amount);
+      const aaPaymentAmount = BigInt(quote.aa_payment_amount);
+      const validUntil = BigInt(quote.valid_until);
+      const claimAmount = BigInt(quote.claim_amount);
+
+      // Verify all 7 response fields are present and valid.
+      expect(quoteSigBytes).toHaveLength(64);
+      expect(fjAmount).toBeGreaterThan(0n);
+      expect(aaPaymentAmount).toBeGreaterThan(0n);
+      expect(quote.accepted_asset.toLowerCase()).toBe(ctx.tokenAddress.toString().toLowerCase());
+      expect(fjAmount).toBe(ctx.quoteFjAmount);
+      expect(claimAmount).toBe(BigInt(SENTINEL_CLAIM_AMOUNT));
+      expect(quote.claim_secret_hash).toBeDefined();
+
+      // Verify cold-start quote signature with the 9-field preimage.
+      const isValid = await verifyColdStartQuoteSignature(
+        ctx.schnorr,
+        ctx.operatorPubKey,
+        ctx.fpcAddress,
+        ctx.tokenAddress,
+        ctx.operator,
+        fjAmount,
+        aaPaymentAmount,
+        validUntil,
+        claimAmount,
+        Fr.fromHexString(quote.claim_secret_hash),
+        quoteSigBytes,
+      );
+      expect(isValid).toBe(true);
+
+      // Verify valid_until is in the future and within the contract's max TTL (3600s).
+      const chainNowMax = chainNowBefore > chainNowAfter ? chainNowBefore : chainNowAfter;
+      expect(validUntil).toBeGreaterThan(chainNowMax);
+      expect(validUntil).toBeLessThanOrEqual(chainNowMax + 3_610n);
+    });
+
+    it("cold-start quote signature fails verification with regular quote domain separator", async () => {
+      const authHeaders = buildAuthHeaders(ctx.config);
+      const quote = await fetchColdStartQuote(
+        coldStartQuoteUrl({
+          user: ctx.operator.toString(),
+          accepted_asset: ctx.tokenAddress.toString(),
+          fj_amount: ctx.quoteFjAmount.toString(),
+          claim_amount: SENTINEL_CLAIM_AMOUNT,
+          claim_secret_hash: SENTINEL_CLAIM_SECRET_HASH,
+        }),
+        ctx.config.httpTimeoutMs,
+        authHeaders,
+      );
+
+      const quoteSigBytes = Array.from(Buffer.from(quote.signature.replace("0x", ""), "hex"));
+      const fjAmount = BigInt(quote.fj_amount);
+      const aaPaymentAmount = BigInt(quote.aa_payment_amount);
+      const validUntil = BigInt(quote.valid_until);
+
+      // Attempt to verify using the regular (non-cold-start) verifier -- should fail.
+      const isValid = await verifyQuoteSignature(
+        ctx.schnorr,
+        ctx.operatorPubKey,
+        ctx.fpcAddress,
+        ctx.tokenAddress,
+        ctx.operator,
+        fjAmount,
+        aaPaymentAmount,
+        validUntil,
+        quoteSigBytes,
+      );
+      expect(isValid).toBe(false);
+    });
+
+    describe("cold-start quote input validation", () => {
+      it("rejects missing claim_amount", async () => {
+        const params = coldStartBaseParams();
+        delete params.claim_amount;
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects claim_amount=0", async () => {
+        const params = coldStartBaseParams();
+        params.claim_amount = "0";
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects negative claim_amount", async () => {
+        const params = coldStartBaseParams();
+        params.claim_amount = "-1";
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects non-numeric claim_amount", async () => {
+        const params = coldStartBaseParams();
+        params.claim_amount = "notanumber";
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects missing claim_secret_hash", async () => {
+        const params = coldStartBaseParams();
+        delete params.claim_secret_hash;
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects invalid hex claim_secret_hash", async () => {
+        const params = coldStartBaseParams();
+        params.claim_secret_hash = "not_valid_hex";
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects claim_amount smaller than fee", async () => {
+        // Use a very small claim_amount that will be less than the computed aa_payment_amount.
+        const params = coldStartBaseParams();
+        params.fj_amount = ctx.quoteFjAmount.toString();
+        params.claim_amount = "1";
+        const authHeaders = buildAuthHeaders(ctx.config);
+        const response = await fetch(coldStartQuoteUrl(params), {
+          headers: authHeaders,
+        });
+        expect(response.status).toBe(400);
+        const body = await response.text();
+        expect(body).toContain("claim_amount must be >= aa_payment_amount");
+      });
+
+      it("rejects missing user param", async () => {
+        const params = coldStartBaseParams();
+        delete params.user;
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects missing fj_amount param", async () => {
+        const params = coldStartBaseParams();
+        delete params.fj_amount;
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+
+      it("rejects fj_amount=0", async () => {
+        const params = coldStartBaseParams();
+        params.fj_amount = "0";
+        const response = await fetch(coldStartQuoteUrl(params));
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(response.status).toBeLessThan(500);
+      });
+    });
+  });
+
+  describe.skipIf(!hasQuoteAuth(getConfig()))("cold-start quote auth", () => {
+    function coldStartQuoteUrlWithDefaults(): string {
+      return coldStartQuoteUrl({
+        user: SENTINEL_USER,
+        fj_amount: SENTINEL_FJ_AMOUNT,
+        accepted_asset: ctx.tokenAddress.toString(),
+        claim_amount: SENTINEL_CLAIM_AMOUNT,
+        claim_secret_hash: SENTINEL_CLAIM_SECRET_HASH,
+      });
+    }
+
+    function coldStartQuoteUrl(params: Record<string, string>): string {
+      const qs = new URLSearchParams(params).toString();
+      return `${ctx.config.attestationBaseUrl}/cold-start-quote?${qs}`;
+    }
+
+    it("rejects request without auth header with 401", async () => {
+      const response = await fetch(coldStartQuoteUrlWithDefaults());
+      expect(response.status).toBe(401);
+    });
+
+    it("rejects request with wrong auth key with 401", async () => {
+      const wrongHeaders: Record<string, string> = {};
+      if (ctx.config.quoteAuthApiKey) {
+        wrongHeaders[ctx.config.quoteAuthHeader ?? "x-api-key"] = "WRONG_KEY_FOR_TEST";
+      } else if (ctx.config.quoteAuthHeader) {
+        wrongHeaders[ctx.config.quoteAuthHeader] = "WRONG_VALUE_FOR_TEST";
+      }
+      const response = await fetch(coldStartQuoteUrlWithDefaults(), { headers: wrongHeaders });
+      expect(response.status).toBe(401);
+    });
+
+    it("accepts request with correct auth key", async () => {
+      const response = await fetch(coldStartQuoteUrlWithDefaults(), {
         headers: buildAuthHeaders(ctx.config),
       });
       expect(response.status).toBeGreaterThanOrEqual(200);
