@@ -12,6 +12,7 @@ import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
 import { deployContract, loadArtifact, REQUIRED_ARTIFACTS } from "./deploy-utils.js";
 import { type DeployManifest, writeDeployManifest } from "./manifest.js";
+import { verifyDeployment } from "./verify.js";
 
 const pinoLogger = pino();
 
@@ -26,6 +27,7 @@ type CliArgs = {
   out: string;
   proverEnabled: boolean;
   preflightOnly: boolean;
+  skipVerify: boolean;
 };
 
 type CliParseResult =
@@ -77,6 +79,7 @@ function usage(): string {
     "  --sponsored-fpc-address <addr>   Use sponsored FPC payment mode [env: FPC_SPONSORED_FPC_ADDRESS]",
     "  --pxe-prover-enabled <bool>      Enable PXE prover (default: true) [env: PXE_PROVER_ENABLED]",
     "  --preflight-only                 Run checks only, do not deploy [env: FPC_PREFLIGHT_ONLY=1]",
+    "  --skip-verify                    Skip post-deploy verification [env: FPC_SKIP_VERIFY=1]",
     "",
     "Outputs:",
     `  --data-dir <dir>                 Data directory for artifacts (default: ${DEVNET_DEFAULT_DATA_DIR}) [env: FPC_DATA_DIR]`,
@@ -177,6 +180,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
     ? parseBooleanFlag(process.env.PXE_PROVER_ENABLED, "PXE_PROVER_ENABLED")
     : true;
   let preflightOnly = process.env.FPC_PREFLIGHT_ONLY === "1";
+  let skipVerify = process.env.FPC_SKIP_VERIFY === "1";
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -224,6 +228,9 @@ function parseCliArgs(argv: string[]): CliParseResult {
         break;
       case "--preflight-only":
         preflightOnly = true;
+        break;
+      case "--skip-verify":
+        skipVerify = true;
         break;
       case "--help":
       case "-h":
@@ -292,6 +299,7 @@ function parseCliArgs(argv: string[]): CliParseResult {
       out,
       proverEnabled,
       preflightOnly,
+      skipVerify,
     },
   };
 }
@@ -484,6 +492,14 @@ async function main(): Promise<void> {
   pinoLogger.info(
     `[deploy-fpc-devnet] output contracts: fpc=${manifest.contracts.fpc} variant=${fpcArtifact.name}`,
   );
+
+  if (args.skipVerify) {
+    pinoLogger.info("[deploy-fpc-devnet] skipping post-deploy verification (--skip-verify)");
+  } else {
+    pinoLogger.info("[deploy-fpc-devnet] running post-deploy verification...");
+    await verifyDeployment({ manifest, node });
+    pinoLogger.info("[deploy-fpc-devnet] post-deploy verification passed");
+  }
 
   process.exit(0);
 }

@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Fr } from "@aztec/aztec.js/fields";
+import type { Fr } from "@aztec/aztec.js/fields";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import rateLimit from "fastify-rate-limit";
 import { type AssetPolicyStore, LmdbAssetPolicyStore } from "./asset-policy-store.js";
@@ -12,6 +12,13 @@ import {
 } from "./config.js";
 import { AttestationMetrics, type QuoteOutcome } from "./metrics.js";
 import type { OperatorTreasuryPort } from "./operator-treasury.js";
+import {
+  AdminAssetAddressSchema,
+  AdminAssetPolicyBodySchema,
+  AdminSweepRequestBodySchema,
+  ColdStartQuoteRequestQuerySchema,
+  QuoteRequestQuerySchema,
+} from "./request-schemas.js";
 import type { ColdStartQuoteParams, QuoteSchnorrSigner } from "./signer.js";
 import { signColdStartQuote, signQuote, signRateQuote } from "./signer.js";
 
@@ -45,25 +52,6 @@ const U128_MAX = (1n << 128n) - 1n;
 
 function isU128(value: bigint): boolean {
   return value >= 0n && value <= U128_MAX;
-}
-
-function parsePositiveU128Decimal(value: string | undefined): bigint | undefined {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  if (!/^[0-9]+$/.test(trimmed)) {
-    return undefined;
-  }
-  // Keep parsing bounded and aligned with the on-chain u128 type.
-  if (trimmed.length > 39) {
-    return undefined;
-  }
-  const parsed = BigInt(trimmed);
-  if (parsed <= 0n || !isU128(parsed)) {
-    return undefined;
-  }
-  return parsed;
 }
 
 function ceilDiv(numerator: bigint, denominator: bigint): bigint {
@@ -251,68 +239,28 @@ function createQuoteObserver(metrics: AttestationMetrics): (outcome: QuoteOutcom
   };
 }
 
-function parseRequiredNonZeroAztecAddress(
-  value: string | undefined,
-  missingMessage: string,
-  invalidMessage: string,
-): { ok: true; value: AztecAddress } | { ok: false; message: string } {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return { ok: false, message: missingMessage };
-  }
-
-  let parsedAddress: AztecAddress;
-  try {
-    parsedAddress = AztecAddress.fromString(trimmed);
-  } catch {
-    return { ok: false, message: invalidMessage };
-  }
-
-  if (parsedAddress.isZero()) {
-    return { ok: false, message: invalidMessage };
-  }
-  return { ok: true, value: parsedAddress };
-}
-
 function parseQuoteRequest(
   assetPolicyStore: AssetPolicyStore,
   query: QuoteRequestQuery,
 ): QuoteRequestParseResult {
-  const parsedUserAddress = parseRequiredNonZeroAztecAddress(
-    query.user,
-    "Missing required query param: user",
-    "Invalid user address",
-  );
-  if (!parsedUserAddress.ok) {
-    return parsedUserAddress;
+  const result = QuoteRequestQuerySchema.safeParse(query);
+  if (!result.success) {
+    return { ok: false, message: result.error.issues[0].message };
   }
 
-  const parsedAcceptedAsset = parseRequiredNonZeroAztecAddress(
-    query.accepted_asset,
-    "Missing required query param: accepted_asset",
-    "Invalid accepted_asset address",
-  );
-  if (!parsedAcceptedAsset.ok) {
-    return parsedAcceptedAsset;
-  }
-
-  const selectedAssetPolicy = assetPolicyStore.get(parsedAcceptedAsset.value.toString());
+  const { user, accepted_asset, fj_amount } = result.data;
+  const selectedAssetPolicy = assetPolicyStore.get(accepted_asset.toString());
   if (!selectedAssetPolicy) {
     return { ok: false, message: "Unsupported accepted_asset" };
-  }
-
-  const fjFeeAmount = parsePositiveU128Decimal(query.fj_amount);
-  if (!fjFeeAmount) {
-    return { ok: false, message: "Missing or invalid query param: fj_amount" };
   }
 
   return {
     ok: true,
     value: {
-      userAddress: parsedUserAddress.value,
-      acceptedAsset: parsedAcceptedAsset.value,
+      userAddress: user,
+      acceptedAsset: accepted_asset,
       selectedAssetPolicy,
-      fjFeeAmount,
+      fjFeeAmount: fj_amount,
     },
   };
 }
@@ -326,46 +274,30 @@ type ColdStartQuoteRequestParseResult =
   | { ok: true; value: ParsedColdStartQuoteRequest }
   | { ok: false; message: string };
 
-function parseRequiredHexField(
-  value: string | undefined,
-  label: string,
-): { ok: true; value: Fr } | { ok: false; message: string } {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return { ok: false, message: `Missing required query param: ${label}` };
-  }
-  try {
-    return { ok: true, value: Fr.fromHexString(trimmed) };
-  } catch {
-    return { ok: false, message: `Invalid ${label}: not a valid field element` };
-  }
-}
-
 function parseColdStartQuoteRequest(
   assetPolicyStore: AssetPolicyStore,
   query: ColdStartQuoteRequestQuery,
 ): ColdStartQuoteRequestParseResult {
-  const baseResult = parseQuoteRequest(assetPolicyStore, query);
-  if (!baseResult.ok) {
-    return baseResult;
+  const result = ColdStartQuoteRequestQuerySchema.safeParse(query);
+  if (!result.success) {
+    return { ok: false, message: result.error.issues[0].message };
   }
 
-  const claimAmount = parsePositiveU128Decimal(query.claim_amount);
-  if (!claimAmount) {
-    return { ok: false, message: "Missing or invalid query param: claim_amount" };
-  }
-
-  const parsedClaimSecretHash = parseRequiredHexField(query.claim_secret_hash, "claim_secret_hash");
-  if (!parsedClaimSecretHash.ok) {
-    return parsedClaimSecretHash;
+  const { user, accepted_asset, fj_amount, claim_amount, claim_secret_hash } = result.data;
+  const selectedAssetPolicy = assetPolicyStore.get(accepted_asset.toString());
+  if (!selectedAssetPolicy) {
+    return { ok: false, message: "Unsupported accepted_asset" };
   }
 
   return {
     ok: true,
     value: {
-      ...baseResult.value,
-      claimAmount,
-      claimSecretHash: parsedClaimSecretHash.value,
+      userAddress: user,
+      acceptedAsset: accepted_asset,
+      selectedAssetPolicy,
+      fjFeeAmount: fj_amount,
+      claimAmount: claim_amount,
+      claimSecretHash: claim_secret_hash,
     },
   };
 }
@@ -500,43 +432,26 @@ function parseAdminAssetPolicy(
   assetAddress: string,
   body: AdminAssetPolicyBody | undefined,
 ): SupportedAssetPolicy {
-  const parsedAddress = parseRequiredNonZeroAztecAddress(
-    assetAddress,
-    "Missing asset address",
-    "Invalid asset address",
-  );
-  if (!parsedAddress.ok) {
-    throw new Error(parsedAddress.message);
+  const addressResult = AdminAssetAddressSchema.safeParse(assetAddress);
+  if (!addressResult.success) {
+    throw new Error(addressResult.error.issues[0].message);
   }
+
   if (!body || typeof body !== "object") {
     throw new Error("Missing request body");
   }
 
-  const { fee_bips, market_rate_den, market_rate_num } = body;
-  const name = body.name?.trim();
-  if (!name) {
-    throw new Error("Missing required field: name");
+  const bodyResult = AdminAssetPolicyBodySchema.safeParse(body);
+  if (!bodyResult.success) {
+    throw new Error(bodyResult.error.issues[0].message);
   }
-  if (!Number.isInteger(market_rate_num) || (market_rate_num ?? 0) <= 0) {
-    throw new Error("market_rate_num must be a positive integer");
-  }
-  if (!Number.isInteger(market_rate_den) || (market_rate_den ?? 0) <= 0) {
-    throw new Error("market_rate_den must be a positive integer");
-  }
-  if (!Number.isInteger(fee_bips) || (fee_bips ?? -1) < 0 || (fee_bips ?? 10001) > 10000) {
-    throw new Error("fee_bips must be an integer in range [0, 10000]");
-  }
-
-  const marketRateNum = market_rate_num as number;
-  const marketRateDen = market_rate_den as number;
-  const feeBips = fee_bips as number;
 
   return {
-    address: parsedAddress.value.toString(),
-    name,
-    market_rate_num: marketRateNum,
-    market_rate_den: marketRateDen,
-    fee_bips: feeBips,
+    address: addressResult.data.toString(),
+    name: bodyResult.data.name,
+    market_rate_num: bodyResult.data.market_rate_num,
+    market_rate_den: bodyResult.data.market_rate_den,
+    fee_bips: bodyResult.data.fee_bips,
   };
 }
 
@@ -598,29 +513,22 @@ function parseAdminSweepRequest(
   assetPolicyStore: AssetPolicyStore,
   body: AdminSweepRequestBody | undefined,
 ): ParsedAdminSweepRequest {
-  const acceptedAsset = body?.accepted_asset?.trim();
-  if (!acceptedAsset) {
-    throw new Error("Missing required field: accepted_asset");
+  const result = AdminSweepRequestBodySchema.safeParse(body ?? {});
+  if (!result.success) {
+    throw new Error(result.error.issues[0].message);
   }
-  if (!assetPolicyStore.get(acceptedAsset)) {
+
+  const { accepted_asset, destination: bodyDestination, amount } = result.data;
+  if (!assetPolicyStore.get(accepted_asset)) {
     throw new Error("Unsupported accepted_asset");
   }
 
-  const destination = body?.destination?.trim() || config.treasury_destination_address || undefined;
+  const destination = bodyDestination || config.treasury_destination_address || undefined;
   if (!destination) {
     throw new Error("Missing required field: destination");
   }
 
-  const amount = parsePositiveU128Decimal(body?.amount);
-  if (body?.amount !== undefined && !amount) {
-    throw new Error("Missing or invalid field: amount");
-  }
-
-  return {
-    acceptedAsset,
-    amount,
-    destination,
-  };
+  return { acceptedAsset: accepted_asset, amount, destination };
 }
 
 function isBadSweepRequestError(message: string): boolean {

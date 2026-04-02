@@ -24,10 +24,13 @@ const defaultArtifactCache: Partial<Record<DefaultArtifactLabel, ContractArtifac
 
 function resolveArtifactSearchDirs(): string[] {
   const dirs = [
-    path.resolve(currentDir, "..", "..", "artifacts"),
+    // Bundled artifacts in published package (dist/ sibling)
     path.resolve(currentDir, "..", "artifacts"),
+    // Development: running from sdk/src/internal/
+    path.resolve(currentDir, "..", "..", "artifacts"),
+    // Development: compiled artifacts in monorepo root
     path.resolve(currentDir, "..", "..", "..", "target"),
-    path.resolve(currentDir, "..", "..", "..", "..", "target"),
+    // Fallback: cwd-relative target/
     path.resolve(process.cwd(), "target"),
   ];
 
