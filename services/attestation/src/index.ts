@@ -20,9 +20,12 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
+import {
+  FpcImmutableVerificationError,
+  verifyFpcImmutablesOnStartup,
+} from "@nethermindeth/aztec-fpc-contract-deployment/src/fpc-immutables.ts";
 import { LmdbAssetPolicyStore } from "./asset-policy-store.js";
 import { loadConfig } from "./config.js";
-import { FpcImmutableVerificationError, verifyFpcImmutablesOnStartup } from "./fpc-immutables.js";
 import { OperatorTreasury } from "./operator-treasury.js";
 import { buildServer } from "./server.js";
 import type { QuoteSchnorrSigner } from "./signer.js";

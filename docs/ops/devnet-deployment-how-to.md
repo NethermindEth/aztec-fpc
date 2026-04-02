@@ -7,7 +7,7 @@ Scripts used:
 
 - `scripts/contract/deploy-fpc.sh` — recommended wrapper
 - `contract-deployment/src/index.ts` — advanced/manual TypeScript entrypoint
-- `scripts/contract/verify-fpc-devnet-deployment.ts` — post-deploy verification
+- `contract-deployment/src/verify.ts` — post-deploy verification (programmatic API)
 - `scripts/contract/devnet-postdeploy-smoke.ts` — post-deploy runtime smoke
 
 ## 1. One Command Deploy
@@ -135,29 +135,14 @@ The output is schema-validated via `writeDevnetDeployManifest(...)`.
 
 ## 9. Post-Deploy Verification
 
-Run verifier against the deployment manifest:
-
-```bash
-bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts \
-  --manifest ./deployments/devnet-manifest-v2.json
-```
+Post-deploy verification is available programmatically via `verifyDeployment()` from `contract-deployment/src/verify.ts`. It can be called after deployment with a manifest and node client.
 
 Checks performed:
 
-- contract existence on node for `accepted_asset`, `fpc`
-- FPC immutable verification against manifest operator/pubkeys/accepted asset
+- contract existence on node for `fpc`
+- FPC immutable verification against manifest operator/pubkeys
 - contract instance readiness (published instance + non-zero initialization hash)
 - contract class readiness (class publicly registered)
-
-Tuning flags:
-
-```bash
-bunx tsx scripts/contract/verify-fpc-devnet-deployment.ts \
-  --manifest ./deployments/devnet-manifest-v2.json \
-  --max-attempts 20 \
-  --poll-ms 3000 \
-  --node-ready-timeout-ms 45000
-```
 
 ## 10. Render Service Configs From Manifest
 

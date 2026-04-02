@@ -45,7 +45,7 @@
     "biome:ci": "biome ci src test package.json tsconfig.json",
     "lint": "biome lint src test package.json tsconfig.json",
     "copy-artifacts": "mkdir -p artifacts && cp ../target/fpc-FPCMultiAsset.json ../target/token_contract-Token.json ../target/token_bridge_contract-TokenBridge.json artifacts/",
-    "build": "bun run copy-artifacts && tsup src/index.ts --format esm,cjs --dts --clean --shims",
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --shims",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "ci": "bun run format && bun run biome:ci && bun run lint && bun run typecheck && bun run test",
