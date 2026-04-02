@@ -15,10 +15,10 @@ import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { EthAddress } from "@aztec/foundation/eth-address";
 import { createLogger } from "@aztec/foundation/log";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import { type Chain, extractChain } from "viem";
 import * as viemChains from "viem/chains";
+import { FpcWallet } from "../scripts/common/fpc-wallet.ts";
 
 // =============================================================================
 // Constants — edit these to match your deployment
@@ -88,7 +88,7 @@ async function main() {
   console.log("Connecting to Aztec node...");
   const node = createAztecNodeClient(NODE_URL);
   await waitForNode(node);
-  const wallet = await EmbeddedWallet.create(node, {
+  const wallet = await FpcWallet.create(node, {
     ephemeral: true,
     pxeConfig: { proverEnabled: true },
   });
