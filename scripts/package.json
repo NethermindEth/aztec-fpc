@@ -25,6 +25,7 @@
     "@aztec/noir-contracts.js": "4.2.0-aztecnr-rc.2",
     "@aztec/pxe": "4.2.0-aztecnr-rc.2",
     "@aztec/stdlib": "4.2.0-aztecnr-rc.2",
+    "@aztec/wallet-sdk": "4.2.0-aztecnr-rc.2",
     "@aztec/wallets": "4.2.0-aztecnr-rc.2",
     "viem": "npm:@aztec/viem@2.38.2",
     "pino": "^10.3.1",

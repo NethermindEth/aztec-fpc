@@ -4,12 +4,13 @@ import type { L2AmountClaim } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import type { AztecNode } from "@aztec/aztec.js/node";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import pino from "pino";
 import type { Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, it } from "#test";
+import { FpcWallet } from "../common/fpc-wallet.ts";
 
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
 import {
@@ -216,7 +217,7 @@ describe("fpc concurrent e2e", () => {
     users = await Promise.all(
       secrets.map(async (secret, i) => {
         // No syncChainTip: "checkpointed" — see comment in setup-helpers.ts connectAndCreateWallet
-        const wallet = await EmbeddedWallet.create(node, {
+        const wallet = await FpcWallet.create(node, {
           ephemeral: true,
           pxeConfig: { proverEnabled: config.proverEnabled },
         });

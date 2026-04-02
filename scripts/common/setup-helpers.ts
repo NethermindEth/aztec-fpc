@@ -26,7 +26,7 @@ import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/Sponsored
 import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import {
   type DeployManifest,
   readDeployManifest,
@@ -38,6 +38,7 @@ import {
 import pino from "pino";
 import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
 import * as viemChains from "viem/chains";
+import { FpcWallet } from "./fpc-wallet.ts";
 
 const pinoLogger = pino();
 
@@ -86,7 +87,7 @@ export function readManifest(manifestPath: string): DeployManifest {
 export async function connectAndCreateWallet(nodeUrl: string, proverEnabled: boolean) {
   const node = createAztecNodeClient(nodeUrl);
   await waitForNode(node);
-  const wallet = await EmbeddedWallet.create(node, {
+  const wallet = await FpcWallet.create(node, {
     ephemeral: true,
     pxeConfig: { proverEnabled },
   });

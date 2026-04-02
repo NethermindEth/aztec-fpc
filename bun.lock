@@ -60,6 +60,7 @@
         "@aztec/noir-contracts.js": "4.2.0-aztecnr-rc.2",
         "@aztec/pxe": "4.2.0-aztecnr-rc.2",
         "@aztec/stdlib": "4.2.0-aztecnr-rc.2",
+        "@aztec/wallet-sdk": "4.2.0-aztecnr-rc.2",
         "@aztec/wallets": "4.2.0-aztecnr-rc.2",
         "@nethermindeth/aztec-fpc-contract-deployment": "workspace:*",
         "@nethermindeth/aztec-fpc-sdk": "workspace:*",

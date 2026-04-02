@@ -16,12 +16,12 @@ import {
   loadContractArtifact,
   loadContractArtifactForPublic,
 } from "@aztec/stdlib/abi";
-import { GasSettings } from "@aztec/stdlib/gas";
+import { Gas, GasSettings } from "@aztec/stdlib/gas";
 import { computeSecretHash } from "@aztec/stdlib/hash";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import {
   type DeployManifest,
   readDeployManifest,
@@ -30,6 +30,7 @@ import { readTestTokenManifest } from "@nethermindeth/aztec-fpc-contract-deploym
 import pino from "pino";
 import { type Chain, createPublicClient, decodeEventLog, extractChain, http, parseAbi } from "viem";
 import * as viemChains from "viem/chains";
+import { FpcWallet } from "../common/fpc-wallet.ts";
 
 const pinoLogger = pino();
 
@@ -604,7 +605,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
       ),
     ),
   ]);
-  const wallet = await EmbeddedWallet.create(node);
+  const wallet = await FpcWallet.create(node);
   const operatorAccount = await wallet.createSchnorrAccount(
     operatorSecret,
     Fr.ZERO,
@@ -761,15 +762,15 @@ async function runSmoke(args: CliArgs): Promise<void> {
     getFeePayer: async () => fpc.address,
     getGasSettings: () => undefined,
   };
-  const fpcReceipt = await token.methods
+  const { receipt: fpcReceipt } = await token.methods
     .transfer_public_to_public(operatorAddress, operatorAddress, 1n, Fr.random())
     .send({
       from: operatorAddress,
       fee: {
         paymentMethod: fpcPaymentMethod,
         gasSettings: GasSettings.from({
-          gasLimits: { daGas: args.daGasLimit, l2Gas: args.l2GasLimit },
-          teardownGasLimits: { daGas: 0, l2Gas: 0 },
+          gasLimits: new Gas(args.daGasLimit, args.l2GasLimit),
+          teardownGasLimits: Gas.empty(),
           maxFeesPerGas: { feePerDaGas, feePerL2Gas },
           maxPriorityFeesPerGas: { feePerDaGas: 0n, feePerL2Gas: 0n },
         }),
@@ -777,7 +778,7 @@ async function runSmoke(args: CliArgs): Promise<void> {
       wait: { timeout: 180 },
     });
   pinoLogger.info(
-    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.receipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
+    `[devnet-postdeploy-smoke] fpc_fee_path_tx_fee_juice=${fpcReceipt.transactionFee} expected_charge=${fpcExpectedCharge}`,
   );
   pinoLogger.info(`[devnet-postdeploy-smoke] PASS variant=${"FPCMultiAsset"} successful_txs=1`);
 }
