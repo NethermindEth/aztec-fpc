@@ -7,11 +7,8 @@
  * same-token-transfer setup modules.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-import type { ContractArtifact } from "@aztec/aztec.js/abi";
+import { existsSync } from "node:fs";
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract } from "@aztec/aztec.js/contracts";
 import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
 import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -23,9 +20,7 @@ import type { EthAddress } from "@aztec/foundation/eth-address";
 import { createLogger } from "@aztec/foundation/log";
 import { TestERC20Abi } from "@aztec/l1-artifacts";
 import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
-import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
-import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import {
   type DeployManifest,
@@ -38,38 +33,27 @@ import {
 import pino from "pino";
 import { type Chain, extractChain, type GetContractReturnType, getContract, type Hex } from "viem";
 import * as viemChains from "viem/chains";
+import { CounterContract } from "../../codegen/Counter.ts";
+import { FaucetContract } from "../../codegen/Faucet.ts";
+import { FPCMultiAssetContract } from "../../codegen/FPCMultiAsset.ts";
+import { TokenContract } from "../../codegen/Token.ts";
+import { TokenBridgeContract } from "../../codegen/TokenBridge.ts";
 import { FpcWallet } from "./fpc-wallet.ts";
 
 const pinoLogger = pino();
 
-export async function registerAndGet(
+async function registerContract(
   node: AztecNode,
   wallet: EmbeddedWallet,
   address: AztecAddress,
-  artifactPath: string,
+  artifact: import("@aztec/aztec.js/abi").ContractArtifact,
   secretKey?: Fr,
-) {
+): Promise<void> {
   const instance = await node.getContract(address);
   if (!instance) {
     throw new Error(`Contract not found on node: ${address.toString()}`);
   }
-  const raw = readFileSync(artifactPath, "utf8");
-  const parsed = JSON.parse(raw) as NoirCompiledContract;
-  let artifact: ContractArtifact;
-  try {
-    artifact = loadContractArtifact(parsed);
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      err.message.includes("Contract's public bytecode has not been transpiled")
-    ) {
-      artifact = loadContractArtifactForPublic(parsed);
-    } else {
-      throw err;
-    }
-  }
   await wallet.registerContract(instance, artifact, secretKey);
-  return Contract.at(address, artifact, wallet);
 }
 
 export function readManifest(manifestPath: string): DeployManifest {
@@ -95,55 +79,39 @@ export async function connectAndCreateWallet(nodeUrl: string, proverEnabled: boo
 }
 
 export type CoreContracts = {
-  token: Contract;
-  fpc: Contract;
-  counter: Contract;
-  faucet: Contract;
-  bridge: Contract;
+  token: TokenContract;
+  fpc: FPCMultiAssetContract;
+  counter: CounterContract;
+  faucet: FaucetContract;
+  bridge: TokenBridgeContract;
 };
 
 export async function registerCoreContracts(
-  repoRoot: string,
   manifest: DeployManifest,
   testTokenManifest: TestTokenManifest,
   node: AztecNode,
   wallet: EmbeddedWallet,
 ): Promise<CoreContracts> {
-  const target = path.join(repoRoot, "target");
+  await Promise.all([
+    registerContract(node, wallet, testTokenManifest.contracts.token, TokenContract.artifact),
+    registerContract(node, wallet, manifest.contracts.fpc, FPCMultiAssetContract.artifact, Fr.ZERO),
+    registerContract(node, wallet, testTokenManifest.contracts.counter, CounterContract.artifact),
+    registerContract(node, wallet, testTokenManifest.contracts.faucet, FaucetContract.artifact),
+    registerContract(
+      node,
+      wallet,
+      testTokenManifest.contracts.bridge,
+      TokenBridgeContract.artifact,
+    ),
+  ]);
 
-  const token = await registerAndGet(
-    node,
-    wallet,
-    testTokenManifest.contracts.token,
-    path.join(target, "token_contract-Token.json"),
-  );
-  const fpc = await registerAndGet(
-    node,
-    wallet,
-    manifest.contracts.fpc,
-    path.join(target, "fpc-FPCMultiAsset.json"),
-    Fr.ZERO,
-  );
-  const counter = await registerAndGet(
-    node,
-    wallet,
-    testTokenManifest.contracts.counter,
-    path.join(target, "mock_counter-Counter.json"),
-  );
-  const faucet = await registerAndGet(
-    node,
-    wallet,
-    testTokenManifest.contracts.faucet,
-    path.join(target, "faucet-Faucet.json"),
-  );
-  const bridge = await registerAndGet(
-    node,
-    wallet,
-    testTokenManifest.contracts.bridge,
-    path.join(target, "token_bridge_contract-TokenBridge.json"),
-  );
-
-  return { token, fpc, counter, faucet, bridge };
+  return {
+    token: TokenContract.at(testTokenManifest.contracts.token, wallet),
+    fpc: FPCMultiAssetContract.at(manifest.contracts.fpc, wallet),
+    counter: CounterContract.at(testTokenManifest.contracts.counter, wallet),
+    faucet: FaucetContract.at(testTokenManifest.contracts.faucet, wallet),
+    bridge: TokenBridgeContract.at(testTokenManifest.contracts.bridge, wallet),
+  };
 }
 
 export async function registerSponsoredFpc(wallet: EmbeddedWallet) {
@@ -280,11 +248,7 @@ export type SetupResult = {
   sponsoredFpcAddress: AztecAddress;
 };
 
-export async function setup(
-  args: SetupArgs,
-  repoRoot: string,
-  label: string,
-): Promise<SetupResult> {
+export async function setup(args: SetupArgs, label: string): Promise<SetupResult> {
   pinoLogger.info(`[${label}] starting`);
   pinoLogger.info(`[${label}] node_url=${args.nodeUrl}`);
   pinoLogger.info(`[${label}] manifest=${args.manifestPath}`);
@@ -302,13 +266,7 @@ export async function setup(
   const operator = manifest.operator.address;
   pinoLogger.info(`[${label}] operator=${operator.toString()}`);
 
-  const contracts = await registerCoreContracts(
-    repoRoot,
-    manifest,
-    testTokenManifest,
-    node,
-    wallet,
-  );
+  const contracts = await registerCoreContracts(manifest, testTokenManifest, node, wallet);
 
   const sponsoredFpcAddress = await registerSponsoredFpc(wallet);
 

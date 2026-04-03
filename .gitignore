@@ -149,6 +149,8 @@ configs/
 .attestation-asset-policies/
 .topup-bridge-state.json
 artifacts/
+!codegen/artifacts/
+codegenCache.json
 
 # Generated deploy artifacts
 deployments/manifest.json

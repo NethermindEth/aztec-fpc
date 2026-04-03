@@ -7,6 +7,7 @@ on:
     tags:
       - "**"
     paths:
+      - "codegen/**"
       - "sdk/**"
       - "services/**"
       - "scripts/**"
@@ -38,6 +39,7 @@ jobs:
         with:
           filters: |
             relevant:
+              - "codegen/**"
               - "sdk/**"
               - "services/**"
               - "scripts/**"

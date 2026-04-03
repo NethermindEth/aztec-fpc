@@ -8,54 +8,22 @@
  * already published before each attempt.
  */
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ContractArtifact } from "@aztec/aztec.js/abi";
 import {
   BatchCall,
-  type Contract,
+  type ContractBase,
   type ContractFunctionInteraction,
   type DeployMethod,
   type DeployOptions,
   getContractClassFromArtifact,
 } from "@aztec/aztec.js/contracts";
 import type { Wallet } from "@aztec/aztec.js/wallet";
-import { loadContractArtifact, loadContractArtifactForPublic } from "@aztec/stdlib/abi";
-import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import pino from "pino";
 
 const pinoLogger = pino();
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 3000;
-
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(SCRIPT_DIR, "../..");
-
-export const REQUIRED_ARTIFACTS = {
-  fpc: path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json"),
-  token: path.join(REPO_ROOT, "target", "token_contract-Token.json"),
-  tokenBridge: path.join(REPO_ROOT, "target", "token_bridge_contract-TokenBridge.json"),
-  faucet: path.join(REPO_ROOT, "target", "faucet-Faucet.json"),
-  counter: path.join(REPO_ROOT, "target", "mock_counter-Counter.json"),
-} as const;
-
-export function loadArtifact(artifactPath: string): ContractArtifact {
-  const raw = readFileSync(artifactPath, "utf8");
-  const parsed = JSON.parse(raw) as NoirCompiledContract;
-  try {
-    return loadContractArtifact(parsed);
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      err.message.includes("Contract's public bytecode has not been transpiled")
-    ) {
-      return loadContractArtifactForPublic(parsed);
-    }
-    throw err;
-  }
-}
 
 /**
  * Deploy a contract with automatic retry on class publication races.
@@ -66,10 +34,10 @@ export function loadArtifact(artifactPath: string): ContractArtifact {
  * @param sendOptions  - Options forwarded to `.send()` (`from`, `fee`, etc.)
  * @param extraCalls   - Optional extra calls to batch with the deploy via BatchCall
  */
-export async function deployContract(
+export async function deployContract<T extends ContractBase>(
   wallet: Wallet,
   artifact: ContractArtifact,
-  deployMethod: DeployMethod<Contract>,
+  deployMethod: DeployMethod<T>,
   sendOptions: DeployOptions,
   extraCalls?: ContractFunctionInteraction[],
 ): Promise<string> {

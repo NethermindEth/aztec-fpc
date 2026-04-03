@@ -1,14 +1,23 @@
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import type { Contract } from "@aztec/aztec.js/contracts";
+import type { ContractFunctionInteraction } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
 
 const pinoLogger = pino();
 
+/** Minimal interface satisfied by both untyped Contract and codegen typed classes. */
+type TokenLike = {
+  readonly address: AztecAddress;
+  methods: {
+    balance_of_private: (owner: AztecAddress) => ContractFunctionInteraction;
+    balance_of_public: (owner: AztecAddress) => ContractFunctionInteraction;
+  };
+};
+
 abstract class BalanceTracker {
   constructor(
-    protected readonly token: Contract,
+    protected readonly token: TokenLike,
     readonly address: AztecAddress,
     protected readonly label: string,
     protected expected = 0n,
@@ -41,7 +50,7 @@ export class PrivateBalanceTracker extends BalanceTracker {
   protected balanceKind = "private_balance";
 
   private constructor(
-    token: Contract,
+    token: TokenLike,
     address: AztecAddress,
     label: string,
     expected = 0n,
@@ -51,7 +60,7 @@ export class PrivateBalanceTracker extends BalanceTracker {
   }
 
   static async create(
-    token: Contract,
+    token: TokenLike,
     wallet: EmbeddedWallet,
     secretKey: Fr,
     label: string,

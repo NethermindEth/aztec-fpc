@@ -1,12 +1,13 @@
-import path from "node:path";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { BatchCall, type Contract } from "@aztec/aztec.js/contracts";
+import { BatchCall } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import { beforeAll, describe, it } from "#test";
+import type { FaucetContract } from "../../codegen/Faucet.ts";
+import type { TokenContract } from "../../codegen/Token.ts";
 import { PrivateBalanceTracker, PublicBalanceTracker } from "../common/balance-tracker.ts";
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
 import { setup } from "../common/setup-helpers.ts";
@@ -32,8 +33,8 @@ type SetupResult = {
   operator: AztecAddress;
   fpcClient: FpcClient;
   tokenAddress: AztecAddress;
-  token: Contract;
-  faucet: Contract;
+  token: TokenContract;
+  faucet: FaucetContract;
   sponsoredFeePayment: SponsoredFeePaymentMethod;
   userData: AccountData;
   user: AztecAddress;
@@ -96,8 +97,6 @@ function getConfig(): SameTokenTransferConfig {
 // ---------------------------------------------------------------------------
 
 async function setupFromConfig(config: SameTokenTransferConfig): Promise<SetupResult> {
-  const repoRoot = path.resolve(import.meta.dirname, "../..");
-
   const { node, wallet, operator, contracts, sponsoredFpcAddress } = await setup(
     {
       nodeUrl: config.nodeUrl,
@@ -106,7 +105,6 @@ async function setupFromConfig(config: SameTokenTransferConfig): Promise<SetupRe
       proverEnabled: config.pxeProverEnabled,
       messageTimeoutSeconds: config.messageTimeoutSeconds,
     },
-    repoRoot,
     "same-token-transfer",
   );
 

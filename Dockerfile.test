@@ -5,6 +5,9 @@ COPY tsconfig.base.json vitest.config.ts ./
 COPY services/attestation/tsconfig.json services/attestation/
 COPY services/topup/tsconfig.json services/topup/
 
+# ── Codegen typed contract wrappers ──
+COPY codegen/ codegen/
+
 # ── Service & SDK source ──
 COPY services/attestation/src/ services/attestation/src/
 COPY services/topup/src/ services/topup/src/

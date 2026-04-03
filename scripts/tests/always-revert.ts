@@ -1,6 +1,5 @@
-import path from "node:path";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { BatchCall, type Contract } from "@aztec/aztec.js/contracts";
+import { BatchCall } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
@@ -10,6 +9,9 @@ import { Gas } from "@aztec/stdlib/gas";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import { beforeAll, describe, expect, it } from "#test";
+import type { CounterContract } from "../../codegen/Counter.ts";
+import type { FaucetContract } from "../../codegen/Faucet.ts";
+import type { TokenContract } from "../../codegen/Token.ts";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
 import { type AccountData, deriveAccount } from "../common/script-credentials.ts";
 import { setup as commonSetup } from "../common/setup-helpers.ts";
@@ -32,9 +34,9 @@ type SetupResult = {
   fpcClient: FpcClient;
   fpcAddress: AztecAddress;
   tokenAddress: AztecAddress;
-  token: Contract;
-  faucet: Contract;
-  counter: Contract;
+  token: TokenContract;
+  faucet: FaucetContract;
+  counter: CounterContract;
   sponsoredFeePayment: SponsoredFeePaymentMethod;
   user: AztecAddress;
   userData: AccountData;
@@ -83,8 +85,6 @@ function getConfig(): AlwaysRevertConfig {
 }
 
 async function setupFromManifest(config: AlwaysRevertConfig): Promise<SetupResult> {
-  const repoRoot = path.resolve(import.meta.dirname, "../..");
-
   const { node, wallet, operator, contracts, sponsoredFpcAddress } = await commonSetup(
     {
       nodeUrl: config.nodeUrl,
@@ -93,7 +93,6 @@ async function setupFromManifest(config: AlwaysRevertConfig): Promise<SetupResul
       proverEnabled: config.proverEnabled,
       messageTimeoutSeconds: config.messageTimeoutSeconds,
     },
-    repoRoot,
     "always-revert",
   );
 

@@ -1,5 +1,4 @@
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract } from "@aztec/aztec.js/contracts";
 import type { FeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { AztecNode } from "@aztec/aztec.js/node";
@@ -14,7 +13,9 @@ import {
   type TxReceipt,
 } from "@aztec/stdlib/tx";
 
-import { requireDefaultArtifact } from "./internal/contracts";
+import { FPCMultiAssetContract } from "../../codegen/FPCMultiAsset.js";
+import { TokenContract } from "../../codegen/Token.js";
+import { TokenBridgeContract } from "../../codegen/TokenBridge.js";
 import type {
   ColdStartQuoteResponse,
   ColdStartResult,
@@ -64,8 +65,8 @@ export class FpcClient {
     const gasLimits = rawGasLimits.add(GAS_BUFFER);
 
     const [fpc, token] = await Promise.all([
-      attachContract(fpcAddress, "fpc", node, wallet),
-      attachContract(tokenAddress, "token", node, wallet),
+      attachTypedContract(FPCMultiAssetContract, fpcAddress, node, wallet, Fr.ZERO),
+      attachTypedContract(TokenContract, tokenAddress, node, wallet),
     ]);
 
     const gasFees = await node.getCurrentMinFees();
@@ -110,9 +111,9 @@ export class FpcClient {
     const timeoutMs = input.txWaitTimeoutMs ?? DEFAULT_TX_WAIT_TIMEOUT_MS;
 
     const [fpc, _token, _bridge] = await Promise.all([
-      attachContract(fpcAddress, "fpc", node, wallet),
-      attachContract(tokenAddress, "token", node, wallet),
-      attachContract(bridgeAddress, "bridge", node, wallet),
+      attachTypedContract(FPCMultiAssetContract, fpcAddress, node, wallet, Fr.ZERO),
+      attachTypedContract(TokenContract, tokenAddress, node, wallet),
+      attachTypedContract(TokenBridgeContract, bridgeAddress, node, wallet),
     ]);
 
     const gasFees = await node.getCurrentMinFees();
@@ -282,20 +283,22 @@ async function waitForTx(txHash: TxHash, node: AztecNode, timeoutMs: number): Pr
   return receipt;
 }
 
-async function attachContract(
+async function attachTypedContract<C>(
+  contractClass: {
+    at(address: AztecAddress, wallet: AccountWallet): C;
+    artifact: import("@aztec/aztec.js/abi").ContractArtifact;
+  },
   address: AztecAddress,
-  label: "fpc" | "token" | "bridge",
   node: AztecNode,
   wallet: AccountWallet,
-): Promise<Contract> {
-  const artifact = requireDefaultArtifact(label);
+  secretKey?: Fr,
+): Promise<C> {
   const instance = await node.getContract(address);
   if (!instance) {
-    throw new Error(`${label} contract not found on node at ${address.toString()}`);
+    throw new Error(`Contract not found on node at ${address.toString()}`);
   }
-  const secretKey = label === "fpc" ? Fr.ZERO : undefined;
-  await wallet.registerContract(instance, artifact, secretKey);
-  return Contract.at(address, artifact, wallet);
+  await wallet.registerContract(instance, contractClass.artifact, secretKey);
+  return contractClass.at(address, wallet);
 }
 
 function computeFjAmount(gasLimits: Gas, gasFees: GasFees): bigint {
@@ -312,7 +315,7 @@ function parseQuoteFields(quote: QuoteResponse) {
 }
 
 async function createTransferAuthwit(
-  token: Contract,
+  token: TokenContract,
   wallet: AccountWallet,
   user: AztecAddress,
   operator: AztecAddress,

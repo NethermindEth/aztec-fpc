@@ -1,8 +1,7 @@
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { getSchnorrAccountContractAddress } from "@aztec/accounts/schnorr";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
+import type { DeployOptions } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -10,7 +9,8 @@ import { Schnorr } from "@aztec/foundation/crypto/schnorr";
 import { deriveKeys, deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
-import { deployContract, loadArtifact, REQUIRED_ARTIFACTS } from "./deploy-utils.js";
+import { FPCMultiAssetContract } from "../../codegen/FPCMultiAsset.js";
+import { deployContract } from "./deploy-utils.js";
 import { type DeployManifest, writeDeployManifest } from "./manifest.js";
 import { verifyDeployment } from "./verify.js";
 
@@ -318,32 +318,19 @@ async function deriveOperatorIdentity(operatorSecretKey: string): Promise<Operat
   };
 }
 
-function assertRequiredArtifactsExistForDevnet(fpcArtifactPath: string): void {
-  if (!existsSync(fpcArtifactPath)) {
-    throw new CliError(
-      `Artifact preflight failed: FPC artifact not found at ${fpcArtifactPath}.\nRun 'aztec compile --workspace --force' and retry.`,
-    );
-  }
-}
-
 async function main(): Promise<void> {
   const parseResult = parseCliArgs(process.argv.slice(2));
   if (parseResult.kind === "help") {
     return;
   }
   const args = parseResult.args;
-  const fpcArtifactPath = REQUIRED_ARTIFACTS.fpc;
 
   pinoLogger.info("[deploy-fpc-devnet] starting preflight checks");
   pinoLogger.info(`[deploy-fpc-devnet] node_url=${args.nodeUrl}`);
   pinoLogger.info(
     `[deploy-fpc-devnet] sponsored_fpc_address=${args.sponsoredFpcAddress ?? "<none — fee juice payment>"}`,
   );
-  pinoLogger.info(`[deploy-fpc-devnet] fpc_artifact=${fpcArtifactPath}`);
   pinoLogger.info(`[deploy-fpc-devnet] output_manifest_path=${path.resolve(args.out)}`);
-
-  assertRequiredArtifactsExistForDevnet(fpcArtifactPath);
-  pinoLogger.info("[deploy-fpc-devnet] artifact preflight passed");
 
   const node = createAztecNodeClient(args.nodeUrl);
   await waitForNode(node);
@@ -437,17 +424,17 @@ async function main(): Promise<void> {
     deployOpts = { from: deployerAddress };
   }
 
-  const fpcArtifact = loadArtifact(fpcArtifactPath);
-  pinoLogger.info(
-    `[deploy-fpc-devnet] deploying ${fpcArtifact.name} contract from ${fpcArtifactPath}`,
-  );
+  const fpcArtifact = FPCMultiAssetContract.artifact;
+  pinoLogger.info(`[deploy-fpc-devnet] deploying ${fpcArtifact.name} contract`);
 
   const { publicKeys: fpcPublicKeys } = await deriveKeys(Fr.ZERO);
-  const fpcDeployMethod = Contract.deployWithPublicKeys(fpcPublicKeys, wallet, fpcArtifact, [
+  const fpcDeployMethod = FPCMultiAssetContract.deployWithPublicKeys(
+    fpcPublicKeys,
+    wallet,
     operatorAddress,
-    operatorIdentity.pubkeyX,
-    operatorIdentity.pubkeyY,
-  ]);
+    Fr.fromHexString(operatorIdentity.pubkeyX),
+    Fr.fromHexString(operatorIdentity.pubkeyY),
+  );
   const fpcAddress = (await fpcDeployMethod.getInstance()).address.toString();
   const fpcDeployTxHash = await deployContract(wallet, fpcArtifact, fpcDeployMethod, deployOpts);
   pinoLogger.info(`[deploy-fpc-devnet] fpc deployed. address=${fpcAddress}`);

@@ -1,6 +1,5 @@
-import path from "node:path";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { BatchCall, type Contract } from "@aztec/aztec.js/contracts";
+import { BatchCall } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
@@ -14,6 +13,10 @@ import { ExecutionPayload, type TxHash, type TxReceipt } from "@aztec/stdlib/tx"
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import type { Hex } from "viem";
 import { beforeAll, describe, expect, it } from "#test";
+import type { FaucetContract } from "../../codegen/Faucet.ts";
+import type { FPCMultiAssetContract } from "../../codegen/FPCMultiAsset.ts";
+import type { TokenContract } from "../../codegen/Token.ts";
+import type { TokenBridgeContract } from "../../codegen/TokenBridge.ts";
 import { deriveAccount, resolveScriptAccounts } from "../common/script-credentials.ts";
 import {
   setup as commonSetup,
@@ -46,17 +49,16 @@ type ColdStartValidationConfig = {
 };
 
 type RuntimeResult = {
-  repoRoot: string;
   operator: AztecAddress;
   operatorSecretHex: string;
   user: AztecAddress;
   otherUser: AztecAddress;
   wallet: EmbeddedWallet;
   node: AztecNode;
-  token: Contract;
-  fpc: Contract;
-  faucet: Contract;
-  bridge: Contract;
+  token: TokenContract;
+  fpc: FPCMultiAssetContract;
+  faucet: FaucetContract;
+  bridge: TokenBridgeContract;
   sponsoredFeePayment: SponsoredFeePaymentMethod;
   gasLimits: Gas;
   maxFeesPerGas: GasFees;
@@ -324,8 +326,6 @@ async function executeColdStartTx(
 }
 
 async function setupFromManifest(config: ColdStartValidationConfig): Promise<RuntimeResult> {
-  const repoRoot = path.resolve(import.meta.dirname, "../..");
-
   const { testTokenManifest, node, wallet, operator, contracts, sponsoredFpcAddress } =
     await commonSetup(
       {
@@ -335,7 +335,6 @@ async function setupFromManifest(config: ColdStartValidationConfig): Promise<Run
         proverEnabled: config.pxeProverEnabled,
         messageTimeoutSeconds: Math.ceil(config.feeJuiceTimeoutMs / 1_000),
       },
-      repoRoot,
       "cold-start-validation",
     );
 
@@ -392,7 +391,6 @@ async function setupFromManifest(config: ColdStartValidationConfig): Promise<Run
   const maxFeesPerGas = new GasFees(minFees.feePerDaGas, minFees.feePerL2Gas);
 
   return {
-    repoRoot,
     operator,
     operatorSecretHex: config.operatorSecretKey,
     user,

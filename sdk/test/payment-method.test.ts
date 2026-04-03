@@ -7,30 +7,52 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FpcClient } from "../src/payment-method";
 
-vi.mock("../src/internal/contracts", () => ({
-  requireDefaultArtifact: vi.fn(() => ({ name: "MockArtifact" })),
-}));
-
-vi.mock("@aztec/aztec.js/contracts", () => {
-  const contractInstance = {
-    address: AztecAddress.fromString(
-      "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b",
-    ),
-    methods: {
-      transfer_private_to_private: vi.fn(() => ({
-        getFunctionCall: vi.fn(async () => ({ fn: "transfer" })),
+vi.mock("../../codegen/FPCMultiAsset.js", async () => {
+  const { AztecAddress: Addr } = await import("@aztec/aztec.js/addresses");
+  const FPC_ADDR = "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b";
+  return {
+    FPCMultiAssetContract: {
+      at: vi.fn(() => ({
+        address: Addr.fromString(FPC_ADDR),
+        methods: {
+          fee_entrypoint: vi.fn(() => ({
+            getFunctionCall: vi.fn(async () => ({ fn: "fee_entrypoint" })),
+          })),
+        },
       })),
-      fee_entrypoint: vi.fn(() => ({
-        getFunctionCall: vi.fn(async () => ({ fn: "fee_entrypoint" })),
-      })),
+      artifact: { name: "MockFPCMultiAsset" },
     },
   };
+});
 
+vi.mock("../../codegen/Token.js", async () => {
+  const { AztecAddress: Addr } = await import("@aztec/aztec.js/addresses");
+  const FPC_ADDR = "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b";
   return {
-    Contract: {
-      at: vi.fn(() => contractInstance),
+    TokenContract: {
+      at: vi.fn(() => ({
+        address: Addr.fromString(FPC_ADDR),
+        methods: {
+          transfer_private_to_private: vi.fn(() => ({
+            getFunctionCall: vi.fn(async () => ({ fn: "transfer" })),
+          })),
+        },
+      })),
+      artifact: { name: "MockToken" },
     },
-    __contractInstance: contractInstance,
+  };
+});
+
+vi.mock("../../codegen/TokenBridge.js", async () => {
+  const { AztecAddress: Addr } = await import("@aztec/aztec.js/addresses");
+  const FPC_ADDR = "0x24a735808258519dc1637f1833202ea2dc7c829a0a82c73f61bbd195fce4105b";
+  return {
+    TokenBridgeContract: {
+      at: vi.fn(() => ({
+        address: Addr.fromString(FPC_ADDR),
+      })),
+      artifact: { name: "MockTokenBridge" },
+    },
   };
 });
 
@@ -262,6 +284,6 @@ describe("FpcClient", () => {
         tokenAddress: TOKEN_ADDRESS,
         ...DEFAULT_GAS_INPUT,
       }),
-    ).rejects.toThrow("contract not found on node");
+    ).rejects.toThrow("Contract not found on node");
   });
 });
