@@ -13,6 +13,13 @@
         "vitest": "^4.1.2",
       },
     },
+    "codegen": {
+      "name": "@nethermindeth/aztec-fpc-codegen",
+      "version": "0.0.0",
+      "dependencies": {
+        "@aztec/aztec.js": "4.2.0-aztecnr-rc.2",
+      },
+    },
     "contract-deployment": {
       "name": "@nethermindeth/aztec-fpc-contract-deployment",
       "version": "0.1.0",
@@ -433,6 +440,8 @@
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.1.1", "", { "dependencies": { "@emnapi/core": "^1.7.1", "@emnapi/runtime": "^1.7.1", "@tybys/wasm-util": "^0.10.1" } }, "sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A=="],
 
     "@nethermindeth/aztec-fpc-attestation": ["@nethermindeth/aztec-fpc-attestation@workspace:services/attestation"],
+
+    "@nethermindeth/aztec-fpc-codegen": ["@nethermindeth/aztec-fpc-codegen@workspace:codegen"],
 
     "@nethermindeth/aztec-fpc-contract-deployment": ["@nethermindeth/aztec-fpc-contract-deployment@workspace:contract-deployment"],
 

@@ -1,63 +1,15 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import type { NoirCompiledContract } from "@aztec/aztec.js/abi";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { type AztecNode, createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
-import {
-  type ContractArtifact,
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { TokenContract } from "../../../codegen/Token.js";
 import type { Config } from "./config.js";
 import { normalizeAztecAddress } from "./config.js";
-
-const currentDir =
-  typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
-
-function resolveRepoRoot(): string {
-  return path.resolve(currentDir, "..", "..", "..");
-}
-
-function loadArtifact(artifactPath: string): ContractArtifact {
-  const parsed = JSON.parse(readFileSync(artifactPath, "utf8")) as NoirCompiledContract;
-  try {
-    return loadContractArtifact(parsed);
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("Contract's public bytecode has not been transpiled")
-    ) {
-      return loadContractArtifactForPublic(parsed);
-    }
-    throw error;
-  }
-}
-
-function resolveTokenArtifactPath(): string {
-  const explicit = process.env.ATTESTATION_TOKEN_ARTIFACT_PATH?.trim();
-  const repoRoot = resolveRepoRoot();
-  const candidates = explicit
-    ? [path.resolve(explicit)]
-    : [path.join(repoRoot, "target", "token_contract-Token.json")];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  throw new Error(`Token artifact not found. Searched: ${candidates.join(", ")}`);
-}
 
 interface TreasuryContext {
   node: AztecNode;
   operatorAddress: AztecAddress;
-  tokenArtifact: ContractArtifact;
   wallet: EmbeddedWallet;
 }
 
@@ -239,18 +191,20 @@ export class OperatorTreasury implements OperatorTreasuryPort {
     return {
       node,
       operatorAddress: account.address,
-      tokenArtifact: loadArtifact(resolveTokenArtifactPath()),
       wallet,
     };
   }
 
-  private async attachTokenContract(context: TreasuryContext, address: string): Promise<Contract> {
+  private async attachTokenContract(
+    context: TreasuryContext,
+    address: string,
+  ): Promise<TokenContract> {
     const tokenAddress = AztecAddress.fromString(address);
     const instance = await context.node.getContract(tokenAddress);
     if (!instance) {
       throw new Error(`Token contract not found at ${tokenAddress.toString()}`);
     }
-    await context.wallet.registerContract(instance, context.tokenArtifact);
-    return Contract.at(tokenAddress, context.tokenArtifact, context.wallet);
+    await context.wallet.registerContract(instance, TokenContract.artifact);
+    return TokenContract.at(tokenAddress, context.wallet);
   }
 }

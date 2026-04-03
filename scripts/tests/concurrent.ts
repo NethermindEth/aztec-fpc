@@ -1,4 +1,3 @@
-import path from "node:path";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import type { L2AmountClaim } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
@@ -131,7 +130,6 @@ let node: AztecNode;
 describe("fpc concurrent e2e", () => {
   beforeAll(async () => {
     const config = getConfig();
-    const repoRoot = path.resolve(import.meta.dirname, "../..");
 
     pinoLogger.info(`[${LABEL}] N=${config.concurrentN} claimAmount=${config.claimAmount}`);
 
@@ -151,7 +149,6 @@ describe("fpc concurrent e2e", () => {
         proverEnabled: config.proverEnabled,
         messageTimeoutSeconds: config.messageTimeoutSeconds,
       },
-      repoRoot,
       LABEL,
     );
 
@@ -221,13 +218,7 @@ describe("fpc concurrent e2e", () => {
           ephemeral: true,
           pxeConfig: { proverEnabled: config.proverEnabled },
         });
-        const contracts = await registerCoreContracts(
-          repoRoot,
-          manifest,
-          testTokenManifest,
-          node,
-          wallet,
-        );
+        const contracts = await registerCoreContracts(manifest, testTokenManifest, node, wallet);
         const account = await deriveAccount(secret, wallet);
 
         const msgHash = Fr.fromHexString(bridgeClaims[i].messageHash as string);

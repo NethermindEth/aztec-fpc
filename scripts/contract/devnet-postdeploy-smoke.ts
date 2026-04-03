@@ -1,9 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { computeInnerAuthWitHash } from "@aztec/aztec.js/authorization";
-import { Contract } from "@aztec/aztec.js/contracts";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
@@ -11,15 +9,9 @@ import { FeeJuiceContract, ProtocolContractAddress } from "@aztec/aztec.js/proto
 import { getFeeJuiceBalance } from "@aztec/aztec.js/utils";
 import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { Schnorr } from "@aztec/foundation/crypto/schnorr";
-import {
-  type ContractArtifact,
-  loadContractArtifact,
-  loadContractArtifactForPublic,
-} from "@aztec/stdlib/abi";
 import { Gas, GasSettings } from "@aztec/stdlib/gas";
 import { computeSecretHash } from "@aztec/stdlib/hash";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
-import type { NoirCompiledContract } from "@aztec/stdlib/noir";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import {
@@ -30,6 +22,9 @@ import { readTestTokenManifest } from "@nethermindeth/aztec-fpc-contract-deploym
 import pino from "pino";
 import { type Chain, createPublicClient, decodeEventLog, extractChain, http, parseAbi } from "viem";
 import * as viemChains from "viem/chains";
+import { FaucetContract } from "../../codegen/Faucet.ts";
+import { FPCMultiAssetContract } from "../../codegen/FPCMultiAsset.ts";
+import { TokenContract } from "../../codegen/Token.ts";
 import { FpcWallet } from "../common/fpc-wallet.ts";
 
 const pinoLogger = pino();
@@ -85,7 +80,6 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
 const DEFAULT_MANIFEST_PATH = path.join(REPO_ROOT, "deployments", "manifest.json");
 const DEFAULT_LOCAL_L1_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-const FPC_ARTIFACT_PATH = path.join(REPO_ROOT, "target", "fpc-FPCMultiAsset.json");
 const HEX_32_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const UINT_DEC_PATTERN = /^(0|[1-9][0-9]*)$/;
 const ETH_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
@@ -355,22 +349,6 @@ function parseManifestFromDisk(manifestPath: string): DeployManifest {
   }
 }
 
-function loadArtifact(artifactPath: string): ContractArtifact {
-  const raw = readFileSync(artifactPath, "utf8");
-  const parsed = JSON.parse(raw) as NoirCompiledContract;
-  try {
-    return loadContractArtifact(parsed);
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("Contract's public bytecode has not been transpiled")
-    ) {
-      return loadContractArtifactForPublic(parsed);
-    }
-    throw error;
-  }
-}
-
 function resolveOperatorSecretKey(args: CliArgs): string {
   if (args.operatorSecretKey) {
     return args.operatorSecretKey;
@@ -568,10 +546,6 @@ async function runSmoke(args: CliArgs): Promise<void> {
   const manifest = parseManifestFromDisk(args.manifestPath);
   const testTokenManifest = readTestTokenManifest(args.testTokenManifestPath);
 
-  if (!existsSync(FPC_ARTIFACT_PATH)) {
-    throw new CliError(`FPC artifact not found: ${FPC_ARTIFACT_PATH}`);
-  }
-
   const operatorSecretKeyHex = resolveOperatorSecretKey(args);
   const l1OperatorPrivateKeyHex = resolveL1OperatorPrivateKey(args);
   const operatorSecret = Fr.fromHexString(operatorSecretKeyHex);
@@ -636,38 +610,29 @@ async function runSmoke(args: CliArgs): Promise<void> {
   });
   const l1WalletClient = createExtendedL1Client([args.l1RpcUrl], l1OperatorPrivateKeyHex, l1Chain);
 
-  const tokenArtifact = loadArtifact(path.join(REPO_ROOT, "target", "token_contract-Token.json"));
-  const selectedFpcArtifact = loadArtifact(FPC_ARTIFACT_PATH);
-
   const tokenAddress = testTokenManifest.contracts.token;
   const fpcAddress = manifest.contracts.fpc;
-
-  // Contract.at() no longer auto-registers with PXE (SDK breaking change).
-  // Fetch on-chain instances and register explicitly before use.
-  const tokenInstance = await node.getContract(tokenAddress);
-  if (!tokenInstance) {
-    throw new CliError(`Token contract not found on node at ${tokenAddress}`);
-  }
-  await wallet.registerContract(tokenInstance, tokenArtifact);
-
-  const fpcInstance = await node.getContract(fpcAddress);
-  if (!fpcInstance) {
-    throw new CliError(`FPC contract not found on node at ${manifest.contracts.fpc}`);
-  }
-  await wallet.registerContract(fpcInstance, selectedFpcArtifact);
-
-  const token = Contract.at(tokenAddress, tokenArtifact, wallet);
-  const fpc = Contract.at(fpcAddress, selectedFpcArtifact, wallet);
-
-  // Register faucet contract for dripping tokens (bridge is the minter, not operator)
   const faucetAddress = testTokenManifest.contracts.faucet;
-  const faucetArtifact = loadArtifact(path.join(REPO_ROOT, "target", "faucet-Faucet.json"));
-  const faucetInstance = await node.getContract(faucetAddress);
-  if (!faucetInstance) {
-    throw new CliError(`Faucet contract not found on node at ${faucetAddress}`);
-  }
-  await wallet.registerContract(faucetInstance, faucetArtifact);
-  const faucet = Contract.at(faucetAddress, faucetArtifact, wallet);
+
+  // Register contracts with PXE before use.
+  const [tokenInstance, fpcInstance, faucetInstance] = await Promise.all([
+    node.getContract(tokenAddress),
+    node.getContract(fpcAddress),
+    node.getContract(faucetAddress),
+  ]);
+  if (!tokenInstance) throw new CliError(`Token contract not found on node at ${tokenAddress}`);
+  if (!fpcInstance) throw new CliError(`FPC contract not found on node at ${fpcAddress}`);
+  if (!faucetInstance) throw new CliError(`Faucet contract not found on node at ${faucetAddress}`);
+
+  await Promise.all([
+    wallet.registerContract(tokenInstance, TokenContract.artifact),
+    wallet.registerContract(fpcInstance, FPCMultiAssetContract.artifact),
+    wallet.registerContract(faucetInstance, FaucetContract.artifact),
+  ]);
+
+  const token = TokenContract.at(tokenAddress, wallet);
+  const fpc = FPCMultiAssetContract.at(fpcAddress, wallet);
+  const faucet = FaucetContract.at(faucetAddress, wallet);
 
   const minFees = await node.getCurrentMinFees();
   const feePerDaGas = minFees.feePerDaGas as bigint;

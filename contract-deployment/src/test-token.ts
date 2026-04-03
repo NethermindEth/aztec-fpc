@@ -1,5 +1,5 @@
 import type { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Contract, type DeployOptions } from "@aztec/aztec.js/contracts";
+import type { DeployOptions } from "@aztec/aztec.js/contracts";
 import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
@@ -17,7 +17,11 @@ import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import pino from "pino";
 import { type Chain, extractChain, type Hex } from "viem";
 import * as viemChains from "viem/chains";
-import { deployContract, loadArtifact, REQUIRED_ARTIFACTS } from "./deploy-utils.js";
+import { CounterContract } from "../../codegen/Counter.js";
+import { FaucetContract } from "../../codegen/Faucet.js";
+import { TokenContract } from "../../codegen/Token.js";
+import { TokenBridgeContract } from "../../codegen/TokenBridge.js";
+import { deployContract } from "./deploy-utils.js";
 import { type TestTokenManifest, writeTestTokenManifest } from "./test-token-manifest.js";
 
 const logger = pino();
@@ -123,38 +127,35 @@ export async function deployTestToken(
   // ── Phase 0: Pre-compute all L2 addresses ──────────────────────────
   logger.info("[deploy-fpc-devnet] pre-computing L2 contract addresses");
 
-  const tokenArtifact = loadArtifact(REQUIRED_ARTIFACTS.token);
-  const bridgeArtifact = loadArtifact(REQUIRED_ARTIFACTS.tokenBridge);
-  const bridgeDeploy = Contract.deploy(deps.wallet, bridgeArtifact, []);
+  const bridgeDeploy = TokenBridgeContract.deploy(deps.wallet);
   const bridgeInstance = await bridgeDeploy.getInstance();
   const bridgeAddress = bridgeInstance.address;
 
-  const tokenDeploy = Contract.deploy(
-    deps.wallet,
-    tokenArtifact,
-    [params.name, params.symbol, params.decimals, bridgeAddress],
-    "constructor_with_minter",
+  const tokenDeploy = TokenContract.deployWithOpts(
+    { wallet: deps.wallet, method: "constructor_with_minter" },
+    params.name,
+    params.symbol,
+    params.decimals,
+    bridgeAddress,
   );
   const tokenInstance = await tokenDeploy.getInstance();
   const tokenAddress = tokenInstance.address;
 
   const faucetConfig = readFaucetEnvConfig();
-  const faucetArtifact = loadArtifact(REQUIRED_ARTIFACTS.faucet);
-  const faucetDeploy = Contract.deploy(deps.wallet, faucetArtifact, [
+  const faucetDeploy = FaucetContract.deploy(
+    deps.wallet,
     tokenAddress,
     deps.operatorAddress,
     faucetConfig.dripAmount,
     faucetConfig.cooldownSeconds,
-  ]);
+  );
   const faucetInstance = await faucetDeploy.getInstance();
   const faucetAddress = faucetInstance.address;
 
-  const counterArtifact = loadArtifact(REQUIRED_ARTIFACTS.counter);
-  const counterDeploy = Contract.deploy(
-    deps.wallet,
-    counterArtifact,
-    [0, deps.operatorAddress],
-    "initialize",
+  const counterDeploy = CounterContract.deployWithOpts(
+    { wallet: deps.wallet, method: "initialize" },
+    0,
+    deps.operatorAddress,
   );
   const counterInstance = await counterDeploy.getInstance();
   const counterAddress = counterInstance.address;
@@ -229,10 +230,10 @@ export async function deployTestToken(
   );
 
   // ── Phase 2: L2 batch 1 — bridge deploy + set_config (4 units) ────
-  const bridgeContract = Contract.at(bridgeAddress, bridgeArtifact, deps.wallet);
+  const bridgeContract = TokenBridgeContract.at(bridgeAddress, deps.wallet);
   const bridgeDeployTxHash = await deployContract(
     deps.wallet,
-    bridgeArtifact,
+    TokenBridgeContract.artifact,
     bridgeDeploy,
     deps.deployOpts,
     [bridgeContract.methods.set_config(tokenAddress, EthAddress.fromString(l1TokenPortalAddress))],
@@ -242,7 +243,7 @@ export async function deployTestToken(
   // ── Phase 3: L2 batch 2 — token deploy ─────────────────────────────
   const tokenDeployTxHash = await deployContract(
     deps.wallet,
-    tokenArtifact,
+    TokenContract.artifact,
     tokenDeploy,
     deps.deployOpts,
   );
@@ -251,7 +252,7 @@ export async function deployTestToken(
   // ── Phase 4: L2 batch 3 — counter deploy ───────────────────────────
   const counterDeployTxHash = await deployContract(
     deps.wallet,
-    counterArtifact,
+    CounterContract.artifact,
     counterDeploy,
     deps.deployOpts,
   );
@@ -267,7 +268,7 @@ export async function deployTestToken(
   // ── Phase 6: L2 batch 4 — faucet deploy + claim_public (4 units) ──
   const faucetDeployTxHash = await deployContract(
     deps.wallet,
-    faucetArtifact,
+    FaucetContract.artifact,
     faucetDeploy,
     deps.deployOpts,
     [

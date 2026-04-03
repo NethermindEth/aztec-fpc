@@ -37,7 +37,8 @@
     "test": "bun run test:contracts && bun run test:ts",
     "test:ts": "bun run --filter @nethermindeth/aztec-fpc-attestation --if-present test && bun run --filter @nethermindeth/aztec-fpc-topup --if-present test && bun run --filter @nethermindeth/aztec-fpc-sdk --if-present test",
     "test:services": "bun run test:ts",
-    "test:contracts": "aztec compile --workspace --force && aztec test --package fpc",
+    "codegen": "aztec codegen target --outdir codegen -f && sed -i 's/private constructor/protected constructor/g' codegen/*.ts && mkdir -p codegen/artifacts && cp target/*.json codegen/artifacts/ && sed -i \"s|'\\.\\.\/target/|'./artifacts/|g\" codegen/*.ts",
+    "test:contracts": "aztec compile --workspace --force && bun run codegen && aztec test --package fpc",
     "attestation:build": "bun run --filter @nethermindeth/aztec-fpc-attestation build",
     "attestation:dev": "bun run --filter @nethermindeth/aztec-fpc-attestation dev",
     "attestation:start": "bun run --filter @nethermindeth/aztec-fpc-attestation start",
@@ -73,6 +74,7 @@
     "teardown": "pkill -f '[a]ztec' || true"
   },
   "workspaces": [
+    "codegen",
     "examples",
     "scripts",
     "services/*",

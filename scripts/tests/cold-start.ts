@@ -10,7 +10,6 @@
 
 import path from "node:path";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import type { Contract } from "@aztec/aztec.js/contracts";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { Fr } from "@aztec/aztec.js/fields";
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
@@ -19,6 +18,8 @@ import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import type { Hex } from "viem";
 import { beforeAll, describe, expect, it } from "#test";
+import type { CounterContract } from "../../codegen/Counter.ts";
+import type { TokenContract } from "../../codegen/Token.ts";
 import { PrivateBalanceTracker } from "../common/balance-tracker.ts";
 import {
   type AccountData,
@@ -113,8 +114,8 @@ let config: ColdStartConfig;
 let node: AztecNode;
 let wallet: EmbeddedWallet;
 let operator: AztecAddress;
-let token: Contract;
-let counter: Contract;
+let token: TokenContract;
+let counter: CounterContract;
 let fpcAddress: AztecAddress;
 let tokenAddress: AztecAddress;
 let bridgeAddress: AztecAddress;
@@ -132,7 +133,6 @@ let operatorBalance: PrivateBalanceTracker;
 describe("cold-start smoke", () => {
   beforeAll(async () => {
     config = getConfig();
-    const repoRoot = path.resolve(import.meta.dirname, "../..");
 
     const {
       testTokenManifest,
@@ -149,7 +149,6 @@ describe("cold-start smoke", () => {
         proverEnabled: config.proverEnabled,
         messageTimeoutSeconds: config.messageTimeoutSeconds,
       },
-      repoRoot,
       "cold-start-smoke",
     );
 

@@ -15,6 +15,7 @@ FROM base AS deps
 # Bun workspace resolution requires every member's package.json present
 # before `bun install` will accept the lockfile.
 COPY package.json bun.lock ./
+COPY codegen/package.json codegen/
 COPY examples/package.json examples/
 COPY sdk/package.json sdk/
 COPY scripts/package.json scripts/
@@ -35,6 +36,7 @@ COPY ${PACKAGE_DIR}/tsconfig.json ${PACKAGE_DIR}/
 COPY ${PACKAGE_DIR}/src/ ${PACKAGE_DIR}/src/
 
 # Cross-workspace source needed by bun build for workspace imports
+COPY codegen/ codegen/
 COPY contract-deployment/src/ contract-deployment/src/
 
 FROM build-src AS build-amd64

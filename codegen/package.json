@@ -1,0 +1,9 @@
+{
+  "name": "@nethermindeth/aztec-fpc-codegen",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aztec/aztec.js": "4.2.0-aztecnr-rc.2"
+  }
+}
