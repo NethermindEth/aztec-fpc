@@ -1,149 +1,158 @@
-# Quick Start [Run a full local FPC stack in 5 minutes]
+# Quick Start [Run a full local FPC stack and send a fee-abstracted tx]
 
-Get a local FPC stack running and execute your first fee-abstracted transaction.
+Three options — pick one based on what you want:
+
+1. **Local stack via Docker Compose** — spins everything up in one command. Good for kicking the tires.
+2. **Local manual bring-up** — runs each service yourself. Good for debugging or customizing.
+3. **Use the hosted testnet** — skip deployment; just integrate against Nethermind's deployed FPC.
+
+## Option 1 — Docker Compose (recommended for local dev)
+
+The fastest path to a working local FPC.
 
 :::info[Prerequisites]
-- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
-- [Bun](https://bun.sh/) v1.3.11+
-- [Aztec CLI](https://docs.aztec.network) installed
+- [Docker](https://docs.docker.com/get-docker/) + Docker Compose
+- [Bun](https://bun.sh/) ≥ 1.3.11
+- [Aztec CLI](https://docs.aztec.network) — `VERSION=4.2.0-aztecnr-rc.2 bash -i <(curl -sL https://install.aztec.network/$VERSION)`
 :::
-
-## Option A: Docker Compose (Recommended)
-
-The fastest way to run everything locally.
-
-::::steps
-
-### Clone the repo
 
 ```bash
 git clone https://github.com/NethermindEth/aztec-fpc.git
 cd aztec-fpc
-```
-
-### Install dependencies
-
-```bash
+git submodule update --init --recursive
 bun install
-```
-
-### Start the full stack
-
-```bash
 bun run compose:full
 ```
 
-This starts:
-- **Anvil** — Local L1 on port `8545`
-- **Aztec Node** — Sandbox on port `8080`
-- **FPC Contract** — Auto-deployed
-- **Attestation Service** — Quote API on port `3000`
-- **Top-up Service** — Balance daemon on port `3001`
-- **Block Producer** — Local block production
-- **Integration Tests** — Run automatically
+`compose:full` starts:
+- **Anvil** (L1) on `:8545`
+- **Aztec sandbox** (L2) on `:8080`
+- **FPC + Token auto-deployed**
+- **Attestation service** on `:3000`
+- **Top-up service** on `:3001`
+- **Block producer** + integration tests
 
-### Verify everything is running
+Verify:
 
 ```bash
-# Check attestation service
 curl http://localhost:3000/health
-
-# Check accepted assets
+curl http://localhost:3000/.well-known/fpc.json
 curl http://localhost:3000/accepted-assets
-
-# Check top-up service
-curl http://localhost:3001/health
+curl http://localhost:3001/ready
 ```
 
-::::
+The single-command smoke flow for services + integration test is `bun run smoke:services:compose`.
 
-## Option B: Manual Setup
+## Option 2 — Manual local bring-up
 
-For more control over individual components.
-
-::::steps
-
-### Start infrastructure
+For when you want explicit control. Uses bun scripts, no Docker.
 
 ```bash
-bun run compose:infra
-```
+# 1. Start a local Aztec network (new terminal)
+aztec start --local-network
 
-This starts Anvil (L1) and the Aztec sandbox.
-
-### Deploy contracts
-
-```bash
+# 2. Compile + deploy FPC + test token (new terminal, at repo root)
+aztec compile --workspace --force
 export AZTEC_NODE_URL=http://localhost:8080
-export L1_RPC_URL=http://localhost:8545
-export FPC_DEPLOYER_SECRET_KEY=0x...  # Your L2 deployer key
+export FPC_DEPLOYER_SECRET_KEY=0x<your_deployer_key>
+FPC_LOCAL_OUT=./tmp/deploy-fpc-local.json bun run deploy:fpc:local
+# manifest written to ./tmp/deploy-fpc-local.json
 
-bun run deploy:fpc
-```
-
-### Start the attestation service
-
-```bash
+# 3. Attestation service (new terminal)
 cd services/attestation
 cp config.example.yaml config.yaml
-# Edit config.yaml with your FPC address and operator key
+# edit config.yaml: set fpc_address and accepted_asset_address from the manifest
+OPERATOR_SECRET_KEY=0x<operator_key> bun run start
 
-OPERATOR_SECRET_KEY=0x... bun run start
-```
-
-### Start the top-up service
-
-```bash
+# 4. Top-up service (new terminal)
 cd services/topup
 cp config.example.yaml config.yaml
-# Edit config.yaml with your FPC address
-
-L1_OPERATOR_PRIVATE_KEY=0x... bun run start
+# edit config.yaml: set fpc_address
+L1_OPERATOR_PRIVATE_KEY=0x<l1_key> bun run start
 ```
 
-::::
+Health checks:
 
-## Your First Transaction
+```bash
+curl http://localhost:3000/health
+curl http://localhost:3001/ready
+```
 
-Once the stack is running, use the SDK to send a fee-abstracted transaction:
+For a full production walk-through including Docker images, `configure-token`, and auto-claim, see [Run an FPC Operator](/how-to/run-operator) and [Deployment](/operations/deployment).
+
+## Option 3 — Use the hosted testnet
+
+Skip all deployment. Point your wallet/app at the Nethermind-operated testnet FPC — addresses, URLs, and a live `/.well-known/fpc.json` check in one place:
+
+**→ [Testnet Deployment](/reference/testnet-deployment)**
+
+## Your First Fee-Abstracted Transaction
+
+Once you have a running FPC (local or testnet):
 
 ```typescript
-import { FpcClient } from '@nethermindeth/aztec-fpc-sdk';
-import { createPXEClient, getSchnorrAccount } from '@aztec/aztec.js';
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 
-// Connect to the local node
-const pxe = createPXEClient('http://localhost:8080');
-
-// Create the FPC client
-const fpcClient = new FpcClient({
-  fpcAddress: AztecAddress.fromString('0x...'), // From deployment manifest
-  attestationUrl: 'http://localhost:3000',
+// 1. Connect + wallet
+const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
+await waitForNode(node);
+const wallet = await EmbeddedWallet.create(node, {
+  ephemeral: true,
+  pxeConfig: { proverEnabled: true },
 });
 
-// Create a payment method
+// 2. FPC client — operator + node are REQUIRED
+const fpcClient = new FpcClient({
+  fpcAddress: AztecAddress.fromString(
+    "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f",
+  ),
+  operator: AztecAddress.fromString(
+    "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
+  ),
+  node,
+  attestationBaseUrl: "https://aztec-fpc-testnet.staging-nethermind.xyz/",
+});
+
+// 3. Simulate to get gas
+const userAddress = wallet.getAddress();
+const { estimatedGas } = await someContract.methods
+  .someMethod(args)
+  .simulate({ from: userAddress, fee: { estimateGas: true } });
+if (!estimatedGas) throw new Error("Failed to estimate gas");
+
+// 4. Build payment method
 const { fee } = await fpcClient.createPaymentMethod({
   wallet,
-  userAddress: wallet.getAddress(),
-  tokenAddress: testTokenAddress,
-  estimatedGas: { daGas: 5000, l2Gas: 1_000_000 },
+  user: userAddress,
+  tokenAddress: AztecAddress.fromString(
+    "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb",
+  ),
+  estimatedGas,
 });
 
-// Use it in any transaction
-const tx = await someContract.methods
-  .someMethod(args)
-  .send({ fee });
-
+// 5. Send
+const tx = await someContract.methods.someMethod(args).send({
+  from: userAddress,
+  fee,
+});
 await tx.wait();
-console.log('Transaction confirmed with FPC fee payment!');
+console.log("Confirmed with FPC fee payment");
 ```
 
-:::tip[Full Example]
-See [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts) for a complete working example.
+:::tip[Full runnable example]
+See [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts) for end-to-end cold-start + standard flow. Run from repo root:
+
+```bash
+bun run examples/fpc-full-flow.ts
+```
 :::
 
 ## Next Steps
 
-- [Architecture](/overview/architecture) — Understand how the pieces fit together
-- [SDK Reference](/sdk/api-reference) — Full API documentation
-- [Deployment Guide](/operations/deployment) — Deploy to devnet/testnet
-- [Configuration](/operations/configuration) — Tune every setting
+- [Architecture](/overview/architecture) — how the pieces fit
+- [SDK Getting Started](/sdk/getting-started) — deeper SDK walk-through incl. cold-start
+- [Run an Operator](/how-to/run-operator) — production deploy
+- [Deployment](/operations/deployment) — Docker-based deploy to devnet/testnet

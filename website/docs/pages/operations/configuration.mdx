@@ -22,9 +22,11 @@ Environment variables always take precedence over YAML values.
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `network_id` | `NETWORK_ID` | — | Aztec network identifier |
+| `network_id` | `NETWORK_ID` | — | Aztec network identifier — **string**, e.g. `"aztec-testnet"` (not a numeric chain id) |
 | `fpc_address` | `FPC_ADDRESS` | — | Deployed FPC contract address |
+| `contract_variant` | — | `"fpc-v1"` | Contract flavour identifier emitted in discovery |
 | `aztec_node_url` | `AZTEC_NODE_URL` | — | Aztec node PXE endpoint |
+| `quote_base_url` | `QUOTE_BASE_URL` | derived from request headers | Public base URL emitted in `.well-known/fpc.json` — set this if behind a reverse proxy |
 
 ### Operator
 
@@ -33,33 +35,63 @@ Environment variables always take precedence over YAML values.
 | `operator_secret_provider` | — | `auto` | Key mode: `auto`, `env`, `config`, `kms`, `hsm` |
 | `operator_address` | `OPERATOR_ADDRESS` | — | Operator L2 address (non-zero salt) |
 | `operator_account_salt` | `OPERATOR_ACCOUNT_SALT` | — | Account salt (optional) |
-| — | `OPERATOR_SECRET_KEY` | — | L2 operator Schnorr private key |
+| — | `OPERATOR_SECRET_KEY` | — | L2 operator Schnorr private key (plaintext) |
+| — | `OPERATOR_SECRET_KEY_REF` | — | KMS / secret-manager reference for the key (**preferred in production**) |
+
+:::tip[Prefer `_REF` variants in production]
+Any `*_SECRET_KEY` env var has a matching `*_SECRET_KEY_REF` variant that resolves via the configured secret provider (KMS/HSM). Use the `_REF` form so plaintext keys never appear in process env or shell history.
+:::
 
 ### Quote Settings
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `quote_validity_seconds` | `QUOTE_VALIDITY_SECONDS` | `300` | Quote lifetime |
-| `quote_auth_mode` | `QUOTE_AUTH_MODE` | `disabled` | `disabled`, `api_key`, `trusted_header` |
-| `quote_rate_limit_window_ms` | `QUOTE_RATE_LIMIT_WINDOW_MS` | — | Rate limit window |
-| `quote_rate_limit_max` | `QUOTE_RATE_LIMIT_MAX` | — | Max requests per window |
+| `quote_validity_seconds` | `QUOTE_VALIDITY_SECONDS` | `300` | Quote lifetime (seconds) — capped at 3600 on-chain regardless |
+| `quote_base_url` | `QUOTE_BASE_URL` | derived from request headers | Public base URL emitted in `.well-known/fpc.json`. Set explicitly when behind a reverse proxy. |
+
+### Quote Auth (request-time auth on `/quote`)
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `quote_auth_mode` | `QUOTE_AUTH_MODE` | `disabled` | `disabled`, `api_key`, `trusted_header`. **Rejected in `runtime_profile: production` if `disabled`.** |
+| — | `QUOTE_AUTH_API_KEY` | — | Shared secret required when mode = `api_key` |
+| — | `QUOTE_AUTH_API_KEY_HEADER` | `x-api-key` | Header name clients pass the API key in |
+| — | `QUOTE_AUTH_TRUSTED_HEADER_NAME` | — | Header name your reverse proxy sets (mode = `trusted_header`) |
+| — | `QUOTE_AUTH_TRUSTED_HEADER_VALUE` | — | Value the header must equal to be accepted |
+
+### Quote Rate Limiting
+
+Fixed-window rate limiting on `/quote`.
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| — | `QUOTE_RATE_LIMIT_ENABLED` | `true` | Master toggle |
+| — | `QUOTE_RATE_LIMIT_MAX_REQUESTS` | `60` | Max requests per window per key |
+| — | `QUOTE_RATE_LIMIT_WINDOW_SECONDS` | `60` | Window length (seconds) |
+| — | `QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS` | `10000` | Cap on distinct keys (users/IPs) held in memory |
+| `quote_rate_limit_window_ms` | `QUOTE_RATE_LIMIT_WINDOW_MS` | — | Legacy millisecond alternative — prefer `_SECONDS` |
+| `quote_rate_limit_max` | `QUOTE_RATE_LIMIT_MAX` | — | Legacy alias for `MAX_REQUESTS` |
 
 ### Admin
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
 | `admin_api_key_header` | — | `x-admin-api-key` | Header name for admin auth |
-| — | `ADMIN_API_KEY` | — | Admin API key value |
+| — | `ADMIN_API_KEY` | — | Admin API key value (constant-time compared) |
+| `treasury_destination_address` | — | — | Default destination for `POST /admin/sweeps` when the request body omits `destination` |
 
 ### Assets
 
 ```yaml
 supported_assets:
   - address: "0x..."
-    market_rate_num: 1        # Base exchange rate numerator
-    market_rate_den: 1        # Base exchange rate denominator
-    fee_bips: 100             # Operator fee: 100 bips = 1%
+    name: "humanUSDC"           # Human-readable name surfaced in /accepted-assets
+    market_rate_num: 1          # Base exchange rate numerator (asset units per 1 FeeJuice)
+    market_rate_den: 1000       # Base exchange rate denominator
+    fee_bips: 200               # Operator margin: 200 bips = 2%
 ```
+
+Final rate computed as `rate_num = market_rate_num × (10000 + fee_bips)` / `rate_den = market_rate_den × 10000`. Per-asset `market_rate_num`, `market_rate_den`, and `fee_bips` overrides are all optional — omitted values inherit top-level defaults.
 
 ### State & Runtime
 
@@ -94,24 +126,30 @@ supported_assets:
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `data_dir` | `TOPUP_DATA_DIR` | `.topup-data` | LMDB directory |
-| `check_interval_ms` | `TOPUP_CHECK_INTERVAL_MS` | `60000` | Check interval |
-| `confirmation_timeout_ms` | `TOPUP_CONFIRMATION_TIMEOUT_MS` | `600000` | Bridge confirmation timeout |
+| `data_dir` | `TOPUP_DATA_DIR` | `.topup-data` | LMDB directory for in-flight bridge state |
+| `check_interval_ms` | `TOPUP_CHECK_INTERVAL_MS` | `60000` | FPC balance check interval |
+| `confirmation_timeout_ms` | `TOPUP_CONFIRMATION_TIMEOUT_MS` | `180000` | Max wait for L1→L2 message + balance settlement after a bridge tx |
+| `confirmation_poll_initial_ms` | — | `1000` | Initial poll interval during confirmation |
+| `confirmation_poll_max_ms` | — | `15000` | Max poll interval (exponential backoff cap) |
 
 ### Operator
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `l1_operator_secret_provider` | — | `auto` | L1 key mode |
-| — | `L1_OPERATOR_PRIVATE_KEY` | — | L1 operator private key |
+| `l1_operator_secret_provider` | — | `auto` | L1 key mode: `auto`, `env`, `config`, `kms`, `hsm` |
+| — | `L1_OPERATOR_PRIVATE_KEY` | — | L1 operator private key (plaintext) |
+| — | `L1_OPERATOR_PRIVATE_KEY_REF` | — | KMS / secret-manager reference (**preferred in production**) |
 
 ### Auto-Claim
 
+Auto-claim completes the L2 side of the top-up bridge (claims the bridged Fee Juice into the FPC's balance). **Enabled by default** — set to `0` to disable.
+
 | Env Var | Default | Description |
 |---------|---------|-------------|
-| `TOPUP_AUTOCLAIM_ENABLED` | `false` | Enable auto-claiming |
-| `TOPUP_AUTOCLAIM_SECRET_KEY` | — | L2 claimer key |
-| `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | — | Sponsor claimer gas |
+| `TOPUP_AUTOCLAIM_ENABLED` | `1` | `1` = enabled, `0` = disabled |
+| `TOPUP_AUTOCLAIM_SECRET_KEY` | — | L2 claimer secret key (**required** in `runtime_profile=production`; `development` falls back to the first `@aztec/accounts/testing` account) |
+| `TOPUP_AUTOCLAIM_SECRET_KEY_REF` | — | KMS / secret-manager reference for the claimer key |
+| `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | — | Use a sponsored FPC to pay the claim tx's fees (recommended — avoids needing Fee Juice on the claimer account) |
 
 ### Operations
 
@@ -125,12 +163,20 @@ supported_assets:
 
 | Env Var | Required | Description |
 |---------|:--------:|-------------|
-| `FPC_DEPLOYER_SECRET_KEY` | Yes | L2 deployer account key |
+| `FPC_DEPLOYER_SECRET_KEY` | Yes | L2 deployer account key (plaintext) |
+| `FPC_DEPLOYER_SECRET_KEY_REF` | — | KMS-backed alternative to the plaintext deployer key |
 | `FPC_OPERATOR_SECRET_KEY` | No | L2 operator key (defaults to deployer) |
-| `FPC_L1_DEPLOYER_KEY` | If bridge | L1 deployer key |
+| `FPC_OPERATOR_SECRET_KEY_REF` | — | KMS-backed alternative |
+| `FPC_L1_DEPLOYER_KEY` | If bridge | L1 deployer key for ERC20 + portal deployment |
+| `FPC_L1_DEPLOYER_KEY_REF` | — | KMS-backed alternative |
+| `FPC_SPONSORED_FPC_ADDRESS` | No | Pay deploy fees via an existing sponsored FPC (useful if the deployer account has no Fee Juice) |
+| `FPC_ACCEPTED_ASSET` | No | Reuse an existing token address — skips test-token deployment |
+| `FPC_ATTESTATION_URL` | `configure-token` | Attestation service URL for token registration |
+| `FPC_PREFLIGHT_ONLY` | No | `1` = validate connectivity + state, don't submit any txs |
+| `FPC_SKIP_CONFIG_GEN` | No | `1` = don't auto-generate per-service configs |
 | `AZTEC_NODE_URL` | Yes | Aztec node PXE URL |
 | `L1_RPC_URL` | If bridge | L1 RPC endpoint |
-| `ADMIN_API_KEY` | No | For attestation token registration |
+| `ADMIN_API_KEY` | No | For attestation token registration (admin endpoints) |
 
 ---
 

@@ -76,6 +76,7 @@ export default defineConfig({
       if (documentId.includes('/overview/what-is-fpc')) return 2.5
       if (documentId.includes('/overview/quick-start')) return 2
       if (documentId.includes('/sdk/getting-started')) return 2
+      if (documentId.includes('/how-to/cold-start-flow')) return 2
       if (documentId.includes('/overview/')) return 1.5
       return 1
     },
@@ -108,14 +109,23 @@ export default defineConfig({
     },
     {
       text: 'Operations',
-      link: '/operations/configuration',
+      link: '/operations/deployment',
       match: '/operations',
     },
     {
-      text: 'v1.0',
+      text: 'Reference',
+      link: '/reference/wallet-discovery',
+      match: '/reference',
+    },
+    {
+      text: 'v3.0.0',
       items: [
         {
-          text: 'Changelog',
+          text: 'Release notes',
+          link: 'https://github.com/NethermindEth/aztec-fpc/releases/tag/v3.0.0',
+        },
+        {
+          text: 'All releases',
           link: 'https://github.com/NethermindEth/aztec-fpc/releases',
         },
         {
@@ -145,9 +155,15 @@ export default defineConfig({
     ],
     '/how-to': [
       {
-        text: 'How-To Guides',
+        text: 'Wallet & App Integration',
         items: [
           { text: 'Integrate in a Wallet', link: '/how-to/integrate-wallet' },
+          { text: 'Cold-Start Flow (Bridge Builders)', link: '/how-to/cold-start-flow' },
+        ],
+      },
+      {
+        text: 'Operator',
+        items: [
           { text: 'Run an Operator', link: '/how-to/run-operator' },
           { text: 'Add a Supported Asset', link: '/how-to/add-supported-asset' },
         ],
@@ -195,6 +211,28 @@ export default defineConfig({
         text: 'Reference',
         items: [
           { text: 'Configuration', link: '/operations/configuration' },
+        ],
+      },
+    ],
+    '/reference': [
+      {
+        text: 'Deployments',
+        items: [
+          { text: 'Testnet Deployment', link: '/reference/testnet-deployment' },
+        ],
+      },
+      {
+        text: 'Normative Specs',
+        items: [
+          { text: 'Wallet Discovery Spec', link: '/reference/wallet-discovery' },
+          { text: 'ADR-0001 — Asset Model', link: '/reference/asset-model-adr' },
+          { text: 'E2E Test Matrix', link: '/reference/e2e-test-matrix' },
+        ],
+      },
+      {
+        text: 'Operational',
+        items: [
+          { text: 'Metrics & Probes', link: '/reference/metrics' },
         ],
       },
     ],

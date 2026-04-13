@@ -24,6 +24,7 @@ The attestation service is the operator's quote engine. It:
 | `GET` | `/metrics` | Prometheus metrics |
 | `GET` | `/accepted-assets` | Supported tokens with pricing |
 | `GET` | `/quote` | Request a signed fee quote |
+| `GET` | `/cold-start-quote` | Request a signed cold-start quote (includes `claim_amount` + `claim_secret_hash`) |
 
 ### Admin
 
@@ -78,27 +79,55 @@ Compute Poseidon2 hash of quote preimage → Schnorr sign with operator key.
     "accepted_asset": "0x...",
     "fj_amount": "1000000",
     "aa_payment_amount": "1010000",
-    "valid_until": 1700000300,
+    "valid_until": "1700000300",
     "signature": "0xabcd...1234"
 }
 ```
 
+All numeric fields are returned as strings (u128 / unix-timestamp) to preserve precision across JSON. The signature is 64 raw Schnorr bytes, hex-encoded and `0x`-prefixed.
+
 ::::
+
+## Cold-Start Quote
+
+`GET /cold-start-quote` extends `/quote` with two bridge-binding query params:
+
+| Param | Description |
+|-------|-------------|
+| `user` | User Aztec address |
+| `accepted_asset` | Token address |
+| `fj_amount` | Fee Juice amount (u128) |
+| `claim_amount` | Amount being claimed from the L1→L2 bridge |
+| `claim_secret_hash` | Claim secret hash (0x-hex) |
+
+The service validates `claim_amount >= aa_payment_amount` before signing. Response extends `QuoteResponse` with `claim_amount` and `claim_secret_hash` fields. Signed with a **different domain separator** (`0x46504373` = `"FPCs"`) so cold-start quotes can't be replayed as regular quotes.
 
 ## Wallet Discovery
 
-The `/.well-known/fpc.json` endpoint enables automatic wallet integration:
+The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full normative spec at [docs/spec/wallet-discovery-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md).
 
 ```json
 {
+    "discovery_version": "1.0",
+    "attestation_api_version": "1.0",
+    "network_id": "aztec-testnet",
     "fpc_address": "0x...",
-    "attestation_url": "https://fpc.example.com",
-    "supported_assets": ["0x...", "0x..."],
-    "network_id": 1
+    "contract_variant": "fpc-v1",
+    "quote_base_url": "https://fpc.example.com",
+    "endpoints": {
+        "discovery": "/.well-known/fpc.json",
+        "health": "/health",
+        "accepted_assets": "/accepted-assets",
+        "quote": "/quote",
+        "cold_start_quote": "/cold-start-quote"
+    },
+    "supported_assets": [
+        { "address": "0x...", "name": "humanUSDC" }
+    ]
 }
 ```
 
-See `docs/spec/wallet-discovery-spec.md` in the repo for the full specification.
+Wallet lookup key is the tuple `(network_id, asset_address, fpc_address)` — `network_id` is a **string** (e.g. `"aztec-testnet"`), not a number. Wallets must fail closed on any validation mismatch (do not silently fall back to a record with a different network/asset/FPC).
 
 ## Key Modules
 
@@ -151,14 +180,20 @@ See [Configuration](/operations/configuration) for the full reference.
 Key settings:
 
 ```yaml title="config.yaml"
-network_id: 1
+runtime_profile: production
+network_id: "aztec-testnet"        # string, not number
 fpc_address: "0x..."
-aztec_node_url: "http://localhost:8080"
-operator_secret_provider: auto
+contract_variant: "fpc-v1"
+aztec_node_url: "https://..."
+operator_secret_provider: env       # env | config | kms | hsm | auto
 quote_validity_seconds: 300
+quote_auth_mode: api_key            # disabled | api_key | trusted_header
+port: 3000
+
 supported_assets:
   - address: "0x..."
+    name: "humanUSDC"
     market_rate_num: 1
-    market_rate_den: 1
-    fee_bips: 100
+    market_rate_den: 1000
+    fee_bips: 200
 ```

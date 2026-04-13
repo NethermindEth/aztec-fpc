@@ -52,26 +52,36 @@ Save the deployment manifest — it contains the FPC address you'll need everywh
 ### Configure the attestation service
 
 ```yaml title="attestation-config.yaml"
-network_id: 1
-fpc_address: "0x..."  # From deployment manifest
+runtime_profile: production     # Rejects plaintext config secrets + requires auth
+network_id: "aztec-testnet"     # String identifier — NOT a number
+fpc_address: "0x..."            # From deployment manifest
+contract_variant: "fpc-v1"
 aztec_node_url: "https://your-aztec-node.com"
 
-operator_secret_provider: kms  # Use KMS, never plaintext
-runtime_profile: production     # Rejects plaintext secrets
+# Key — KMS in production, never plaintext
+operator_secret_provider: kms
 
 quote_validity_seconds: 300
-quote_auth_mode: api_key        # Require auth on quote endpoint
+quote_auth_mode: api_key        # disabled is REJECTED in runtime_profile=production
+# quote_auth_api_key: provide via env QUOTE_AUTH_API_KEY
 
-quote_rate_limit_window_ms: 60000
-quote_rate_limit_max: 100
+# Rate limiting — enable in all environments
+quote_rate_limit_enabled: true
+quote_rate_limit_max_requests: 60
+quote_rate_limit_window_seconds: 60
+
+# Public base URL if behind a reverse proxy (otherwise derived from request headers)
+quote_base_url: "https://fpc.example.com"
 
 supported_assets:
   - address: "0x..."
+    name: "humanUSDC"
     market_rate_num: 1
-    market_rate_den: 1
-    fee_bips: 100
+    market_rate_den: 1000
+    fee_bips: 200
 
 asset_policy_state_path: "/var/fpc/attestation-data"
+pxe_data_directory: "/var/fpc/attestation-pxe"
 ```
 
 ### Configure the top-up service

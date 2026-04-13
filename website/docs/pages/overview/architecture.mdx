@@ -161,12 +161,12 @@ Top-up Service              L1 (Ethereum)             Aztec L2
 
 | From | To | Interface | Protocol |
 |------|----|-----------|----------|
-| Wallet/SDK | Attestation | HTTP REST | `GET /quote`, `GET /accepted-assets` |
+| Wallet/SDK | Attestation | HTTP REST | `GET /quote`, `GET /cold-start-quote`, `GET /accepted-assets`, `GET /.well-known/fpc.json` |
 | Wallet/SDK | FPC Contract | Aztec tx | `fee_entrypoint()`, `cold_start_entrypoint()` |
-| Top-up | L1 Portal | Ethereum tx | Bridge Fee Juice |
-| Top-up | Aztec L2 | Aztec tx | Claim bridged tokens |
-| Attestation | Aztec Node | PXE RPC | Gas estimation, balance queries |
-| FPC Contract | Token Contract | Aztec call | `transfer_in_public()`, `transfer_to_public()` |
+| Top-up | L1 Portal | Ethereum tx | `L1FeeJuicePortalManager.bridgeTokensPublic()` |
+| Top-up | Aztec L2 | Aztec tx | `FeeJuice.claim()` (auto-claim) |
+| Attestation | Aztec Node | PXE RPC | Gas estimation, operator note discovery, `node_getNodeInfo` |
+| FPC Contract | Token Contract | Aztec call (private) | `transfer_private_to_private(user → operator, amount, nonce)` |
 
 ## Operator Model
 

@@ -4,6 +4,22 @@ The core fee payment contract. Verifies operator-signed quotes and pays transact
 
 **Source:** `contracts/fpc/src/main.nr`
 
+## Where is the "multi-asset" part?
+
+**It's not an on-chain allowlist.** Readers landing on this page often expect storage to contain a list of accepted tokens. It doesn't — the contract holds a single immutable `Config` and that's it.
+
+The "multi-asset" property comes from **quote binding + off-chain policy**:
+
+| Layer | What enforces asset choice |
+|---|---|
+| On-chain (this contract) | `accepted_asset` is an argument to `fee_entrypoint` and is included in the signed quote preimage. Swapping the asset at call time invalidates the Schnorr signature, so the tx reverts. |
+| Off-chain (attestation service) | The operator maintains the asset policy (exchange rates, fee spread) per asset in LMDB. The service refuses to sign quotes for unsupported assets. See [Add a Supported Asset](/how-to/add-supported-asset). |
+| Protocol decision | [ADR-0001](/reference/asset-model-adr) — **one FPC deployment must support many assets** (no redeploying per token). |
+
+In practice: adding a new accepted token is a `PUT /admin/asset-policies/:addr` call — no on-chain change, no redeploy. The same FPC contract instance serves USDC, ETH variants, your app's token, etc.
+
+See [Security Model § No on-chain asset allowlist](/overview/security) for why this design is safe.
+
 ## Storage
 
 ```noir

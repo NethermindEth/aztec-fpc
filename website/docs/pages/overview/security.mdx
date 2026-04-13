@@ -19,6 +19,23 @@ The operator:
 Users never give custody of their funds beyond the agreed transaction fee. The FPC contract enforces exact amounts on-chain.
 :::
 
+:::danger[Setup-phase irreversibility — the fee is paid even if your app logic reverts]
+The user → operator token transfer executes **directly inside the Aztec setup phase, before `end_setup()`**. It is irrevocably committed at that point.
+
+If the user's subsequent app logic reverts, **the fee has still been paid**. There is no teardown phase and no refund — this is inherent to the Aztec FPC model, not a Nethermind design choice.
+
+Implications for integrators:
+- **Wallets** must surface this clearly. "Fee charged even on app-level failure" is a truthful description.
+- **App developers** should simulate before sending. A failing tx still costs fees.
+- **Always-revert testing** (see [`scripts/tests/always-revert.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/always-revert.ts)) confirms the FPC is still paid when downstream logic reverts.
+:::
+
+:::warning[No on-chain asset allowlist — protection is via quote binding]
+The FPC contract does **not** store a list of accepted assets. Nothing on-chain rejects an arbitrary token address passed to `fee_entrypoint`. Protection comes from the **quote signature**: `accepted_asset` is in the signed Poseidon2 preimage, so swapping the asset at call time invalidates signature verification.
+
+This matters because the "multi-asset" property of `FPCMultiAsset` is an *off-chain* policy (attestation service) plus *quote binding* — not an on-chain allowlist. See [FPCMultiAsset](/contracts/fpc-multi-asset).
+:::
+
 ## Key Management
 
 ### Operator Keys
@@ -123,6 +140,8 @@ Optional fixed-window rate limiting on the quote endpoint to prevent abuse.
 | FPC balance depletion | Top-up auto-bridges from L1 |
 | Top-up service crash | LMDB persistence + reconciliation |
 | Cold-start manipulation | Tx root check + claim >= fee + bridge binding |
+| Malicious asset address at call time | `accepted_asset` in quote preimage — tampering invalidates the signature |
+| App-logic revert bypassing fee | Fee is paid in setup phase, before app logic runs — not bypassable |
 
 ## Production Checklist
 
