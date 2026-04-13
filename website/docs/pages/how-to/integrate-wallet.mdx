@@ -1,0 +1,146 @@
+# Integrate FPC in Your Wallet [Add fee-abstracted payments to an Aztec wallet]
+
+This guide shows how to integrate FPC into an Aztec wallet so your users can pay gas in any supported token.
+
+:::info[Audience]
+Wallet engineers who already integrate Aztec.js and want to add FPC as a payment option.
+:::
+
+## What You'll Build
+
+A wallet that:
+
+1. Discovers FPC operators via the well-known endpoint
+2. Lets users select a payment token
+3. Fetches a signed quote from the attestation service
+4. Submits transactions with FPC as the fee payer
+
+## Steps
+
+::::steps
+
+### Install the SDK
+
+:::code-group
+
+```bash [npm]
+npm install @nethermindeth/aztec-fpc-sdk
+```
+
+```bash [bun]
+bun add @nethermindeth/aztec-fpc-sdk
+```
+
+:::
+
+### Discover the FPC operator
+
+Fetch the wallet discovery metadata:
+
+```typescript
+const response = await fetch('https://fpc.example.com/.well-known/fpc.json');
+const metadata = await response.json();
+
+// {
+//   fpc_address: "0x...",
+//   attestation_url: "https://fpc.example.com",
+//   supported_assets: ["0x...", "0x..."],
+//   network_id: 1
+// }
+```
+
+### Let users pick a payment token
+
+Display the list of supported assets in your wallet UI:
+
+```typescript
+const acceptedAssets = await fetch(`${metadata.attestation_url}/accepted-assets`)
+  .then(r => r.json());
+
+// Display acceptedAssets in UI, let user select one
+const selectedToken = acceptedAssets[0];
+```
+
+### Create a payment method for each transaction
+
+```typescript
+import { FpcClient } from '@nethermindeth/aztec-fpc-sdk';
+
+const fpcClient = new FpcClient({
+  fpcAddress: AztecAddress.fromString(metadata.fpc_address),
+  attestationUrl: metadata.attestation_url,
+});
+
+const { fee } = await fpcClient.createPaymentMethod({
+  wallet,
+  userAddress: wallet.getAddress(),
+  tokenAddress: AztecAddress.fromString(selectedToken.address),
+  estimatedGas: { daGas: 5000, l2Gas: 1_000_000 },
+});
+```
+
+### Submit the transaction
+
+```typescript
+const tx = await contract.methods
+  .transfer(recipient, amount)
+  .send({ fee });
+
+const receipt = await tx.wait();
+```
+
+The user signs once — the fee is transparently paid in their chosen token.
+
+::::
+
+## Handling Cold Start
+
+For users who just bridged from L1 and have no L2 balance:
+
+```typescript
+const result = await fpcClient.executeColdStart({
+  wallet,
+  userAddress: wallet.getAddress(),
+  tokenAddress: bridgedTokenAddress,
+  bridgeAddress: bridgeAddress,
+  claimAmount: 1_000_000n,
+  claimSecret: claimSecretFr,
+  claimSecretHash: claimSecretHashFr,
+  messageLeafIndex: messageIndex,
+});
+```
+
+After this single transaction, the user has:
+- An L2 token balance
+- A transaction history
+- Ready for subsequent FPC-paid transactions via the standard flow
+
+## Error Handling
+
+:::tip[User-facing errors]
+- **Asset not supported** — Refresh the supported assets list; asset may have been removed
+- **Quote expired** — Re-fetch the quote; they're only valid for ~5 minutes
+- **Rate limited** — Inform user to retry later; consider your own quote caching
+:::
+
+```typescript
+try {
+  const { fee } = await fpcClient.createPaymentMethod({ ... });
+  const tx = await contract.methods.someMethod(args).send({ fee });
+  await tx.wait();
+} catch (error) {
+  if (error.message.includes('not supported')) {
+    // Asset no longer supported
+  } else if (error.message.includes('expired')) {
+    // Quote expired — retry
+  } else {
+    // Other error
+  }
+}
+```
+
+## Next Steps
+
+- [SDK API Reference](/sdk/api-reference) — Full type definitions
+- [Quote System](/overview/quote-system) — Understand what's happening under the hood
+- [Security Model](/overview/security) — Trust assumptions users should know

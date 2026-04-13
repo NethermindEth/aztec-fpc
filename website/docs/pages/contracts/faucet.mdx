@@ -1,0 +1,65 @@
+# Faucet Contract [Test token dispenser with per-recipient cooldowns]
+
+A public token dispenser for test environments. Distributes tokens with per-recipient cooldowns.
+
+**Source:** `contracts/faucet/src/main.nr`
+
+:::warning
+The Faucet is a **test-support contract** for devnet/testnet only. Not intended for production.
+:::
+
+## Storage
+
+```noir
+struct Storage {
+    config: PublicImmutable<Config>,
+    last_drip: Map<AztecAddress, PublicMutable<u64>>,
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config` | `PublicImmutable<Config>` | Token, admin, drip amount, cooldown |
+| `last_drip` | `Map<AztecAddress, PublicMutable<u64>>` | Per-recipient cooldown tracking |
+
+## Constructor Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `token` | `AztecAddress` | Token contract to dispense |
+| `admin` | `AztecAddress` | Address with `admin_drip` privilege |
+| `drip_amount` | `Field` | Amount per drip |
+| `cooldown_seconds` | `u64` | Minimum time between drips per recipient |
+
+## Functions
+
+### `drip`
+
+```noir
+#[public]
+fn drip(recipient: AztecAddress)
+```
+
+Transfers `drip_amount` to the recipient's public balance if the cooldown has elapsed since their last drip.
+
+### `admin_drip`
+
+```noir
+#[public]
+fn admin_drip(recipient: AztecAddress, amount: Field)
+```
+
+Operator bypass — no cooldown, any amount. Only callable by the configured `admin`.
+
+### `get_config` / `get_config_public`
+
+Read the faucet's configuration. Available in both private and public contexts.
+
+### `get_last_drip`
+
+```noir
+#[public]
+fn get_last_drip(recipient: AztecAddress) -> u64
+```
+
+Returns the timestamp of the recipient's last drip. Useful for checking cooldown status.

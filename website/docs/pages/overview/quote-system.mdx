@@ -1,0 +1,137 @@
+# Quote System [The cryptographic contract between operator and user]
+
+The quote system is the trust bridge between the off-chain attestation service and the on-chain FPC contract. Understanding it is key to working with FPC.
+
+## What is a Quote?
+
+A quote is a signed message from the operator:
+
+> *"I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user's transaction, valid until `valid_until`."*
+
+## Lifecycle
+
+::::steps
+
+### User requests a quote
+
+The wallet calls `GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<amount>` on the attestation service.
+
+### Attestation signs the quote
+
+The service computes the exchange rate, creates a Poseidon2 hash of the quote parameters, and signs it with the operator's Schnorr key.
+
+### User includes the quote in the transaction
+
+The 64-byte signature and quote parameters are passed as arguments to `fee_entrypoint` or `cold_start_entrypoint`.
+
+### Contract verifies on-chain
+
+The FPC contract reconstructs the hash, verifies the Schnorr signature against the stored operator public key, and pushes a nullifier.
+
+### Quote is consumed
+
+The nullifier prevents the same quote from being used again. The contract transfers tokens and pays gas.
+
+::::
+
+## Quote Types
+
+### Normal Quote (`fee_entrypoint`)
+
+| Field | Value |
+|-------|-------|
+| Domain separator | `0x465043` (ASCII: `FPC`) |
+| Hash function | Poseidon2 |
+| Signature | Schnorr (64 bytes) |
+
+**Hash preimage:**
+
+```noir
+poseidon2([
+    0x465043,           // domain separator
+    fpc_address,        // this contract's address
+    accepted_asset,     // token contract address
+    fj_fee_amount,      // Fee Juice amount
+    aa_payment_amount,  // token payment amount
+    valid_until,        // expiry timestamp
+    user_address,       // msg_sender (the paying user)
+])
+```
+
+### Cold-Start Quote (`cold_start_entrypoint`)
+
+| Field | Value |
+|-------|-------|
+| Domain separator | `0x46504373` (ASCII: `FPCs`) |
+| Hash function | Poseidon2 |
+| Signature | Schnorr (64 bytes) |
+
+**Hash preimage (extended):**
+
+```noir
+poseidon2([
+    0x46504373,          // different domain separator
+    fpc_address,
+    accepted_asset,
+    fj_fee_amount,
+    aa_payment_amount,
+    valid_until,
+    user_address,        // explicit param (not msg_sender)
+    bridge,              // bridge contract address
+    claim_amount,        // amount being claimed
+    claim_secret_hash,   // hash of the claim secret
+    message_leaf_index,  // L1→L2 message index
+])
+```
+
+:::warning
+The different domain separators prevent cross-entrypoint quote reuse. A quote signed for `fee_entrypoint` will fail in `cold_start_entrypoint` and vice versa.
+:::
+
+## Exchange Rate Computation
+
+The attestation service computes the token payment from the Fee Juice amount:
+
+```
+rate_num = market_rate_num × (10000 + fee_bips)
+rate_den = market_rate_den × 10000
+
+aa_payment_amount = ceil(fj_fee_amount × rate_num / rate_den)
+```
+
+**Example:** If `market_rate = 1/1` and `fee_bips = 100` (1%):
+
+```
+fj_fee_amount    = 1,000,000
+aa_payment_amount = ceil(1,000,000 × 10100 / 10000) = 1,010,000
+```
+
+The operator earns 10,000 units (1%) as revenue.
+
+## Security Properties
+
+| Property | How It's Enforced |
+|----------|-------------------|
+| **Authenticity** | Schnorr signature verified against immutable on-chain pubkey |
+| **Integrity** | Poseidon2 hash covers all parameters — any change breaks the sig |
+| **Replay protection** | Quote hash pushed as nullifier (one-time use) |
+| **User binding** | Hash includes user address — User A can't use User B's quote |
+| **Freshness** | `valid_until >= block_timestamp` check |
+| **TTL cap** | `valid_until - block_timestamp <= 3600` — max 1 hour lifetime |
+| **Domain separation** | Different separators per entrypoint |
+
+## Quote Response Format
+
+The attestation service returns:
+
+```json
+{
+    "accepted_asset": "0x1234...abcd",
+    "fj_amount": "1000000",
+    "aa_payment_amount": "1010000",
+    "valid_until": 1700000300,
+    "signature": "0xabcd...1234"
+}
+```
+
+This response is consumed directly by the SDK's `createPaymentMethod()` or `executeColdStart()`.

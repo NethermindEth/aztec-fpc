@@ -1,0 +1,127 @@
+# SDK — Getting Started [Integrate FPC into your wallet or dApp]
+
+Integrate FPC fee payments into your wallet or dApp with two methods.
+
+**Package:** `@nethermindeth/aztec-fpc-sdk`
+**Source:** `sdk/`
+
+## Installation
+
+:::code-group
+
+```bash [npm]
+npm install @nethermindeth/aztec-fpc-sdk
+```
+
+```bash [bun]
+bun add @nethermindeth/aztec-fpc-sdk
+```
+
+```bash [pnpm]
+pnpm add @nethermindeth/aztec-fpc-sdk
+```
+
+:::
+
+:::info
+The SDK requires `@aztec/aztec.js` as a peer dependency.
+:::
+
+## Quick Example
+
+### Standard Flow — User Has Tokens on L2
+
+```typescript
+import { FpcClient } from '@nethermindeth/aztec-fpc-sdk';
+
+// 1. Create the client
+const fpcClient = new FpcClient({
+  fpcAddress: AztecAddress.fromString('0x...'),
+  attestationUrl: 'https://fpc.example.com',
+});
+
+// 2. Get a payment method for your transaction
+const { fee, nonce, quote } = await fpcClient.createPaymentMethod({
+  wallet,
+  userAddress: wallet.getAddress(),
+  tokenAddress: usdcAddress,
+  estimatedGas: { daGas: 5000, l2Gas: 1_000_000 },
+});
+
+// 3. Use it in any Aztec.js transaction
+const tx = await contract.methods
+  .transfer(recipient, amount)
+  .send({ fee });
+
+await tx.wait();
+```
+
+That's it. Three steps. The SDK handles:
+- Fetching a signed quote from the attestation service
+- Computing the Fee Juice amount from estimated gas
+- Building the authorization witness for the token transfer
+- Constructing the `FeePaymentMethod` pointing to `fee_entrypoint`
+
+### Cold Start Flow — User Just Bridged from L1
+
+```typescript
+// User has bridged tokens from L1 but has no L2 balance
+const result = await fpcClient.executeColdStart({
+  wallet,
+  userAddress: wallet.getAddress(),
+  tokenAddress: usdcAddress,
+  bridgeAddress: bridgeAddr,
+  claimAmount: 1_000_000n,
+  claimSecret: claimSecretFr,
+  claimSecretHash: claimSecretHashFr,
+  messageLeafIndex: 42n,
+});
+
+console.log(`Tx: ${result.txHash}`);
+console.log(`Fee paid: ${result.aaPaymentAmount} tokens`);
+console.log(`User received: ${result.claimAmount - result.aaPaymentAmount} tokens`);
+```
+
+One transaction takes the user from "just bridged" to "has tokens and has transacted."
+
+## How It Works Under the Hood
+
+### `createPaymentMethod` Flow
+
+```
+1. Attach FPC + Token contract instances to wallet
+2. Fetch quote: GET /quote?user=...&accepted_asset=...&fj_amount=...
+3. Build authwit allowing FPC to transfer user's tokens
+4. Construct FeePaymentMethod → fee_entrypoint
+5. Return { fee, nonce, quote }
+```
+
+### `executeColdStart` Flow
+
+```
+1. Fetch cold-start quote from attestation
+2. Build cold_start_entrypoint call with bridge claim details
+3. Use hardcoded gas limits with safety margins:
+   - DA gas: 5000 (×3.2 margin)
+   - L2 gas: 1,000,000 (×1.4 margin)
+4. Send transaction + wait for confirmation
+5. Return { txHash, txFee, fjAmount, aaPaymentAmount }
+```
+
+## Contract Artifacts
+
+The SDK needs compiled contract ABI artifacts. It looks for them in order:
+
+1. Packaged within the SDK itself
+2. `target/` directory in the repo root
+3. `target/` directory in the current working directory
+
+Files needed:
+- `fpc-FPCMultiAsset.json`
+- `token_contract-Token.json`
+
+## Next Steps
+
+- [API Reference](/sdk/api-reference) — Full type definitions and method signatures
+- [Quote System](/overview/quote-system) — What the SDK constructs under the hood
+- [Example Flow](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts) — Complete working example

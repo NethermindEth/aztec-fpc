@@ -1,0 +1,203 @@
+# FPCMultiAsset Contract [The on-chain core that verifies quotes and pays gas]
+
+The core fee payment contract. Verifies operator-signed quotes and pays transaction gas on behalf of users.
+
+**Source:** `contracts/fpc/src/main.nr`
+
+## Storage
+
+```noir
+struct Storage {
+    config: PublicImmutable<Config>,
+}
+```
+
+`Config` stores three immutable fields set at construction:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operator` | `AztecAddress` | Receives token payments |
+| `operator_pubkey_x` | `Field` | Schnorr public key X coordinate |
+| `operator_pubkey_y` | `Field` | Schnorr public key Y coordinate |
+
+:::warning
+These values are **immutable**. Operator key rotation requires deploying a new contract.
+:::
+
+## Constructor
+
+```noir
+#[public]
+#[initializer]
+fn constructor(
+    operator: AztecAddress,
+    operator_pubkey_x: Field,
+    operator_pubkey_y: Field,
+)
+```
+
+Stores the operator address and Schnorr public key coordinates. Called once at deployment.
+
+---
+
+## `fee_entrypoint`
+
+Standard fee payment for users with existing L2 token balances.
+
+```noir
+#[private]
+fn fee_entrypoint(
+    accepted_asset: AztecAddress,    // Token contract address
+    authwit_nonce: Field,            // Nonce for token transfer authwit
+    fj_fee_amount: Field,            // Fee Juice amount (gas cost)
+    aa_payment_amount: Field,        // Token amount (what user pays)
+    valid_until: u64,                // Quote expiry timestamp
+    quote_sig: [u8; 64],            // Operator's Schnorr signature
+)
+```
+
+### Flow
+
+::::steps
+
+### Verify the quote
+
+Calls `assert_valid_quote()`:
+- Reconstructs the Poseidon2 hash with domain separator `0x465043`
+- Verifies the Schnorr signature against stored operator pubkey
+- Pushes the quote hash as a nullifier (prevents replay)
+- Checks `valid_until >= block_timestamp` and `TTL <= 3600s`
+
+### Enforce setup phase
+
+Uses `set_as_fee_payer()` — can only execute during the transaction's setup phase.
+
+### Transfer tokens
+
+Enqueues a public call: transfer `aa_payment_amount` of `accepted_asset` from `msg_sender` to the operator using the provided `authwit_nonce`.
+
+### Declare fee payer
+
+The FPC contract pays the transaction's gas in Fee Juice.
+
+::::
+
+### Requirements
+
+- Caller must have created an **authorization witness** (authwit) for the token transfer
+- Quote must not be expired
+- Quote must not have been used before
+- Must execute during the tx setup phase
+
+---
+
+## `cold_start_entrypoint`
+
+For new users who bridged tokens from L1 and have no L2 balance.
+
+```noir
+#[private]
+fn cold_start_entrypoint(
+    user: AztecAddress,              // User's L2 address
+    accepted_asset: AztecAddress,    // Token contract address
+    bridge: AztecAddress,            // Bridge contract address
+    claim_amount: Field,             // Amount bridged from L1
+    claim_secret: Field,             // Bridge claim secret
+    claim_secret_hash: Field,        // Hash of claim secret
+    message_leaf_index: Field,       // L1→L2 message index
+    fj_fee_amount: Field,            // Fee Juice amount
+    aa_payment_amount: Field,        // Token payment amount
+    valid_until: u64,                // Quote expiry
+    quote_sig: [u8; 64],            // Operator signature
+)
+```
+
+### Flow
+
+::::steps
+
+### Guard: transaction root
+
+Assert `msg_sender.is_none()` — this function **must** be the transaction's entrypoint (not called by another contract).
+
+### Guard: claim covers fee
+
+Assert `claim_amount >= aa_payment_amount` — user can't pay more than they're claiming.
+
+### Verify cold-start quote
+
+Uses `assert_valid_cold_start_quote()` with domain separator `0x46504373` and extended preimage (includes bridge, claim_amount, etc.).
+
+### Declare fee payer
+
+FPC pays gas in Fee Juice.
+
+### Claim tokens from bridge
+
+Enqueues `bridge.claim_public()` — mints tokens into FPC's public balance.
+
+### Distribute tokens
+
+- Transfer `claim_amount - aa_payment_amount` → **user**
+- Transfer `aa_payment_amount` → **operator**
+
+::::
+
+### Requirements
+
+- Must be **transaction root** (no parent caller)
+- `claim_amount >= aa_payment_amount`
+- Cold-start quote cannot be used with `fee_entrypoint` (different domain separator)
+
+---
+
+## Internal Helpers
+
+### `assert_valid_quote`
+
+```noir
+fn assert_valid_quote(
+    config: Config,
+    accepted_asset: AztecAddress,
+    fj_fee_amount: Field,
+    aa_payment_amount: Field,
+    valid_until: u64,
+    quote_sig: [u8; 64],
+    user: AztecAddress,
+) -> Field  // returns quote_hash
+```
+
+Verifies a normal quote: hash, signature, nullifier, expiry, TTL.
+
+### `assert_valid_cold_start_quote`
+
+Same as above with extended preimage (bridge, claim_amount, claim_secret_hash, message_leaf_index) and domain separator `0x46504373`.
+
+### `get_max_gas_cost`
+
+Computes the maximum possible transaction fee using protocol gas settings.
+
+---
+
+## Test Coverage
+
+### `fee_entrypoint.nr` — 7 tests
+
+| Test | Verifies |
+|------|----------|
+| Happy path | Standard fee payment succeeds |
+| Mismatched fee | Signature fails if amounts differ from quote |
+| Expired quote | Rejects quotes past `valid_until` |
+| Overlong TTL | Rejects quotes with TTL > 3600s |
+| Non-root caller | Context-specific constraints |
+| Wrong user binding | Quote for user A can't be used by user B |
+| Authwit freshness | Authorization witness must be valid |
+
+### `cold_start_entrypoint.nr` — 4 tests
+
+| Test | Verifies |
+|------|----------|
+| Setup phase enforcement | Can only run during tx setup |
+| Root-call guard | Must be transaction root |
+| Domain separation | Cold-start quote can't be used in fee_entrypoint |
+| Standard quote rejection | Normal quote can't be used in cold_start |

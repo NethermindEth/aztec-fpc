@@ -1,0 +1,149 @@
+# Quick Start [Run a full local FPC stack in 5 minutes]
+
+Get a local FPC stack running and execute your first fee-abstracted transaction.
+
+:::info[Prerequisites]
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
+- [Bun](https://bun.sh/) v1.3.11+
+- [Aztec CLI](https://docs.aztec.network) installed
+:::
+
+## Option A: Docker Compose (Recommended)
+
+The fastest way to run everything locally.
+
+::::steps
+
+### Clone the repo
+
+```bash
+git clone https://github.com/NethermindEth/aztec-fpc.git
+cd aztec-fpc
+```
+
+### Install dependencies
+
+```bash
+bun install
+```
+
+### Start the full stack
+
+```bash
+bun run compose:full
+```
+
+This starts:
+- **Anvil** — Local L1 on port `8545`
+- **Aztec Node** — Sandbox on port `8080`
+- **FPC Contract** — Auto-deployed
+- **Attestation Service** — Quote API on port `3000`
+- **Top-up Service** — Balance daemon on port `3001`
+- **Block Producer** — Local block production
+- **Integration Tests** — Run automatically
+
+### Verify everything is running
+
+```bash
+# Check attestation service
+curl http://localhost:3000/health
+
+# Check accepted assets
+curl http://localhost:3000/accepted-assets
+
+# Check top-up service
+curl http://localhost:3001/health
+```
+
+::::
+
+## Option B: Manual Setup
+
+For more control over individual components.
+
+::::steps
+
+### Start infrastructure
+
+```bash
+bun run compose:infra
+```
+
+This starts Anvil (L1) and the Aztec sandbox.
+
+### Deploy contracts
+
+```bash
+export AZTEC_NODE_URL=http://localhost:8080
+export L1_RPC_URL=http://localhost:8545
+export FPC_DEPLOYER_SECRET_KEY=0x...  # Your L2 deployer key
+
+bun run deploy:fpc
+```
+
+### Start the attestation service
+
+```bash
+cd services/attestation
+cp config.example.yaml config.yaml
+# Edit config.yaml with your FPC address and operator key
+
+OPERATOR_SECRET_KEY=0x... bun run start
+```
+
+### Start the top-up service
+
+```bash
+cd services/topup
+cp config.example.yaml config.yaml
+# Edit config.yaml with your FPC address
+
+L1_OPERATOR_PRIVATE_KEY=0x... bun run start
+```
+
+::::
+
+## Your First Transaction
+
+Once the stack is running, use the SDK to send a fee-abstracted transaction:
+
+```typescript
+import { FpcClient } from '@nethermindeth/aztec-fpc-sdk';
+import { createPXEClient, getSchnorrAccount } from '@aztec/aztec.js';
+
+// Connect to the local node
+const pxe = createPXEClient('http://localhost:8080');
+
+// Create the FPC client
+const fpcClient = new FpcClient({
+  fpcAddress: AztecAddress.fromString('0x...'), // From deployment manifest
+  attestationUrl: 'http://localhost:3000',
+});
+
+// Create a payment method
+const { fee } = await fpcClient.createPaymentMethod({
+  wallet,
+  userAddress: wallet.getAddress(),
+  tokenAddress: testTokenAddress,
+  estimatedGas: { daGas: 5000, l2Gas: 1_000_000 },
+});
+
+// Use it in any transaction
+const tx = await someContract.methods
+  .someMethod(args)
+  .send({ fee });
+
+await tx.wait();
+console.log('Transaction confirmed with FPC fee payment!');
+```
+
+:::tip[Full Example]
+See [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts) for a complete working example.
+:::
+
+## Next Steps
+
+- [Architecture](/overview/architecture) — Understand how the pieces fit together
+- [SDK Reference](/sdk/api-reference) — Full API documentation
+- [Deployment Guide](/operations/deployment) — Deploy to devnet/testnet
+- [Configuration](/operations/configuration) — Tune every setting

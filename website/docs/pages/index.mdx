@@ -1,0 +1,72 @@
+---
+layout: landing
+title: Aztec FPC — Multi-asset, operator-runnable Fee Payment Contract
+description: Nethermind's production multi-asset FPC for Aztec. Accept any token for gas, monetize the spread, and onboard users in one transaction from L1.
+---
+
+import { HomePage } from 'vocs/components'
+
+<div className="hero-section">
+  <h1>
+    <span className="landing-gradient">Multi-asset FPC for Aztec.</span>
+  </h1>
+  <p className="tagline">
+    Nethermind's production Fee Payment Contract — accept any token for gas, earn a configurable spread, and onboard cold-start users from L1 in a single transaction.
+  </p>
+  <div className="hero-buttons">
+    <HomePage.Button href="/overview/what-is-fpc" variant="accent">How is this different from Sponsored FPC?</HomePage.Button>
+    <HomePage.Button href="https://github.com/NethermindEth/aztec-fpc">GitHub</HomePage.Button>
+  </div>
+</div>
+
+<div className="feature-grid">
+  <div className="feature-card">
+    <h3>Multi-asset, not single-token</h3>
+    <p>Accept any token your operator approves — USDC, ETH, your app's native token. The canonical Sponsored FPC is single-purpose; this one is policy-driven.</p>
+  </div>
+  <div className="feature-card">
+    <h3>Operator-runnable & monetizable</h3>
+    <p>Configurable <code>fee_bips</code> spread on every quote. Run it as a wallet, an app, or a bridge — earn revenue while sponsoring UX.</p>
+  </div>
+  <div className="feature-card">
+    <h3>Cold-start aware</h3>
+    <p>Single-transaction onboarding from L1: claim bridged tokens and pay fees in the same tx. The reason bridge teams care about this contract.</p>
+  </div>
+  <div className="feature-card">
+    <h3>Schnorr-signed quotes</h3>
+    <p>Domain-separated, replay-protected quotes signed off-chain. The contract verifies on-chain — no operator can forge or front-run.</p>
+  </div>
+  <div className="feature-card">
+    <h3>Production services included</h3>
+    <p>Attestation API + auto-top-up daemon ship with the contract. KMS-backed keys, LMDB-persisted state, Prometheus metrics.</p>
+  </div>
+  <div className="feature-card">
+    <h3>SDK for wallets and apps</h3>
+    <p><code>createPaymentMethod()</code> for existing users, <code>executeColdStart()</code> for first-tx users from L1. Two methods, full coverage.</p>
+  </div>
+</div>
+
+---
+
+<div className="quick-links">
+  <a className="quick-link" href="/overview/what-is-fpc">
+    <span className="icon">→</span>
+    <h4>I know what an FPC is — what's different here?</h4>
+    <p>Side-by-side with Aztec's canonical Sponsored FPC. When to pick which.</p>
+  </a>
+  <a className="quick-link" href="/how-to/integrate-wallet">
+    <span className="icon">→</span>
+    <h4>I'm a wallet team running my own FPC</h4>
+    <p>Combined operator + integrator path. Deploy, configure, and surface in your wallet.</p>
+  </a>
+  <a className="quick-link" href="/sdk/getting-started">
+    <span className="icon">→</span>
+    <h4>I'm building a privacy app or DEX</h4>
+    <p>Sponsor your users' gas in your app's token. SDK-first integration.</p>
+  </a>
+  <a className="quick-link" href="/overview/quote-system#cold-start">
+    <span className="icon">→</span>
+    <h4>I'm building a bridge UX</h4>
+    <p>One-transaction onboarding: claim from L1 + pay fees + send remainder to user.</p>
+  </a>
+</div>

@@ -1,0 +1,157 @@
+# Configuration [Every config option across every service]
+
+Complete reference for all configuration options across FPC services.
+
+## Configuration Hierarchy
+
+All services follow the same precedence:
+
+1. **YAML config file** — Base configuration (path from `CONFIG_PATH` env var)
+2. **Environment variables** — Override specific values
+3. **CLI arguments** — Override at runtime
+
+Environment variables always take precedence over YAML values.
+
+---
+
+## Attestation Service
+
+**Config file:** `services/attestation/config.example.yaml`
+
+### Network
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `network_id` | `NETWORK_ID` | — | Aztec network identifier |
+| `fpc_address` | `FPC_ADDRESS` | — | Deployed FPC contract address |
+| `aztec_node_url` | `AZTEC_NODE_URL` | — | Aztec node PXE endpoint |
+
+### Operator
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `operator_secret_provider` | — | `auto` | Key mode: `auto`, `env`, `config`, `kms`, `hsm` |
+| `operator_address` | `OPERATOR_ADDRESS` | — | Operator L2 address (non-zero salt) |
+| `operator_account_salt` | `OPERATOR_ACCOUNT_SALT` | — | Account salt (optional) |
+| — | `OPERATOR_SECRET_KEY` | — | L2 operator Schnorr private key |
+
+### Quote Settings
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `quote_validity_seconds` | `QUOTE_VALIDITY_SECONDS` | `300` | Quote lifetime |
+| `quote_auth_mode` | `QUOTE_AUTH_MODE` | `disabled` | `disabled`, `api_key`, `trusted_header` |
+| `quote_rate_limit_window_ms` | `QUOTE_RATE_LIMIT_WINDOW_MS` | — | Rate limit window |
+| `quote_rate_limit_max` | `QUOTE_RATE_LIMIT_MAX` | — | Max requests per window |
+
+### Admin
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `admin_api_key_header` | — | `x-admin-api-key` | Header name for admin auth |
+| — | `ADMIN_API_KEY` | — | Admin API key value |
+
+### Assets
+
+```yaml
+supported_assets:
+  - address: "0x..."
+    market_rate_num: 1        # Base exchange rate numerator
+    market_rate_den: 1        # Base exchange rate denominator
+    fee_bips: 100             # Operator fee: 100 bips = 1%
+```
+
+### State & Runtime
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `asset_policy_state_path` | — | `.attestation-data` | LMDB directory |
+| `runtime_profile` | `RUNTIME_PROFILE` | `development` | `development`, `test`, `production` |
+| `pxe_data_directory` | `PXE_DATA_DIRECTORY` | — | PXE data dir for embedded wallet |
+
+---
+
+## Top-up Service
+
+**Config file:** `services/topup/config.example.yaml`
+
+### Network
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `aztec_node_url` | `AZTEC_NODE_URL` | — | Aztec node URL |
+| `l1_rpc_url` | `L1_RPC_URL` | — | L1 Ethereum RPC |
+
+### FPC & Thresholds
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `fpc_address` | `FPC_ADDRESS` | — | FPC contract to monitor |
+| `threshold` | `TOPUP_THRESHOLD` | — | Bridge when below this |
+| `top_up_amount` | `TOPUP_AMOUNT` | — | Amount to bridge each time |
+
+### State & Polling
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `data_dir` | `TOPUP_DATA_DIR` | `.topup-data` | LMDB directory |
+| `check_interval_ms` | `TOPUP_CHECK_INTERVAL_MS` | `60000` | Check interval |
+| `confirmation_timeout_ms` | `TOPUP_CONFIRMATION_TIMEOUT_MS` | `600000` | Bridge confirmation timeout |
+
+### Operator
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `l1_operator_secret_provider` | — | `auto` | L1 key mode |
+| — | `L1_OPERATOR_PRIVATE_KEY` | — | L1 operator private key |
+
+### Auto-Claim
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `TOPUP_AUTOCLAIM_ENABLED` | `false` | Enable auto-claiming |
+| `TOPUP_AUTOCLAIM_SECRET_KEY` | — | L2 claimer key |
+| `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | — | Sponsor claimer gas |
+
+### Operations
+
+| YAML Key | Env Var | Default | Description |
+|----------|---------|---------|-------------|
+| `ops_port` | `TOPUP_OPS_PORT` | `3001` | Health/metrics port |
+
+---
+
+## Deployment
+
+| Env Var | Required | Description |
+|---------|:--------:|-------------|
+| `FPC_DEPLOYER_SECRET_KEY` | Yes | L2 deployer account key |
+| `FPC_OPERATOR_SECRET_KEY` | No | L2 operator key (defaults to deployer) |
+| `FPC_L1_DEPLOYER_KEY` | If bridge | L1 deployer key |
+| `AZTEC_NODE_URL` | Yes | Aztec node PXE URL |
+| `L1_RPC_URL` | If bridge | L1 RPC endpoint |
+| `ADMIN_API_KEY` | No | For attestation token registration |
+
+---
+
+## Runtime Profiles
+
+| Profile | Behavior |
+|---------|----------|
+| `development` | Permissive — allows plaintext secrets in config |
+| `test` | Similar to development |
+| `production` | **Strict** — rejects plaintext config secrets; requires `env`, `kms`, or `hsm` |
+
+:::danger
+Always use `runtime_profile: production` in production. It prevents accidental plaintext secret leaks.
+:::
+
+## Per-Environment Configs
+
+```
+deployments/
+├── fpc-config.example.yaml    # Master template
+├── local/fpc-config.yaml      # Local development
+├── devnet/fpc-config.yaml     # Devnet
+└── testnet/fpc-config.yaml    # Testnet
+```

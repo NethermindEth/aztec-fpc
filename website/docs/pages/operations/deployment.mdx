@@ -1,0 +1,130 @@
+# Deployment [Deploy contracts, services, and infrastructure]
+
+How to deploy the FPC system — contracts, services, and supporting infrastructure.
+
+**Source:** `contract-deployment/`
+
+## Deployment Flow
+
+::::steps
+
+### Deploy FPC Contract
+
+The `FPCMultiAsset` contract with operator address and Schnorr public key.
+
+```bash
+export FPC_DEPLOYER_SECRET_KEY=0x...
+export AZTEC_NODE_URL=http://localhost:8080
+
+bun run deploy:fpc
+```
+
+### Deploy Token + Bridge (test environments)
+
+For devnet/testnet, deploy a test token and bridge:
+
+```bash
+export FPC_L1_DEPLOYER_KEY=0x...
+export L1_RPC_URL=http://localhost:8545
+
+bun run deploy:token
+```
+
+### Deploy Faucet (optional)
+
+Token dispenser for devnet:
+
+```bash
+bun run deploy:faucet
+```
+
+### Start Attestation Service
+
+```bash
+cd services/attestation
+OPERATOR_SECRET_KEY=0x... bun run start
+```
+
+### Start Top-up Service
+
+```bash
+cd services/topup
+L1_OPERATOR_PRIVATE_KEY=0x... bun run start
+```
+
+### Register Tokens
+
+Register supported tokens in the attestation service:
+
+```bash
+curl -X PUT http://localhost:3000/admin/asset-policies/0x... \
+  -H "x-admin-api-key: $ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"market_rate_num": 1, "market_rate_den": 1, "fee_bips": 100}'
+```
+
+::::
+
+## Deployment Manifest
+
+Each deployment writes a manifest JSON:
+
+```json
+{
+    "network_id": 1,
+    "fpc_address": "0x...",
+    "operator_address": "0x...",
+    "tokens": [
+        {
+            "address": "0x...",
+            "bridge_address": "0x...",
+            "faucet_address": "0x...",
+            "symbol": "TEST",
+            "decimals": 18
+        }
+    ],
+    "attestation_url": "https://fpc.example.com",
+    "deployed_at": "2024-01-01T00:00:00Z"
+}
+```
+
+Stored in:
+- `deployments/local/local-manifest.json`
+- `deployments/devnet/devnet-manifest.json`
+- `deployments/testnet/testnet-manifest.json`
+
+## Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `deploy-utils.ts` | Generic contract deployment helpers |
+| `fpc-immutables.ts` | FPC constructor validation (derives pubkey, checks on-chain state) |
+| `configure-token.ts` | Token + bridge deployment, attestation registration |
+| `manifest.ts` | Manifest file read/write/merge |
+| `verify.ts` | Post-deployment on-chain verification |
+| `test-token.ts` | Test token deployment |
+
+## Verification
+
+After deployment, verify on-chain state matches your manifest:
+
+```bash
+bun run verify
+```
+
+This reads on-chain contract state and compares it against the manifest values, reporting any mismatches.
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|:--------:|-------------|
+| `FPC_DEPLOYER_SECRET_KEY` | Yes | L2 deployer key |
+| `FPC_OPERATOR_SECRET_KEY` | No | L2 operator key (defaults to deployer) |
+| `FPC_L1_DEPLOYER_KEY` | If bridge | L1 deployer key |
+| `AZTEC_NODE_URL` | Yes | Aztec node URL |
+| `L1_RPC_URL` | If bridge | L1 RPC endpoint |
+| `ADMIN_API_KEY` | No | For attestation registration |
+
+## Docker Deployment
+
+For containerized deployments, see [Docker & CI](/operations/docker).

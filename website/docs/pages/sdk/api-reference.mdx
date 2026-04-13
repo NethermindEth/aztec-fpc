@@ -1,0 +1,205 @@
+# SDK — API Reference [Complete type definitions and method signatures]
+
+Complete type definitions and method signatures for `@nethermindeth/aztec-fpc-sdk`.
+
+## `FpcClient`
+
+The main class for interacting with FPC.
+
+### Constructor
+
+```typescript
+new FpcClient(config: FpcClientConfig)
+```
+
+```typescript
+interface FpcClientConfig {
+  /** Deployed FPC contract address */
+  fpcAddress: AztecAddress;
+  /** Attestation service base URL */
+  attestationUrl: string;
+}
+```
+
+---
+
+### `createPaymentMethod`
+
+Creates a fee payment method for users with existing L2 token balances.
+
+```typescript
+async createPaymentMethod(
+  input: CreatePaymentMethodInput
+): Promise<FpcPaymentMethodResult>
+```
+
+#### Input
+
+```typescript
+interface CreatePaymentMethodInput {
+  /** Aztec.js wallet instance */
+  wallet: Wallet;
+  /** User's L2 address */
+  userAddress: AztecAddress;
+  /** Token to pay fees with */
+  tokenAddress: AztecAddress;
+  /** Estimated gas for the transaction */
+  estimatedGas: {
+    daGas: number;
+    l2Gas: number;
+  };
+}
+```
+
+#### Output
+
+```typescript
+interface FpcPaymentMethodResult {
+  /** Fee options — pass directly to .send({ fee }) */
+  fee: InteractionFeeOptions;
+  /** Authwit nonce for the token transfer */
+  nonce: Fr;
+  /** The signed quote from attestation */
+  quote: QuoteResponse;
+}
+```
+
+#### Usage
+
+```typescript
+const { fee } = await fpcClient.createPaymentMethod({
+  wallet,
+  userAddress: wallet.getAddress(),
+  tokenAddress: usdcAddress,
+  estimatedGas: { daGas: 5000, l2Gas: 1_000_000 },
+});
+
+const tx = await contract.methods.someMethod(args).send({ fee });
+```
+
+---
+
+### `executeColdStart`
+
+Executes a cold-start transaction for users claiming bridged L1 tokens.
+
+```typescript
+async executeColdStart(
+  input: ExecuteColdStartInput
+): Promise<ColdStartResult>
+```
+
+#### Input
+
+```typescript
+interface ExecuteColdStartInput {
+  /** Aztec.js wallet instance */
+  wallet: Wallet;
+  /** User's L2 address */
+  userAddress: AztecAddress;
+  /** Token being claimed */
+  tokenAddress: AztecAddress;
+  /** Bridge contract address */
+  bridgeAddress: AztecAddress;
+  /** Amount bridged from L1 */
+  claimAmount: bigint;
+  /** Bridge claim secret */
+  claimSecret: Fr;
+  /** Hash of claim secret */
+  claimSecretHash: Fr;
+  /** L1→L2 message tree index */
+  messageLeafIndex: bigint;
+}
+```
+
+#### Output
+
+```typescript
+interface ColdStartResult {
+  /** Transaction hash */
+  txHash: TxHash;
+  /** Actual fee paid in Fee Juice */
+  txFee: bigint;
+  /** Fee Juice amount quoted */
+  fjAmount: bigint;
+  /** Token amount paid */
+  aaPaymentAmount: bigint;
+  /** Quote expiry timestamp */
+  quoteValidUntil: number;
+}
+```
+
+#### Usage
+
+```typescript
+const result = await fpcClient.executeColdStart({
+  wallet,
+  userAddress: wallet.getAddress(),
+  tokenAddress: usdcAddress,
+  bridgeAddress: bridgeAddr,
+  claimAmount: 1_000_000n,
+  claimSecret: secretFr,
+  claimSecretHash: secretHashFr,
+  messageLeafIndex: 42n,
+});
+```
+
+---
+
+## Types
+
+### `QuoteResponse`
+
+Returned by the attestation service's `/quote` endpoint.
+
+```typescript
+interface QuoteResponse {
+  /** Token contract address */
+  accepted_asset: string;
+  /** Fee Juice amount */
+  fj_amount: string;
+  /** Token payment amount */
+  aa_payment_amount: string;
+  /** Quote expiry (Unix timestamp) */
+  valid_until: number;
+  /** Schnorr signature (hex) */
+  signature: string;
+}
+```
+
+### `ColdStartQuoteResponse`
+
+Same shape as `QuoteResponse`, but signed with the cold-start domain separator (`0x46504373`).
+
+```typescript
+interface ColdStartQuoteResponse extends QuoteResponse {
+  // Same fields — different signing domain
+}
+```
+
+## Gas Estimation
+
+### `createPaymentMethod`
+
+The SDK uses the provided `estimatedGas` to compute the `fj_amount` parameter sent to the attestation service. The actual gas is determined by transaction simulation.
+
+### `executeColdStart`
+
+Uses hardcoded gas limits with safety margins:
+
+| Gas Type | Limit | Safety Margin |
+|----------|-------|---------------|
+| DA gas | 5,000 | ~3.2x |
+| L2 gas | 1,000,000 | ~1.4x |
+
+These margins accommodate variance in actual execution costs.
+
+## Error Handling
+
+The SDK propagates errors from:
+
+- **Attestation service** — HTTP errors (asset not supported, rate limited, etc.)
+- **Aztec.js** — Transaction simulation failures, on-chain reverts
+- **Network** — Connection failures to attestation or Aztec node
+
+All errors are thrown as standard JavaScript exceptions.
