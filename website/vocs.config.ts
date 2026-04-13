@@ -76,41 +76,6 @@ export default defineConfig({
   },
   topNav: [
     {
-      text: 'Learn',
-      link: '/overview/what-is-fpc',
-      match: '/overview',
-    },
-    {
-      text: 'How-To',
-      link: '/how-to/integrate-wallet',
-      match: '/how-to',
-    },
-    {
-      text: 'SDK',
-      link: '/sdk/getting-started',
-      match: '/sdk',
-    },
-    {
-      text: 'Contracts',
-      link: '/contracts/overview',
-      match: '/contracts',
-    },
-    {
-      text: 'Services',
-      link: '/services/attestation',
-      match: '/services',
-    },
-    {
-      text: 'Operations',
-      link: '/operations/deployment',
-      match: '/operations',
-    },
-    {
-      text: 'Reference',
-      link: '/reference/wallet-discovery',
-      match: '/reference',
-    },
-    {
       text: 'Contribute',
       link: 'https://github.com/NethermindEth/aztec-fpc',
     },
@@ -132,112 +97,98 @@ export default defineConfig({
       ],
     },
   ],
-  sidebar: {
-    '/overview': [
-      {
-        text: 'Get Started',
-        items: [
-          { text: 'What is FPC?', link: '/overview/what-is-fpc' },
-          { text: 'Quick Start', link: '/overview/quick-start' },
-        ],
-      },
-      {
-        text: 'Concepts',
-        items: [
-          { text: 'Architecture', link: '/overview/architecture' },
-          { text: 'Quote System', link: '/overview/quote-system' },
-          { text: 'Security Model', link: '/overview/security' },
-        ],
-      },
-    ],
-    '/how-to': [
-      {
-        text: 'Wallet & App Integration',
-        items: [
-          { text: 'Integrate in a Wallet', link: '/how-to/integrate-wallet' },
-          { text: 'Cold-Start Flow (Bridge Builders)', link: '/how-to/cold-start-flow' },
-        ],
-      },
-      {
-        text: 'Operator',
-        items: [
-          { text: 'Run an Operator', link: '/how-to/run-operator' },
-          { text: 'Add a Supported Asset', link: '/how-to/add-supported-asset' },
-        ],
-      },
-    ],
-    '/contracts': [
-      {
-        text: 'Smart Contracts',
-        items: [
-          { text: 'Overview', link: '/contracts/overview' },
-          { text: 'FPCMultiAsset', link: '/contracts/fpc-multi-asset' },
-          { text: 'Token Bridge', link: '/contracts/token-bridge' },
-          { text: 'Faucet', link: '/contracts/faucet' },
-        ],
-      },
-    ],
-    '/services': [
-      {
-        text: 'Off-Chain Services',
-        items: [
-          { text: 'Attestation Service', link: '/services/attestation' },
-          { text: 'Top-up Service', link: '/services/topup' },
-        ],
-      },
-    ],
-    '/sdk': [
-      {
-        text: 'SDK',
-        items: [
-          { text: 'Getting Started', link: '/sdk/getting-started' },
-          { text: 'API Reference', link: '/sdk/api-reference' },
-        ],
-      },
-    ],
-    '/operations': [
-      {
-        text: 'Deploy & Run',
-        items: [
-          { text: 'Deployment', link: '/operations/deployment' },
-          { text: 'Docker & CI', link: '/operations/docker' },
-          { text: 'Testing', link: '/operations/testing' },
-        ],
-      },
-      {
-        text: 'Reference',
-        items: [
-          { text: 'Configuration', link: '/operations/configuration' },
-        ],
-      },
-    ],
-    '/reference': [
-      {
-        text: 'Lookup',
-        items: [
-          { text: 'Glossary', link: '/reference/glossary' },
-        ],
-      },
-      {
-        text: 'Deployments',
-        items: [
-          { text: 'Testnet Deployment', link: '/reference/testnet-deployment' },
-        ],
-      },
-      {
-        text: 'Normative Specs',
-        items: [
-          { text: 'Wallet Discovery Spec', link: '/reference/wallet-discovery' },
-          { text: 'ADR-0001 — Asset Model', link: '/reference/asset-model-adr' },
-          { text: 'E2E Test Matrix', link: '/reference/e2e-test-matrix' },
-        ],
-      },
-      {
-        text: 'Operational',
-        items: [
-          { text: 'Metrics & Probes', link: '/reference/metrics' },
-        ],
-      },
-    ],
-  },
+  sidebar: [
+    {
+      text: 'Learn',
+      items: [
+        {
+          text: 'Get Started',
+          items: [
+            { text: 'What is FPC?', link: '/overview/what-is-fpc' },
+            { text: 'Quick Start', link: '/overview/quick-start' },
+          ],
+        },
+        {
+          text: 'Concepts',
+          items: [
+            { text: 'Architecture', link: '/overview/architecture' },
+            { text: 'Quote System', link: '/overview/quote-system' },
+            { text: 'Security Model', link: '/overview/security' },
+          ],
+        },
+      ],
+    },
+    {
+      text: 'How-To',
+      items: [
+        {
+          text: 'Wallet & App Integration',
+          items: [
+            { text: 'Integrate in a Wallet', link: '/how-to/integrate-wallet' },
+            { text: 'Cold-Start Flow', link: '/how-to/cold-start-flow' },
+          ],
+        },
+        {
+          text: 'Operator',
+          items: [
+            { text: 'Run an Operator', link: '/how-to/run-operator' },
+            { text: 'Add a Supported Asset', link: '/how-to/add-supported-asset' },
+          ],
+        },
+      ],
+    },
+    {
+      text: 'SDK',
+      items: [
+        { text: 'Getting Started', link: '/sdk/getting-started' },
+        { text: 'API Reference', link: '/sdk/api-reference' },
+      ],
+    },
+    {
+      text: 'Contracts',
+      items: [
+        { text: 'Overview', link: '/contracts/overview' },
+        { text: 'FPCMultiAsset', link: '/contracts/fpc-multi-asset' },
+        { text: 'Token Bridge', link: '/contracts/token-bridge' },
+        { text: 'Faucet', link: '/contracts/faucet' },
+      ],
+    },
+    {
+      text: 'Services',
+      items: [
+        { text: 'Attestation Service', link: '/services/attestation' },
+        { text: 'Top-up Service', link: '/services/topup' },
+      ],
+    },
+    {
+      text: 'Operations',
+      items: [
+        {
+          text: 'Deploy & Run',
+          items: [
+            { text: 'Deployment', link: '/operations/deployment' },
+            { text: 'Docker & CI', link: '/operations/docker' },
+            { text: 'Testing', link: '/operations/testing' },
+          ],
+        },
+        { text: 'Configuration', link: '/operations/configuration' },
+      ],
+    },
+    {
+      text: 'Reference',
+      items: [
+        { text: 'Glossary', link: '/reference/glossary' },
+        { text: 'Testnet Deployment', link: '/reference/testnet-deployment' },
+        {
+          text: 'Specs',
+          items: [
+            { text: 'Wallet Discovery', link: '/reference/wallet-discovery' },
+            { text: 'ADR-0001 — Asset Model', link: '/reference/asset-model-adr' },
+            { text: 'E2E Test Matrix', link: '/reference/e2e-test-matrix' },
+          ],
+        },
+        { text: 'Metrics & Probes', link: '/reference/metrics' },
+      ],
+    },
+  ],
 })

@@ -24,7 +24,7 @@ Use these values to integrate against the **Nethermind-operated FPC on Aztec tes
 | `<ATTESTATION_URL>` | `https://aztec-fpc-testnet.staging-nethermind.xyz/` |
 | `<FPC_ADDRESS>` | `0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f` |
 | `<OPERATOR_ADDRESS>` | `0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974` |
-| `<TOKEN_ADDRESS>` (humanUSDC) | `0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb` |
+| `<TOKEN_ADDRESS>` (FpcAcceptedAsset) | `0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb` |
 | Aztec node version | `4.2.0-aztecnr-rc.2` |
 
 :::warning[Addresses may rotate]
@@ -44,9 +44,9 @@ curl https://aztec-fpc-testnet.staging-nethermind.xyz/.well-known/fpc.json
 curl https://aztec-fpc-testnet.staging-nethermind.xyz/accepted-assets
 ```
 
-## Notes on `humanUSDC`
+## Notes on `FpcAcceptedAsset`
 
-The accepted token (`0x07348d12…`) is a **test token**, not a real USDC peg. It's deployed by the `configure-token` phase of the testnet stack and is claimable via the faucet contract. Do not confuse with mainnet USDC.
+The accepted token (`0x07348d12…`) is a **test token**, not a real USDC peg. It's deployed by the `configure-token` phase of the testnet stack and is claimable via the faucet contract. The name `FpcAcceptedAsset` is what the operator registered in the attestation service — it has no relationship to USDC or any mainnet token.
 
 ## Where this is used in the docs
 
