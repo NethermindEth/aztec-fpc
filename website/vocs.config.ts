@@ -216,6 +216,12 @@ export default defineConfig({
     ],
     '/reference': [
       {
+        text: 'Lookup',
+        items: [
+          { text: 'Glossary', link: '/reference/glossary' },
+        ],
+      },
+      {
         text: 'Deployments',
         items: [
           { text: 'Testnet Deployment', link: '/reference/testnet-deployment' },

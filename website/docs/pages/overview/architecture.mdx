@@ -2,6 +2,12 @@
 
 The FPC system has four layers that work together to abstract gas payments.
 
+:::tip[Where do you fit?]
+- **Wallet team** (Azguard, Obsidion-style) — you run all four layers yourself: deploy the contract, run attestation + top-up, integrate the SDK in your wallet UI.
+- **dApp or DEX** (Shieldswap, Nemi-style) — you use the SDK against an operator you trust (or run your own attestation service). You never touch the contract directly.
+- **Bridge builder** (Substance Labs, TRAIN, Wormhole-style) — you use the SDK's `executeColdStart()`. The [Cold-Start flow diagram](#cold-start) below is the one that matters to you.
+:::
+
 ## System Diagram
 
 ```

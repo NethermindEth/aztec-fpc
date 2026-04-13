@@ -6,6 +6,10 @@ This guide walks through running a production-grade FPC operator — from key ma
 For local development, see [Quick Start](/overview/quick-start) instead.
 :::
 
+:::info[Who runs their own FPC today]
+Wallets like [Azguard](https://azguardwallet.io/) and [Obsidion](https://app.obsidion.xyz/) run their own FPC on Aztec testnet — they are simultaneously the operator and the integrator. If you're a wallet team, this guide and [Integrate in a Wallet](/how-to/integrate-wallet) together cover your full deployment. Aztec Alpha Mainnet launched in January 2026 — this is early-mover territory, and production key hygiene matters more than on a mature network.
+:::
+
 ## Prerequisites
 
 - An Aztec node you control or trust
@@ -98,7 +102,7 @@ top_up_amount: "5000000000000000000" # 5 Fee Juice
 data_dir: "/var/fpc/topup-data"
 
 check_interval_ms: 60000
-confirmation_timeout_ms: 600000
+confirmation_timeout_ms: 180000    # default — raise for slow testnets if needed
 
 l1_operator_secret_provider: kms
 ```

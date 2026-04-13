@@ -56,8 +56,8 @@ Claims tokens from an L1→L2 deposit into the recipient's **public** balance:
 2. Consumes the message from the Aztec inbox
 3. Mints `amount` tokens to `to`'s public balance
 
-:::info[Used by FPC]
-The FPC contract calls `claim_public` during `cold_start_entrypoint` to claim bridged tokens into the FPC's balance for redistribution.
+:::info[Not used by FPC cold-start]
+FPC cold-start calls [`claim_private`](#claim_private), not `claim_public`, because the subsequent transfers to the user and operator use the private domain.
 :::
 
 ### `claim_private`
@@ -97,12 +97,14 @@ Burns L2 tokens and sends an L2→L1 message:
 ```
 User (L1) ──bridge──► L1 Portal ──message──► Aztec Inbox
                                                    │
-FPC.cold_start_entrypoint ──► TokenBridge.claim_public()
+FPC.cold_start_entrypoint ──► TokenBridge.claim_private(fpc_address, claim_amount, ...)
                                     │
                                     ▼
-                              Token.mint_to_public(FPC, amount)
+                              Tokens minted to FPC's PRIVATE balance
                                     │
-                              FPC distributes:
+                              FPC distributes via transfer_private_to_private:
                               ├──► user gets (claim - fee)
                               └──► operator gets (fee)
 ```
+
+FPC passes `fpc_address` (not the user) as the `to` argument, so tokens land in the FPC's private balance first. This is deliberate — the user's account may not be deployed on L2 yet, so we can't write directly to the user's notes. Writing to FPC and then re-transferring sidesteps the need for an authwit from a non-existent account.

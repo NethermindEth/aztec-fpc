@@ -109,7 +109,7 @@ threshold: "1000000000"
 top_up_amount: "5000000000"
 data_dir: ".topup-data"
 check_interval_ms: 60000
-confirmation_timeout_ms: 600000
+confirmation_timeout_ms: 180000    # default 180s — max wait for L1→L2 message + balance settlement
 l1_operator_secret_provider: auto
 ops_port: 3001
 ```

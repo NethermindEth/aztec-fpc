@@ -150,9 +150,11 @@ Configurable via `quote_auth_mode`:
 
 | Mode | Description |
 |------|-------------|
-| `disabled` | No authentication (development default) |
-| `api_key` | Require API key in request header |
-| `trusted_header` | Trust header from reverse proxy |
+| `disabled` | No authentication (development default — **rejected in `runtime_profile: production`**) |
+| `api_key` | Require API key in `QUOTE_AUTH_API_KEY_HEADER` (default `x-api-key`) |
+| `trusted_header` | Trust a reverse-proxy-set header (name + expected value configured separately) |
+| `api_key_or_trusted_header` | Accept either an API key **or** a trusted header |
+| `api_key_and_trusted_header` | Require **both** an API key and a trusted header (headers must differ) |
 
 ### Admin Endpoints
 
@@ -181,13 +183,15 @@ Key settings:
 
 ```yaml title="config.yaml"
 runtime_profile: production
-network_id: "aztec-testnet"        # string, not number
+network_id: "aztec-testnet"        # string, not number (default "aztec-alpha-local")
 fpc_address: "0x..."
 contract_variant: "fpc-v1"
 aztec_node_url: "https://..."
-operator_secret_provider: env       # env | config | kms | hsm | auto
+operator_secret_provider: kms       # env | config | kms | hsm | auto
+operator_secret_ref: "secret-manager://prod/operator"  # preferred over OPERATOR_SECRET_KEY
 quote_validity_seconds: 300
-quote_auth_mode: api_key            # disabled | api_key | trusted_header
+quote_format: amount_quote          # amount_quote | rate_quote
+quote_auth_mode: api_key            # disabled (dev only) | api_key | trusted_header | api_key_or_trusted_header | api_key_and_trusted_header
 port: 3000
 
 supported_assets:

@@ -66,7 +66,7 @@ poseidon2([
 | Hash function | Poseidon2 |
 | Signature | Schnorr (64 bytes) |
 
-**Hash preimage (extended):**
+**Hash preimage (9 fields — the normal preimage plus `claim_amount` + `claim_secret_hash`):**
 
 ```noir
 poseidon2([
@@ -77,12 +77,14 @@ poseidon2([
     aa_payment_amount,
     valid_until,
     user_address,        // explicit param (not msg_sender)
-    bridge,              // bridge contract address
-    claim_amount,        // amount being claimed
+    claim_amount,        // amount being claimed from the bridge
     claim_secret_hash,   // hash of the claim secret
-    message_leaf_index,  // L1→L2 message index
 ])
 ```
+
+:::warning[Bridge address and `message_leaf_index` are NOT in the preimage]
+The contract accepts `bridge` and `message_leaf_index` as function arguments to `cold_start_entrypoint`, but they are **not** signed by the operator. Only `claim_amount` and `claim_secret_hash` bind the quote to a specific bridge deposit. The bridge address can be chosen by the caller at tx time — the operator is trusting that the claim will be honored by whatever bridge the user points at, because the mint goes to the FPC first and the contract only distributes what was actually claimed.
+:::
 
 :::warning
 The different domain separators prevent cross-entrypoint quote reuse. A quote signed for `fee_entrypoint` will fail in `cold_start_entrypoint` and vice versa.
@@ -129,9 +131,11 @@ The attestation service returns:
     "accepted_asset": "0x1234...abcd",
     "fj_amount": "1000000",
     "aa_payment_amount": "1010000",
-    "valid_until": 1700000300,
+    "valid_until": "1700000300",
     "signature": "0xabcd...1234"
 }
 ```
+
+All numeric fields (`fj_amount`, `aa_payment_amount`, `valid_until`) are returned as **strings** to preserve full u128 / unix-timestamp precision across JSON.
 
 This response is consumed directly by the SDK's `createPaymentMethod()` or `executeColdStart()`.

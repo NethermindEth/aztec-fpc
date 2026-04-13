@@ -61,14 +61,15 @@ Stores the operator address and Schnorr public key coordinates. Called once at d
 Standard fee payment for users with existing L2 token balances.
 
 ```noir
-#[private]
+#[external("private")]
+#[allow_phase_change]
 fn fee_entrypoint(
     accepted_asset: AztecAddress,    // Token contract address
     authwit_nonce: Field,            // Nonce for token transfer authwit
-    fj_fee_amount: Field,            // Fee Juice amount (gas cost)
-    aa_payment_amount: Field,        // Token amount (what user pays)
+    fj_fee_amount: u128,             // Fee Juice amount (gas cost)
+    aa_payment_amount: u128,         // Token amount (what user pays)
     valid_until: u64,                // Quote expiry timestamp
-    quote_sig: [u8; 64],            // Operator's Schnorr signature
+    quote_sig: [u8; 64],             // Operator's Schnorr signature
 )
 ```
 
@@ -112,19 +113,20 @@ The FPC contract pays the transaction's gas in Fee Juice.
 For new users who bridged tokens from L1 and have no L2 balance.
 
 ```noir
-#[private]
+#[external("private")]
+#[allow_phase_change]
 fn cold_start_entrypoint(
-    user: AztecAddress,              // User's L2 address
+    user: AztecAddress,              // User's L2 address (bound in quote preimage)
     accepted_asset: AztecAddress,    // Token contract address
-    bridge: AztecAddress,            // Bridge contract address
-    claim_amount: Field,             // Amount bridged from L1
+    bridge: AztecAddress,            // Bridge contract address (NOT in quote preimage)
+    claim_amount: u128,              // Amount bridged from L1
     claim_secret: Field,             // Bridge claim secret
     claim_secret_hash: Field,        // Hash of claim secret
-    message_leaf_index: Field,       // L1→L2 message index
-    fj_fee_amount: Field,            // Fee Juice amount
-    aa_payment_amount: Field,        // Token payment amount
+    message_leaf_index: Field,       // L1→L2 message index (NOT in quote preimage)
+    fj_fee_amount: u128,             // Fee Juice amount
+    aa_payment_amount: u128,         // Token payment amount
     valid_until: u64,                // Quote expiry
-    quote_sig: [u8; 64],            // Operator signature
+    quote_sig: [u8; 64],             // Operator signature
 )
 ```
 
@@ -150,12 +152,14 @@ FPC pays gas in Fee Juice.
 
 ### Claim tokens from bridge
 
-Enqueues `bridge.claim_public()` — mints tokens into FPC's public balance.
+Calls `TokenBridge.claim_private(fpc_address, claim_amount, claim_secret, message_leaf_index)` — mints tokens into the **FPC's private balance** (not user's). This is why no user authwit is needed: the FPC becomes `msg_sender` for the subsequent transfers.
 
 ### Distribute tokens
 
-- Transfer `claim_amount - aa_payment_amount` → **user**
-- Transfer `aa_payment_amount` → **operator**
+Both transfers use `Token.transfer_private_to_private(fpc → recipient, amount, 0)` (nonce `0` — no authwit because FPC is the sender):
+
+- `claim_amount - aa_payment_amount` → **user** (only if `user_amount > 0`)
+- `aa_payment_amount` → **operator**
 
 ::::
 
@@ -172,22 +176,24 @@ Enqueues `bridge.claim_public()` — mints tokens into FPC's public balance.
 ### `assert_valid_quote`
 
 ```noir
+#[contract_library_method]
 fn assert_valid_quote(
-    config: Config,
+    context: &mut PrivateContext,
+    operator_pubkey: EmbeddedCurvePoint,
     accepted_asset: AztecAddress,
-    fj_fee_amount: Field,
-    aa_payment_amount: Field,
+    fj_fee_amount: u128,
+    aa_payment_amount: u128,
     valid_until: u64,
+    user_address: AztecAddress,
     quote_sig: [u8; 64],
-    user: AztecAddress,
-) -> Field  // returns quote_hash
+)
 ```
 
-Verifies a normal quote: hash, signature, nullifier, expiry, TTL.
+Verifies a normal quote: computes the 7-field preimage hash, verifies the Schnorr signature, pushes the nullifier, asserts expiry + TTL ≤ 3600s, sets tx expiration timestamp.
 
 ### `assert_valid_cold_start_quote`
 
-Same as above with extended preimage (bridge, claim_amount, claim_secret_hash, message_leaf_index) and domain separator `0x46504373`.
+Same structure with extended 9-field preimage — adds `claim_amount` and `claim_secret_hash` (**not** `bridge` or `message_leaf_index` — those are args but not signed) and uses domain separator `0x46504373`.
 
 ### `get_max_gas_cost`
 
