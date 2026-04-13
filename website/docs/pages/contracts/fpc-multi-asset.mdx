@@ -211,7 +211,7 @@ Computes the maximum possible transaction fee using protocol gas settings.
 | Mismatched fee | Signature fails if amounts differ from quote |
 | Expired quote | Rejects quotes past `valid_until` |
 | Overlong TTL | Rejects quotes with TTL > 3600s |
-| Non-root caller | Context-specific constraints |
+| Constructor validation | Rejects zero operator address |
 | Wrong user binding | Quote for user A can't be used by user B |
 | Authwit freshness | Authorization witness must be valid |
 
@@ -219,7 +219,7 @@ Computes the maximum possible transaction fee using protocol gas settings.
 
 | Test | Verifies |
 |------|----------|
-| Setup phase enforcement | Can only run during tx setup |
+| Happy path | Cold-start succeeds, tokens distributed correctly |
 | Root-call guard | Must be transaction root |
 | Domain separation | Cold-start quote can't be used in fee_entrypoint |
 | Standard quote rejection | Normal quote can't be used in cold_start |

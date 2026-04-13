@@ -61,16 +61,17 @@ anvil → aztec-node → deploy → attestation → configure-token
 
 ## Integration Test Services
 
-Six test suites run as compose services:
+Seven test suites run as compose services:
 
 | Service | Test Suite |
 |---------|-----------|
 | `tests-services` | Health + API smoke |
 | `tests-cold-start` | Full cold-start flow |
-| `tests-fee-entrypoint` | Fee entrypoint validation |
+| `tests-cold-start-validation` | Cold-start edge-case validation |
+| `tests-fee-entrypoint-validation` | Fee entrypoint validation |
 | `tests-concurrent` | Concurrent transaction stress |
-| `tests-same-token` | Same-token transfer |
-| `tests-revert` | Revert behavior |
+| `tests-same-token-transfer` | Same-token transfer |
+| `tests-always-revert` | Revert behavior |
 
 ## CI Pipeline
 

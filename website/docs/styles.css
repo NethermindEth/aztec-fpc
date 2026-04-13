@@ -1,5 +1,290 @@
 /* ── Aztec FPC Docs — Global Styles ─────────────────────────────── */
 
+/* ── Landing page design tokens ─────────────────────────────────── */
+:root {
+  --fpc-bg-card:     #16151f;
+  --fpc-bg-card-hi:  #1e1c2b;
+  --fpc-accent:      #8b6ff5;
+  --fpc-accent-dim:  rgba(139,111,245,0.10);
+  --fpc-teal:        #4edea3;
+  --fpc-teal-dim:    rgba(78,222,163,0.10);
+  --fpc-text:        #e4e0f0;
+  --fpc-muted:       #7a748f;
+  --fpc-border:      rgba(255,255,255,0.07);
+  --fpc-mono:        'JetBrains Mono', 'Fira Mono', monospace;
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────── */
+.fpc-hero {
+  text-align: center;
+  padding: 5rem 0 3.5rem;
+}
+.fpc-eyebrow {
+  font-family: var(--fpc-mono);
+  font-size: 0.7rem;
+  color: var(--fpc-teal);
+  letter-spacing: 0.1em;
+  margin: 0 0 1.5rem;
+}
+.fpc-h1 {
+  font-size: clamp(2.25rem, 5.5vw, 3.75rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin: 0 0 1.25rem;
+  color: var(--fpc-text);
+}
+.fpc-grad {
+  background: linear-gradient(135deg, var(--fpc-accent) 0%, #c4a6ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.fpc-sub {
+  font-size: 1.0625rem;
+  color: var(--fpc-muted);
+  max-width: 540px;
+  margin: 0 auto 2.5rem;
+  line-height: 1.65;
+}
+.fpc-ctas {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ── Stats strip ──────────────────────────────────────────────────── */
+.fpc-stats {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--fpc-bg-card);
+  border: 1px solid var(--fpc-border);
+  border-radius: 0.875rem;
+  padding: 1.5rem;
+  margin-bottom: 3.5rem;
+}
+.fpc-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem 2rem;
+  gap: 0.2rem;
+}
+.fpc-stat-n {
+  font-family: var(--fpc-mono);
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: var(--fpc-accent);
+  line-height: 1;
+}
+.fpc-stat-l {
+  font-family: var(--fpc-mono);
+  font-size: 0.6875rem;
+  color: var(--fpc-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.fpc-sep {
+  width: 1px;
+  height: 2.5rem;
+  background: var(--fpc-border);
+  flex-shrink: 0;
+}
+
+/* ── Section label ────────────────────────────────────────────────── */
+.fpc-section-label {
+  font-family: var(--fpc-mono);
+  font-size: 0.6875rem;
+  color: var(--fpc-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 1rem;
+}
+
+/* ── Bento feature grid ───────────────────────────────────────────── */
+.fpc-bento {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-areas:
+    "a a b"
+    "c d b"
+    "e e e";
+  gap: 0.875rem;
+  margin-bottom: 3.5rem;
+}
+.fpc-card {
+  background: var(--fpc-bg-card);
+  border: 1px solid var(--fpc-border);
+  border-radius: 0.875rem;
+  padding: 1.5rem;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.fpc-card:hover {
+  border-color: rgba(139,111,245,0.3);
+  background: var(--fpc-bg-card-hi);
+}
+.fpc-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.5rem;
+  color: var(--fpc-text);
+  line-height: 1.3;
+}
+.fpc-card p {
+  font-size: 0.875rem;
+  color: var(--fpc-muted);
+  margin: 0 0 0.75rem;
+  line-height: 1.65;
+}
+.fpc-card-sub {
+  font-size: 0.8125rem !important;
+  font-style: italic;
+}
+.fpc-card code {
+  font-size: 0.8125rem;
+  background: rgba(0,0,0,0.25);
+  padding: 0.1em 0.35em;
+  border-radius: 0.25rem;
+  color: var(--fpc-teal);
+}
+.fpc-card-link {
+  font-family: var(--fpc-mono);
+  font-size: 0.75rem;
+  color: var(--fpc-accent);
+  text-decoration: none;
+  display: inline-block;
+  margin-top: 0.5rem;
+}
+.fpc-card-link:hover { text-decoration: underline; }
+
+/* Grid area assignments */
+.fpc-card-a {
+  grid-area: a;
+  background: linear-gradient(135deg, #1a1728 0%, var(--fpc-bg-card) 65%);
+}
+.fpc-card-b { grid-area: b; }
+.fpc-card-c { grid-area: c; }
+.fpc-card-d { grid-area: d; }
+.fpc-card-e {
+  grid-area: e;
+  display: flex;
+  align-items: flex-start;
+  gap: 2rem;
+}
+.fpc-card-e-text { flex: 1; min-width: 0; }
+
+/* Tags */
+.fpc-tag {
+  display: inline-block;
+  font-family: var(--fpc-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.625rem;
+  border-radius: 9999px;
+  border: 1px solid;
+}
+.fpc-tag-purple {
+  color: var(--fpc-accent);
+  background: var(--fpc-accent-dim);
+  border-color: rgba(139,111,245,0.3);
+}
+.fpc-tag-teal {
+  color: var(--fpc-teal);
+  background: var(--fpc-teal-dim);
+  border-color: rgba(78,222,163,0.3);
+}
+
+/* Code block in SDK card */
+.fpc-code {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--fpc-border);
+  border-radius: 0.625rem;
+  padding: 1rem 1.25rem;
+  font-family: var(--fpc-mono);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--fpc-muted);
+  flex-shrink: 0;
+  margin: 0;
+  max-width: 420px;
+}
+
+/* ── Persona routing ──────────────────────────────────────────────── */
+.fpc-personas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.875rem;
+  margin-bottom: 2rem;
+}
+.fpc-persona {
+  display: flex;
+  flex-direction: column;
+  background: var(--fpc-bg-card);
+  border: 1px solid var(--fpc-border);
+  border-radius: 0.875rem;
+  padding: 1.5rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  gap: 0.25rem;
+}
+.fpc-persona:hover {
+  border-color: rgba(139,111,245,0.35);
+  background: var(--fpc-bg-card-hi);
+}
+.fpc-persona-who {
+  font-family: var(--fpc-mono);
+  font-size: 0.6875rem;
+  color: var(--fpc-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.fpc-persona h4 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0.25rem 0 0.375rem;
+  color: var(--fpc-text);
+  line-height: 1.3;
+}
+.fpc-persona p {
+  font-size: 0.8125rem;
+  color: var(--fpc-muted);
+  margin: 0;
+  line-height: 1.55;
+  flex: 1;
+}
+.fpc-persona-arrow {
+  margin-top: 1.25rem;
+  font-family: var(--fpc-mono);
+  font-size: 0.75rem;
+  color: var(--fpc-accent);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .fpc-bento {
+    grid-template-columns: 1fr;
+    grid-template-areas: "a" "b" "c" "d" "e";
+  }
+  .fpc-card-e { flex-direction: column; }
+  .fpc-code { white-space: pre-wrap; max-width: 100%; }
+  .fpc-personas { grid-template-columns: 1fr; }
+  .fpc-sep { display: none; }
+  .fpc-stat { padding: 0.5rem 1rem; }
+}
+
+
+
 /* Landing page hero gradient */
 .landing-gradient {
   background: linear-gradient(135deg, #5B3AE8 0%, #8B6FF5 40%, #C4A6FF 100%);

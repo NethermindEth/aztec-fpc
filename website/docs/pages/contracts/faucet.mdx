@@ -28,7 +28,7 @@ struct Storage {
 |-----------|------|-------------|
 | `token` | `AztecAddress` | Token contract to dispense |
 | `admin` | `AztecAddress` | Address with `admin_drip` privilege |
-| `drip_amount` | `Field` | Amount per drip |
+| `drip_amount` | `u128` | Amount per drip (base units) |
 | `cooldown_seconds` | `u64` | Minimum time between drips per recipient |
 
 ## Functions
@@ -36,7 +36,7 @@ struct Storage {
 ### `drip`
 
 ```noir
-#[public]
+#[external("public")]
 fn drip(recipient: AztecAddress)
 ```
 
@@ -45,21 +45,26 @@ Transfers `drip_amount` to the recipient's public balance if the cooldown has el
 ### `admin_drip`
 
 ```noir
-#[public]
-fn admin_drip(recipient: AztecAddress, amount: Field)
+#[external("public")]
+fn admin_drip(recipient: AztecAddress, amount: u128)
 ```
 
-Operator bypass — no cooldown, any amount. Only callable by the configured `admin`.
+Operator bypass — no cooldown, any amount. Only callable by the configured `admin`. Does not update `last_drip`, so it never blocks the recipient's regular drip cooldown.
 
-### `get_config` / `get_config_public`
+### `get_config`
 
-Read the faucet's configuration. Available in both private and public contexts.
+```noir
+#[external("utility")]
+unconstrained fn get_config() -> Config
+```
+
+Read the faucet's configuration (unconstrained utility).
 
 ### `get_last_drip`
 
 ```noir
-#[public]
-fn get_last_drip(recipient: AztecAddress) -> u64
+#[external("utility")]
+unconstrained fn get_last_drip(recipient: AztecAddress) -> u64
 ```
 
-Returns the timestamp of the recipient's last drip. Useful for checking cooldown status.
+Returns the unix timestamp of the recipient's last drip. Uninitialized entries return `0`, so the first drip is always allowed.
