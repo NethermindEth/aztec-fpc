@@ -25,19 +25,19 @@ export default defineConfig({
   ],
   theme: {
     accentColor: {
-      light: '#5B3AE8',
-      dark: '#8B6FF5',
+      light: '#5a6400',   // olive-lime for light mode
+      dark: '#C8E600',    // muted lime — readable on dark, matches landing accent
     },
     colorScheme: 'system',
     variables: {
       color: {
         background: {
-          light: '#FAFAFA',
-          dark: '#0D0D12',
+          light: '#F9F7F2',   // warm off-white (echoes the warm dark)
+          dark: '#161312',    // landing page bg — obsidian brown
         },
         backgroundDark: {
-          light: '#F0EFF5',
-          dark: '#16151F',
+          light: '#EDEAE3',
+          dark: '#1e1b1a',    // landing page surface
         },
       },
       content: {
@@ -49,18 +49,11 @@ export default defineConfig({
   },
   font: {
     default: {
-      google: 'Inter',
+      google: 'Manrope',
     },
     mono: {
       google: 'JetBrains Mono',
     },
-  },
-  banner: {
-    content: '🚧 These docs are under active development. [Contribute on GitHub →](https://github.com/NethermindEth/aztec-fpc)',
-    dismissable: true,
-    backgroundColor: '#5B3AE8',
-    textColor: '#FFFFFF',
-    height: '36px',
   },
   markdown: {
     code: {
@@ -116,6 +109,10 @@ export default defineConfig({
       text: 'Reference',
       link: '/reference/wallet-discovery',
       match: '/reference',
+    },
+    {
+      text: 'Contribute',
+      link: 'https://github.com/NethermindEth/aztec-fpc',
     },
     {
       text: 'v3.0.0',

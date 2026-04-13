@@ -4,110 +4,130 @@ title: Aztec FPC — Multi-asset, operator-runnable Fee Payment Contract
 description: Nethermind's production multi-asset FPC for Aztec. Accept any token for gas, monetize the spread, and onboard users in one transaction from L1.
 ---
 
-import { HomePage } from 'vocs/components'
 import '../styles.css'
 
-<div className="fpc-hero">
-  <p className="fpc-eyebrow">// aztec · fee payment contract · v3.0.0</p>
-  <h1 className="fpc-h1">Accept <span className="fpc-grad">any token</span> for gas on Aztec.</h1>
-  <p className="fpc-sub">Nethermind's production multi-asset FPC — users pay in USDC, ETH, or your app's token. The contract pays Fee Juice. You earn the spread.</p>
-  <div className="fpc-ctas">
-    <HomePage.Button href="/overview/what-is-fpc" variant="accent">What is FPC?</HomePage.Button>
-    <HomePage.Button href="https://github.com/NethermindEth/aztec-fpc">GitHub →</HomePage.Button>
+<div className="ren-grain" />
+
+<div className="ren-ticker">
+  <div className="ren-ticker-track">
+    <span>COLD START · ONE TRANSACTION · FEE JUICE · AZTEC · PAY GAS IN ANY TOKEN · NETHERMIND · v3.0.0 · COLD START · ONE TRANSACTION · FEE JUICE · AZTEC · PAY GAS IN ANY TOKEN · NETHERMIND · v3.0.0 ·</span>
+    <span aria-hidden="true">COLD START · ONE TRANSACTION · FEE JUICE · AZTEC · PAY GAS IN ANY TOKEN · NETHERMIND · v3.0.0 · COLD START · ONE TRANSACTION · FEE JUICE · AZTEC · PAY GAS IN ANY TOKEN · NETHERMIND · v3.0.0 ·</span>
   </div>
 </div>
 
-<div className="fpc-stats">
-  <div className="fpc-stat">
-    <span className="fpc-stat-n">∞</span>
-    <span className="fpc-stat-l">tokens accepted</span>
-  </div>
-  <div className="fpc-sep" />
-  <div className="fpc-stat">
-    <span className="fpc-stat-n">1 tx</span>
-    <span className="fpc-stat-l">cold-start from L1</span>
-  </div>
-  <div className="fpc-sep" />
-  <div className="fpc-stat">
-    <span className="fpc-stat-n">0</span>
-    <span className="fpc-stat-l">on-chain allowlist</span>
-  </div>
-  <div className="fpc-sep" />
-  <div className="fpc-stat">
-    <span className="fpc-stat-n">2</span>
-    <span className="fpc-stat-l">SDK methods</span>
+<div className="ren-hero">
+  <div className="ren-watermark">FPC</div>
+  <p className="ren-eyebrow">// FEE PAYMENT CONTRACT · NETHERMIND</p>
+  <h1 className="ren-h1">
+    Accept <span className="ren-underline">Any Token</span> for Gas on Aztec.
+  </h1>
+  <p className="ren-sub">Nethermind's production multi-asset Fee Payment Contract — users pay in USDC, ETH, or your app's token. The contract pays Fee Juice. You earn the spread.</p>
+  <div className="ren-ctas">
+    <a className="ren-btn-primary" href="/overview/what-is-fpc">What is FPC?</a>
+    <a className="ren-btn-ghost" href="https://github.com/NethermindEth/aztec-fpc">GitHub →</a>
   </div>
 </div>
 
-<p className="fpc-section-label">// what's in the box</p>
+<div className="ren-stats">
+  <div className="ren-stat">
+    <span className="ren-stat-n">∞</span>
+    <span className="ren-stat-l">tokens accepted</span>
+  </div>
+  <div className="ren-stat-sep" />
+  <div className="ren-stat">
+    <span className="ren-stat-n">1 TX</span>
+    <span className="ren-stat-l">cold-start from L1</span>
+  </div>
+  <div className="ren-stat-sep" />
+  <div className="ren-stat">
+    <span className="ren-stat-n">0</span>
+    <span className="ren-stat-l">on-chain allowlist</span>
+  </div>
+  <div className="ren-stat-sep" />
+  <div className="ren-stat">
+    <span className="ren-stat-n">2</span>
+    <span className="ren-stat-l">SDK methods</span>
+  </div>
+</div>
 
-<div className="fpc-bento">
-  <div className="fpc-card fpc-card-a">
-    <span className="fpc-tag fpc-tag-purple">core</span>
-    <h3>Multi-asset, not single-token</h3>
-    <p>Accept USDC, ETH, wstETH, or your app's native token — whatever your users have. Token policy is off-chain and operator-controlled; adding a new asset is a single API call, no contract upgrade required.</p>
-    <a className="fpc-card-link" href="/contracts/fpc-multi-asset">See the contract →</a>
+<div className="ren-section-label">// what's in the box</div>
+
+<div className="ren-bento">
+  <div className="ren-card ren-card-a">
+    <span className="ren-tag">core</span>
+    <h3 className="ren-card-h">Multi-Asset, Not Single-Token</h3>
+    <p className="ren-card-p">Accept USDC, ETH, wstETH, or your app's native token — whatever your users have. Token policy is off-chain and operator-controlled. Adding a new asset is a single API call, no contract upgrade required.</p>
+    <a className="ren-card-link" href="/contracts/fpc-multi-asset">See the contract →</a>
   </div>
-  <div className="fpc-card fpc-card-b">
-    <span className="fpc-tag fpc-tag-teal">onboarding</span>
-    <h3>Cold-start: L1 → Aztec in one transaction</h3>
-    <p>User bridges tokens from L1 with no Fee Juice, no deployed account. <code>cold_start_entrypoint</code> atomically claims the bridge, splits tokens, pays gas, and delivers the remainder.</p>
-    <p className="fpc-card-sub">This is why bridge and onboarding teams integrate FPC.</p>
-    <a className="fpc-card-link" href="/how-to/cold-start-flow">Cold-start guide →</a>
+  <div className="ren-card ren-card-b">
+    <span className="ren-tag">onboarding</span>
+    <h3 className="ren-card-h">Cold Start: L1 → Aztec in One Transaction</h3>
+    <p className="ren-card-p">User bridges tokens from L1 — no Fee Juice, no deployed account. <code className="ren-inline-code">cold_start_entrypoint</code> atomically claims the bridge, splits tokens, pays gas, and delivers the remainder.</p>
+    <p className="ren-card-note">This is why bridge and onboarding teams integrate FPC.</p>
+    <a className="ren-card-link" href="/how-to/cold-start-flow">Cold-start guide →</a>
   </div>
-  <div className="fpc-card fpc-card-c">
-    <span className="fpc-tag fpc-tag-purple">security</span>
-    <h3>Schnorr-signed quotes</h3>
-    <p>Domain-separated, replay-protected quotes signed off-chain with the operator's Schnorr key, verified on-chain via Poseidon2. No front-running, no replay attacks.</p>
-    <a className="fpc-card-link" href="/overview/quote-system">Quote system →</a>
+  <div className="ren-card ren-card-c">
+    <span className="ren-tag">security</span>
+    <h3 className="ren-card-h">Schnorr-Signed Quotes</h3>
+    <p className="ren-card-p">Domain-separated, replay-protected quotes signed off-chain with the operator's Schnorr key, verified on-chain via Poseidon2. No front-running, no replay attacks.</p>
+    <a className="ren-card-link" href="/overview/quote-system">Quote system →</a>
   </div>
-  <div className="fpc-card fpc-card-d">
-    <span className="fpc-tag fpc-tag-teal">economics</span>
-    <h3>Configurable operator spread</h3>
-    <p>Set <code>fee_bips</code> per asset. Every quote includes your margin on top of the market rate. Earn revenue on every sponsored transaction.</p>
-    <a className="fpc-card-link" href="/operations/configuration">Configure →</a>
+  <div className="ren-card ren-card-d">
+    <span className="ren-tag">economics</span>
+    <h3 className="ren-card-h">Configurable Operator Spread</h3>
+    <p className="ren-card-p">Set <code className="ren-inline-code">fee_bips</code> per asset. Every quote includes your margin on top of the market rate. Earn revenue on every sponsored transaction.</p>
+    <a className="ren-card-link" href="/operations/configuration">Configure →</a>
   </div>
-  <div className="fpc-card fpc-card-e">
-    <div className="fpc-card-e-text">
-      <span className="fpc-tag fpc-tag-purple">sdk</span>
-      <h3>Two methods, full coverage</h3>
-      <p><code>createPaymentMethod()</code> for users already on Aztec. <code>executeColdStart()</code> for first-tx users arriving from L1. That's the entire integration surface.</p>
-      <a className="fpc-card-link" href="/sdk/getting-started">SDK docs →</a>
+  <div className="ren-card ren-card-e">
+    <div className="ren-card-e-left">
+      <span className="ren-tag">sdk</span>
+      <h3 className="ren-card-h">Two Methods, Full Coverage</h3>
+      <p className="ren-card-p"><code className="ren-inline-code">createPaymentMethod()</code> for users already on Aztec. <code className="ren-inline-code">executeColdStart()</code> for first-tx users arriving from L1. That's the entire integration surface.</p>
+      <a className="ren-card-link" href="/sdk/getting-started">SDK docs →</a>
     </div>
-    <pre className="fpc-code">{`// existing user
-const payment = await fpc.createPaymentMethod({ wallet, tokenAddress });
+    <pre className="ren-codeblock">{`// existing user
+const payment = await fpc.createPaymentMethod(
+  { wallet, tokenAddress }
+);
 await contract.method().send({ fee: payment.fee });
 
 // cold-start from L1
-const result = await fpc.executeColdStart({ wallet, bridgeClaim });`}</pre>
+const result = await fpc.executeColdStart(
+  { wallet, bridgeClaim }
+);`}</pre>
   </div>
 </div>
 
-<p className="fpc-section-label">// start here</p>
+<div className="ren-section-label">// start here</div>
 
-<div className="fpc-personas">
-  <a className="fpc-persona" href="/how-to/integrate-wallet">
-    <span className="fpc-persona-who">Wallet team / operator</span>
-    <h4>I'm running my own FPC</h4>
-    <p>Deploy the contract, configure the attestation service, surface it in your wallet. Combined operator + integrator path.</p>
-    <span className="fpc-persona-arrow">→ Integrate in a wallet</span>
+<div className="ren-personas">
+  <a className="ren-persona" href="/how-to/integrate-wallet">
+    <span className="ren-persona-who">Wallet team / operator</span>
+    <h4 className="ren-persona-h">I'm Running My Own FPC</h4>
+    <p className="ren-persona-p">Deploy the contract, configure the attestation service, surface it in your wallet. Combined operator + integrator path.</p>
+    <span className="ren-persona-link">→ Integrate in a wallet</span>
   </a>
-  <a className="fpc-persona" href="/sdk/getting-started">
-    <span className="fpc-persona-who">dApp / DEX builder</span>
-    <h4>I want to sponsor my users' gas</h4>
-    <p>Use an existing FPC operator or run your own. SDK-first — two methods, done.</p>
-    <span className="fpc-persona-arrow">→ SDK getting started</span>
+  <a className="ren-persona" href="/sdk/getting-started">
+    <span className="ren-persona-who">dApp / DEX builder</span>
+    <h4 className="ren-persona-h">I Want to Sponsor My Users' Gas</h4>
+    <p className="ren-persona-p">Use an existing FPC operator or run your own. SDK-first — two methods, done.</p>
+    <span className="ren-persona-link">→ SDK getting started</span>
   </a>
-  <a className="fpc-persona" href="/how-to/cold-start-flow">
-    <span className="fpc-persona-who">Bridge / onboarding UX</span>
-    <h4>I'm building a one-tx L1 to L2 flow</h4>
-    <p>Claim bridged tokens, pay gas, and deliver the remainder — all in one atomic transaction.</p>
-    <span className="fpc-persona-arrow">→ Cold-start flow</span>
+  <a className="ren-persona" href="/how-to/cold-start-flow">
+    <span className="ren-persona-who">Bridge / onboarding UX</span>
+    <h4 className="ren-persona-h">I'm Building a One-Tx L1 to L2 Flow</h4>
+    <p className="ren-persona-p">Claim bridged tokens, pay gas, and deliver the remainder — all in one atomic transaction.</p>
+    <span className="ren-persona-link">→ Cold-start flow</span>
   </a>
-  <a className="fpc-persona" href="/overview/security">
-    <span className="fpc-persona-who">Auditor / security reviewer</span>
-    <h4>I need the trust model</h4>
-    <p>Quote binding, setup-phase irreversibility, replay protection, operator key custody, and threat mitigations.</p>
-    <span className="fpc-persona-arrow">→ Security model</span>
+  <a className="ren-persona" href="/overview/security">
+    <span className="ren-persona-who">Auditor / security reviewer</span>
+    <h4 className="ren-persona-h">I Need the Trust Model</h4>
+    <p className="ren-persona-p">Quote binding, setup-phase irreversibility, replay protection, operator key custody, and threat mitigations.</p>
+    <span className="ren-persona-link">→ Security model</span>
   </a>
+</div>
+
+<div className="ren-footer">
+  <span>Aztec FPC · Nethermind · v3.0.0</span>
+  <span className="ren-footer-note">Fee Payment Contract for Aztec L2 · Open Source · MIT License</span>
 </div>
