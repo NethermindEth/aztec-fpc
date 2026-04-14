@@ -27,7 +27,7 @@ The [SDK](/sdk/getting-started) (`@nethermindeth/aztec-fpc-sdk`) is part of this
 
 <img src="/image.png" alt="FPC transaction flow: User requests a signed quote from the Attestation Service, submits a transaction to the FPC Contract which verifies the quote, transfers the user's token to the operator, and pays gas." style={{ width: '100%', borderRadius: '8px' }} />
 
-The wallet requests a quote from the attestation service, which prices the Fee Juice cost in the user's token and signs it with the operator's Schnorr key. The user includes the operator's quote signature in their transaction alongside a transfer authorization witness (authwit) — the authwit authorizes the token transfer and is carried as an execution payload component, not a function argument. The FPC contract reconstructs the hash, verifies the signature against the stored operator public key, pushes a nullifier to prevent replay, and executes the payment.
+The wallet requests a quote from the attestation service, which prices the Fee Juice cost in the user's token and signs it with the operator's Schnorr key. The user includes the operator's quote signature in their transaction alongside a transfer authorization witness (authwit). The authwit authorizes the token transfer and is carried as an execution payload component, not a function argument to `fee_entrypoint`. The FPC contract reconstructs the hash, verifies the signature against the stored operator public key, pushes a nullifier to prevent replay, and executes the payment.
 
 ## What FPC does not do
 
