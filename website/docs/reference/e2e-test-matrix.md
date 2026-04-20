@@ -11,7 +11,7 @@ These are the negative scenarios an FPC implementation must enforce. Happy-path 
 
 ## Required Negative Scenarios
 
-All scenarios target `fee_entrypoint`. Scenarios 1 through 5 run against a pre-deployed FPC from a deployment manifest, already funded by the running top-up service. Scenario 6 deploys an isolated FPC with a controlled Fee Juice budget. Contract-level unit tests are in [`contracts/fpc/src/test/`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/test/).
+All scenarios target `fee_entrypoint`. All run against a pre-deployed FPC from a deployment manifest, already funded by the running top-up service. Contract-level unit tests are in [`contracts/fpc/src/test/`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/test/).
 
 | # | Scenario | Expected behavior |
 |---|---|---|
@@ -20,7 +20,7 @@ All scenarios target `fee_entrypoint`. Scenarios 1 through 5 run against a pre-d
 | 3 | **Overlong quote TTL** | Submit a quote where `valid_until - anchor_timestamp > 3600`. Transaction is rejected. |
 | 4 | **Quote sender binding** | Quote issued for user A is submitted by user B. Transaction is rejected because the signature binds to `msg_sender`. |
 | 5 | **Direct `fee_entrypoint` outside setup** | Call `fee_entrypoint` as a root-level transaction outside the setup phase. Transaction is rejected. |
-| 6 | **Insufficient Fee Juice** | Deploy an isolated FPC with a controlled Fee Juice budget (direct bridge + claim). First transaction succeeds. Second transaction is rejected for insufficient fee-payer balance. |
+| 6 | **Insufficient Fee Juice** | Inflate `maxFeesPerGas` so the quoted fee exceeds the FPC's current Fee Juice balance. Transaction is rejected for insufficient fee-payer balance. |
 
 ## Asset Model and Wiring
 
@@ -33,7 +33,7 @@ Two assets are involved in the E2E tests. Do not conflate them.
 
 2. **Fee Juice (protocol fee asset for gas payment)**
    - Scenarios 1-5: the FPC is pre-funded by the running top-up service.
-   - Scenario 6: Fee Juice is bridged directly via `L1FeeJuicePortalManager.bridgeTokensPublic()` and claimed on L2 via `FeeJuice.claim()`.
+   - Scenario 6: uses the same pre-funded FPC but inflates gas fees beyond its balance.
    - L1/L2 Fee Juice addresses are discovered from `node_getNodeInfo`.
 
 ## Full Lifecycle Phases
@@ -45,7 +45,7 @@ The test suite executes in 7 phases:
 3. Register pre-deployed contracts in local wallet.
 4. Wait for FPC to have positive Fee Juice balance (funded by the top-up service).
 5. Run negative scenarios 1-5 against the pre-deployed FPC.
-6. For scenario 6: deploy isolated Token + FPC, bridge + claim Fee Juice directly, run insufficient balance test.
+6. For scenario 6: inflate gas fees to exceed FPC balance, run insufficient balance test.
 7. Persist diagnostics and artifacts.
 
 ## Local-Network Troubleshooting
@@ -89,7 +89,7 @@ For the test to pass, all of the following must hold:
   - Replayed quotes are rejected via nullifier.
   - `fee_entrypoint` TTL is capped at 3600 seconds.
 - Direct `fee_entrypoint` calls outside the setup phase are rejected.
-- Insufficient Fee Juice correctly rejects the second transaction when the budget allows only one.
+- Insufficient Fee Juice correctly rejects a transaction when inflated gas fees exceed the FPC's balance.
 
 ## Non-Goals
 
@@ -120,7 +120,7 @@ These concerns are out of scope for this test matrix (covered elsewhere or not a
 | `FPC_TEST_TOKEN_MANIFEST` | Token deployment manifest path (required) |
 | `FPC_OPERATOR_SECRET_KEY` | Operator 0x-prefixed 32-byte hex secret (required) |
 | `AZTEC_NODE_URL` | Aztec node RPC (default: `http://localhost:8080`) |
-| `L1_RPC_URL` | L1 Ethereum RPC (default: `http://localhost:8545`). Only needed for scenario 6. |
+| `L1_RPC_URL` | L1 Ethereum RPC (default: `http://localhost:8545`). Not currently used by this test suite but may be required by shared setup helpers. |
 
 **Tunable knobs:**
 
