@@ -252,28 +252,24 @@ bun run deploy:fpc
 
 ## Deployment Manifest
 
-The manifest is the canonical output of deployment. Services, smoke tests, and SDK examples read from it. **Contains raw key material. Treat as secret. Never commit to version control.**
+The manifest is the canonical output of deployment. Services, smoke tests, and SDK examples read from it.
 
-Schema (validated via `writeDevnetDeployManifest`):
+Schema (from [`contract-deployment/src/manifest.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts), validated via `deployManifestSchema`):
 
 ```json
 {
-  "network_metadata": {
-    "node_url": "https://...",
-    "node_version": "4.2.0-aztecnr-rc.2",
+  "status": "deploy_ok",
+  "generated_at": "2026-03-17T14:37:26.643Z",
+  "network": {
+    "node_url": "https://rpc.testnet.aztec-labs.com/",
+    "node_version": "4.1.0-rc.2",
     "l1_chain_id": 11155111,
-    "rollup_version": "..."
+    "rollup_version": 1
   },
-  "l1_contract_addresses": {
-    "rollup": "0x...",
-    "fee_juice": "0x...",
-    "fee_juice_portal": "0x..."
+  "aztec_required_addresses": {
+    "sponsored_fpc_address": "0x..."
   },
-  "deployer": {
-    "address": "0x...",
-    "private_key": "0x...",
-    "private_key_ref": "secret-manager://..."
-  },
+  "deployer_address": "0x...",
   "contracts": {
     "fpc": "0x..."
   },
@@ -287,6 +283,25 @@ Schema (validated via `writeDevnetDeployManifest`):
   }
 }
 ```
+
+| Field | Type | Notes |
+|---|---|---|
+| `status` | literal `"deploy_ok"` | Always this value on success |
+| `generated_at` | ISO 8601 timestamp | When the manifest was written |
+| `network.node_url` | HTTP(S) URL | The Aztec node used for deployment |
+| `network.node_version` | string | Node version reported by `getNodeInfo` |
+| `network.l1_chain_id` | positive integer | L1 chain ID (e.g. 11155111 for Sepolia) |
+| `network.rollup_version` | positive integer | Rollup version from node |
+| `aztec_required_addresses.sponsored_fpc_address` | Aztec address (optional) | Present only if `--sponsored-fpc-address` was used |
+| `deployer_address` | Aztec address | The deployer's L2 address |
+| `contracts.fpc` | Aztec address | Deployed FPC contract address |
+| `operator.address` | Aztec address | Operator's L2 address (derived from secret key) |
+| `operator.pubkey_x` | field value | Operator Schnorr public key X coordinate |
+| `operator.pubkey_y` | field value | Operator Schnorr public key Y coordinate |
+| `tx_hashes.fpc_deploy` | tx hash | FPC contract deployment transaction hash |
+
+> [!WARNING]
+> **L1 contract addresses are not in the manifest.** L1 addresses (Fee Juice token, portal, rollup) come from `nodeInfo` at runtime, not from the deployment manifest. The services resolve them automatically.
 
 Manifest file locations by path:
 
