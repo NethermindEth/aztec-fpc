@@ -123,16 +123,22 @@ All addresses, URLs, and a live verification check are on the [Testnet Deploymen
 
 Once you have a running FPC (local or testnet), this pattern sends a transaction with fee payment handled by the FPC.
 
+> [!CAUTION]
+> **Use `FpcWallet`, not `EmbeddedWallet`.** Aztec 4.2.0 introduced three breaking changes in `EmbeddedWallet` that cause FPC transactions to fail at runtime. See [SDK: FpcWallet](./sdk.md#fpcwallet-required-wallet-class) for details and the required workaround.
+
 ```typescript
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
-import { FpcWallet } from "./scripts/common/fpc-wallet";
+import { FpcWallet } from "./fpc-wallet"; // see sdk.md for setup
 
 // 1. Connect to node and create wallet
 const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
 await waitForNode(node);
-const wallet = await FpcWallet.create(node, { ephemeral: true });
+const wallet = await FpcWallet.create(node, {
+  ephemeral: true,
+  pxeConfig: { proverEnabled: true },
+});
 
 // 2. Create FPC client
 const fpcClient = new FpcClient({
@@ -162,7 +168,7 @@ const { fee } = await fpcClient.createPaymentMethod({
 });
 
 // 5. Send
-await someContract.methods.someMethod(args).send({ from: wallet.getAddress(), fee }).wait();
+await someContract.methods.someMethod(args).send({ from: wallet.getAddress(), fee });
 ```
 
 **Full runnable example**

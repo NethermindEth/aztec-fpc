@@ -21,16 +21,16 @@ Two layers of terminology appear in this documentation.
 A smart contract that pays transaction gas in [Fee Juice](#fee-juice) on behalf of a user. In return, the user pays the operator in a different token. FPC is a generic Aztec primitive. See Aztec's [Paying Fees](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) documentation for the canonical definition.
 
 ### FPCMultiAsset
-Nethermind's FPC implementation. A single deployed contract instance accepts multiple tokens (USDC, ETH, app tokens). Token selection is enforced through quote-binding, not an on-chain allowlist. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+Nethermind's FPC implementation. A single deployed contract instance accepts multiple tokens (USDC, ETH, app tokens). Token selection is enforced through quote-binding, not an on-chain allowlist. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
 ### Sponsored FPC
 Aztec's canonical FPC, deployed by Aztec Labs. It pays fees unconditionally, with no charge to the user. Useful for testnet UX and app-sponsored gas.
 
 ### Attestation service
-The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts). See the [API reference](../sdk.md#api-reference).
+The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L817). See the [API reference](../sdk.md#api-reference).
 
 ### Top-up service
-A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts)
+A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts#L35)
 
 ### Quote
 A signed message from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user, valid until `valid_until`." Signed off-chain with Schnorr, verified on-chain.
