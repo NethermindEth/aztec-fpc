@@ -1,30 +1,30 @@
 ---
 title: Wallet Discovery Specification
-description: Normative spec for .well-known/fpc.json resolution — lookup key, required fields, resolution order, fallback behavior.
+description: Normative spec for .well-known/fpc.json resolution, covering lookup key, required fields, resolution order, and fallback behavior.
 ---
 
-# Wallet Discovery Specification [Alpha]
+# Wallet Discovery Specification (Alpha)
 
 > **Status:** Accepted for Alpha
 > **Normative source:** [docs/spec/wallet-discovery-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md)
 
-This is the minimum wallet-discovery contract for resolving attestation endpoints. It is normative for Alpha — wallets and SDKs must implement it exactly.
+This is the minimum wallet-discovery contract for resolving attestation endpoints. It is normative for Alpha. Wallets and SDKs must implement it exactly.
 
 ## Lookup Key
 
-Discovery is keyed by this exact tuple — missing any field means discovery must fail (no partial lookups):
+Discovery is keyed by this exact tuple. If any field is missing, discovery must fail. No partial lookups are allowed.
 
 ```
 (network_id, asset_address, fpc_address)
 ```
 
-Normalization:
+Normalization rules:
 
 | Field | Rule |
 |---|---|
-| `network_id` | exact string match (case-sensitive) — e.g. `"aztec-testnet"`, not a numeric chain id |
-| `asset_address` | lowercase, `0x`-prefixed Aztec address string |
-| `fpc_address` | lowercase, `0x`-prefixed Aztec address string |
+| `network_id` | Exact string match, case-sensitive (e.g. `"aztec-testnet"`, not a numeric chain id) |
+| `asset_address` | Lowercase, `0x`-prefixed Aztec address string |
+| `fpc_address` | Lowercase, `0x`-prefixed Aztec address string |
 
 ## Discovery Document
 
@@ -40,41 +40,40 @@ GET /.well-known/fpc.json
 |---|---|---|
 | `discovery_version` | string | Alpha fixed value: `"1.0"` |
 | `attestation_api_version` | string | Alpha fixed value: `"1.0"` |
-| `network_id` | string | Must exactly match lookup key |
-| `fpc_address` | string | Must exactly match lookup key |
+| `network_id` | string | Must exactly match the lookup key |
+| `fpc_address` | string | Must exactly match the lookup key |
 | `contract_variant` | string | Contract flavor identifier (e.g. `"fpc-v1"`) |
-| `quote_base_url` | string | Absolute base URL for the quote API. **HTTPS required** outside localhost/dev |
-| `endpoints` | object | Required relative paths: `discovery`, `health`, `accepted_assets`, `quote` (+ `cold_start_quote` for FPCs that support it) |
-| `supported_assets` | array | Non-empty, `[{ address, name }]` — each `address` lowercase `0x` form |
+| `quote_base_url` | string | Absolute base URL for the quote API. HTTPS required outside localhost/dev. |
+| `endpoints` | object | Required relative paths: `discovery`, `health`, `accepted_assets`, `quote` |
+| `supported_assets` | array | Non-empty. Each entry is `{ address, name }` with `address` in lowercase `0x` form. |
 
 ## Resolution Order
 
 Given `(network_id, asset_address, fpc_address)`:
 
+### 1. Build an ordered candidate `quote_base_url` list
 
-### Build ordered candidate `quote_base_url` list
-
-In this priority order:
+In priority order:
 
 1. Exact override entry for `(network_id, asset_address, fpc_address)` from wallet/dapp config
 2. Exact wallet-registry entries for `(network_id, fpc_address)`
 3. Network defaults for `(network_id, asset_address)` marked `is_default=true`
 
-### Validate each candidate
+### 2. Validate each candidate
 
-For each `quote_base_url`, fetch `/.well-known/fpc.json` and validate all of:
+For each `quote_base_url`, fetch `/.well-known/fpc.json` and check all of:
 
-- Required fields exist and parse
+- Required fields exist and parse correctly
 - `discovery_version == "1.0"`
 - `attestation_api_version == "1.0"`
-- `network_id` and `fpc_address` exactly match lookup input
+- `network_id` and `fpc_address` exactly match the lookup input
 - `asset_address` exists in `supported_assets[].address`
 
-### First valid document wins
+### 3. First valid document wins
 
 Stop and use it.
 
-### Fallback behavior
+### 4. Fallback behavior
 
 On any of:
 - Timeout
@@ -82,16 +81,14 @@ On any of:
 - Non-2xx HTTP status
 - Validation failure
 
-...continue to the next candidate.
+Continue to the next candidate.
 
 **If all candidates fail:** fail closed (`DISCOVERY_NOT_FOUND`) and do **not** call `/quote`.
-
 
 > [!CAUTION]
 > **No silent fallback**
 >
-> A wallet must never fall back to a record with a different `network_id`, `asset_address`, or `fpc_address`. The user selected the operator/asset explicitly — swapping silently is a security issue (different operator could be malicious or offline).
-
+> A wallet must never fall back to a record with a different `network_id`, `asset_address`, or `fpc_address`. The user selected the operator and asset explicitly. Swapping silently is a security risk because a different operator could be malicious or offline.
 
 ## Example Payload
 
@@ -107,8 +104,7 @@ On any of:
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
     "accepted_assets": "/accepted-assets",
-    "quote": "/quote",
-    "cold_start_quote": "/cold-start-quote"
+    "quote": "/quote"
   },
   "supported_assets": [
     {
@@ -125,12 +121,12 @@ On any of:
 
 Single-asset deployments still use `supported_assets` as an array of length 1.
 
-## What's NOT in the discovery document
+## What is NOT in the discovery document
 
-The operator's Aztec address is **not** in `.well-known/fpc.json`. Wallets need it separately because the SDK builds the token-transfer authwit `user → operator` off-chain — passing a wrong operator makes the authwit invalid. Sources:
+The operator's Aztec address is **not** in `.well-known/fpc.json`. Wallets need it separately because the SDK builds the token-transfer authwit `user -> operator` off-chain. Passing a wrong operator makes the authwit invalid.
 
-- Operator's own documentation / integration guide
+Sources for the operator address:
+
+- The operator's documentation or integration guide
 - Token manifest (if tokens were deployed via `configure-token`)
 - Reading the FPC contract's `config` storage slot on-chain
-
-See [Integrate in a Wallet](../how-to/integrate-wallet.md) for the full integration pattern.

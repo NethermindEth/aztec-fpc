@@ -1,80 +1,73 @@
 # Aztec FPC
 
-**Nethermind's production multi-asset Fee Payment Contract for Aztec.**
-
-Users pay in USDC, ETH, or your app's token. The contract pays Fee Juice. You earn the spread.
+Nethermind's multi-asset Fee Payment Contract for Aztec. Users pay transaction fees in USDC, ETH, or any operator-configured token. The FPC contract pays Fee Juice to the protocol. The operator earns the spread.
 
 | | |
 |---|---|
 | **Tokens accepted** | Any token the operator configures |
-| **Cold-start** | 1 TX from L1 |
-| **On-chain allowlist** | None required |
+| **Cold-start** | 1 tx from L1 bridge to active L2 account |
+| **On-chain allowlist** | None required (quote-binding enforces asset selection) |
 | **SDK surface** | 2 methods |
 
-[What is FPC?](./overview/what-is-fpc.md) | [GitHub](https://github.com/NethermindEth/aztec-fpc) | [Quick Start](./overview/quick-start.md)
+[GitHub](https://github.com/NethermindEth/aztec-fpc) | [SDK Getting Started](./sdk/getting-started.md) | [Testnet Deployment](./reference/testnet-deployment.md)
 
 ---
 
-## What's in the box
+## Components
 
-### Multi-Asset, Not Single-Token
-
-Accept USDC, ETH, wstETH, or your app's native token. Token policy is off-chain and operator-controlled. Adding a new asset is a single API call, no contract upgrade required. [See the contract](./contracts/fpc-multi-asset.md)
-
-### Cold Start: L1 to Aztec in One Transaction
-
-User bridges tokens from L1 with no Fee Juice and no deployed account. `cold_start_entrypoint` atomically claims the bridge, splits tokens, pays gas, and delivers the remainder. This is why bridge and onboarding teams integrate FPC. [Cold-start guide](./how-to/cold-start-flow.md)
-
-### Schnorr-Signed Quotes
-
-Domain-separated, replay-protected quotes signed off-chain with the operator's Schnorr key, verified on-chain via Poseidon2. No front-running, no replay attacks. [Quote system](./overview/quote-system.md)
-
-### Configurable Operator Spread
-
-Set `fee_bips` per asset. Every quote includes your margin on top of the market rate. Earn revenue on every sponsored transaction. [Configure](./operations/configuration.md)
-
-### Two SDK Methods, Full Coverage
-
-`createPaymentMethod()` for users already on Aztec. `executeColdStart()` for first-tx users arriving from L1. That's the entire integration surface. [SDK docs](./sdk/getting-started.md)
-
-```typescript
-// existing user
-const payment = await fpc.createPaymentMethod(
-  { wallet, tokenAddress }
-);
-await contract.method().send({ fee: payment.fee });
-
-// cold-start from L1
-const result = await fpc.executeColdStart(
-  { wallet, bridgeClaim }
-);
-```
+| Component | Role |
+|-----------|------|
+| **FPC Contract** (`FPCMultiAsset`) | On-chain fee payer. Verifies operator-signed quotes, transfers tokens from user to operator, pays Fee Juice to the protocol. |
+| **Attestation Service** | REST API that signs per-user fee quotes with the operator's Schnorr key. Serves wallet discovery metadata. |
+| **Top-up Service** | Monitors the FPC's Fee Juice balance on L2 and bridges more from L1 when it drops below a threshold. |
+| **SDK** (`@nethermindeth/aztec-fpc-sdk`) | TypeScript client that handles quote fetching, auth-witness construction, and transaction submission. |
 
 ---
 
-## Start here
+## Start Here
 
 | You are... | Goal | Start here |
 |---|---|---|
-| **Wallet team / operator** | Deploy the contract, configure the attestation service, surface it in your wallet | [Integrate in a wallet](./how-to/integrate-wallet.md) |
-| **dApp / DEX builder** | Use an existing FPC operator or run your own. SDK-first, two methods, done | [SDK getting started](./sdk/getting-started.md) |
-| **Bridge / onboarding UX** | Claim bridged tokens, pay gas, and deliver the remainder in one atomic transaction | [Cold-start flow](./how-to/cold-start-flow.md) |
-| **Auditor / security reviewer** | Quote binding, setup-phase irreversibility, replay protection, operator key custody | [Security model](./overview/security.md) |
+| **dApp developer** | Use an existing FPC operator or run your own | [SDK Getting Started](./sdk/getting-started.md) |
+| **Wallet team / operator** | Deploy the contract, configure attestation, surface FPC in your wallet | [Testnet Deployment](./reference/testnet-deployment.md) |
+| **Bridge / onboarding UX** | Claim bridged tokens, pay gas, deliver the remainder in one atomic tx | [SDK Getting Started](./sdk/getting-started.md#cold-start-flow-user-just-bridged-from-l1) |
+| **Auditor** | Quote binding, setup-phase irreversibility, replay protection, operator key custody | [Glossary](./reference/glossary.md) |
 
 ---
 
 ## Documentation
 
-| Section | What's covered |
+| Section | Contents |
 |---|---|
-| [Overview](./overview/what-is-fpc.md) | What FPC is, architecture, quote system, security model |
-| [How-To Guides](./how-to/run-operator.md) | Run an operator, integrate a wallet, add assets, cold-start flow |
-| [Contracts](./contracts/overview.md) | FPCMultiAsset, TokenBridge, Faucet contract reference |
-| [Operations](./operations/configuration.md) | Configuration, deployment, Docker, testing |
 | [SDK](./sdk/getting-started.md) | Getting started, API reference |
-| [Services](./services/attestation.md) | Attestation service, top-up daemon |
-| [Reference](./reference/glossary.md) | Glossary, metrics, test matrix, testnet deployment, wallet discovery |
+| [Reference](./reference/glossary.md) | Glossary, metrics, E2E test matrix, testnet deployment, wallet discovery, asset model ADR |
 
 ---
 
-*Aztec FPC - Nethermind - v3.0.0 - MIT License*
+## Quick Example
+
+```typescript
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
+
+// Standard flow: user already has L2 tokens
+const { fee } = await fpcClient.createPaymentMethod({
+  wallet,
+  user: userAddress,
+  tokenAddress,
+  estimatedGas,
+});
+await contract.methods.transfer(recipient, amount).send({ fee });
+
+// Cold-start: user just bridged from L1
+const result = await fpcClient.executeColdStart({
+  wallet,
+  userAddress,
+  tokenAddress,
+  bridgeAddress,
+  bridgeClaim,
+});
+```
+
+---
+
+*Aztec FPC, Nethermind, MIT License*

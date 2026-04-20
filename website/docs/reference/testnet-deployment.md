@@ -1,11 +1,11 @@
 ---
 title: Testnet Deployment
-description: Verified addresses and URLs for the Nethermind-operated FPC on Aztec testnet. Cross-checked against the live deployment manifest and the running attestation service.
+description: Verified addresses and URLs for the Nethermind-operated FPC on Aztec testnet, cross-checked against the live deployment manifest and attestation service.
 ---
 
 # Testnet Deployment
 
-Addresses and configuration for the Nethermind-operated FPC on Aztec testnet. All values below are verified against `deployments/testnet/manifest.json` (generated 2026-03-17) and the live attestation service.
+Addresses and configuration for the Nethermind-operated FPC on Aztec testnet. All values are verified against `deployments/testnet/manifest.json` (generated 2026-03-17) and the live attestation service.
 
 > [!NOTE]
 > **When to use this**
@@ -15,10 +15,9 @@ Addresses and configuration for the Nethermind-operated FPC on Aztec testnet. Al
 > - Prototyping a cold-start flow end-to-end
 > - Running the [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts) example
 >
-> This deployment is not suitable for production. See [Run an Operator](../how-to/run-operator.md).
+> This deployment is not suitable for production.
 
-
-## L2 addresses
+## L2 Addresses
 
 | Variable | Address |
 |----------|---------|
@@ -30,7 +29,7 @@ Addresses and configuration for the Nethermind-operated FPC on Aztec testnet. Al
 | `BRIDGE_ADDRESS` | `0x19b200d772d3e9068921e6f5df7530271229e958acc9efc2c637afe64db9763f` |
 | `FAUCET_ADDRESS` | `0x291b988c66f0314b3e2758fe7c85b85f39c3007a9478ccc46f443f8b48783db4` |
 
-## L1 addresses (Sepolia, chain ID 11155111)
+## L1 Addresses (Sepolia, chain ID 11155111)
 
 | Contract | Address |
 |----------|---------|
@@ -38,14 +37,14 @@ Addresses and configuration for the Nethermind-operated FPC on Aztec testnet. Al
 | ERC-20 | `0xf49de848d9c00c4dfb088b2e6ba2dac81e34aa5d` |
 | L1 RPC | `https://ethereum-sepolia-rpc.publicnode.com` |
 
-## Operator public key
+## Operator Public Key
 
 | Field | Value |
 |-------|-------|
 | `pubkey_x` | `0x137514cff4c383c6fd6dcf3b914c1651e221525553ee2a87c4629e8d3e23074e` |
 | `pubkey_y` | `0x17700f56ba224e972fa101a7c43862113556dd716ba4f3f1d6b2579397908488` |
 
-## Network metadata
+## Network Metadata
 
 | Field | Value | Source |
 |-------|-------|--------|
@@ -57,22 +56,20 @@ Addresses and configuration for the Nethermind-operated FPC on Aztec testnet. Al
 > [!WARNING]
 > **network_id is "aztec-alpha-local"**
 >
-> The live discovery document reports `network_id: "aztec-alpha-local"`. Per the [wallet discovery spec](../reference/wallet-discovery.md), lookup is an exact case-sensitive match on the tuple `(network_id, asset_address, fpc_address)`. Wallets integrating against this deployment must use `"aztec-alpha-local"` as the `network_id` — not `"aztec-testnet"` or any other value.
-
+> The live discovery document reports `network_id: "aztec-alpha-local"`. Per the [wallet discovery spec](../reference/wallet-discovery.md), lookup is an exact case-sensitive match on the tuple `(network_id, asset_address, fpc_address)`. Wallets integrating against this deployment must use `"aztec-alpha-local"` as the `network_id`, not `"aztec-testnet"` or any other value.
 
 > [!WARNING]
 > **Addresses may rotate**
 >
 > The discovery document at [`/.well-known/fpc.json`](https://aztec-fpc-testnet.staging-nethermind.xyz/.well-known/fpc.json) is the live source of truth. If any value above drifts from the discovery document, the discovery document wins.
 
-
-## Quick verification
+## Quick Verification
 
 ```bash
 # Liveness
 curl https://aztec-fpc-testnet.staging-nethermind.xyz/health
 
-# Discovery document — authoritative for FPC address, network_id, supported assets
+# Discovery document (authoritative for FPC address, network_id, supported assets)
 curl https://aztec-fpc-testnet.staging-nethermind.xyz/.well-known/fpc.json
 
 # Accepted assets and current pricing
@@ -81,14 +78,13 @@ curl https://aztec-fpc-testnet.staging-nethermind.xyz/accepted-assets
 
 ## Notes on FpcAcceptedAsset
 
-The accepted token (`0x07348d12...`) is a test token with no real-world peg. It is deployed by the `configure-token` phase of the testnet stack. The name `FpcAcceptedAsset` is the label the operator registered in the attestation service. To receive tokens, call `drip(recipient)` on the faucet contract (`0x291b988c...db4`) — tokens land in the recipient's public balance and must be shielded before use with the FPC.
+The accepted token (`0x07348d12...`) is a test token with no real-world peg. It was deployed by the `configure-token` phase of the testnet stack. The name `FpcAcceptedAsset` is the label the operator registered in the attestation service. To receive tokens, call `drip(recipient)` on the faucet contract (`0x291b988c...db4`). Tokens land in the recipient's public balance and must be shielded before use with the FPC.
 
-## Mainnet support
+## Mainnet Support
 
-Nethermind does not operate a public FPC on Aztec Alpha Mainnet. Teams deploying to mainnet must run their own stack. See [Run an Operator](../how-to/run-operator.md).
+Nethermind does not operate a public FPC on Aztec Alpha Mainnet. Teams deploying to mainnet must run their own stack.
 
 > [!WARNING]
 > **Alpha Mainnet context**
 >
 > Aztec Alpha Mainnet is in early access. Keep key management strict and monitor the [Aztec security advisories](https://github.com/AztecProtocol/aztec-packages/security/advisories) for updates before deploying.
-

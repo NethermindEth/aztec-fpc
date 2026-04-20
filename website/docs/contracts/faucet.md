@@ -1,4 +1,4 @@
-# Faucet Contract [Test token dispenser with per-recipient cooldowns]
+# Faucet Contract
 
 A public token dispenser for test environments. Distributes tokens with per-recipient cooldowns.
 
@@ -6,8 +6,7 @@ A public token dispenser for test environments. Distributes tokens with per-reci
 
 > [!WARNING]
 >
-> The Faucet is a **test-support contract** for devnet/testnet only. Not intended for production.
-
+> The Faucet is a test-support contract for devnet and testnet only. Do not deploy in production.
 
 ## Storage
 
@@ -20,17 +19,28 @@ struct Storage {
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `config` | `PublicImmutable<Config>` | Token, admin, drip amount, cooldown |
-| `last_drip` | `Map<AztecAddress, PublicMutable<u64>>` | Per-recipient cooldown tracking |
+| `config` | `PublicImmutable<Config>` | Token address, admin, drip amount, cooldown duration |
+| `last_drip` | `Map<AztecAddress, PublicMutable<u64>>` | Per-recipient timestamp of last drip |
 
-## Constructor Parameters
+## Constructor
+
+```noir
+#[public]
+#[initializer]
+fn constructor(
+    token: AztecAddress,
+    admin: AztecAddress,
+    drip_amount: u128,
+    cooldown_seconds: u64,
+)
+```
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `token` | `AztecAddress` | Token contract to dispense |
+| `token` | `AztecAddress` | Token contract to dispense from |
 | `admin` | `AztecAddress` | Address with `admin_drip` privilege |
-| `drip_amount` | `u128` | Amount per drip (base units) |
-| `cooldown_seconds` | `u64` | Minimum time between drips per recipient |
+| `drip_amount` | `u128` | Amount per drip in base units |
+| `cooldown_seconds` | `u64` | Minimum seconds between drips per recipient |
 
 ## Functions
 
@@ -41,7 +51,7 @@ struct Storage {
 fn drip(recipient: AztecAddress)
 ```
 
-Transfers `drip_amount` to the recipient's public balance if the cooldown has elapsed since their last drip.
+Transfers `drip_amount` to the recipient's public balance. Reverts if the cooldown has not elapsed since the recipient's last drip.
 
 ### `admin_drip`
 
@@ -50,7 +60,7 @@ Transfers `drip_amount` to the recipient's public balance if the cooldown has el
 fn admin_drip(recipient: AztecAddress, amount: u128)
 ```
 
-Operator bypass — no cooldown, any amount. Only callable by the configured `admin`. Does not update `last_drip`, so it never blocks the recipient's regular drip cooldown.
+Operator bypass: no cooldown, arbitrary amount. Only callable by the configured `admin`. Does not update `last_drip`, so it never blocks the recipient's regular drip cooldown.
 
 ### `get_config`
 
@@ -59,7 +69,7 @@ Operator bypass — no cooldown, any amount. Only callable by the configured `ad
 unconstrained fn get_config() -> Config
 ```
 
-Read the faucet's configuration (unconstrained utility).
+Returns the faucet's configuration. Unconstrained utility function.
 
 ### `get_last_drip`
 
@@ -68,4 +78,10 @@ Read the faucet's configuration (unconstrained utility).
 unconstrained fn get_last_drip(recipient: AztecAddress) -> u64
 ```
 
-Returns the unix timestamp of the recipient's last drip. Uninitialized entries return `0`, so the first drip is always allowed.
+Returns the unix timestamp of the recipient's last drip. Uninitialized entries return `0`, so the first drip always succeeds.
+
+## Limitations
+
+- Public transfers only. The faucet does not support private drips.
+- The faucet must hold a sufficient public balance of the configured token. If the balance runs out, `drip` reverts.
+- No mechanism exists to change the `drip_amount` or `cooldown_seconds` after deployment. Redeploy to change parameters.

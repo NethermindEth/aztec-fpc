@@ -1,22 +1,35 @@
-# Docker & CI [Container builds, compose orchestration, and CI pipeline]
+# Docker and CI
 
-Container builds, compose orchestration, and CI pipeline.
+Container builds, compose orchestration, and CI pipeline for the FPC stack.
 
 ## Docker Images
 
-Built via Docker Buildx Bake (`docker-bake.hcl`):
+Four images are built via Docker Buildx Bake (`docker-bake.hcl`):
 
 | Image | Source | Purpose |
 |-------|--------|---------|
-| `attestation` | `services/attestation/` | Quote-signing REST API |
-| `topup` | `services/topup/` | Fee Juice bridge daemon |
-| `deploy` | `contract-deployment/` | Contract deployment CLI |
-| `configure-token` | `contract-deployment/` | Token setup + registration |
+| `nethermind/aztec-fpc-attestation` | `services/attestation/` | Quote-signing REST API |
+| `nethermind/aztec-fpc-topup` | `services/topup/` | Fee Juice bridge daemon |
+| `nethermind/aztec-fpc-contract-deployment` | `contract-deployment/` | Contract deployment CLI + token configuration |
+| `nethermind/aztec-fpc-test` | `scripts/tests/` | Integration test runner |
+
+### Building images
 
 ```bash
-# Build all images
-bun run docker:build
+# Build all images with default :local tag
+docker buildx bake
+
+# Build a single target
+docker buildx bake deploy
+
+# Custom tag
+TAG=v0.1.0 docker buildx bake
+
+# Custom registry + tag
+REGISTRY=ghcr.io/ TAG=v0.1.0 docker buildx bake
 ```
+
+The shorthand `bun run docker:build` also builds all images.
 
 ## Docker Compose
 
@@ -41,37 +54,54 @@ Adds to infrastructure:
 
 | Service | Role | Port | Depends On |
 |---------|------|------|------------|
-| `deploy` | Deploys FPC + tokens | — | aztec-node |
-| `configure-token` | Registers tokens | — | deploy, attestation |
+| `deploy` | Deploys FPC + generates configs | | aztec-node |
+| `configure-token` | Deploys test tokens + registers with attestation | | deploy, attestation |
 | `attestation` | Quote API | 3000 | deploy |
 | `topup` | Bridge daemon | 3001 | deploy |
-| `block-producer` | Local blocks | — | aztec-node |
+| `block-producer` | Local block production | | aztec-node |
 
 ### Startup Order
 
 ```
-anvil → aztec-node → deploy → attestation → configure-token
-                        │
-                        ├──→ topup
-                        └──→ block-producer
+anvil -> aztec-node -> deploy -> attestation -> configure-token
+                         |
+                         |-> topup
+                         |-> block-producer
 
-                     (after configure-token)
-                        └──→ tests-*
+                      (after configure-token)
+                         |-> tests-*
 ```
+
+### Docker Compose for Public Networks
+
+For deploying to devnet or testnet, use `docker-compose.public.yaml`. This runs the full stack (FPC deployment, token configuration, attestation, and top-up) in one command.
+
+```bash
+export FPC_DEPLOYER_SECRET_KEY=0x<deployer_key>
+export FPC_OPERATOR_SECRET_KEY=0x<operator_key>
+export FPC_L1_DEPLOYER_KEY=0x<l1_key>
+export ADMIN_API_KEY=<admin_secret>
+
+DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
+```
+
+The compose file reads network defaults (node URL, L1 RPC) from `.env.${DEPLOYMENT}` (e.g., `.env.testnet`) and mounts `deployments/${DEPLOYMENT}/` as the data directory.
 
 ## Integration Test Services
 
-Seven test suites run as compose services:
+Seven test suites run as Docker Compose services against the full stack:
 
 | Service | Test Suite |
 |---------|-----------|
-| `tests-services` | Health + API smoke |
-| `tests-cold-start` | Full cold-start flow |
+| `tests-services` | Health endpoints + API smoke |
+| `tests-cold-start` | Full cold-start flow (bridge, claim, pay) |
 | `tests-cold-start-validation` | Cold-start edge-case validation |
-| `tests-fee-entrypoint-validation` | Fee entrypoint validation |
+| `tests-fee-entrypoint-validation` | Fee entrypoint validation (nullifier, transfers) |
 | `tests-concurrent` | Concurrent transaction stress |
-| `tests-same-token-transfer` | Same-token transfer |
-| `tests-always-revert` | Revert behavior |
+| `tests-same-token-transfer` | Pay fee in same token being transferred |
+| `tests-always-revert` | Revert behavior (FPC still gets paid when app logic reverts) |
+
+All test services depend on `configure-token` completing before they start.
 
 ## CI Pipeline
 
@@ -81,11 +111,11 @@ bun run ci
 
 Runs in order:
 
-1. **`format`** — Biome format check
-2. **`lint`** — Biome lint
-3. **`typecheck`** — TypeScript type checking
-4. **`build`** — Build all TypeScript packages
-5. **`test`** — Run contract + TS tests
+1. **`format`**: Biome format check
+2. **`lint`**: Biome lint
+3. **`typecheck`**: TypeScript type checking
+4. **`build`**: Build all TypeScript packages
+5. **`test`**: Run contract + TS tests
 
 ## Build Configuration Files
 
@@ -93,7 +123,13 @@ Runs in order:
 |------|---------|
 | `docker-bake.hcl` | Buildx multi-target config |
 | `Nargo.toml` | Noir workspace members |
-| `biome.json` | Code formatter/linter |
+| `biome.json` | Code formatter and linter |
 | `vitest.config.ts` | TypeScript test runner |
 | `.aztecrc` | Aztec CLI config |
 | `tsconfig.base.json` | Shared TypeScript config |
+
+## Security Notes
+
+- **Never pass secrets as CLI arguments or inline `-e KEY=VALUE`.** Export secrets first and pass by name. Non-secret values like `AZTEC_NODE_URL` and `L1_RPC_URL` are fine to pass inline.
+- The deployment manifest (`manifest.json`) may contain raw private keys. Treat it as secret material.
+- Do not commit manifests with plaintext keys to version control.

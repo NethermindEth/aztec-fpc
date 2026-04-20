@@ -5,18 +5,18 @@ description: FPC lets users pay Aztec transaction fees in any token. The operato
 
 # What is FPC?
 
-Every Aztec transaction requires Fee Juice, the protocol's native gas token. Users who bridge assets from Ethereum, wallets serving non-technical audiences, and apps accepting their own token all face the same barrier. Fee Juice has to come from somewhere before anything else can happen.
+Every Aztec transaction requires Fee Juice, the protocol's native gas token. Users who bridge assets from Ethereum, wallets serving non-technical audiences, and apps accepting their own token all face the same barrier: Fee Juice has to come from somewhere before anything else can happen.
 
 FPC (Fee Payment Contract) moves that responsibility to an operator. The operator holds Fee Juice and pays it on the user's behalf. The user pays the operator in a token they already have, at a rate the operator sets and commits to in a signed quote. The on-chain contract verifies the quote and executes the transfer atomically.
 
-Nethermind's `aztec-fpc` is the production multi-asset implementation. One contract instance serves any number of accepted tokens. Adding support for a new token requires no redeployment.
+Nethermind's `aztec-fpc` is the production multi-asset implementation. One contract instance serves any number of accepted tokens. Adding a new token requires no redeployment.
 
 ## The three components
 
 | Component | What it does |
 |-----------|-------------|
 | `FPCMultiAsset` contract | Verifies the operator-signed quote, transfers the user's token to the operator, and pays the transaction gas in Fee Juice |
-| Attestation service | Signs user-specific fee quotes, maintains asset pricing policy per token, and serves the wallet discovery document |
+| Attestation service | Signs user-specific fee quotes, maintains asset pricing policy per token, and serves the wallet discovery document at `/.well-known/fpc.json` |
 | Top-up daemon | Watches the FPC's Fee Juice balance on L2 and bridges more from L1 when it falls below a configured threshold |
 
 > [!NOTE]
@@ -24,18 +24,21 @@ Nethermind's `aztec-fpc` is the production multi-asset implementation. One contr
 >
 > The [SDK](../sdk/getting-started.md) (`@nethermindeth/aztec-fpc-sdk`) is part of this project and is the recommended integration point for wallet teams and dApp developers. It handles quote fetching, transaction construction, and authwit generation so that applications do not need to interact with the contract ABI directly.
 
-
 ## How a standard transaction works
 
 ![FPC transaction flow: User requests a signed quote from the Attestation Service, submits a transaction to the FPC Contract which verifies the quote, transfers the user's token to the operator, and pays gas.](../assets/image.png)
 
-The wallet requests a quote from the attestation service, which prices the Fee Juice cost in the user's token and signs it with the operator's Schnorr key. The user includes the operator's quote signature in their transaction alongside a transfer authorization witness (authwit). The authwit authorizes the token transfer and is carried as an execution payload component, not a function argument to `fee_entrypoint`. The FPC contract reconstructs the hash, verifies the signature against the stored operator public key, pushes a nullifier to prevent replay, and executes the payment.
+The wallet requests a quote from the attestation service, which prices the Fee Juice cost in the user's token and signs it with the operator's Schnorr key. The user includes the operator's quote signature in their transaction alongside a transfer authorization witness (authwit). The authwit authorizes the token transfer and is carried as an execution payload component, not a function argument to `fee_entrypoint`.
+
+The FPC contract reconstructs the Poseidon2 hash of the quote fields (domain separator, FPC address, accepted asset, Fee Juice amount, payment amount, expiry, and user address), verifies the Schnorr signature against the stored operator public key, pushes a nullifier to prevent replay, and then calls `transfer_private_to_private` to move the payment from the user's private balance to the operator's private balance. All of this executes in the setup phase. The contract then calls `set_as_fee_payer()` and `end_setup()`, committing the fee payment before the user's app logic runs.
 
 ## What FPC does not do
 
-FPC does not eliminate gas costs. It shifts who pays them and in what token. The operator takes on the operational cost of keeping the FPC funded with Fee Juice and recoups it through a configurable spread per token. The spread is set as `fee_bips` in the attestation service configuration and is applied off-chain when pricing quotes. The on-chain contract has no knowledge of `fee_bips`; it verifies and settles whatever signed amounts the attestation service produced.
+FPC does not eliminate gas costs. It shifts who pays them and in what token. The operator takes on the operational cost of keeping the FPC funded with Fee Juice and recoups it through a configurable spread per token. The spread is set as `fee_bips` in the attestation service configuration and is applied off-chain when pricing quotes. The on-chain contract has no knowledge of `fee_bips`. It verifies and settles whatever signed amounts the attestation service produced.
 
 Quote signatures are user-specific and single-use. A quote issued to one user cannot be used by another, and a consumed quote cannot be replayed. The operator is not exposed to a free-rider problem, but they are exposed to market rate risk if the token value moves between quote issuance and settlement.
+
+There is no on-chain asset allowlist. The contract does not enforce which tokens are accepted. Protection comes entirely from the quote signature: `accepted_asset` is part of the signed Poseidon2 preimage, so substituting a different token at call time invalidates the signature.
 
 Operator key rotation requires deploying a new contract. The public key is stored in `PublicImmutable` and cannot be updated.
 
@@ -48,7 +51,7 @@ Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/az
 | **Accepted tokens** | None, fully sponsored | Any token the operator configures |
 | **Operator revenue** | None | Configurable `fee_bips` spread per asset |
 | **Quote system** | None | Schnorr-signed, single-use, user-bound |
-| **Cold-start (L1 to first tx)** | Not supported | Supported |
+| **Cold-start (L1 to first tx)** | Not supported | Supported via `cold_start_entrypoint` |
 | **Off-chain services** | None | Attestation service and top-up daemon |
 | **Who runs it** | Aztec Labs | You |
 
@@ -63,4 +66,3 @@ The Sponsored FPC is the right choice for devnet and local development where gas
 > - **Running your own FPC** → [Run an Operator](../how-to/run-operator.md)
 > - **Building a bridge with one-transaction onboarding** → [Cold-Start Flow](../how-to/cold-start-flow.md)
 > - **Full architecture detail** → [Architecture](../overview/architecture.md)
-

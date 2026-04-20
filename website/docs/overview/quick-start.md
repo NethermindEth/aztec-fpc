@@ -79,6 +79,7 @@ aztec start --local-network
 aztec compile --workspace --force
 export AZTEC_NODE_URL=http://localhost:8080
 export FPC_DEPLOYER_SECRET_KEY=0x<your_deployer_key>
+export FPC_OPERATOR_SECRET_KEY=0x<your_operator_key>
 bun run deploy:fpc
 # Manifest written to ./deployments/manifest.json by default.
 # Set FPC_OUT=./path/to/manifest.json to change the output path.
@@ -95,6 +96,9 @@ cp config.example.yaml config.yaml
 # Edit config.yaml: set fpc_address from the manifest.
 L1_OPERATOR_PRIVATE_KEY=0x<l1_key> bun run start
 ```
+
+> [!NOTE]
+> For `aztec start --local-network`, FeeJuice L1 contract addresses are provisioned by the local network bootstrap. Do not add a manual custom L1 FeeJuice deployment step. The top-up service discovers these addresses from the Aztec node's `nodeInfo`.
 
 **Verify**
 
@@ -117,7 +121,7 @@ All addresses, URLs, and a live verification check are on the [Testnet Deploymen
 
 ## Send a fee-abstracted transaction
 
-Once you have a running FPC (local or testnet), the following pattern sends a transaction with fee payment handled by the FPC.
+Once you have a running FPC (local or testnet), this pattern sends a transaction with fee payment handled by the FPC.
 
 ```typescript
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -173,7 +177,7 @@ bunx tsx examples/fpc-full-flow.ts
 
 ## Where to go next
 
-- [Architecture](../overview/architecture.md) — how the components fit together
-- [SDK Getting Started](../sdk/getting-started.md) — cold-start, authwit flow, error handling
-- [Run an Operator](../how-to/run-operator.md) — production deployment
-- [Deployment](../operations/deployment.md) — Docker-based deploy to devnet or testnet
+- [Architecture](../overview/architecture.md) for how the components fit together
+- [SDK Getting Started](../sdk/getting-started.md) for cold-start, authwit flow, and error handling
+- [Run an Operator](../how-to/run-operator.md) for production deployment
+- [Deployment](../operations/deployment.md) for Docker-based deploy to devnet or testnet

@@ -1,15 +1,14 @@
 ---
-title: Cold-Start Flow (Bridge Builder Guide)
-description: How bridge UIs and cross-chain onboarding teams can deliver one-transaction L1 → first-tx-on-L2 experiences using FPC's cold-start entrypoint.
+title: Cold-Start Flow
+description: How bridge UIs and cross-chain onboarding teams can deliver one-transaction L1-to-first-L2-tx experiences using FPC's cold-start entrypoint.
 ---
 
-# Cold-Start Flow [From L1 bridge to first L2 tx in one shot]
+# Cold-Start Flow
 
 > [!NOTE]
 > **Audience**
 >
-> Bridge builders (Substance Labs / Train / Wormhole-style) and cross-chain wallet teams. The cold-start flow is **the UX problem you were solving anyway** — this page shows how FPC solves it in one transaction.
-
+> Bridge builders (Substance Labs, TRAIN Protocol, Wormhole) and cross-chain wallet teams. The cold-start flow solves the onboarding gap between "funds arrived on L2" and "first transaction."
 
 ## The UX problem
 
@@ -17,32 +16,32 @@ Before cold-start, bridging a user from L1 to Aztec L2 looked like this:
 
 ```
 User bridges USDC from L1
-  ↓
+  |
 Tokens appear on L2 (private, claimable)
-  ↓
-User can't do anything yet — needs Fee Juice to pay gas
-  ↓
+  |
+User can't do anything yet, needs Fee Juice to pay gas
+  |
 User must acquire Fee Juice somehow (second bridge? faucet? DEX?)
-  ↓
+  |
 User claims bridged USDC
-  ↓
+  |
 User does their first L2 action
 ```
 
-Four steps, three of them UX cliffs. For a bridge UI this is **the** onboarding problem — and it's why most cross-chain flows abandon users between "funds arrived" and "first transaction."
+Four steps, three of them UX dead ends. For a bridge UI this is the core onboarding failure, and it is why most cross-chain flows abandon users between "funds arrived" and "first transaction."
 
 ## What cold-start gives you
 
 ```
 User bridges USDC from L1
-  ↓
+  |
 Bridge UI calls executeColdStart()
-  ↓
+  |
 One L2 transaction:
   - Claims bridged USDC from the bridge
   - Pays FPC operator in USDC for gas (operator covers the Fee Juice)
   - Leaves the remainder in the user's private balance
-  ↓
+  |
 User has tokens AND a transaction history, ready for subsequent actions
 ```
 
@@ -52,26 +51,28 @@ One step. No intermediate "get Fee Juice somehow" cliff.
 
 | | Standard `fee_entrypoint` | `cold_start_entrypoint` |
 |---|---|---|
-| Prerequisite | User has an existing L2 token balance + a deployed account | Neither — tokens are still on the L1→L2 bridge; account may not exist on L2 yet |
-| Payment source | Private note the user already holds | The claim itself — bridged amount is split between fee + user |
+| Prerequisite | User has an existing L2 token balance + a deployed account | Neither. Tokens are still on the L1-to-L2 bridge. Account may not exist on L2 yet. |
+| Payment source | Private note the user already holds | The claim itself. Bridged amount is split between fee and user. |
 | Quote endpoint | `GET /quote` | `GET /cold-start-quote` (different domain separator `"FPCs"` = `0x46504373`) |
 | Quote preimage | 7 fields | 9 fields (adds `claim_amount` + `claim_secret_hash`) |
-| Gas simulation | Yes (`simulate({fee:{estimateGas:true}})`) | **No** — hardcoded `Gas(5_000, 1_000_000)` (the user's account may not exist yet, so the PXE can't simulate) |
+| Gas simulation | Yes (`simulate({fee:{estimateGas:true}})`) | No. Uses hardcoded `Gas(5_000, 1_000_000)` because the user's account may not exist, so the PXE cannot simulate. |
 
-Attestation validates `claim_amount >= aa_payment_amount` before signing — a cold-start quote whose claim is too small to cover its own fee gets rejected by the service, not on-chain.
+The attestation service validates `claim_amount >= aa_payment_amount` before signing. A cold-start quote whose claim is too small to cover the fee is rejected by the service, not on-chain.
 
-## Integration — step-by-step
+## Integration step by step
 
 ### Prerequisites
 
-You need to know the operator's FPC deployment details — FPC address, attestation URL, accepted token, operator address.
+You need the operator's FPC deployment details: FPC address, attestation URL, accepted token, operator address, and bridge address.
 
-- Integrating against the Nethermind-operated testnet? → **[Testnet Deployment](../reference/testnet-deployment.md)**
-- Integrating against a custom operator? → Resolve via [`.well-known/fpc.json`](../services/attestation.md#wallet-discovery) using the key `(network_id, asset_address, fpc_address)`.
+- Integrating against the Nethermind-operated testnet? See **[Testnet Deployment](../reference/testnet-deployment.md)**.
+- Integrating against a custom operator? Resolve via [`.well-known/fpc.json`](../services/attestation.md#wallet-discovery) using the key `(network_id, asset_address, fpc_address)`.
+
+The bridge address is recorded in the token manifest (`deployments/tokens/<TokenName>.json`) if test tokens were deployed via `configure-token`. For production tokens with an existing address, obtain the bridge address from the token's deployment records or the operator.
 
 ### 1. Bridge the tokens from L1
 
-Use the standard L1→L2 portal manager. The `bridgeClaim` object you get back carries everything the cold-start quote needs.
+Use the standard L1-to-L2 portal manager. The `bridgeClaim` object carries everything the cold-start quote needs.
 
 ```typescript
 import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
@@ -100,9 +101,9 @@ const bridgeClaim = await portalManager.bridgeTokensPrivate(
 );
 ```
 
-### 2. Wait for the L1→L2 message to land
+### 2. Wait for the L1-to-L2 message to land
 
-L2 can't see the bridged tokens until the L1→L2 message is included. For Aztec sandbox this is seconds; for testnet, expect up to a few minutes.
+L2 cannot see the bridged tokens until the L1-to-L2 message is included. For Aztec sandbox this takes seconds. For testnet, expect up to a few minutes.
 
 ```typescript
 import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
@@ -117,7 +118,7 @@ await waitForL1ToL2MessageReady(
 
 ### 3. Execute cold-start
 
-Pass the `bridgeClaim` as-is — do **not** destructure it. The SDK reads `claimAmount`, `claimSecret`, `claimSecretHash`, and `messageLeafIndex` off the object.
+Pass the `bridgeClaim` as-is. Do **not** destructure it. The SDK reads `claimAmount`, `claimSecret`, `claimSecretHash`, and `messageLeafIndex` off the object.
 
 ```typescript
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -139,12 +140,11 @@ const result = await fpcClient.executeColdStart({
 });
 
 console.log(`Tx: ${result.txHash}`);
-// claimAmount is NOT on the result — read it from bridgeClaim (still in scope from step 1)
 console.log(`User received: ${bridgeClaim.claimAmount - result.aaPaymentAmount}`);
 console.log(`Operator received (fee): ${result.aaPaymentAmount}`);
 ```
 
-## What the single tx actually does
+## What the single transaction does
 
 ```
 cold_start_entrypoint(
@@ -155,23 +155,25 @@ cold_start_entrypoint(
   1. Verify the cold-start quote (Schnorr, domain sep "FPCs", bound to msg_sender)
   2. Push quote nullifier (replay protection)
   3. Call bridge.claim_private(message_leaf_index, claim_amount, claim_secret)
-     → mints claim_amount of the token to the contract
-  4. Transfer aa_payment_amount (token) → operator (private)
-  5. Transfer (claim_amount - aa_payment_amount) → user (private)
+     -> mints claim_amount of the token to the contract
+  4. Transfer aa_payment_amount (token) -> operator (private)
+  5. Transfer (claim_amount - aa_payment_amount) -> user (private)
   6. set_as_fee_payer() + end_setup()
   7. Protocol deducts fj_amount Fee Juice from FPC's balance to pay gas
 ```
 
-One proof, one tx, three private transfers (claim + user split + operator split), fees paid from the claim itself. The user never needs prior L2 state.
+One proof, one transaction, three private transfers (claim + user split + operator split). Fees are paid from the claim itself. The user never needs prior L2 state.
 
-## Gas limits: why they're hardcoded
+## Gas limits: why they are hardcoded
 
-`executeColdStart` does **not** simulate — it uses `Gas(5_000, 1_000_000)` as a fixed upper bound. Two reasons the SDK can't simulate:
+`executeColdStart` does **not** simulate. It uses `Gas(5_000, 1_000_000)` as a fixed upper bound. Two reasons the SDK cannot simulate:
 
 1. The user's **account may not exist on L2 yet**, so the PXE cannot simulate through a normal account entrypoint.
-2. The **quote signature is a function argument**, but we need the quote to simulate — chicken-and-egg.
+2. The **quote signature is a function argument**, but the quote is needed to simulate. This is a circular dependency.
 
-The hardcoded limits are the cold-start benchmark's worst case (measured DA 1,568 / L2 711,103) with safety margin. Unused Fee Juice stays in the FPC's balance — no teardown/refund phase. Re-measure after contract changes:
+The hardcoded limits come from the cold-start benchmark's worst case (measured DA 1,568, L2 711,103) with safety margin. Unused Fee Juice stays in the FPC's balance. There is no teardown or refund phase.
+
+Re-measure after contract changes:
 
 ```bash
 ./profiling/setup.sh && ./profiling/run.sh
@@ -181,18 +183,18 @@ The hardcoded limits are the cold-start benchmark's worst case (measured DA 1,56
 
 | Scenario | What happens | UI should |
 |---|---|---|
-| Claim amount too small to cover fee | Attestation returns HTTP 400 before signing | Tell user "bridge more" or add subsidy |
-| L1→L2 message not yet ready when user clicks "continue" | SDK throws `"Message not in state"`, retries 3x internally | Show "waiting for L1 confirmation" spinner; SDK handles retry |
-| Quote expired between fetch and submit | On-chain revert | Re-fetch + retry (quotes typically valid ~5 min, capped at 1 hour) |
-| User already has an L2 account | Still works — cold-start is usable by any user, not just new accounts | Prefer `createPaymentMethod` if the user already has an L2 balance (cheaper, supports teardown refund) |
-| Same `bridgeClaim` submitted twice | Second tx reverts (nullifier conflict) | Track submission state in your UI |
+| Claim amount too small to cover fee | Attestation returns HTTP 400 before signing | Tell user "bridge more" or add a subsidy |
+| L1-to-L2 message not yet ready | SDK throws `"Message not in state"`, retries 3x internally | Show "waiting for L1 confirmation" spinner. The SDK handles retry. |
+| Quote expired between fetch and submit | On-chain revert | Re-fetch and retry. Quotes typically live ~5 minutes, capped at 1 hour. |
+| User already has an L2 account | Still works. Cold-start is usable by any user, not just new accounts. | Prefer `createPaymentMethod` if the user already has an L2 balance (cheaper, supports gas estimation). |
+| Same `bridgeClaim` submitted twice | Second transaction reverts (nullifier conflict) | Track submission state in your UI |
 
 ## Picking between cold-start and standard flows
 
 Use **cold-start** when:
 - The user is transacting for the first time on L2
 - Tokens are arriving from an L1 bridge in this same user session
-- You don't have a reliable way to know if the user already has L2 balance
+- You do not have a reliable way to know if the user already has L2 balance
 
 Use **standard `fee_entrypoint`** (via `createPaymentMethod`) when:
 - The user already has tokens on L2
@@ -203,8 +205,8 @@ Most bridge UIs need **both**: cold-start for the first session, standard flow f
 
 ## Next steps
 
-- [SDK — Getting Started](../sdk/getting-started.md) — full SDK context including the standard flow
-- [SDK — API Reference](../sdk/api-reference.md#executecoldstart) — complete type signatures
-- [Quote System](../overview/quote-system.md#cold-start) — the domain separator, 9-field preimage, and replay protection
-- [Architecture](../overview/architecture.md#cold-start) — data-flow diagram across L1, attestation, and FPC
-- [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts) — end-to-end runnable bridge → cold-start → standard
+- [SDK: Getting Started](../sdk/getting-started.md): full SDK context including the standard flow
+- [SDK: API Reference](../sdk/api-reference.md#executecoldstart): complete type signatures
+- [Quote System](../overview/quote-system.md#cold-start): the domain separator, 9-field preimage, and replay protection
+- [Architecture](../overview/architecture.md#cold-start): data-flow diagram across L1, attestation, and FPC
+- [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts): end-to-end runnable bridge to cold-start to standard flow

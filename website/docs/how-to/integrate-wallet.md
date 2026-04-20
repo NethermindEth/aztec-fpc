@@ -1,36 +1,34 @@
-# Integrate FPC in Your Wallet [Add fee-abstracted payments to an Aztec wallet]
+# Integrate FPC in Your Wallet
 
-This guide shows how to integrate FPC into an Aztec wallet so your users can pay gas in any supported token.
+Add FPC-based fee payment to an Aztec wallet so users can pay gas in any supported token instead of native Fee Juice.
 
 > [!NOTE]
 > **Audience**
 >
-> Wallet engineers who already integrate Aztec.js and want to add FPC as a payment option. [Azguard Wallet](https://azguardwallet.io/) and [Obsidion Wallet](https://app.obsidion.xyz/) — two live wallets on Aztec testnet — both run their own FPC stack using this pattern. AB1 prize-winning wallets (Aztec Wallet, Dry Wallet) are on the same path.
-
+> Wallet engineers who already integrate Aztec.js and want to add FPC as a payment option. [Azguard Wallet](https://azguardwallet.io/) and [Obsidion Wallet](https://app.obsidion.xyz/), two live wallets on Aztec testnet, both run their own FPC stack using this pattern.
 
 ## What You'll Build
 
 A wallet that:
 
-1. Discovers FPC attestation metadata via `.well-known/fpc.json`
+1. Discovers FPC attestation metadata via `/.well-known/fpc.json`
 2. Lets users select a supported payment token
 3. Fetches a signed quote from the attestation service
 4. Submits transactions with the FPC as fee payer
 
 ## Testnet Defaults
 
-For the Nethermind-operated testnet — addresses, URLs, and live discovery check: **[Testnet Deployment](../reference/testnet-deployment.md)**.
+For the Nethermind-operated testnet (addresses, URLs, and live discovery check): **[Testnet Deployment](../reference/testnet-deployment.md)**.
 
 ## Steps
 
-
 ### Install the SDK
 
-The SDK isn't published to npm yet — install from a local clone of `NethermindEth/aztec-fpc`. Once published, standard `bun add @nethermindeth/aztec-fpc-sdk` will work. See [SDK — Getting Started](../sdk/getting-started.md#installation).
+The SDK is not published to npm yet. Install from a local clone of `NethermindEth/aztec-fpc`. Once published, standard `bun add @nethermindeth/aztec-fpc-sdk` will work. See [SDK: Getting Started](../sdk/getting-started.md#installation).
 
 ### Discover the FPC attestation metadata
 
-Fetch `.well-known/fpc.json` to discover the operator's endpoints and supported assets. Lookup is keyed by `(network_id, asset_address, fpc_address)` — wallets must validate that all three match what they expect.
+Fetch `/.well-known/fpc.json` to discover the operator's endpoints and supported assets. Lookup is keyed by `(network_id, asset_address, fpc_address)`. Validate that all three match what the wallet expects.
 
 ```typescript
 const response = await fetch(
@@ -39,7 +37,7 @@ const response = await fetch(
 const metadata = await response.json();
 ```
 
-The response shape (normative — see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md)):
+The response shape (normative, see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md)):
 
 ```json
 {
@@ -62,15 +60,15 @@ The response shape (normative — see [wallet-discovery-spec](https://github.com
 }
 ```
 
-Validation rules for wallets:
+Validation rules:
 - `discovery_version` and `attestation_api_version` must exactly equal `"1.0"`
 - `network_id` and `fpc_address` must match the wallet's configured lookup key
 - User-selected `asset_address` must appear in `supported_assets[].address`
-- On any validation failure, fail closed (`DISCOVERY_NOT_FOUND`) — do not call `/quote`
+- On any validation failure, fail closed (`DISCOVERY_NOT_FOUND`). Do not call `/quote`.
 
 ### Let users pick a payment token
 
-Render `supported_assets` from the discovery document, or call `/accepted-assets` directly for the same data:
+Render `supported_assets` from the discovery document, or call `/accepted-assets` directly for the same data.
 
 ```typescript
 const assets = await fetch(
@@ -82,7 +80,7 @@ const selectedAsset = assets[0];
 
 ### Create the FPC client and a payment method
 
-The SDK's `FpcClient` needs four fields — `fpcAddress`, `operator`, `node`, and `attestationBaseUrl`:
+The SDK's `FpcClient` needs four fields: `fpcAddress`, `operator`, `node`, and `attestationBaseUrl`.
 
 ```typescript
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -95,7 +93,7 @@ const fpcClient = new FpcClient({
   attestationBaseUrl: metadata.quote_base_url,
 });
 
-// 1. Simulate the tx to get gas settings
+// 1. Simulate the tx to get gas estimates
 const { estimatedGas } = await contract.methods
   .transfer(recipient, amount)
   .simulate({ from: wallet.getAddress(), fee: { estimateGas: true } });
@@ -113,8 +111,15 @@ const { fee } = await fpcClient.createPaymentMethod({
 > [!WARNING]
 > **Operator address is not in the discovery document**
 >
-> The FPC's operator address must be obtained separately — from the operator's documentation, their token manifest, or by reading the FPC's `config` slot on-chain. It's required because the SDK builds the token-transfer auth-witness `user → operator` off-chain; a wrong operator invalidates the authwit.
+> The FPC's operator address must be obtained separately, from the operator's documentation, their token manifest, or by reading the FPC's `config` slot on-chain. The SDK builds the token-transfer auth-witness `user -> operator` off-chain. A wrong operator address invalidates the authwit and the transaction will revert.
 
+Under the hood, `createPaymentMethod` does the following:
+
+1. Fetches current gas prices from the node and computes `fj_amount` (with a gas buffer)
+2. Fetches a signed quote from `GET <ATTESTATION_URL>/quote`
+3. Builds a token transfer auth-witness (user to operator) for the quoted `aa_payment_amount`
+4. Builds the `fee_entrypoint` call payload with the quote signature
+5. Returns `fee` options ready to attach to any Aztec transaction
 
 ### Submit the transaction
 
@@ -126,12 +131,11 @@ const tx = await contract.methods
 const receipt = await tx.wait();
 ```
 
-The user signs once — the fee is paid in their chosen token via the FPC.
-
+The user signs once. The fee is paid in their chosen token via the FPC.
 
 ## Handling Cold Start (User Just Bridged from L1)
 
-For users who've bridged tokens but have no L2 balance yet, `executeColdStart` atomically claims from the bridge **and** pays the FPC fee in one tx. Pass the `bridgeClaim` object from `L1ToL2TokenPortalManager.bridgeTokensPrivate` directly — do not destructure it.
+For users who have bridged tokens but have no L2 balance yet, `executeColdStart` atomically claims from the bridge and pays the FPC fee in one transaction. Pass the `bridgeClaim` object from `L1ToL2TokenPortalManager.bridgeTokensPrivate` directly. Do not destructure it.
 
 ```typescript
 const result = await fpcClient.executeColdStart({
@@ -143,21 +147,20 @@ const result = await fpcClient.executeColdStart({
 });
 ```
 
-After this single tx, the user has an L2 balance + transaction history and can use the standard flow for subsequent txs. See [SDK — Getting Started](../sdk/getting-started.md#cold-start-flow--user-just-bridged-from-l1) for the full bridging + waiting sequence.
+After this single transaction, the user has an L2 balance and transaction history and can use the standard flow for subsequent transactions. See [Cold-Start Flow](../how-to/cold-start-flow.md) for the full bridging and waiting sequence.
 
 ## Error Handling
 
-The SDK propagates HTTP errors from attestation and on-chain reverts from Aztec.js.
+The SDK propagates HTTP errors from the attestation service and on-chain reverts from Aztec.js.
 
 > [!TIP]
 > **User-facing errors**
 >
-> - **Asset not supported (HTTP 400)** — Refresh `/accepted-assets`; asset may have been removed (but previously-signed quotes remain valid until `valid_until`)
-> - **Unauthorized (HTTP 401)** — Attestation is in `api_key` auth mode; ensure your wallet backend holds the key
-> - **Rate limited (HTTP 429)** — Back off; consider caching the quote for its TTL
-> - **Quote expired (on-chain revert)** — Re-fetch; quotes typically live ~5 min, capped at 3600s
-> - **Sender-binding failure (on-chain revert)** — You passed a quote signed for a different user
-
+> - **Asset not supported (HTTP 400)**: refresh `/accepted-assets`. The asset may have been removed, though previously-signed quotes remain valid until `valid_until`.
+> - **Unauthorized (HTTP 401)**: the attestation service is in `api_key` auth mode. Ensure your wallet backend holds the key.
+> - **Rate limited (HTTP 429)**: back off. Consider caching the quote for its TTL.
+> - **Quote expired (on-chain revert)**: re-fetch. Quotes typically live ~5 minutes, capped at 3600 seconds on-chain.
+> - **Sender-binding failure (on-chain revert)**: the quote was signed for a different user address.
 
 ```typescript
 try {
@@ -171,13 +174,19 @@ try {
   } else if (msg.includes("429")) {
     // Rate limited
   } else if (msg.includes("Quote") || msg.includes("sender")) {
-    // On-chain quote validation
+    // On-chain quote validation failure
   }
 }
 ```
 
+## Known Limitations
+
+- The token transfer executes in the setup phase before `end_setup()`. It is irrevocably committed. If the user's application logic reverts, the fee has still been paid. This is inherent to the Aztec FPC model.
+- `fj_amount` must match `max_gas_cost_no_teardown` for the transaction gas settings. The SDK handles this, but if you build the payment method manually, a mismatch causes `fee_entrypoint` to revert.
+- No teardown or refund phase exists. Unused Fee Juice stays in the FPC's balance.
+
 ## Next Steps
 
-- [SDK API Reference](../sdk/api-reference.md) — complete type signatures
-- [Quote System](../overview/quote-system.md) — what the SDK wraps
-- [Security Model](../overview/security.md) — trust assumptions users should know
+- [SDK API Reference](../sdk/api-reference.md): complete type signatures
+- [Quote System](../overview/quote-system.md): what the SDK wraps
+- [Security Model](../overview/security.md): trust assumptions users should know

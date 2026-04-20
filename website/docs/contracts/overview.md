@@ -1,14 +1,14 @@
-# Contracts Overview [All Noir contracts in the FPC system at a glance]
+# Contracts Overview
 
-All smart contracts in the FPC system are written in **Noir** using the **Aztec.nr** framework.
+All smart contracts in the FPC system are written in Noir using the Aztec.nr framework.
 
 ## Contract Map
 
 ```
 contracts/
-├── fpc/                 # Core — FPCMultiAsset
+├── fpc/                 # Core: FPCMultiAsset
 ├── faucet/              # Test token dispenser
-├── token_bridge/        # L1↔L2 bridge
+├── token_bridge/        # L1-L2 bridge
 └── noop/                # Profiling baseline
 
 vendor/                  # Git submodule: aztec-standards
@@ -21,7 +21,7 @@ vendor/                  # Git submodule: aztec-standards
 | Contract | Purpose | Production? | Key Functions |
 |----------|---------|:-----------:|---------------|
 | [**FPCMultiAsset**](../contracts/fpc-multi-asset.md) | Core fee payment | Yes | `fee_entrypoint`, `cold_start_entrypoint` |
-| [**TokenBridge**](../contracts/token-bridge.md) | L1↔L2 token bridge | Yes | `claim_public`, `claim_private`, `exit_to_l1_public` |
+| [**TokenBridge**](../contracts/token-bridge.md) | L1-L2 token bridge | Yes | `claim_public`, `claim_private`, `exit_to_l1_public` |
 | [**Faucet**](../contracts/faucet.md) | Test token dispenser | Devnet only | `drip`, `admin_drip` |
 | **Noop** | Gate count benchmarking | No | `noop` |
 | **Token** (vendor) | Standard fungible token | Yes | `transfer_in_public`, `mint_to_public` |
@@ -46,7 +46,8 @@ TokenBridge
 
 Contracts are compiled as a Noir workspace:
 
-```toml title="Nargo.toml"
+```toml
+# Nargo.toml
 [workspace]
 members = [
     "contracts/fpc",
@@ -57,18 +58,22 @@ members = [
 ]
 ```
 
+Compile all contracts:
 
 ```bash
 aztec compile --workspace
 ```
 
+Run tests for the FPC contract:
+
 ```bash
 aztec test --package fpc
 ```
 
+Generate TypeScript ABIs:
+
 ```bash
 aztec codegen target -o codegen
 ```
-
 
 After compilation, TypeScript ABIs are generated into `codegen/` for use by the services and SDK.

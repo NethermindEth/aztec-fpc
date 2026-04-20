@@ -3,9 +3,9 @@ title: Operational Metrics
 description: Prometheus metrics and health probes exposed by the attestation and top-up services.
 ---
 
-# Operational Metrics [Full inventory]
+# Operational Metrics
 
-Prometheus-style metrics and health/readiness probes exposed by both off-chain services.
+Both off-chain services expose Prometheus-style metrics and health/readiness probes.
 
 **Normative source:** [docs/ops/operational-metrics.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/ops/operational-metrics.md)
 
@@ -17,8 +17,8 @@ Default base URL: `http://127.0.0.1:3000`
 
 | Method | Path | Response |
 |---|---|---|
-| `GET` | `/health` | `200` with `{ "status": "ok" }` — liveness |
-| `GET` | `/metrics` | `200` with `text/plain; version=0.0.4` — Prometheus exposition |
+| `GET` | `/health` | `200` with `{ "status": "ok" }`. Liveness probe. |
+| `GET` | `/metrics` | `200` with `text/plain; version=0.0.4`. Prometheus exposition format. |
 
 ### Metrics
 
@@ -40,7 +40,7 @@ Failed `/quote` requests grouped by error type.
 
 #### `attestation_quote_latency_seconds` (histogram)
 
-`/quote` request latency grouped by outcome. Includes the standard `le` bucket label.
+`/quote` request latency grouped by outcome. Includes the standard Prometheus `le` bucket label.
 
 | Label | Values |
 |---|---|
@@ -49,17 +49,18 @@ Failed `/quote` requests grouped by error type.
 
 ## Top-up Service
 
-Default base URL: `http://127.0.0.1:3001` (configurable via `ops_port` / `TOPUP_OPS_PORT`).
+Default base URL: `http://127.0.0.1:3001` (configurable via `ops_port` or `TOPUP_OPS_PORT`).
 
 ### Endpoints
 
 | Method | Path | Response |
 |---|---|---|
-| `GET` | `/health` | `200` with `{ "status": "ok" }` — liveness |
-| `GET` | `/ready` | `200` when ready, `503` when not |
-| `GET` | `/metrics` | `200` with Prometheus exposition |
+| `GET` | `/health` | `200` with `{ "status": "ok" }`. Liveness probe. |
+| `GET` | `/ready` | `200` when ready, `503` when not ready. |
+| `GET` | `/metrics` | `200` with `text/plain; version=0.0.4`. Prometheus exposition format. |
 
 Non-ready reasons reported by `/ready`:
+
 - No successful balance checks yet
 - Latest balance check failed
 - Balance checks are stale
@@ -77,7 +78,7 @@ Bridge lifecycle counters.
 
 #### `topup_balance_checks_total` (counter)
 
-Fee Juice balance read results — used by the readiness probe.
+Fee Juice balance read results. Used by the readiness probe.
 
 | Label | Values |
 |---|---|
@@ -85,7 +86,7 @@ Fee Juice balance read results — used by the readiness probe.
 
 #### `topup_readiness_status` (gauge)
 
-Snapshot of readiness: `1` = ready, `0` = not ready. No labels.
+Readiness snapshot: `1` = ready, `0` = not ready. No labels.
 
 #### `topup_uptime_seconds` (gauge)
 
@@ -103,7 +104,7 @@ Process uptime in seconds. No labels.
 
 ## Scrape Configuration
 
-```yaml title="prometheus.yml"
+```yaml
 scrape_configs:
   - job_name: 'fpc-attestation'
     static_configs:

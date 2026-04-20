@@ -1,40 +1,29 @@
-# Quote System [The cryptographic contract between operator and user]
+---
+title: Quote System
+description: How fee quotes are signed, verified, and consumed. Covers the Poseidon2 hash preimage, Schnorr signatures, exchange rate math, and replay protection.
+---
 
-The quote system is the trust bridge between the off-chain attestation service and the on-chain FPC contract. Understanding it is key to working with FPC.
+# Quote System
 
-## What is a Quote?
+A fee quote is a signed commitment from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user's transaction, valid until `valid_until`."
 
-A quote is a signed message from the operator:
-
-> *"I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user's transaction, valid until `valid_until`."*
+The attestation service signs these off-chain. The FPC contract verifies them on-chain. This page covers the hash format, signing mechanics, exchange rate computation, and security properties.
 
 ## Lifecycle
 
+1. **User requests a quote.** The wallet calls `GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<amount>` on the attestation service. The `fj_amount` must equal `max_gas_cost_no_teardown` for the transaction gas settings.
 
-### User requests a quote
+2. **Attestation service signs the quote.** The service computes the exchange rate, creates a Poseidon2 hash of the quote parameters using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness`, and signs the 32-byte hash with the operator's Schnorr key. It returns a 64-byte hex signature.
 
-The wallet calls `GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<amount>` on the attestation service.
+3. **User includes the quote in the transaction.** The signature and quote parameters are passed as arguments to `fee_entrypoint`. A separate token transfer authwit (authorizing the FPC to pull `aa_payment_amount` from the user) is carried in `authWitnesses`, not as a function argument.
 
-### Attestation signs the quote
+4. **Contract verifies on-chain.** The FPC contract reconstructs the hash, verifies the Schnorr signature against the stored operator public key (`operator_pubkey_x`, `operator_pubkey_y` from the packed immutable config), and pushes the quote hash as a nullifier.
 
-The service computes the exchange rate, creates a Poseidon2 hash of the quote parameters, and signs it with the operator's Schnorr key.
+5. **Quote is consumed.** The nullifier prevents the same quote from being used again. The contract transfers tokens and calls `set_as_fee_payer()`.
 
-### User includes the quote in the transaction
+## Quote types
 
-The 64-byte signature and quote parameters are passed as arguments to `fee_entrypoint` or `cold_start_entrypoint`.
-
-### Contract verifies on-chain
-
-The FPC contract reconstructs the hash, verifies the Schnorr signature against the stored operator public key, and pushes a nullifier.
-
-### Quote is consumed
-
-The nullifier prevents the same quote from being used again. The contract transfers tokens and pays gas.
-
-
-## Quote Types
-
-### Normal Quote (`fee_entrypoint`)
+### Normal quote (`fee_entrypoint`)
 
 | Field | Value |
 |-------|-------|
@@ -42,7 +31,7 @@ The nullifier prevents the same quote from being used again. The contract transf
 | Hash function | Poseidon2 |
 | Signature | Schnorr (64 bytes) |
 
-**Hash preimage:**
+**Hash preimage (7 fields):**
 
 ```noir
 poseidon2([
@@ -51,12 +40,12 @@ poseidon2([
     accepted_asset,     // token contract address
     fj_fee_amount,      // Fee Juice amount
     aa_payment_amount,  // token payment amount
-    valid_until,        // expiry timestamp
-    user_address,       // msg_sender (the paying user)
+    valid_until,        // expiry timestamp (u64, unix)
+    user_address,       // msg_sender (the paying user, never zero)
 ])
 ```
 
-### Cold-Start Quote (`cold_start_entrypoint`)
+### Cold-start quote (`cold_start_entrypoint`)
 
 | Field | Value |
 |-------|-------|
@@ -64,7 +53,7 @@ poseidon2([
 | Hash function | Poseidon2 |
 | Signature | Schnorr (64 bytes) |
 
-**Hash preimage (9 fields — the normal preimage plus `claim_amount` + `claim_secret_hash`):**
+**Hash preimage (9 fields):**
 
 ```noir
 poseidon2([
@@ -81,49 +70,51 @@ poseidon2([
 ```
 
 > [!WARNING]
-> **Bridge address and `message_leaf_index` are NOT in the preimage**
+> **Bridge address and `message_leaf_index` are not in the preimage**
 >
-> The contract accepts `bridge` and `message_leaf_index` as function arguments to `cold_start_entrypoint`, but they are **not** signed by the operator. Only `claim_amount` and `claim_secret_hash` bind the quote to a specific bridge deposit. The bridge address can be chosen by the caller at tx time — the operator is trusting that the claim will be honored by whatever bridge the user points at, because the mint goes to the FPC first and the contract only distributes what was actually claimed.
-
+> The contract accepts `bridge` and `message_leaf_index` as function arguments to `cold_start_entrypoint`, but they are not signed by the operator. Only `claim_amount` and `claim_secret_hash` bind the quote to a specific bridge deposit. The bridge address can be chosen by the caller at transaction time. The operator trusts that the claim will be honored because the mint goes to the FPC first, and the contract only distributes what was actually claimed.
 
 > [!WARNING]
->
-> The different domain separators prevent cross-entrypoint quote reuse. A quote signed for `fee_entrypoint` will fail in `cold_start_entrypoint` and vice versa.
+> The different domain separators prevent cross-entrypoint quote reuse. A quote signed for `fee_entrypoint` will fail verification in `cold_start_entrypoint`, and vice versa.
 
+## Exchange rate computation
 
-## Exchange Rate Computation
+The attestation service computes the token payment from the Fee Juice amount.
 
-The attestation service computes the token payment from the Fee Juice amount:
-
-```
-rate_num = market_rate_num × (10000 + fee_bips)
-rate_den = market_rate_den × 10000
-
-aa_payment_amount = ceil(fj_fee_amount × rate_num / rate_den)
-```
-
-**Example:** If `market_rate = 1/1` and `fee_bips = 100` (1%):
+Per-asset pricing can be configured either at the top level (`market_rate_num`, `market_rate_den`, `fee_bips`) or overridden per entry in the `supported_assets` list.
 
 ```
-fj_fee_amount    = 1,000,000
-aa_payment_amount = ceil(1,000,000 × 10100 / 10000) = 1,010,000
+final_rate_num = market_rate_num × (10000 + fee_bips)
+final_rate_den = market_rate_den × 10000
+
+aa_payment_amount = ceil(fj_amount × final_rate_num / final_rate_den)
 ```
 
-The operator earns 10,000 units (1%) as revenue.
+**Example:** If `market_rate_num = 1`, `market_rate_den = 1000`, and `fee_bips = 200` (2%):
 
-## Security Properties
+```
+fj_amount         = 1,000,000
+final_rate_num    = 1 × (10000 + 200) = 10200
+final_rate_den    = 1000 × 10000       = 10000000
+aa_payment_amount = ceil(1,000,000 × 10200 / 10000000) = ceil(1020) = 1020
+```
 
-| Property | How It's Enforced |
+The on-chain contract has no knowledge of `fee_bips`, `market_rate_num`, or `market_rate_den`. It receives and enforces the final `aa_payment_amount` as signed by the operator. Rate changes take effect at quote signing time and require no contract interaction.
+
+## Security properties
+
+| Property | How it is enforced |
 |----------|-------------------|
 | **Authenticity** | Schnorr signature verified against immutable on-chain pubkey |
-| **Integrity** | Poseidon2 hash covers all parameters — any change breaks the sig |
-| **Replay protection** | Quote hash pushed as nullifier (one-time use) |
-| **User binding** | Hash includes user address — User A can't use User B's quote |
-| **Freshness** | `valid_until >= block_timestamp` check |
-| **TTL cap** | `valid_until - block_timestamp <= 3600` — max 1 hour lifetime |
-| **Domain separation** | Different separators per entrypoint |
+| **Integrity** | Poseidon2 hash covers all parameters; any change breaks the signature |
+| **Replay protection** | Quote hash pushed as nullifier; duplicates fail via nullifier conflict |
+| **User binding** | Hash includes user address; User A cannot use User B's quote |
+| **Freshness** | `anchor_block_timestamp <= valid_until` |
+| **TTL cap** | `(valid_until - anchor_block_timestamp) <= 3600` seconds (max 1 hour lifetime) |
+| **Domain separation** | Different domain separators per entrypoint (`0x465043` vs `0x46504373`) |
+| **Asset binding** | `accepted_asset` is in the signed preimage; substituting a different token at call time invalidates the signature |
 
-## Quote Response Format
+## Quote response format
 
 The attestation service returns:
 
@@ -137,6 +128,10 @@ The attestation service returns:
 }
 ```
 
-All numeric fields (`fj_amount`, `aa_payment_amount`, `valid_until`) are returned as **strings** to preserve full u128 / unix-timestamp precision across JSON.
+All numeric fields (`fj_amount`, `aa_payment_amount`, `valid_until`) are returned as strings to preserve full u128 and unix-timestamp precision across JSON.
+
+The cold-start quote endpoint (`GET /cold-start-quote`) returns the same fields plus `claim_amount` and `claim_secret_hash`. The attestation service validates that `claim_amount >= aa_payment_amount` before signing a cold-start quote.
+
+Deterministic `400 BAD_REQUEST` responses cover missing or invalid `user`, missing or invalid `accepted_asset`, unsupported `accepted_asset`, missing or invalid `fj_amount`, and computed overflow for `aa_payment_amount`.
 
 This response is consumed directly by the SDK's `createPaymentMethod()` or `executeColdStart()`.
