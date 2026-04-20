@@ -72,7 +72,7 @@ Base URL for all docs: website/docs/
     System diagram, data flows, interface map, operator key model.
 
   quote-system.md
-    How fee quotes are constructed, signed (Schnorr over Poseidon2 hash), and verified
+    How fee quotes are constructed, signed (Schnorr over compute_inner_authwit_hash), and verified
     on-chain. 7-field normal preimage, 9-field cold-start preimage, domain separators,
     exchange rate formula, TTL cap (3600s).
 
