@@ -2,9 +2,9 @@
 
 Deploy the FPC system: contracts, services, and supporting infrastructure.
 
-[Source: deploy CLI](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/index.ts) |
-[Source: configure-token](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/configure-token.ts) |
-[Source: manifest schema](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts)
+[Source: deploy CLI](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/index.ts#L321) |
+[Source: configure-token](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/configure-token.ts#L228) |
+[Source: manifest schema](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts#L15)
 
 Two deployment paths are supported:
 
@@ -256,7 +256,7 @@ bun run deploy:fpc
 
 The manifest is the canonical output of deployment. Services, smoke tests, and SDK examples read from it.
 
-Schema (from [`contract-deployment/src/manifest.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts), validated via `deployManifestSchema`):
+Schema (from [`contract-deployment/src/manifest.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts#L15), validated via `deployManifestSchema`):
 
 ```json
 {

@@ -53,7 +53,7 @@ The L2 Schnorr key is the most sensitive. It signs every quote and its public ke
 
 ### Secret provider modes
 
-[Source: `services/attestation/src/secret-provider.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts)
+[Source: `services/attestation/src/secret-provider.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts#L137)
 
 Both the attestation and top-up services support multiple key storage backends:
 
@@ -65,11 +65,11 @@ Both the attestation and top-up services support multiple key storage backends:
 | `kms` | Cloud key management (AWS KMS, etc.) | Production |
 | `hsm` | Hardware security module | High-security production |
 
-Setting `runtime_profile: production` rejects plaintext config-file secrets. This is enforced at startup. [Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+Setting `runtime_profile: production` rejects plaintext config-file secrets. This is enforced at startup. [Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L338)
 
 ## On-chain protections
 
-[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
 ### Quote authenticity
 
@@ -108,7 +108,7 @@ The contract asserts `fj_fee_amount == get_max_gas_cost(...)` for the transactio
 
 ### Cold-start guards
 
-[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L141)
 
 | Guard | What it prevents |
 |-------|-----------------|
@@ -121,7 +121,7 @@ The contract asserts `fj_fee_amount == get_max_gas_cost(...)` for the transactio
 
 ### Admin API authentication
 
-[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L489)
 
 Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_KEY` env var. All admin requests require the `x-admin-api-key` header.
 
@@ -131,7 +131,7 @@ Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_K
 
 ### Rate limiting
 
-[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L405)
 
 Fixed-window rate limiting on the quote endpoint prevents abuse. Enabled by default. Configure via `quote_rate_limit_enabled`, `quote_rate_limit_max_requests`, and `quote_rate_limit_window_seconds` in the attestation service config.
 

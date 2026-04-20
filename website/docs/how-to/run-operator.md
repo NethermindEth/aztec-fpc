@@ -63,7 +63,7 @@ If a `fpc-config.yaml` file exists in the `deployments/` directory before deploy
 
 ### Configure the attestation service
 
-[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L499)
 
 ```yaml title="attestation-config.yaml"
 runtime_profile: production     # Rejects plaintext config secrets, requires auth

@@ -1,6 +1,6 @@
 # Add a Supported Asset
 
-Register a new payment token with a running attestation service so users can pay fees in it. [Source: admin routes in `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+Register a new payment token with a running attestation service so users can pay fees in it. [Source: admin routes in `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L685)
 
 > [!NOTE]
 > **Prerequisites**
@@ -13,7 +13,7 @@ Register a new payment token with a running attestation service so users can pay
 
 ### Determine the exchange rate
 
-The attestation service prices quotes using a rational fraction: `market_rate_num / market_rate_den`. This represents the number of accepted-asset units per 1 Fee Juice. [Source: `computeFinalRate` in `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+The attestation service prices quotes using a rational fraction: `market_rate_num / market_rate_den`. This represents the number of accepted-asset units per 1 Fee Juice. [Source: `computeFinalRate` in `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)
 
 For a token pegged 1:1 with Fee Juice:
 
@@ -123,7 +123,7 @@ The DELETE fails if this is the last remaining asset. At least one asset must al
 
 ## Other Admin Endpoints
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L685)
 
 | Method | Path | Description |
 |--------|------|-------------|

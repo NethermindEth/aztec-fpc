@@ -2,8 +2,8 @@
 
 Complete reference for all configuration options across FPC services.
 
-[Source: attestation config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) |
-[Source: topup config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts)
+[Source: attestation config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L499) |
+[Source: topup config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts#L136)
 
 ## Configuration Hierarchy
 
@@ -107,7 +107,7 @@ supported_assets:
 
 Each entry requires: `address` (non-zero Aztec address), `name` (non-empty string), `market_rate_num` (positive integer), `market_rate_den` (positive integer), `fee_bips` (integer 0-10000).
 
-Final rate formula ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)): `rate_num = market_rate_num * (10000 + fee_bips)`, `rate_den = market_rate_den * 10000`. The payment amount is `aa_payment_amount = ceil(fj_amount * rate_num / rate_den)`.
+Final rate formula ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)): `rate_num = market_rate_num * (10000 + fee_bips)`, `rate_den = market_rate_den * 10000`. The payment amount is `aa_payment_amount = ceil(fj_amount * rate_num / rate_den)`.
 
 ### State and Runtime
 
@@ -174,7 +174,7 @@ Auto-claim completes the L2 side of the top-up bridge (claims bridged Fee Juice 
 
 | Env Var | Default | Description |
 |---------|---------|-------------|
-| `TOPUP_AUTOCLAIM_ENABLED` | `1` | `1` = enabled, `0` = disabled |
+| `TOPUP_AUTOCLAIM_ENABLED` | enabled (unset) | Enabled unless explicitly set to `0` |
 | `TOPUP_AUTOCLAIM_SECRET_KEY` | | L2 claimer secret key. Required when `runtime_profile=production`. In `development`, falls back to the first `@aztec/accounts/testing` account. |
 | `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | | Use a sponsored FPC to pay the claim tx's fees. Recommended to avoid needing Fee Juice on the claimer account. |
 

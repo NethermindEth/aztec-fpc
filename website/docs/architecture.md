@@ -49,7 +49,7 @@ The FPC system has four components that work together to abstract gas payments: 
 
 ### FPC contract (on-chain)
 
-[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
 The core smart contract deployed on Aztec L2, written in Noir (Aztec.nr).
 
@@ -72,7 +72,7 @@ The token transfer executes in the setup phase and is irrevocably committed. No 
 
 ### Attestation service (off-chain)
 
-[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L817)
 
 A Fastify REST API run by the FPC operator.
 
@@ -89,7 +89,7 @@ For multi-asset deployments, each `supported_assets` entry can override the top-
 
 ### Top-up service (off-chain)
 
-[Source: `services/topup/src/index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts)
+[Source: `services/topup/src/index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts#L35)
 
 A background daemon that keeps the FPC solvent.
 
@@ -105,7 +105,7 @@ Configuration fields `l1_chain_id` and Fee Juice L1 contract addresses are deriv
 
 ### SDK (client-side)
 
-[Source: `sdk/src/payment-method.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)
+[Source: `sdk/src/payment-method.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L50)
 
 A TypeScript library (`@nethermindeth/aztec-fpc-sdk`) wrapping the attestation API and Aztec.js.
 
@@ -144,7 +144,7 @@ User Wallet                 Attestation Service       Aztec L2 (FPC)
     │◄──────────────────────────────────────────────────────│
 ```
 
-In step 4, the contract performs these checks in order ([Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)):
+In step 4, the contract performs these checks in order ([Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L79)):
 
 1. Asserts it is not in the revertible phase (conditional on non-zero gas fees)
 2. Reads packed config from storage (operator address and signing pubkey)

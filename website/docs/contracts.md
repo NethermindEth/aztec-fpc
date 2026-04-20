@@ -24,7 +24,7 @@ vendor/                  # Git submodule: aztec-standards
 | [**TokenBridge**](./contracts.md#tokenbridge) | L1-L2 token bridge | Yes | `claim_public`, `claim_private`, `exit_to_l1_public` |
 | [**Faucet**](./contracts.md#faucet) | Test token dispenser | Devnet only | `drip`, `admin_drip` |
 | **Noop** | Gate count benchmarking | No | `noop` |
-| **Token** (vendor) | Standard fungible token | Yes | `transfer_in_public`, `mint_to_public` |
+| **Token** (vendor) | Standard fungible token | Yes | `transfer_public_to_public`, `mint_to_public` |
 
 ## Dependency Graph
 
@@ -84,7 +84,7 @@ After compilation, TypeScript ABIs are generated into `codegen/` for use by the 
 
 Fee payment contract. Accepts operator-signed quotes and pays transaction gas on behalf of users.
 
-**Source:** [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+**Source:** [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
 ---
 
@@ -260,7 +260,7 @@ No authwit required for either transfer because the FPC is `msg_sender` for both
 
 ### Internal helpers
 
-[Source: `contracts/fpc/src/main.nr` lines 251-330](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `contracts/fpc/src/main.nr` lines 251-330](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L252)
 
 #### `assert_valid_quote`
 
@@ -347,7 +347,7 @@ Returns the maximum possible transaction fee by computing `fee_per_da_gas * da_g
 
 A public token dispenser for test environments. Distributes tokens with per-recipient cooldowns.
 
-**Source:** [`contracts/faucet/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/faucet/src/main.nr)
+**Source:** [`contracts/faucet/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/faucet/src/main.nr#L39)
 
 > [!WARNING]
 >
@@ -437,7 +437,7 @@ Returns the unix timestamp of the recipient's last drip. Uninitialized entries r
 
 L1-L2 bridge for moving tokens between Ethereum and Aztec.
 
-**Source:** [`contracts/token_bridge/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/token_bridge/src/main.nr)
+**Source:** [`contracts/token_bridge/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/token_bridge/src/main.nr#L11)
 
 ### Storage
 

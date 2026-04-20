@@ -1,5 +1,11 @@
 # FPC: Fee Payment Contracts for Aztec
 
+> **Using an AI assistant?** Get full project context in one command:
+> ```bash
+> curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms.txt
+> ```
+> Or the complete docs (~5k lines): `curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms-full.txt`
+
 ## Why FPC Exists
 
 Every transaction on Aztec L2 costs gas, paid in the native **Fee Juice** token (more in the [docs](https://docs.aztec.network/developers/docs/foundational-topics/fees)). Fee Juice creates two problems for users:
@@ -355,7 +361,8 @@ This starts the full stack (anvil, aztec-node, deploy, configure-token, attestat
 |-------------|-------------|
 | `tests-services` | Service health, API, and quote flow validation |
 | `tests-cold-start` | Cold-start flow (L1 bridge + claim + FPC payment) |
-| `tests-fee-entrypoint-validation` | Verifies fee_entrypoint cannot be called outside setup phase |
+| `tests-cold-start-validation` | Cold-start negative scenarios (replay, expiry, sender binding) |
+| `tests-fee-entrypoint-validation` | fee_entrypoint negative scenarios (replay, expiry, TTL, phase enforcement) |
 | `tests-concurrent` | Concurrent transaction stress test |
 | `tests-same-token-transfer` | Same-token transfer flow |
 | `tests-always-revert` | Revert behavior validation |

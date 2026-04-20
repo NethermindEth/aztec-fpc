@@ -146,13 +146,13 @@ console.log(`Operator received (fee): ${result.aaPaymentAmount}`);
 
 ## What the single transaction does
 
-[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L141)
 
 ```
 cold_start_entrypoint(
-  user, token, bridge,
+  user, accepted_asset, bridge,
   claim_amount, claim_secret, claim_secret_hash, message_leaf_index,
-  fj_amount, aa_payment_amount, valid_until, quote_sig,
+  fj_fee_amount, aa_payment_amount, valid_until, quote_sig,
 ):
   Setup phase:
     1. Assert this is the tx root (maybe_msg_sender().is_none())

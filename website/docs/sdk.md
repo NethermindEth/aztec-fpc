@@ -33,12 +33,12 @@ Once the package is published, `bun add @nethermindeth/aztec-fpc-sdk` will work.
 
 ## FpcWallet: required wallet class
 
-[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts)
+[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts#L37)
 
 > [!CAUTION]
 > **Do not use `EmbeddedWallet` directly for FPC flows.**
 >
-> Aztec 4.2.0 introduced three breaking changes in `EmbeddedWallet` that cause FPC transactions to fail at runtime. Use `FpcWallet` instead. Copy [`scripts/common/fpc-wallet.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts) into your project, or import it from the cloned repo.
+> Aztec 4.2.0 introduced three breaking changes in `EmbeddedWallet` that cause FPC transactions to fail at runtime. Use `FpcWallet` instead. Copy [`scripts/common/fpc-wallet.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts#L37) into your project, or import it from the cloned repo.
 
 `FpcWallet` extends `EmbeddedWallet` and overrides four methods to fix three compatibility issues introduced in Aztec 4.2.0:
 
@@ -205,7 +205,7 @@ One transaction takes the user from "just bridged" to "has tokens and transactio
 
 ## What the SDK Constructs
 
-[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)
+[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L50)
 
 ### `createPaymentMethod`
 
@@ -235,14 +235,14 @@ The SDK ships its own copies of `FPCMultiAsset`, `Token`, and `TokenBridge` arti
 
 - [API Reference](./sdk.md#api-reference) for full type signatures
 - [Full example](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts): cold-start + FPC-paid account deployment, end-to-end
-- [FpcWallet source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts): the wallet compatibility shim
+- [FpcWallet source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts#L37): the wallet compatibility shim
 - [Testnet Deployment](./reference/testnet-deployment.md) for live addresses
 
 ## API Reference
 
 Complete type definitions and method signatures for `@nethermindeth/aztec-fpc-sdk`.
 
-**Source:** [sdk/src/types.ts](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/types.ts)
+**Source:** [sdk/src/types.ts](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/types.ts#L9)
 
 ### `FpcClient`
 

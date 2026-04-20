@@ -51,7 +51,7 @@ Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_K
 
 ### `GET /quote`
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L581) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts#L88)
 
 ```
 GET /quote?user=<address>&accepted_asset=<address>&fj_amount=<positive_u128_decimal>
@@ -98,7 +98,7 @@ Deterministic `400 BAD_REQUEST` for: missing or invalid `user`, missing or inval
 
 ### `GET /cold-start-quote`
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L881) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts#L132)
 
 Extends `/quote` with two bridge-binding query parameters for users who have no existing L2 balance.
 
@@ -136,7 +136,7 @@ The cold-start quote uses domain separator `0x46504373` ("FPCs") instead of `0x4
 
 ### `PUT /admin/asset-policies/:assetAddress`
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L685)
 
 Adds or updates a pricing policy for a supported asset.
 
@@ -171,7 +171,7 @@ Sweeps operator tokens to a destination address.
 
 ### Pricing Formula
 
-[Source: `config.ts` `computeFinalRate`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+[Source: `config.ts` `computeFinalRate`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)
 
 The operator sets baseline rate values in the attestation config:
 
@@ -197,7 +197,7 @@ For `FPC.fee_entrypoint`, the `fj_amount` must match `get_max_gas_cost` for the 
 
 ### Wallet Discovery
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551)
 
 The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full normative spec at [`wallet-discovery-spec.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md).
 
@@ -245,7 +245,7 @@ Returns the list of supported tokens.
 
 ### Authentication
 
-[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) | [Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L385) | [Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L489)
 
 #### Quote endpoint
 
@@ -272,7 +272,7 @@ Optional fixed-window rate limiting on the quote endpoint. Configurable window d
 
 ### Startup Sequence
 
-[Source: `index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/index.ts)
+[Source: `index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/index.ts#L35)
 
 1. Load and validate configuration from YAML + environment variables.
 2. Resolve operator secret key via the configured secret provider.
@@ -437,7 +437,7 @@ After the top-up service bridges Fee Juice from L1, the tokens must be claimed o
 
 | Setting | Description |
 |---------|-------------|
-| `TOPUP_AUTOCLAIM_ENABLED` | Enable auto-claim (default: `1`; set `0` to disable) |
+| `TOPUP_AUTOCLAIM_ENABLED` | Enable auto-claim (enabled unless set to `0`) |
 | `TOPUP_AUTOCLAIM_SECRET_KEY` | L2 secret key for the claimer account |
 | `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | Use a sponsored FPC to pay claim tx fees |
 
@@ -447,7 +447,7 @@ In `development` profile, if `TOPUP_AUTOCLAIM_SECRET_KEY` is not set, the servic
 
 ### Configuration
 
-[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts)
+[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts#L136)
 
 See [Configuration](./operations/configuration.md) for the full reference.
 
@@ -488,7 +488,7 @@ ops_port: 3001
 
 ### Ops Endpoints
 
-[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts)
+[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts#L228)
 
 Default port: `3001` (overridable via `TOPUP_OPS_PORT` env var)
 
@@ -500,7 +500,7 @@ Default port: `3001` (overridable via `TOPUP_OPS_PORT` env var)
 
 ### Prometheus Metrics
 
-[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts)
+[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts#L42)
 
 | Metric | Type | Description |
 |--------|------|-------------|

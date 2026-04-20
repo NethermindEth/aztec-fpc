@@ -46,7 +46,7 @@ GET /.well-known/fpc.json
 | `fpc_address` | string | Must exactly match the lookup key |
 | `contract_variant` | string | Contract flavor identifier (e.g. `"fpc-v1"`) |
 | `quote_base_url` | string | Absolute base URL for the quote API. HTTPS required outside localhost/dev. |
-| `endpoints` | object | Required relative paths: `discovery`, `health`, `accepted_assets`, `quote` |
+| `endpoints` | object | Required relative paths: `discovery`, `health`, `accepted_assets`, `quote`, `cold_start_quote` |
 | `supported_assets` | array | Non-empty. Each entry is `{ address, name }` with `address` in lowercase `0x` form. |
 
 ## Resolution Order
@@ -106,7 +106,8 @@ Continue to the next candidate.
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
     "accepted_assets": "/accepted-assets",
-    "quote": "/quote"
+    "quote": "/quote",
+    "cold_start_quote": "/cold-start-quote"
   },
   "supported_assets": [
     {
