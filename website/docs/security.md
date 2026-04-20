@@ -33,7 +33,7 @@ Users trust that the operator will:
 > [!WARNING]
 > **No on-chain asset allowlist**
 >
-> The FPC contract does not store a list of accepted assets. Nothing on-chain rejects an arbitrary token address passed to `fee_entrypoint`. Protection comes from the quote signature: `accepted_asset` is in the signed Poseidon2 preimage, so swapping the asset at call time invalidates signature verification. The "multi-asset" property of `FPCMultiAsset` is an off-chain policy (attestation service) plus quote binding, not an on-chain allowlist.
+> The FPC contract does not store a list of accepted assets. Nothing on-chain rejects an arbitrary token address passed to `fee_entrypoint`. Protection comes from the quote signature: `accepted_asset` is in the signed `compute_inner_authwit_hash` preimage, so swapping the asset at call time invalidates signature verification. The "multi-asset" property of `FPCMultiAsset` is an off-chain policy (attestation service) plus quote binding, not an on-chain allowlist.
 
 ## Key management
 
@@ -65,7 +65,7 @@ Both the attestation and top-up services support multiple key storage backends:
 | `kms` | Cloud key management (AWS KMS, etc.) | Production |
 | `hsm` | Hardware security module | High-security production |
 
-Setting `runtime_profile: production` rejects plaintext config-file secrets. This is enforced at startup. [Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L338)
+Setting `runtime_profile: production` rejects plaintext config-file secrets. This is enforced at startup. [Source: `services/attestation/src/secret-provider.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts#L61)
 
 ## On-chain protections
 
@@ -86,7 +86,7 @@ Second use → nullifier already exists → transaction fails (nullifier conflic
 
 ### User binding
 
-Quotes include the user's address in the Poseidon2 hash preimage:
+Quotes include the user's address in the `compute_inner_authwit_hash` hash preimage:
 
 - **Normal quotes:** bound to `msg_sender`
 - **Cold-start quotes:** bound to the explicit `user` parameter
