@@ -73,7 +73,7 @@ Returns a user-specific signed quote. The `user` address is bound into the quote
 2. **Check asset support.** Look up the asset in the LMDB policy store. Reject with `400 BAD_REQUEST` if unsupported.
 3. **Compute payment amount.** Apply the exchange rate formula (see [Pricing Formula](#pricing-formula) below).
 4. **Set expiry.** `valid_until = now + quote_validity_seconds` (default: 300s, max: 3600s).
-5. **Sign.** Compute Poseidon2 hash over the 7-field quote preimage using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness`. Sign the 32-byte hash with the operator Schnorr key.
+5. **Sign.** Compute the quote hash via `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness` over the 7-field preimage. Sign the 32-byte hash with the operator Schnorr key.
 6. **Return.**
 
 #### Response
@@ -290,7 +290,7 @@ Optional fixed-window rate limiting on the quote endpoint. Configurable window d
 |--------|---------|--------|
 | `server.ts` | Fastify HTTP server, routes, quote orchestration | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) |
 | `config.ts` | YAML + env config loading and validation | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) |
-| `signer.ts` | Schnorr signing over Poseidon2 hash | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts) |
+| `signer.ts` | Schnorr signing over `computeInnerAuthWitHash` | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts) |
 | `asset-policy-store.ts` | LMDB-backed asset pricing persistence | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/asset-policy-store.ts) |
 | `operator-treasury.ts` | Private balance tracking and sweeps | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/operator-treasury.ts) |
 | `secret-provider.ts` | Multi-mode key resolution (env, config, KMS, HSM) | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts) |
