@@ -135,7 +135,7 @@ The Solidity contract on L1 that mirrors an L2 contract and handles L1-L2 messag
 The return type from `L1ToL2TokenPortalManager.bridgeTokensPrivate()`. Contains `claimAmount`, `claimSecret`, `claimSecretHash`, and `messageLeafIndex`. Pass the whole object to `executeColdStart`. Do not destructure it.
 
 ### `mint_to_private`
-An Aztec Token contract pattern for minting tokens directly into a private balance. Cold-start uses this via the bridge: the FPC calls `bridge.claim_public()` / `mint_to_private` to pull bridged tokens into its own private balance before redistributing. The mint amount is visible on-chain (it updates total supply), but user identities and balances remain private.
+An Aztec Token contract pattern for minting tokens directly into a private balance. Cold-start uses this via the bridge: the FPC calls `bridge.claim_private()` to pull bridged tokens into its own private balance before redistributing. The mint amount is visible on-chain (it updates total supply), but user identities and balances remain private.
 
 ### AztecAddress
 An Aztec L2 contract or account address (a `Field` element, 0x-prefixed hex). Distinct from `EthAddress` (20-byte L1 address). The SDK uses `AztecAddress.fromString()` to parse.

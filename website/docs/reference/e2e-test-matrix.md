@@ -72,7 +72,7 @@ Coverage is split by concern across these scripts:
 
 | Script | Concern |
 |---|---|
-| [`scripts/contract/deploy-fpc-local.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-fpc-local.ts) / `deploy-fpc-local-smoke.ts` | Deployment and relay usability. Not quote security. |
+| [`scripts/contract/deploy-fpc-local-mode.sh`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-fpc-local-mode.sh) / [`deploy-smoke-local.sh`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-smoke-local.sh) | Deployment and relay usability. Not quote security. |
 | [`scripts/tests/services.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/services.ts) | Deployed service HTTP endpoints: `/quote`, `/cold-start-quote`, top-up health, metrics. |
 | [`scripts/tests/same-token-transfer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/same-token-transfer.ts) | Happy-path integration: private/public/batched fee-paid transfers against a running attestation service and top-up-funded FPC. |
 | [`scripts/tests/fee-entrypoint-validation.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/fee-entrypoint-validation.ts) | **This matrix.** Negative scenarios 1 through 6. |
