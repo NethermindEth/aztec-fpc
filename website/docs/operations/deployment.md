@@ -1,0 +1,267 @@
+# Deployment [Deploy the FPC stack to local, devnet, or testnet]
+
+How to deploy the FPC system — contracts, services, and supporting infrastructure.
+
+There are two supported deployment paths:
+
+- **Docker (recommended)** — pre-compiled artifacts, two-phase deploy, ships the full `nethermind/aztec-fpc-*` image set. Best for testnet/devnet and production.
+- **Bun scripts (non-Docker)** — `bun run deploy:fpc` wrapper. Best for local dev and CI that already has Noir/Bun installed.
+
+**Sources:**
+[docs/ops/docker-deployment-guide.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/ops/docker-deployment-guide.md),
+[docs/ops/devnet-deployment-how-to.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/ops/devnet-deployment-how-to.md),
+[docs/aztec-deployer-user-guide.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/aztec-deployer-user-guide.md)
+
+## Path A — Docker (recommended)
+
+Deployment is **two phases**:
+
+1. **FPC deploy** — deploys `FPCMultiAsset` + writes `manifest.json` + auto-generates per-service configs
+2. **Token configuration** (`configure-token` subcommand) — deploys test tokens (if needed) + registers them with the running attestation service
+
+Between the two phases, you start the attestation + top-up services.
+
+
+### Prepare the master config
+
+```bash
+mkdir -p deployments
+cp deployments/fpc-config.example.yaml deployments/fpc-config.yaml
+# Edit: tokens, exchange rates (market_rate_num/den, fee_bips), thresholds
+```
+
+### Phase 1 — deploy FPC + generate configs
+
+```bash
+export FPC_DEPLOYER_SECRET_KEY=0x<deployer_hex32>
+export FPC_OPERATOR_SECRET_KEY=0x<operator_hex32>
+
+docker run \
+  -e AZTEC_NODE_URL=https://rpc.testnet.aztec-labs.com \
+  -e FPC_DEPLOYER_SECRET_KEY \
+  -e FPC_OPERATOR_SECRET_KEY \
+  -v ./deployments:/app/deployments \
+  nethermind/aztec-fpc-contract-deployment:local
+```
+
+Output:
+
+```text
+deployments/
+├── manifest.json                ← FPC deployment manifest (TREAT AS SECRET)
+├── fpc-config.yaml              ← master config
+├── attestation/config.yaml      ← generated — ready to mount
+└── topup/config.yaml            ← generated — ready to mount
+```
+
+> [!TIP]
+> **Optional: deploy paying fees via Sponsored FPC**
+>
+> Add `--sponsored-fpc-address <EXISTING_FPC_ADDRESS>` to pay deployment fees through an existing sponsored FPC rather than the deployer account. Useful on testnet where you might not have Fee Juice yet.
+
+
+> [!TIP]
+> **Preflight only**
+>
+> Add `--preflight-only` (or `FPC_PREFLIGHT_ONLY=1`) to validate node connectivity and deployer state without submitting any txs.
+
+
+### Start the services
+
+Attestation:
+
+```bash
+export OPERATOR_SECRET_KEY=0x<operator_hex32>
+docker run -d \
+  -e OPERATOR_SECRET_KEY \
+  -v ./deployments/attestation/config.yaml:/app/config.yaml \
+  -p 3000:3000 \
+  nethermind/aztec-fpc-attestation:local
+```
+
+Top-up (requires L1 operator to hold ETH + Fee Juice — run `bun run fund:l1:fee-juice` first if on devnet):
+
+```bash
+export L1_OPERATOR_PRIVATE_KEY=0x<l1_key>
+docker run -d \
+  -e L1_OPERATOR_PRIVATE_KEY \
+  -v ./deployments/topup/config.yaml:/app/config.yaml \
+  -p 3001:3001 \
+  nethermind/aztec-fpc-topup:local
+```
+
+### Phase 2 — configure tokens
+
+Deploy test tokens (if their `address` is omitted in `fpc-config.yaml`) and register them with the attestation service:
+
+```bash
+export FPC_L1_DEPLOYER_KEY=0x<l1_key>
+export ADMIN_API_KEY=<admin_secret>
+
+docker run \
+  -e AZTEC_NODE_URL=https://rpc.testnet.aztec-labs.com \
+  -e L1_RPC_URL=<L1_RPC_URL> \
+  -e FPC_DEPLOYER_SECRET_KEY \
+  -e FPC_L1_DEPLOYER_KEY \
+  -e FPC_ATTESTATION_URL=http://<attestation_host>:3000 \
+  -e ADMIN_API_KEY \
+  -v ./deployments:/app/deployments \
+  nethermind/aztec-fpc-contract-deployment:local \
+  configure-token
+```
+
+Test-token manifests land in `deployments/tokens/<TokenName>.json` and contain L2 addresses (token, bridge, faucet, counter), L1 addresses (ERC20, portal), and tx hashes.
+
+### Smoke test
+
+```bash
+bun run smoke:services:compose              # full compose smoke
+# or
+FPC_COLD_START_MANIFEST=path/to/manifest.json \
+FPC_ATTESTATION_URL=http://localhost:3000 \
+  bun run smoke:fee-entrypoint
+```
+
+
+### Docker Compose for public networks
+
+One-liner for devnet/testnet that runs deploy → attestation → topup → configure-token in dependency order:
+
+```bash
+export FPC_DEPLOYER_SECRET_KEY=0x<...>
+export FPC_OPERATOR_SECRET_KEY=0x<...>
+export FPC_L1_DEPLOYER_KEY=0x<...>
+export ADMIN_API_KEY=<...>
+
+DEPLOYMENT=testnet docker compose -f docker-compose.public.yaml up -d
+```
+
+Reads `.env.${DEPLOYMENT}` for network defaults and writes outputs to `deployments/${DEPLOYMENT}/`.
+
+## Path B — Non-Docker (bun scripts)
+
+For local dev that already has Noir, Bun, and `aztec-wallet` set up.
+
+```bash
+export AZTEC_NODE_URL="https://v4-devnet-2.aztec-labs.com/"
+export FPC_DEPLOYER_SECRET_KEY=0x<deployer>
+export FPC_OPERATOR_SECRET_KEY=0x<operator>
+# Optional — pay deployment fees via existing sponsored FPC:
+export FPC_SPONSORED_FPC_ADDRESS=0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2
+
+bun run deploy:fpc
+```
+
+Manifest written to `deployments/devnet-manifest-v2.json`.
+
+Reuse an existing token (skip test-token deploy):
+
+```bash
+export FPC_ACCEPTED_ASSET=0x<existing_token>
+bun run deploy:fpc
+```
+
+Render service configs from the manifest:
+
+```bash
+bun run generate:configs
+```
+
+Post-deploy runtime smoke (one fee-paid tx + one L1 bridge cycle):
+
+```bash
+set -a; source .env; set +a
+export L1_OPERATOR_PRIVATE_KEY="$L1_ADDRESS_PK"
+export L1_RPC_URL=https://sepolia.infura.io/v3/<key>
+bunx tsx scripts/contract/devnet-postdeploy-smoke.ts --manifest ./deployments/devnet-manifest-v2.json
+```
+
+## Deployment Manifest
+
+The manifest is the canonical output of deployment — later tooling (services, smoke tests, the SDK examples) reads from it. **Contains raw key material; treat as secret.**
+
+Schema (validated via `writeDevnetDeployManifest`):
+
+```json
+{
+  "network_metadata": {
+    "node_url": "https://...",
+    "node_version": "4.2.0-aztecnr-rc.2",
+    "l1_chain_id": 11155111,
+    "rollup_version": "..."
+  },
+  "l1_contract_addresses": {
+    "rollup": "0x...",
+    "fee_juice": "0x...",
+    "fee_juice_portal": "0x..."
+  },
+  "deployer": {
+    "address": "0x...",
+    "private_key": "0x..." ,
+    "private_key_ref": "secret-manager://..."
+  },
+  "contracts": {
+    "fpc": "0x..."
+  },
+  "operator": {
+    "address": "0x...",
+    "pubkey_x": "0x...",
+    "pubkey_y": "0x..."
+  },
+  "tx_hashes": {
+    "fpc_deploy": "0x..."
+  }
+}
+```
+
+File paths by path:
+
+| Path | Manifest location |
+|------|-------------------|
+| Docker | `deployments/manifest.json` |
+| Bun (`deploy:fpc`) | `deployments/devnet-manifest-v2.json` |
+| Bun (`deploy:fpc:local`) | `./tmp/deploy-fpc-local.json` (via `FPC_LOCAL_OUT`) |
+| Docker Compose public | `deployments/${DEPLOYMENT}/manifest.json` |
+
+## Environment Variables
+
+| Variable | When required | Description |
+|----------|:---:|-------------|
+| `AZTEC_NODE_URL` | Always | Aztec node URL |
+| `FPC_DEPLOYER_SECRET_KEY` | Always (or `_REF`) | L2 deployer key |
+| `FPC_OPERATOR_SECRET_KEY` | Optional | L2 operator key (defaults to deployer) |
+| `FPC_L1_DEPLOYER_KEY` | Test-token deploy | L1 deployer for ERC20 + portal |
+| `L1_RPC_URL` | Test-token deploy, topup | L1 RPC endpoint |
+| `FPC_SPONSORED_FPC_ADDRESS` | Optional | Pay deploy fees via existing sponsored FPC |
+| `FPC_ATTESTATION_URL` | `configure-token` | Attestation service URL for token registration |
+| `ADMIN_API_KEY` | `configure-token` | Attestation admin API key |
+| `FPC_PREFLIGHT_ONLY` | Optional | Run checks only; no txs |
+| `FPC_SKIP_CONFIG_GEN` | Optional | Skip auto-generating service configs |
+
+## Security Notes
+
+- **Never pass secrets as CLI args or inline `-e KEY=VALUE`**. Export first (`export FPC_DEPLOYER_SECRET_KEY=...`), pass by name. Inline values leak via `ps` and `docker inspect`.
+- `manifest.json` may contain raw private keys — **treat as secret material**, never commit.
+- Prefer `_REF` variants (KMS / secret manager) over plaintext keys in production.
+- Set `runtime_profile: production` in service configs to reject plaintext secrets at startup.
+
+## Verify Deployment
+
+Post-deploy verification reads on-chain state and compares against the manifest. Checks: contract exists; FPC's immutable config matches the manifest's operator + pubkeys; contract class is publicly registered.
+
+Programmatic API: `verifyDeployment()` from `contract-deployment/src/verify.ts`.
+
+```bash
+bun run verify          # bun path
+# or for Docker: regenerate + reverify from existing manifest
+docker run -v ./deployments:/app/deployments \
+  --entrypoint bash \
+  nethermind/aztec-fpc-contract-deployment:local \
+  scripts/config/generate-service-configs.sh
+```
+
+## Next Steps
+
+- [Run an FPC Operator](../how-to/run-operator.md) — production hardening (KMS, HTTPS, alerts)
+- [Docker & CI](../operations/docker.md) — image build + CI pipeline
+- [Configuration](../operations/configuration.md) — every service config field

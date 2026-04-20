@@ -1,0 +1,180 @@
+# SDK — Getting Started [Integrate FPC into your wallet or dApp]
+
+Integrate FPC fee payments into your wallet or dApp with two methods.
+
+**Package:** `@nethermindeth/aztec-fpc-sdk`
+**Source:** [sdk/](https://github.com/NethermindEth/aztec-fpc/tree/main/sdk)
+
+> [!TIP]
+> **Who this is for**
+>
+> - **Privacy DEX or payment app** (like [Shieldswap](https://shieldswap.org/) or [Nemi](https://nemi.fi)) — sponsor your users' gas in your app's own token instead of Fee Juice.
+> - **Wallet building on Aztec** — offer FPC as a fee payment option alongside the canonical Sponsored FPC.
+> - **Bridge UI** — use `executeColdStart()` to take users from "just bridged from L1" to "active L2 account" in one transaction. See [Cold-Start Flow](../how-to/cold-start-flow.md) for the dedicated bridge builder guide.
+
+
+> [!NOTE]
+> **SDK is not yet published to npm**
+>
+> The SDK is currently installed from a local clone. See the [Installation](#installation) section below.
+
+
+## Testnet Defaults
+
+Nethermind-operated testnet URLs, addresses, and live discovery check: **[Testnet Deployment](../reference/testnet-deployment.md)**.
+
+Compatibility: Aztec `4.2.0-aztecnr-rc.2`, Bun `1.3.11`. `@aztec/*` peer deps must match the node version.
+
+## Installation
+
+The SDK is not yet on npm. Install from a local clone:
+
+```bash
+git clone https://github.com/NethermindEth/aztec-fpc.git
+cd aztec-fpc
+git submodule update --init --recursive
+aztec compile --workspace --force
+bun install && bun run build
+
+cd /path/to/your-app
+bun add /absolute/path/to/aztec-fpc/sdk
+```
+
+Once published, the usual `bun add @nethermindeth/aztec-fpc-sdk` will work.
+
+## Standard Flow — User Has Tokens on L2
+
+```typescript
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
+import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
+
+// 1. Connect to node + create wallet
+const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
+await waitForNode(node);
+const wallet = await EmbeddedWallet.create(node, {
+  ephemeral: true,
+  pxeConfig: { proverEnabled: true },
+});
+
+// 2. Create the FPC client — note: `operator` and `node` are required
+const fpcClient = new FpcClient({
+  fpcAddress: AztecAddress.fromString("0x1be2cae67..."),
+  operator: AztecAddress.fromString("0x0aa818ff7..."),
+  node,
+  attestationBaseUrl: "https://aztec-fpc-testnet.staging-nethermind.xyz/",
+});
+
+// 3. Simulate to estimate gas
+const { estimatedGas } = await contract.methods
+  .transfer(recipient, amount)
+  .simulate({ from: userAddress, fee: { estimateGas: true } });
+if (!estimatedGas) throw new Error("Failed to estimate gas");
+
+// 4. Build the payment method
+const { fee } = await fpcClient.createPaymentMethod({
+  wallet,
+  user: userAddress,
+  tokenAddress: AztecAddress.fromString("0x07348d12a..."),
+  estimatedGas,
+});
+
+// 5. Send tx
+const tx = await contract.methods.transfer(recipient, amount).send({
+  from: userAddress,
+  fee,
+});
+await tx.wait();
+```
+
+The SDK handles:
+- Computing `fj_amount` from the node's current gas fees
+- Fetching a signed quote from `/quote`
+- Building the user → operator token-transfer auth-witness
+- Wiring the `fee_entrypoint` call as a `FeePaymentMethod`
+
+## Cold Start Flow — User Just Bridged from L1
+
+Use `executeColdStart` when the user has bridged tokens from L1 but has **no existing L2 balance** to pay fees.
+
+```typescript
+import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
+import { Fr } from "@aztec/aztec.js/fields";
+import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
+import { createExtendedL1Client } from "@aztec/ethereum/client";
+
+// 1. Bridge tokens from L1
+const l1Client = createExtendedL1Client(
+  ["https://ethereum-sepolia-rpc.publicnode.com"],
+  "0x<your_l1_private_key>",
+  l1Chain,
+);
+
+const portalManager = new L1ToL2TokenPortalManager(
+  l1TokenAddress,
+  l1PortalAddress,
+  undefined,
+  l1Client,
+  logger,
+);
+
+const bridgeClaim = await portalManager.bridgeTokensPrivate(
+  userAddress,
+  10_000_000_000_000_000n,
+  false,
+);
+
+// 2. Wait for the L1→L2 message to land on L2
+await waitForL1ToL2MessageReady(
+  node,
+  Fr.fromHexString(bridgeClaim.messageHash as string),
+  { timeoutSeconds: 300 },
+);
+
+// 3. Execute cold-start — pass bridgeClaim as-is (don't destructure)
+const result = await fpcClient.executeColdStart({
+  wallet,
+  userAddress,
+  tokenAddress: AztecAddress.fromString("0x07348d12a..."),
+  bridgeAddress: AztecAddress.fromString("0x19b200d77..."),
+  bridgeClaim,
+});
+
+console.log(`Tx: ${result.txHash}`);
+console.log(`Fee paid: ${result.aaPaymentAmount} tokens`);
+```
+
+One transaction takes the user from "just bridged" to "has tokens + transaction history."
+
+> [!TIP]
+> **Finding `bridgeAddress`**
+>
+> If the operator deployed test tokens via `configure-token`, the bridge address is in `deployments/tokens/<TokenName>.json`. For production tokens, get it from the token deployment records.
+
+
+## What the SDK Constructs Under the Hood
+
+### `createPaymentMethod`
+1. Attaches FPC + Token contract instances to the wallet via `node.getContract`
+2. Reads current gas fees (`node.getCurrentMinFees`)
+3. Computes `fj_amount = daGas*feePerDaGas + l2Gas*feePerL2Gas` (plus fixed `Gas(5_000, 100_000)` buffer)
+4. `GET <ATTESTATION_URL>/quote?user=…&accepted_asset=…&fj_amount=…`
+5. Builds authwit: `token.transfer_private_to_private(user → operator, aa_payment_amount, nonce)`
+6. Wires `fee_entrypoint` call as the tx's `FeePaymentMethod`
+
+### `executeColdStart`
+1. Fetches cold-start quote from `/cold-start-quote` (different domain separator `0x46504373`)
+2. Builds `cold_start_entrypoint` call with `bridgeClaim` fields + quote signature
+3. Uses hardcoded gas limits `Gas(5_000, 1_000_000)` (simulation isn't possible pre-account-deploy)
+4. Proves, sends, and waits (retries up to 3x on `"Message not in state"` PXE sync races)
+
+## Contract Artifacts
+
+The SDK ships its own copies of `FPCMultiAsset`, `Token`, and `TokenBridge` artifacts via `codegen/`. If you build from source, the artifacts are produced by `aztec compile --workspace --force`.
+
+## Next Steps
+
+- [API Reference](../sdk/api-reference.md) — full type signatures
+- [Quote System](../overview/quote-system.md) — what the SDK wraps
+- [Example](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts) — end-to-end runnable file

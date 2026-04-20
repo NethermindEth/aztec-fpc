@@ -1,0 +1,112 @@
+# Token Bridge Contract [Move tokens between Ethereum and Aztec]
+
+L1-L2 bridge enabling token movement between Ethereum and Aztec.
+
+**Source:** `contracts/token_bridge/src/main.nr`
+
+## Storage
+
+```noir
+struct Storage {
+    config: PublicImmutable<Config>,
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `token` | `AztecAddress` | The L2 token contract this bridge serves |
+| `portal` | `AztecAddress` | The L1 portal contract address |
+
+## Functions
+
+### `constructor`
+
+```noir
+#[public]
+#[initializer]
+fn constructor()
+```
+
+Empty initializer. Config must be set via `set_config`.
+
+### `set_config`
+
+```noir
+#[public]
+fn set_config(token: AztecAddress, portal: AztecAddress)
+```
+
+One-time initialization linking the bridge to its token and L1 portal.
+
+### `claim_public`
+
+```noir
+#[public]
+fn claim_public(
+    to: AztecAddress,
+    amount: Field,
+    secret: Field,
+    message_leaf_index: Field,
+)
+```
+
+Claims tokens from an L1→L2 deposit into the recipient's **public** balance:
+
+1. Constructs the expected L1→L2 message content
+2. Consumes the message from the Aztec inbox
+3. Mints `amount` tokens to `to`'s public balance
+
+> [!NOTE]
+> **Not used by FPC cold-start**
+>
+> FPC cold-start calls [`claim_private`](#claim_private), not `claim_public`, because the subsequent transfers to the user and operator use the private domain.
+
+
+### `claim_private`
+
+```noir
+#[public]
+fn claim_private(
+    to: AztecAddress,
+    amount: Field,
+    secret: Field,
+    message_leaf_index: Field,
+)
+```
+
+Same as `claim_public` but mints to the recipient's **private** balance.
+
+### `exit_to_l1_public`
+
+```noir
+#[public]
+fn exit_to_l1_public(
+    recipient: EthAddress,
+    amount: Field,
+    caller_on_l1: EthAddress,
+    authwit_nonce: Field,
+)
+```
+
+Burns L2 tokens and sends an L2→L1 message:
+
+1. Burns `amount` from the caller's public balance
+2. Sends message to the L1 portal encoding recipient and amount
+3. L1 portal releases corresponding ERC-20 tokens
+
+## Role in Cold Start
+
+```
+User (L1) ──bridge──► L1 Portal ──message──► Aztec Inbox
+                                                   │
+FPC.cold_start_entrypoint ──► TokenBridge.claim_private(fpc_address, claim_amount, ...)
+                                    │
+                                    ▼
+                              Tokens minted to FPC's PRIVATE balance
+                                    │
+                              FPC distributes via transfer_private_to_private:
+                              ├──► user gets (claim - fee)
+                              └──► operator gets (fee)
+```
+
+FPC passes `fpc_address` (not the user) as the `to` argument, so tokens land in the FPC's private balance first. This is deliberate — the user's account may not be deployed on L2 yet, so we can't write directly to the user's notes. Writing to FPC and then re-transferring sidesteps the need for an authwit from a non-existent account.

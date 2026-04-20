@@ -1,0 +1,167 @@
+# Security Model [Trust assumptions, key management, and threat mitigations]
+
+FPC operates under a **trusted operator** model. This page covers the trust assumptions, key management, threat mitigations, and production recommendations.
+
+## Trust Assumptions
+
+The operator:
+- Signs all fee quotes
+- Receives all token payments
+- Funds the FPC with Fee Juice
+- Runs the attestation and top-up services
+
+**Users trust that the operator will:**
+1. Honor signed quotes *(enforced on-chain — can't cheat)*
+2. Keep the FPC funded *(economic incentive)*
+3. Offer fair exchange rates *(market competition)*
+
+> [!NOTE]
+>
+> Users never give custody of their funds beyond the agreed transaction fee. The FPC contract enforces exact amounts on-chain.
+
+
+> [!CAUTION]
+> **Setup-phase irreversibility — the fee is paid even if your app logic reverts**
+>
+> The user → operator token transfer executes **directly inside the Aztec setup phase, before `end_setup()`**. It is irrevocably committed at that point.
+>
+> If the user's subsequent app logic reverts, **the fee has still been paid**. There is no teardown phase and no refund — this is inherent to the Aztec FPC model, not a Nethermind design choice.
+>
+> Implications for integrators:
+> - **Wallets** must surface this clearly. "Fee charged even on app-level failure" is a truthful description.
+> - **App developers** should simulate before sending. A failing tx still costs fees.
+> - **Always-revert testing** (see [`scripts/tests/always-revert.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/always-revert.ts)) confirms the FPC is still paid when downstream logic reverts.
+
+
+> [!WARNING]
+> **No on-chain asset allowlist — protection is via quote binding**
+>
+> The FPC contract does **not** store a list of accepted assets. Nothing on-chain rejects an arbitrary token address passed to `fee_entrypoint`. Protection comes from the **quote signature**: `accepted_asset` is in the signed Poseidon2 preimage, so swapping the asset at call time invalidates signature verification.
+>
+> This matters because the "multi-asset" property of `FPCMultiAsset` is an *off-chain* policy (attestation service) plus *quote binding* — not an on-chain allowlist. See [FPCMultiAsset](../contracts/fpc-multi-asset.md).
+
+
+## Key Management
+
+### Operator Keys
+
+| Key | Purpose | Stored In | Rotation |
+|-----|---------|-----------|----------|
+| L2 Schnorr keypair | Sign fee quotes | Attestation service | **Requires redeployment** |
+| L2 Schnorr pubkey | Verify quotes on-chain | FPC contract (immutable) | — |
+| L1 private key | Bridge Fee Juice | Top-up service | Config change |
+| Admin API key | Protect admin endpoints | Env var | Env var change |
+
+> [!CAUTION]
+>
+> The L2 Schnorr key **cannot be rotated**. The public key is immutable in the FPC contract. Compromise means redeploying the contract and updating all wallet integrations.
+
+
+### Secret Provider Modes
+
+Both services support multiple key storage backends:
+
+| Mode | Description | Environment |
+|------|-------------|-------------|
+| `auto` | Try env → config → KMS → HSM in order | Default |
+| `env` | `OPERATOR_SECRET_KEY` environment variable | Simple deployments |
+| `config` | Plaintext in YAML config | **Development only** |
+| `kms` | Cloud key management (AWS KMS, etc.) | Production |
+| `hsm` | Hardware security module | High-security production |
+
+In `production` runtime profile, plaintext config secrets are **rejected**.
+
+## On-Chain Protections
+
+### Quote Authenticity
+
+Every quote is verified via Schnorr signature against the hardcoded operator public key. No one else can produce valid signatures.
+
+### Replay Protection
+
+Each quote hash is pushed as a **nullifier** to the Aztec state tree:
+
+```
+First use  → nullifier doesn't exist → succeeds → nullifier stored
+Second use → nullifier already exists → transaction fails
+```
+
+### User Binding
+
+Quotes include the user's address in the hash:
+- **Normal quotes:** `msg_sender`
+- **Cold-start quotes:** explicit `user` parameter
+
+Signature verification fails if a different user tries to use the quote.
+
+### Freshness & TTL
+
+| Check | Rule | Purpose |
+|-------|------|---------|
+| Expiry | `valid_until >= block_timestamp` | Reject expired quotes |
+| TTL cap | `valid_until - block_timestamp <= 3600` | Prevent indefinitely valid quotes |
+
+### Cold-Start Guards
+
+| Guard | What It Prevents |
+|-------|-----------------|
+| `msg_sender.is_none()` | Must be transaction root — no nested calls |
+| `claim_amount >= aa_payment_amount` | User can't pay more than they're claiming |
+| Extended hash preimage | Quote is bound to specific bridge deposit details |
+| Different domain separator | Normal quotes can't be used for cold-start |
+
+## Off-Chain Protections
+
+### Admin API Authentication
+
+- Requires `x-admin-api-key` header
+- **Constant-time comparison** (prevents timing attacks)
+- Must be served over HTTPS in production
+
+### Rate Limiting
+
+Optional fixed-window rate limiting on the quote endpoint to prevent abuse.
+
+### Authentication Modes
+
+| Mode | Use Case |
+|------|----------|
+| `disabled` | Development |
+| `api_key` | Simple production |
+| `trusted_header` | Behind reverse proxy |
+
+## Threat Mitigation Matrix
+
+| Threat | Mitigation |
+|--------|-----------|
+| Quote forgery | Schnorr signature + immutable on-chain pubkey |
+| Quote replay | Nullifier per quote hash |
+| Quote theft (User A → B) | User address in hash preimage |
+| Stale quotes | Expiry check + 1-hour TTL cap |
+| Cross-entrypoint reuse | Different domain separators |
+| Operator key compromise | Use KMS/HSM; compromise = redeploy |
+| Admin API abuse | API key + constant-time comparison |
+| Quote endpoint DoS | Rate limiting |
+| Plaintext secrets | Rejected in production profile |
+| FPC balance depletion | Top-up auto-bridges from L1 |
+| Top-up service crash | LMDB persistence + reconciliation |
+| Cold-start manipulation | Tx root check + claim >= fee + bridge binding |
+| Malicious asset address at call time | `accepted_asset` in quote preimage — tampering invalidates the signature |
+| App-logic revert bypassing fee | Fee is paid in setup phase, before app logic runs — not bypassable |
+
+## Production Checklist
+
+> [!TIP]
+> **Before going to production**
+>
+> - [ ] Use **KMS or HSM** for operator keys (`operator_secret_provider: kms`)
+> - [ ] Set `runtime_profile: production` (rejects plaintext secrets)
+> - [ ] Serve attestation behind **HTTPS** with a reverse proxy
+> - [ ] Enable **rate limiting** on the quote endpoint
+> - [ ] Set **alerts** on FPC balance (top-up readiness endpoint)
+> - [ ] Monitor **Prometheus metrics** for anomalies
+> - [ ] Restrict admin endpoints to **internal network**
+> - [ ] Rotate **admin API key** periodically
+> - [ ] Keep operator **L1 account funded** for bridge transactions
+> - [ ] Review top-up logs for **CRITICAL** bridge failures
+

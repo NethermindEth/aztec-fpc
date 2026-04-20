@@ -1,0 +1,201 @@
+# Attestation Service [The REST API that signs fee quotes]
+
+The off-chain REST API that signs fee quotes for users. Run by the FPC operator.
+
+**Source:** `services/attestation/`
+
+## Overview
+
+The attestation service is the operator's quote engine. It:
+
+1. Receives quote requests from wallets/dApps
+2. Computes exchange rates for the requested token
+3. Signs the quote with the operator's Schnorr key
+4. Returns the signed quote for on-chain verification
+
+## HTTP Endpoints
+
+### Public
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/.well-known/fpc.json` | Wallet discovery metadata |
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/metrics` | Prometheus metrics |
+| `GET` | `/accepted-assets` | Supported tokens with pricing |
+| `GET` | `/quote` | Request a signed fee quote |
+| `GET` | `/cold-start-quote` | Request a signed cold-start quote (includes `claim_amount` + `claim_secret_hash`) |
+
+### Admin
+
+All admin endpoints require the `x-admin-api-key` header.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/admin/asset-policies` | List all pricing policies |
+| `PUT` | `/admin/asset-policies/:addr` | Create/update an asset policy |
+| `DELETE` | `/admin/asset-policies/:addr` | Remove an asset policy |
+| `GET` | `/admin/operator-balances` | Operator's token balances |
+| `POST` | `/admin/sweeps` | Manual treasury sweep |
+
+## Quote Request
+
+```
+GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<u128>
+```
+
+### Processing
+
+
+### Validate inputs
+
+Parse and validate user address, asset address, and Fee Juice amount.
+
+### Check asset support
+
+Look up the asset in the policy store (LMDB). Reject if not supported.
+
+### Compute payment amount
+
+```
+rate_num = market_rate_num × (10000 + fee_bips)
+rate_den = market_rate_den × 10000
+aa_payment_amount = ceil(fj_fee_amount × rate_num / rate_den)
+```
+
+### Set expiry
+
+`valid_until = now + quote_validity_seconds` (default: 300s)
+
+### Sign
+
+Compute Poseidon2 hash of quote preimage → Schnorr sign with operator key.
+
+### Return
+
+```json
+{
+    "accepted_asset": "0x...",
+    "fj_amount": "1000000",
+    "aa_payment_amount": "1010000",
+    "valid_until": "1700000300",
+    "signature": "0xabcd...1234"
+}
+```
+
+All numeric fields are returned as strings (u128 / unix-timestamp) to preserve precision across JSON. The signature is 64 raw Schnorr bytes, hex-encoded and `0x`-prefixed.
+
+
+## Cold-Start Quote
+
+`GET /cold-start-quote` extends `/quote` with two bridge-binding query params:
+
+| Param | Description |
+|-------|-------------|
+| `user` | User Aztec address |
+| `accepted_asset` | Token address |
+| `fj_amount` | Fee Juice amount (u128) |
+| `claim_amount` | Amount being claimed from the L1→L2 bridge |
+| `claim_secret_hash` | Claim secret hash (0x-hex) |
+
+The service validates `claim_amount >= aa_payment_amount` before signing. Response extends `QuoteResponse` with `claim_amount` and `claim_secret_hash` fields. Signed with a **different domain separator** (`0x46504373` = `"FPCs"`) so cold-start quotes can't be replayed as regular quotes.
+
+## Wallet Discovery
+
+The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full normative spec at [docs/spec/wallet-discovery-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md).
+
+```json
+{
+    "discovery_version": "1.0",
+    "attestation_api_version": "1.0",
+    "network_id": "aztec-testnet",
+    "fpc_address": "0x...",
+    "contract_variant": "fpc-v1",
+    "quote_base_url": "https://fpc.example.com",
+    "endpoints": {
+        "discovery": "/.well-known/fpc.json",
+        "health": "/health",
+        "accepted_assets": "/accepted-assets",
+        "quote": "/quote",
+        "cold_start_quote": "/cold-start-quote"
+    },
+    "supported_assets": [
+        { "address": "0x...", "name": "humanUSDC" }
+    ]
+}
+```
+
+Wallet lookup key is the tuple `(network_id, asset_address, fpc_address)` — `network_id` is a **string** (e.g. `"aztec-testnet"`), not a number. Wallets must fail closed on any validation mismatch (do not silently fall back to a record with a different network/asset/FPC).
+
+## Key Modules
+
+| Module | Purpose |
+|--------|---------|
+| `server.ts` | Fastify HTTP server, routes, quote orchestration |
+| `config.ts` | YAML + env config loading and validation |
+| `signer.ts` | Schnorr signing over Poseidon2 hash |
+| `asset-policy-store.ts` | LMDB-backed asset pricing persistence |
+| `operator-treasury.ts` | Private balance tracking + sweeps |
+| `secret-provider.ts` | Multi-mode key resolution (env/config/KMS/HSM) |
+| `request-schemas.ts` | Input validation schemas |
+| `metrics.ts` | Prometheus instrumentation |
+
+## Authentication
+
+### Quote Endpoint
+
+Configurable via `quote_auth_mode`:
+
+| Mode | Description |
+|------|-------------|
+| `disabled` | No authentication (development default — **rejected in `runtime_profile: production`**) |
+| `api_key` | Require API key in `QUOTE_AUTH_API_KEY_HEADER` (default `x-api-key`) |
+| `trusted_header` | Trust a reverse-proxy-set header (name + expected value configured separately) |
+| `api_key_or_trusted_header` | Accept either an API key **or** a trusted header |
+| `api_key_and_trusted_header` | Require **both** an API key and a trusted header (headers must differ) |
+
+### Admin Endpoints
+
+- `ADMIN_API_KEY` env var checked against `x-admin-api-key` header
+- **Constant-time comparison** to prevent timing attacks
+
+### Rate Limiting
+
+Optional fixed-window rate limiting on the quote endpoint (configurable window + max requests).
+
+## Startup Sequence
+
+1. Load and validate configuration
+2. Resolve operator secret key
+3. Connect to Aztec node (PXE)
+4. Validate FPC contract on-chain with matching operator pubkey
+5. Initialize LMDB asset policy store
+6. Register configured assets
+7. Start Fastify HTTP server
+
+## Configuration
+
+See [Configuration](../operations/configuration.md) for the full reference.
+
+Key settings:
+
+```yaml title="config.yaml"
+runtime_profile: production
+network_id: "aztec-testnet"        # string, not number (default "aztec-alpha-local")
+fpc_address: "0x..."
+contract_variant: "fpc-v1"
+aztec_node_url: "https://..."
+operator_secret_provider: kms       # env | config | kms | hsm | auto
+operator_secret_ref: "secret-manager://prod/operator"  # preferred over OPERATOR_SECRET_KEY
+quote_validity_seconds: 300
+quote_format: amount_quote          # amount_quote | rate_quote
+quote_auth_mode: api_key            # disabled (dev only) | api_key | trusted_header | api_key_or_trusted_header | api_key_and_trusted_header
+port: 3000
+
+supported_assets:
+  - address: "0x..."
+    name: "humanUSDC"
+    market_rate_num: 1
+    market_rate_den: 1000
+    fee_bips: 200
+```
