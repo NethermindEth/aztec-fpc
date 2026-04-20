@@ -1,10 +1,12 @@
 # FPC: Fee Payment Contracts for Aztec
 
-> **Using an AI assistant?** Paste this into your agent to give it full project context:
+> **Using an AI agent?** Give it full project context in one command:
 > ```
-> Read this project context before answering: curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms.txt
+> curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms.txt
 > ```
-> For the full docs (~5k lines): replace `llms.txt` with `llms-full.txt`. See [`AGENT_PROMPT.md`](website/public/AGENT_PROMPT.md) for a ready-to-paste prompt.
+> For the complete docs (~5k lines): replace `llms.txt` with `llms-full.txt`.
+
+> **Developer?** Start here: **[FPC Documentation](website/docs/README.md)** -- overview, component map, quick code example, and persona-based routing to the page you need.
 
 ## Why FPC Exists
 

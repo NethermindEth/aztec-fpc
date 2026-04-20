@@ -391,7 +391,7 @@ Contract: FPCMultiAsset
   Asset allowlist: none (quote signature binds the asset)
 
 Quote signing:
-  Hash function: computeInnerAuthWitHash (Poseidon2 internally)
+  Hash function: computeInnerAuthWitHash
   Normal preimage (7 fields): [0x465043, fpc_address, accepted_asset, fj_fee_amount,
     aa_payment_amount, valid_until, user_address]
   Cold-start preimage (9 fields): [0x46504373, fpc_address, accepted_asset,
