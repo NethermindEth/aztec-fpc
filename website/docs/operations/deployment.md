@@ -238,17 +238,12 @@ Required env vars (deployment fails without these):
 
 The wrapper auto-compiles if contract artifacts are missing (`aztec compile --workspace --force`). After deployment, it auto-generates service configs unless `FPC_SKIP_CONFIG_GEN=1` is set.
 
-### Retry and debug knobs
+### Troubleshooting
+
+If deployment fails with wallet state errors, use a fresh temporary data directory:
 
 ```bash
-export FPC_WALLET_DEPLOY_RETRIES=6
-export FPC_WALLET_DEPLOY_RETRY_BACKOFF_MS=3000
-```
-
-Use an isolated wallet data dir for troubleshooting:
-
-```bash
-export FPC_WALLET_DATA_DIR="$(mktemp -d /tmp/aztec-wallet-devnet.XXXXXX)"
+export PXE_DATA_DIR="$(mktemp -d /tmp/aztec-pxe.XXXXXX)"
 bun run deploy:fpc
 ```
 
