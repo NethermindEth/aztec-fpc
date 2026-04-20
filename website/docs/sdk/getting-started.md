@@ -10,13 +10,6 @@ Two methods cover the full integration surface. `createPaymentMethod()` handles 
 >
 > Install from a local clone. See the [Installation](#installation) section below.
 
-> [!TIP]
-> **Who this is for**
->
-> - **Privacy DEX or payment app** building on Aztec: sponsor your users' gas in your app's own token instead of Fee Juice.
-> - **Wallet building on Aztec:** offer FPC as a fee payment option alongside the canonical Sponsored FPC.
-> - **Bridge UI:** use `executeColdStart()` to take users from "just bridged from L1" to "active L2 account" in one transaction.
-
 ## Testnet Defaults
 
 Nethermind-operated testnet URLs, addresses, and live discovery check: **[Testnet Deployment](../reference/testnet-deployment.md)**.
@@ -38,18 +31,35 @@ bun add /absolute/path/to/aztec-fpc/sdk
 
 Once the package is published, `bun add @nethermindeth/aztec-fpc-sdk` will work.
 
+## FpcWallet: required wallet class
+
+> [!CAUTION]
+> **Do not use `EmbeddedWallet` directly for FPC flows.**
+>
+> Aztec 4.2.0 introduced three breaking changes in `EmbeddedWallet` that cause FPC transactions to fail at runtime. Use `FpcWallet` instead. Copy [`scripts/common/fpc-wallet.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts) into your project, or import it from the cloned repo.
+
+`FpcWallet` extends `EmbeddedWallet` and overrides four methods to fix three compatibility issues introduced in Aztec 4.2.0:
+
+| Override | Problem in 4.2.0 | Fix |
+|---|---|---|
+| `sendTx()` | `EmbeddedWallet.sendTx()` runs mandatory pre-simulation with inflated gas limits. The FPC contract asserts `fj_fee_amount == max_fee`, so inflated limits break the assertion. | Delegates to `BaseWallet.prototype.sendTx`, skipping pre-simulation. |
+| `scopesFrom()` | `scopesFrom(AztecAddress.ZERO)` returns `[AztecAddress.ZERO]` instead of `[]`. This triggers "Key validation request denied" during proving for undeployed accounts. | Returns `[]` when the address is `AztecAddress.ZERO`. |
+| `simulateViaEntrypoint()` and `createTxExecutionRequestFromPayloadAndFee()` | Account deployment uses `from: AztecAddress.ZERO` (the account does not exist yet). In 4.2.0, these paths call `getAccountFromAddress(ZERO)` which throws. | Intercepts `AztecAddress.ZERO` and routes through `DefaultMultiCallEntrypoint`, replicating the 4.1.0 `SignerlessAccount` + multicall behavior. |
+
+If Aztec restores zero-address handling and adds a skip-simulation option, this subclass can be removed.
+
 ## Standard Flow: User Has Tokens on L2
 
 ```typescript
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
+import { FpcWallet } from "./fpc-wallet"; // copied from scripts/common/fpc-wallet.ts
 
 // 1. Connect to the Aztec node and create a wallet
 const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
 await waitForNode(node);
-const wallet = await EmbeddedWallet.create(node, {
+const wallet = await FpcWallet.create(node, {
   ephemeral: true,
   pxeConfig: { proverEnabled: true },
 });
@@ -93,10 +103,15 @@ await myContract.methods.myMethod(arg1, arg2).send({
 
 The SDK handles these steps internally:
 
-1. Computes `fj_amount` from the node's current gas fees (with a `Gas(5_000, 100_000)` buffer)
+1. Computes `fj_amount` from the node's current gas fees. A fixed `Gas(5_000, 100_000)` buffer is added to `gasLimits` before the computation.
 2. Fetches a signed quote from `GET <ATTESTATION_URL>/quote`
-3. Builds a token-transfer auth-witness (user to operator for `aa_payment_amount`)
-4. Wires the `fee_entrypoint` call as a `FeePaymentMethod`
+3. Builds an auth-witness authorizing the FPC contract (not the operator) to call `token.transfer_private_to_private(user, operator, aa_payment_amount, nonce)` on the user's behalf
+4. Wires the `fee_entrypoint` call as the transaction's `FeePaymentMethod`
+
+> [!WARNING]
+> **`fj_fee_amount` must match the transaction's gas cost**
+>
+> The FPC contract asserts `fj_fee_amount == get_max_gas_cost(...)` for the transaction's actual gas settings. If the `fj_amount` in the quote does not match, the transaction reverts with "quoted fee amount mismatch". The SDK computes this correctly, but if you build fee payloads manually, the amounts must align exactly.
 
 ## Cold-Start Flow: User Just Bridged from L1
 
@@ -111,13 +126,13 @@ import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { createExtendedL1Client } from "@aztec/ethereum/client";
 import { EthAddress } from "@aztec/foundation/eth-address";
 import { createLogger } from "@aztec/foundation/log";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
+import { FpcWallet } from "./fpc-wallet"; // copied from scripts/common/fpc-wallet.ts
 
 // 1. Connect to the Aztec node and create a wallet
 const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
 await waitForNode(node);
-const wallet = await EmbeddedWallet.create(node, {
+const wallet = await FpcWallet.create(node, {
   ephemeral: true,
   pxeConfig: { proverEnabled: true },
 });
@@ -154,7 +169,7 @@ const bridgeClaim = await portalManager.bridgeTokensPrivate(
   false,
 );
 
-// 3. Wait for the L1→L2 message to be available on L2
+// 3. Wait for the L1-to-L2 message to be available on L2
 await waitForL1ToL2MessageReady(
   node,
   Fr.fromHexString(bridgeClaim.messageHash as string),
@@ -192,17 +207,21 @@ One transaction takes the user from "just bridged" to "has tokens and transactio
 
 1. Attaches FPC + Token contract instances to the wallet via `node.getContract`
 2. Reads current gas fees (`node.getCurrentMinFees`)
-3. Computes `fj_amount = daGas * feePerDaGas + l2Gas * feePerL2Gas` (plus a fixed `Gas(5_000, 100_000)` buffer)
+3. Adds a `Gas(5_000, 100_000)` buffer to `gasLimits`, then computes `fj_amount = daGas * feePerDaGas + l2Gas * feePerL2Gas`
 4. Sends `GET <ATTESTATION_URL>/quote?user=...&accepted_asset=...&fj_amount=...`
-5. Builds authwit: `token.transfer_private_to_private(user, operator, aa_payment_amount, nonce)`
+5. Builds authwit authorizing the FPC contract (`fpcAddress` is the `caller`) to execute `token.transfer_private_to_private(user, operator, aa_payment_amount, nonce)`
 6. Wires `fee_entrypoint` call as the transaction's `FeePaymentMethod`
+7. Returns `{ fee, nonce, quote }`. The `fee` field is ready to pass to `.send()`. The `nonce` and `quote` fields are available for debugging or UI display.
 
 ### `executeColdStart`
 
 1. Fetches a cold-start quote from `/cold-start-quote` (different domain separator: `0x46504373`)
 2. Builds `cold_start_entrypoint` call with `bridgeClaim` fields and quote signature
-3. Uses hardcoded gas limits `Gas(5_000, 1_000_000)` because simulation is not possible before account deployment
+3. Uses hardcoded gas limits `Gas(5_000, 1_000_000)` because simulation is not possible before account deployment. Uses `DefaultEntrypoint` instead of the user's account entrypoint (the account may not exist yet).
 4. Proves, sends, and waits. Retries up to 3x on `"Message not in state"` errors from PXE sync races.
+5. Returns `{ txHash, txFee, aaPaymentAmount }`.
+
+An optional `txWaitTimeoutMs` parameter controls how long `executeColdStart` waits for the transaction to be mined (default: 180,000ms).
 
 ## Contract Artifacts
 
@@ -211,5 +230,6 @@ The SDK ships its own copies of `FPCMultiAsset`, `Token`, and `TokenBridge` arti
 ## Next Steps
 
 - [API Reference](../sdk/api-reference.md) for full type signatures
-- [Example](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts) for an end-to-end runnable file
+- [Full example](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts): cold-start + FPC-paid account deployment, end-to-end
+- [FpcWallet source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts): the wallet compatibility shim
 - [Testnet Deployment](../reference/testnet-deployment.md) for live addresses
