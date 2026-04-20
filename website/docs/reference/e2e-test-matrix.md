@@ -22,6 +22,42 @@ All scenarios target `fee_entrypoint`. Scenarios 1 through 5 run against a pre-d
 | 5 | **Direct `fee_entrypoint` outside setup** | Call `fee_entrypoint` as a root-level transaction outside the setup phase. Transaction is rejected. |
 | 6 | **Insufficient Fee Juice** | Deploy an isolated FPC with a controlled Fee Juice budget (direct bridge + claim). First transaction succeeds. Second transaction is rejected for insufficient fee-payer balance. |
 
+## Asset Model and Wiring
+
+Two assets are involved in the E2E tests. Do not conflate them.
+
+1. **`accepted_asset` (L2 token used to charge the user)**
+   - A test token deployed on Aztec L2 (`token_contract-Token`).
+   - Chosen per quote (`accepted_asset`) at runtime for `fee_entrypoint`.
+   - No L1 token wiring is required for this asset in the E2E.
+
+2. **Fee Juice (protocol fee asset for gas payment)**
+   - Scenarios 1-5: the FPC is pre-funded by the running top-up service.
+   - Scenario 6: Fee Juice is bridged directly via `L1FeeJuicePortalManager.bridgeTokensPublic()` and claimed on L2 via `FeeJuice.claim()`.
+   - L1/L2 Fee Juice addresses are discovered from `node_getNodeInfo`.
+
+## Full Lifecycle Phases
+
+The test suite executes in 7 phases:
+
+1. Read pre-deployed FPC and Token addresses from deployment manifest.
+2. Connect to Aztec node, derive operator account from secret, create fresh test users.
+3. Register pre-deployed contracts in local wallet.
+4. Wait for FPC to have positive Fee Juice balance (funded by the top-up service).
+5. Run negative scenarios 1-5 against the pre-deployed FPC.
+6. For scenario 6: deploy isolated Token + FPC, bridge + claim Fee Juice directly, run insufficient balance test.
+7. Persist diagnostics and artifacts.
+
+## Local-Network Troubleshooting
+
+Use this runbook when local E2E fails with address or wiring symptoms.
+
+1. **Stale hardcoded addresses.** Symptom: startup/config errors or bridge failures after node restart/redeploy. Check configured FeeJuice L1/L2 addresses against fresh `node_getNodeInfo` output. Fix: remove stale hardcoded values, regenerate deploy/config artifacts, use node-reported addresses.
+
+2. **L1 chain-id mismatch.** Symptom: bridge submit fails with chain/network mismatch errors. Check: compare node-reported `l1ChainId` from `node_getNodeInfo` with the chain id served by `l1_rpc_url`. Fix: point to the correct L1 RPC for the active local-network instance.
+
+3. **FeeJuice portal/address mismatch.** Symptom: bridge submission fails or FeeJuice balance never increases after a bridge + claim. Check configured/derived FeeJuice token + portal addresses against node-reported `l1ContractAddresses`. Fix: do not override local-network FeeJuice addresses manually. Use node-derived values.
+
 ## Cold-Start Parallel Matrix
 
 `scripts/tests/cold-start-validation.ts` mirrors the same matrix for `cold_start_entrypoint`, covering:
