@@ -5,7 +5,7 @@ This guide covers production deployment of the FPC operator stack: key managemen
 > [!WARNING]
 > **Production guide**
 >
-> For local development, see [Quick Start](../overview/quick-start.md) instead.
+> For local development, see [Quick Start](../quick-start.md) instead.
 
 > [!NOTE]
 > **Who runs their own FPC today**

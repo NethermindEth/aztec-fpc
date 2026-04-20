@@ -1,24 +1,31 @@
 ---
 title: Operational Metrics
-description: Prometheus metrics and health probes exposed by the attestation and top-up services.
+description: Prometheus metrics and health probes exposed by the attestation and top-up services, with source file references for each metric.
 ---
 
 # Operational Metrics
 
 Both off-chain services expose Prometheus-style metrics and health/readiness probes.
 
-**Normative source:** [docs/ops/operational-metrics.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/ops/operational-metrics.md)
+Every metric below is annotated with the source file and line where it is defined. To re-verify, open the linked file.
+
+## Source Files
+
+| Service | Metrics defined in | Endpoints defined in |
+|---------|-------------------|---------------------|
+| Attestation | [`services/attestation/src/metrics.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/metrics.ts) | [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) |
+| Top-up | [`services/topup/src/ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts) | same file |
 
 ## Attestation Service
 
-Default base URL: `http://127.0.0.1:3000`
+Default base URL: `http://127.0.0.1:3000` (source: `config.ts` → `port` default `3000`)
 
 ### Endpoints
 
-| Method | Path | Response |
-|---|---|---|
-| `GET` | `/health` | `200` with `{ "status": "ok" }`. Liveness probe. |
-| `GET` | `/metrics` | `200` with `text/plain; version=0.0.4`. Prometheus exposition format. |
+| Method | Path | Response | Source |
+|---|---|---|---|
+| `GET` | `/health` | `200` with `{ "status": "ok" }`. Liveness probe. | `server.ts:568` |
+| `GET` | `/metrics` | `200` with `text/plain; version=0.0.4`. Prometheus exposition format. | `server.ts:570` |
 
 ### Metrics
 
@@ -26,40 +33,46 @@ Default base URL: `http://127.0.0.1:3000`
 
 Total `/quote` requests grouped by outcome.
 
-| Label | Values |
-|---|---|
-| `outcome` | `success`, `bad_request`, `unauthorized`, `rate_limited`, `internal_error` |
+Source: `metrics.ts:80-88`
+
+| Label | Values | Source |
+|---|---|---|
+| `outcome` | `success`, `bad_request`, `unauthorized`, `rate_limited`, `internal_error` | `metrics.ts:8-13` |
 
 #### `attestation_quote_errors_total` (counter)
 
 Failed `/quote` requests grouped by error type.
 
-| Label | Values |
-|---|---|
-| `error_type` | `bad_request`, `unauthorized`, `rate_limited`, `internal_error` |
+Source: `metrics.ts:90-98`
+
+| Label | Values | Source |
+|---|---|---|
+| `error_type` | `bad_request`, `unauthorized`, `rate_limited`, `internal_error` | `metrics.ts:16-21` |
 
 #### `attestation_quote_latency_seconds` (histogram)
 
 `/quote` request latency grouped by outcome. Includes the standard Prometheus `le` bucket label.
 
-| Label | Values |
-|---|---|
-| `outcome` | `success`, `bad_request`, `unauthorized`, `rate_limited`, `internal_error` |
-| `le` | Histogram bucket upper-bound |
+Source: `metrics.ts:100-118`
+
+| Label | Values | Source |
+|---|---|---|
+| `outcome` | `success`, `bad_request`, `unauthorized`, `rate_limited`, `internal_error` | `metrics.ts:8-13` |
+| `le` | Histogram bucket upper-bound | Prometheus default |
 
 ## Top-up Service
 
-Default base URL: `http://127.0.0.1:3001` (configurable via `ops_port` or `TOPUP_OPS_PORT`).
+Default base URL: `http://127.0.0.1:3001` (source: `config.ts` → `ops_port` default `3001`, overridable via `TOPUP_OPS_PORT`)
 
 ### Endpoints
 
-| Method | Path | Response |
-|---|---|---|
-| `GET` | `/health` | `200` with `{ "status": "ok" }`. Liveness probe. |
-| `GET` | `/ready` | `200` when ready, `503` when not ready. |
-| `GET` | `/metrics` | `200` with `text/plain; version=0.0.4`. Prometheus exposition format. |
+| Method | Path | Response | Source |
+|---|---|---|---|
+| `GET` | `/health` | `200` with `{ "status": "ok" }`. Liveness probe. | `ops.ts:198-199` |
+| `GET` | `/ready` | `200` when ready, `503` when not ready. | `ops.ts:203-205` |
+| `GET` | `/metrics` | `200` with `text/plain; version=0.0.4`. Prometheus exposition format. | `ops.ts:209-210` |
 
-Non-ready reasons reported by `/ready`:
+Non-ready reasons reported by `/ready` (source: `ops.ts:89-119`):
 
 - No successful balance checks yet
 - Latest balance check failed
@@ -72,25 +85,33 @@ Non-ready reasons reported by `/ready`:
 
 Bridge lifecycle counters.
 
-| Label | Values |
-|---|---|
-| `event` | `submitted`, `confirmed`, `timeout`, `aborted`, `failed` |
+Source: `ops.ts:140-148`
+
+| Label | Values | Source |
+|---|---|---|
+| `event` | `submitted`, `confirmed`, `timeout`, `aborted`, `failed` | `ops.ts:5-11` |
 
 #### `topup_balance_checks_total` (counter)
 
 Fee Juice balance read results. Used by the readiness probe.
 
-| Label | Values |
-|---|---|
-| `outcome` | `success`, `error` |
+Source: `ops.ts:150-154`
+
+| Label | Values | Source |
+|---|---|---|
+| `outcome` | `success`, `error` | `ops.ts:150-154` |
 
 #### `topup_readiness_status` (gauge)
 
 Readiness snapshot: `1` = ready, `0` = not ready. No labels.
 
+Source: `ops.ts:155-157`
+
 #### `topup_uptime_seconds` (gauge)
 
 Process uptime in seconds. No labels.
+
+Source: `ops.ts:158-160`
 
 ## Recommended Alerts
 

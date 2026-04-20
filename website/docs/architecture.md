@@ -225,4 +225,4 @@ The operator earns revenue from the spread between Fee Juice cost and token paym
 
 > [!TIP]
 >
-> For production deployments, use KMS or HSM for operator keys. See [Security Model](../overview/security.md) for key management details and the production checklist.
+> For production deployments, use KMS or HSM for operator keys. See [Security Model](./security.md) for key management details and the production checklist.

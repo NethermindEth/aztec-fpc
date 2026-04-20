@@ -107,7 +107,7 @@ curl http://localhost:3000/health
 curl http://localhost:3001/ready
 ```
 
-For a full production walkthrough including Docker images and auto-claim, see [Run an Operator](../how-to/run-operator.md) and [Deployment](../operations/deployment.md).
+For a full production walkthrough including Docker images and auto-claim, see [Run an Operator](./how-to/run-operator.md) and [Deployment](./operations/deployment.md).
 
 ---
 
@@ -115,7 +115,7 @@ For a full production walkthrough including Docker images and auto-claim, see [R
 
 No deployment required. The Nethermind-operated testnet FPC is available for SDK integration and testing.
 
-All addresses, URLs, and a live verification check are on the [Testnet Deployment](../reference/testnet-deployment.md) page.
+All addresses, URLs, and a live verification check are on the [Testnet Deployment](./reference/testnet-deployment.md) page.
 
 ---
 
@@ -177,7 +177,7 @@ bunx tsx examples/fpc-full-flow.ts
 
 ## Where to go next
 
-- [Architecture](../overview/architecture.md) for how the components fit together
-- [SDK Getting Started](../sdk/getting-started.md) for cold-start, authwit flow, and error handling
-- [Run an Operator](../how-to/run-operator.md) for production deployment
-- [Deployment](../operations/deployment.md) for Docker-based deploy to devnet or testnet
+- [Architecture](./architecture.md) for how the components fit together
+- [SDK Getting Started](./sdk.md) for cold-start, authwit flow, and error handling
+- [Run an Operator](./how-to/run-operator.md) for production deployment
+- [Deployment](./operations/deployment.md) for Docker-based deploy to devnet or testnet

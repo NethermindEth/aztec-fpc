@@ -66,7 +66,7 @@ The attestation service validates `claim_amount >= aa_payment_amount` before sig
 You need the operator's FPC deployment details: FPC address, attestation URL, accepted token, operator address, and bridge address.
 
 - Integrating against the Nethermind-operated testnet? See **[Testnet Deployment](../reference/testnet-deployment.md)**.
-- Integrating against a custom operator? Resolve via [`.well-known/fpc.json`](../services/attestation.md#wallet-discovery) using the key `(network_id, asset_address, fpc_address)`.
+- Integrating against a custom operator? Resolve via [`.well-known/fpc.json`](../services.md#wallet-discovery) using the key `(network_id, asset_address, fpc_address)`.
 
 The bridge address is recorded in the token manifest (`deployments/tokens/<TokenName>.json`) if test tokens were deployed via `configure-token`. For production tokens with an existing address, obtain the bridge address from the token's deployment records or the operator.
 
@@ -205,8 +205,8 @@ Most bridge UIs need **both**: cold-start for the first session, standard flow f
 
 ## Next steps
 
-- [SDK: Getting Started](../sdk/getting-started.md): full SDK context including the standard flow
-- [SDK: API Reference](../sdk/api-reference.md#executecoldstart): complete type signatures
-- [Quote System](../overview/quote-system.md#cold-start): the domain separator, 9-field preimage, and replay protection
-- [Architecture](../overview/architecture.md#cold-start): data-flow diagram across L1, attestation, and FPC
+- [SDK: Getting Started](../sdk.md): full SDK context including the standard flow
+- [SDK: API Reference](../sdk.md#executecoldstart): complete type signatures
+- [Quote System](../quote-system.md#cold-start): the domain separator, 9-field preimage, and replay protection
+- [Architecture](../architecture.md#cold-start): data-flow diagram across L1, attestation, and FPC
 - [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts): end-to-end runnable bridge to cold-start to standard flow

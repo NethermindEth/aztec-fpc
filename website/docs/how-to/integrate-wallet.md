@@ -24,7 +24,7 @@ For the Nethermind-operated testnet (addresses, URLs, and live discovery check):
 
 ### Install the SDK
 
-The SDK is not published to npm yet. Install from a local clone of `NethermindEth/aztec-fpc`. Once published, standard `bun add @nethermindeth/aztec-fpc-sdk` will work. See [SDK: Getting Started](../sdk/getting-started.md#installation).
+The SDK is not published to npm yet. Install from a local clone of `NethermindEth/aztec-fpc`. Once published, standard `bun add @nethermindeth/aztec-fpc-sdk` will work. See [SDK: Getting Started](../sdk.md#installation).
 
 ### Discover the FPC attestation metadata
 
@@ -187,6 +187,6 @@ try {
 
 ## Next Steps
 
-- [SDK API Reference](../sdk/api-reference.md): complete type signatures
-- [Quote System](../overview/quote-system.md): what the SDK wraps
-- [Security Model](../overview/security.md): trust assumptions users should know
+- [SDK API Reference](../sdk.md#api-reference): complete type signatures
+- [Quote System](../quote-system.md): what the SDK wraps
+- [Security Model](../security.md): trust assumptions users should know

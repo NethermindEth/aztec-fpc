@@ -27,7 +27,7 @@ Nethermind's FPC implementation. A single deployed contract instance accepts mul
 Aztec's canonical FPC, deployed by Aztec Labs. It pays fees unconditionally, with no charge to the user. Useful for testnet UX and app-sponsored gas.
 
 ### Attestation service
-The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. See the [API reference](../sdk/api-reference.md).
+The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. See the [API reference](../sdk.md#api-reference).
 
 ### Top-up service
 A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold.
@@ -164,5 +164,5 @@ A SNARK-friendly hash function. FPC hashes the quote preimage with Poseidon2 bef
 ## Related
 
 - [Aztec's official glossary](https://docs.aztec.network/developers/docs/resources/glossary)
-- [SDK Getting Started](../sdk/getting-started.md)
+- [SDK Getting Started](../sdk.md)
 - [Wallet Discovery Specification](../reference/wallet-discovery.md)
