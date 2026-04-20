@@ -30,22 +30,22 @@ Aztec's canonical FPC, deployed by Aztec Labs. It pays fees unconditionally, wit
 The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L817). See the [API reference](../sdk.md#api-reference).
 
 ### Top-up service
-A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts#L35)
+A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts#L527)
 
 ### Quote
 A signed message from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user, valid until `valid_until`." Signed off-chain with Schnorr, verified on-chain.
 
 ### Quote preimage
-The ordered tuple of fields hashed with Poseidon2 before signing. Two variants exist: a 7-field preimage for `fee_entrypoint` and a 9-field preimage for `cold_start_entrypoint`.
+The ordered tuple of fields hashed via `compute_inner_authwit_hash` (Poseidon2 internally) before signing. Two variants exist: a 7-field preimage for `fee_entrypoint` and a 9-field preimage for `cold_start_entrypoint`.
 
 ### Domain separator
 A constant prepended to the hash preimage to make quotes for different entrypoints non-interchangeable. `0x465043` (`"FPC"`) for normal quotes. `0x46504373` (`"FPCs"`) for cold-start quotes. A cold-start quote fails verification in `fee_entrypoint`, and vice versa. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L36)
 
 ### `fee_entrypoint`
-The FPC contract function for the standard fee-payment flow. The user already has L2 tokens and a deployed account. Takes a signed quote, transfers tokens from user to operator via `transfer_private_to_private`, declares the FPC as fee payer, and calls `end_setup()`. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+The FPC contract function for the standard fee-payment flow. The user already has L2 tokens and a deployed account. Takes a signed quote, transfers tokens from user to operator via `transfer_private_to_private`, declares the FPC as fee payer, and calls `end_setup()`. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L79)
 
 ### `cold_start_entrypoint`
-The FPC contract function for cold-start. The user has just bridged from L1 and has neither an L2 balance nor a deployed account. Atomically claims bridged tokens into the FPC, splits them between user and operator, and pays gas. Must be the transaction root. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+The FPC contract function for cold-start. The user has just bridged from L1 and has neither an L2 balance nor a deployed account. Atomically claims bridged tokens into the FPC, splits them between user and operator, and pays gas. Must be the transaction root. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L141)
 
 ### Cold start
 The onboarding problem: a user arrives on Aztec with bridged tokens but no Fee Juice to pay gas. The `cold_start_entrypoint` solves this in a single transaction.
@@ -54,7 +54,7 @@ The onboarding problem: a user arrives on Aztec with bridged tokens but no Fee J
 The "accepted asset payment amount." How many units of the user's chosen token the FPC operator receives. Computed as `ceil(fj_fee_amount * final_rate_num / final_rate_den)`, where the final rate includes the operator's margin.
 
 ### `fj_fee_amount`
-The "Fee Juice fee amount." How much Fee Juice the protocol will deduct from the FPC's balance. For `fee_entrypoint`, this must equal `get_max_gas_cost` for the transaction's gas settings. Any divergence causes the on-chain quote check to fail. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+The "Fee Juice fee amount." How much Fee Juice the protocol will deduct from the FPC's balance. For `fee_entrypoint`, this must equal `get_max_gas_cost` for the transaction's gas settings. Any divergence causes the on-chain quote check to fail. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L325)
 
 ### `market_rate_num` / `market_rate_den`
 The operator's baseline exchange rate as a fraction: units of accepted asset per 1 Fee Juice. Configured per-asset in the attestation service.
@@ -78,7 +78,7 @@ The entity running the attestation and top-up services. Holds the Schnorr key th
 A service-wide mode: `development`, `test`, or `production`. In `production`, plaintext secrets in config files are rejected, and `quote_auth_mode: disabled` is rejected.
 
 ### Secret provider
-The mechanism for loading sensitive keys: `env`, `config`, `kms`, `hsm`, or `auto` (tries env then config in order). [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts)
+The mechanism for loading sensitive keys: `env`, `config`, `kms`, `hsm`, or `auto` (tries env then config in order). [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts#L137)
 
 ---
 
@@ -157,7 +157,7 @@ The signature scheme FPC uses for quotes. 64 bytes. Verified on-chain via `schno
 The elliptic curve Aztec uses for Schnorr signatures. Native to Aztec's proving system, unlike secp256k1 used in Ethereum.
 
 ### Poseidon2
-A SNARK-friendly hash function. FPC hashes the quote preimage with Poseidon2 before signing. Much cheaper inside a circuit than SHA-256 or Keccak.
+A SNARK-friendly hash function. FPC hashes the quote preimage via `compute_inner_authwit_hash`, which uses Poseidon2 internally. Much cheaper inside a circuit than SHA-256 or Keccak.
 
 ---
 
