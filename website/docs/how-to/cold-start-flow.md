@@ -214,6 +214,6 @@ Most bridge UIs need **both**: cold-start for the first session, standard flow f
 
 - [SDK: Getting Started](../sdk.md): full SDK context including the standard flow
 - [SDK: API Reference](../sdk.md#executecoldstart): complete type signatures
-- [Quote System](../quote-system.md#cold-start): the domain separator, 9-field preimage, and replay protection
+- [Quote System](../quote-system.md#cold-start-quote-cold_start_entrypoint): the domain separator, 9-field preimage, and replay protection
 - [Architecture](../architecture.md#cold-start): data-flow diagram across L1, attestation, and FPC
 - [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts): end-to-end runnable bridge to cold-start to standard flow
