@@ -1,6 +1,6 @@
 ---
 title: Quote System
-description: How fee quotes are signed, verified, and consumed. Covers the Poseidon2 hash preimage, Schnorr signatures, exchange rate math, and replay protection.
+description: How fee quotes are signed, verified, and consumed. Covers the compute_inner_authwit_hash preimage, Schnorr signatures, exchange rate math, and replay protection.
 ---
 
 # Quote System
@@ -20,7 +20,7 @@ The attestation service signs these off-chain. The FPC contract verifies them on
 
 1. **User requests a quote.** The wallet calls `GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<amount>` on the attestation service. The `fj_amount` must equal `get_max_gas_cost` for the transaction gas settings.
 
-2. **Attestation service signs the quote.** The service computes the exchange rate, creates a hash of the quote parameters using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness` (which internally uses Poseidon2), and signs the 32-byte hash with the operator's Schnorr key. It returns a 64-byte hex signature.
+2. **Attestation service signs the quote.** The service computes the exchange rate, creates a hash of the quote parameters using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness`, and signs the 32-byte hash with the operator's Schnorr key. It returns a 64-byte hex signature.
 
 3. **User includes the quote in the transaction.** The signature and quote parameters are passed as arguments to `fee_entrypoint`. A separate token transfer authwit (authorizing the FPC to pull `aa_payment_amount` from the user) is carried in `authWitnesses`, not as a function argument.
 
@@ -35,7 +35,7 @@ The attestation service signs these off-chain. The FPC contract verifies them on
 | Field | Value |
 |-------|-------|
 | Domain separator | `0x465043` (ASCII: `FPC`) |
-| Hash function | `compute_inner_authwit_hash` (Poseidon2 internally) |
+| Hash function | `compute_inner_authwit_hash` |
 | Signature | Schnorr (64 bytes) |
 
 **Hash preimage (7 fields):**
@@ -57,7 +57,7 @@ compute_inner_authwit_hash([
 | Field | Value |
 |-------|-------|
 | Domain separator | `0x46504373` (ASCII: `FPCs`) |
-| Hash function | `compute_inner_authwit_hash` (Poseidon2 internally) |
+| Hash function | `compute_inner_authwit_hash` |
 | Signature | Schnorr (64 bytes) |
 
 **Hash preimage (9 fields):**

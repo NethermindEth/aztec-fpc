@@ -16,13 +16,13 @@ Maintainer: Nethermind
 Pick your role, follow the path:
 
 **dApp developer** — you want users to pay gas in your token
-  1. Read the overview        → index.md
+  1. Read the overview        → README.md
   2. Install the SDK          → sdk.md
   3. Wire up payments         → sdk.md#standard-flow
   4. Add cold-start if needed → how-to/cold-start-flow.md
 
 **Wallet team** — you want to surface gas abstraction in your wallet UI
-  1. Read the overview        → index.md
+  1. Read the overview        → README.md
   2. Fetch discovery doc      → reference/wallet-discovery.md
   3. Integrate the SDK        → how-to/integrate-wallet.md
   4. Run your own operator    → how-to/run-operator.md
@@ -63,7 +63,7 @@ Base URL for all docs: website/docs/
 
 ### Core (read these first)
 
-  index.md
+  README.md
     What FPC is, component table, comparison with Sponsored FPC, quick code example,
     persona routing table. Start here.
 
@@ -231,6 +231,155 @@ For AI agents navigating the codebase, here is where the key source files live:
   scripts/tests/concurrent.ts            — Concurrent transaction stress test
   scripts/tests/same-token-transfer.ts   — Same-token transfer flow
   scripts/tests/always-revert.ts         — Revert behavior validation
+
+---
+
+## Function-to-file index (jump straight to the code)
+
+Contract functions (Noir):
+  FPCMultiAsset (contract)         → contracts/fpc/src/main.nr:23
+  constructor                      → contracts/fpc/src/main.nr:62
+  fee_entrypoint                   → contracts/fpc/src/main.nr:79
+  cold_start_entrypoint            → contracts/fpc/src/main.nr:141
+  assert_valid_quote               → contracts/fpc/src/main.nr:252
+  assert_valid_cold_start_quote    → contracts/fpc/src/main.nr:288
+  get_max_gas_cost                 → contracts/fpc/src/main.nr:325
+  QUOTE_DOMAIN_SEPARATOR (0x465043)       → contracts/fpc/src/main.nr:36
+  COLD_START_QUOTE_DOMAIN_SEPARATOR       → contracts/fpc/src/main.nr:39
+  MAX_QUOTE_TTL_SECONDS (3600)            → contracts/fpc/src/main.nr:41
+
+Attestation service (TypeScript):
+  buildServer                      → services/attestation/src/server.ts:817
+  registerQuoteRoute (GET /quote)  → services/attestation/src/server.ts:581
+  registerColdStartQuoteRoute      → services/attestation/src/server.ts:881
+  registerAdminRoutes              → services/attestation/src/server.ts:685
+  /.well-known/fpc.json handler    → services/attestation/src/server.ts:551
+  /health handler                  → services/attestation/src/server.ts:568
+  /accepted-assets handler         → services/attestation/src/server.ts:576
+  requireAdminAccess               → services/attestation/src/server.ts:489
+  isQuoteAuthorized                → services/attestation/src/server.ts:74
+  loadConfig                       → services/attestation/src/config.ts:499
+  computeFinalRate                 → services/attestation/src/config.ts:572
+  resolveQuoteAuthConfig           → services/attestation/src/config.ts:385
+  resolveQuoteRateLimitConfig      → services/attestation/src/config.ts:405
+  signQuote                        → services/attestation/src/signer.ts:88
+  computeQuoteHash                 → services/attestation/src/signer.ts:60
+  signColdStartQuote               → services/attestation/src/signer.ts:132
+  resolveSecret                    → services/attestation/src/secret-provider.ts:137
+  assertNoPlaintextConfigSecret    → services/attestation/src/secret-provider.ts:61
+  AttestationMetrics               → services/attestation/src/metrics.ts:39
+
+Top-up service (TypeScript):
+  main                             → services/topup/src/index.ts:527
+  loadConfig                       → services/topup/src/config.ts:136
+  createTopupOpsServer             → services/topup/src/ops.ts:228
+  TopupOpsState                    → services/topup/src/ops.ts:42
+  bridgeTokensPublic               → services/topup/src/bridge.ts:115
+  waitForFeeJuiceBridgeConfirmation → services/topup/src/confirm.ts:182
+  assertL1RpcChainIdMatches        → services/topup/src/l1.ts:16
+  reconcilePersistedBridgeState    → services/topup/src/reconcile.ts:10
+
+SDK (TypeScript):
+  FpcClient (class)                → sdk/src/payment-method.ts:50
+  createPaymentMethod              → sdk/src/payment-method.ts:57
+  executeColdStart                 → sdk/src/payment-method.ts:108
+  FpcClientConfig (type)           → sdk/src/types.ts:9
+  CreatePaymentMethodInput (type)  → sdk/src/types.ts:16
+  ExecuteColdStartInput (type)     → sdk/src/types.ts:42
+  GAS_BUFFER (5_000, 100_000)      → sdk/src/payment-method.ts:30
+  COLD_START_GAS_LIMITS            → sdk/src/payment-method.ts:46
+  COLD_START_MAX_ATTEMPTS (3)      → sdk/src/payment-method.ts:29
+
+Deployment:
+  main (deploy CLI)                → contract-deployment/src/index.ts:321
+  main (configure-token CLI)       → contract-deployment/src/configure-token.ts:228
+  deployManifestSchema             → contract-deployment/src/manifest.ts:15
+  writeDeployManifest              → contract-deployment/src/manifest.ts:57
+
+---
+
+## Error codes and failure modes
+
+On-chain assertion failures (contract reverts):
+  "invalid operator"                    → constructor got zero address
+  "fee_entrypoint must run in setup phase" → called outside setup phase
+  "quoted fee amount mismatch"          → fj_fee_amount != get_max_gas_cost()
+  "must be tx entrypoint"              → cold_start called with a msg_sender (not tx root)
+  "claim insufficient to cover fee"    → claim_amount < aa_payment_amount
+  "quote expired"                       → anchor_block_timestamp > valid_until
+  "quote ttl too large"                → quote TTL > 3600 seconds
+  nullifier conflict                    → quote already used (replay attempt)
+  Schnorr signature invalid             → wrong operator key, tampered fields, or wrong domain separator
+
+Attestation service HTTP errors:
+  400 "Missing required query param: user"           → user not provided or zero
+  400 "Missing required query param: accepted_asset" → accepted_asset not provided or zero
+  400 "Missing or invalid query param: fj_amount"    → fj_amount missing or not positive u128
+  400 "Unsupported accepted_asset"                   → asset not in admin policy store
+  400 "Computed aa_payment_amount does not fit in u128" → rate overflow
+  401 Unauthorized                                   → quote auth enabled, key/header wrong
+  429 Rate limited                                   → exceeded quote_rate_limit_max_requests
+  503 "Admin API is disabled"                        → ADMIN_API_KEY env var not set
+
+SDK errors:
+  "Message not in state"            → cold-start L1-to-L2 message not yet on L2 (retries 3x)
+  tx wait timeout (180s default)    → transaction not mined within txWaitTimeoutMs
+
+Top-up service:
+  "CRITICAL: Evicting stale persisted bridge" → bridge state older than 24 hours
+  readiness 503 reasons: no successful balance checks, last check failed, checks stale, shutdown
+
+---
+
+## Config key to env var mapping
+
+Attestation service:
+  YAML key                          → Env var override                    → Default
+  runtime_profile                   → FPC_RUNTIME_PROFILE                 → development
+  fpc_address                       → (none, YAML only)                   → (required)
+  aztec_node_url                    → AZTEC_NODE_URL                      → (required)
+  operator_secret_provider          → OPERATOR_SECRET_PROVIDER            → auto
+  (secret value)                    → OPERATOR_SECRET_KEY                 → (required)
+  operator_secret_ref               → OPERATOR_SECRET_REF                 → (none)
+  operator_account_salt             → OPERATOR_ACCOUNT_SALT               → (none)
+  port                              → (none, YAML only)                   → 3000
+  quote_validity_seconds            → (none, YAML only)                   → 300
+  quote_format                      → (none, YAML only)                   → amount_quote
+  quote_auth_mode                   → QUOTE_AUTH_MODE                     → disabled
+  quote_auth_api_key_header         → QUOTE_AUTH_API_KEY_HEADER           → x-api-key
+  (api key value)                   → QUOTE_AUTH_API_KEY                  → (none)
+  quote_auth_trusted_header_name    → QUOTE_AUTH_TRUSTED_HEADER_NAME      → (none)
+  (trusted header value)            → QUOTE_AUTH_TRUSTED_HEADER_VALUE     → (none)
+  quote_rate_limit_enabled          → QUOTE_RATE_LIMIT_ENABLED            → true
+  quote_rate_limit_max_requests     → QUOTE_RATE_LIMIT_MAX_REQUESTS       → 60
+  quote_rate_limit_window_seconds   → QUOTE_RATE_LIMIT_WINDOW_SECONDS     → 60
+  quote_rate_limit_max_tracked_keys → QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS   → 10000
+  admin_api_key_header              → ADMIN_API_KEY_HEADER                → x-admin-api-key
+  (admin key value)                 → ADMIN_API_KEY                       → (none, disables admin)
+  asset_policy_state_path           → ATTESTATION_ASSET_POLICY_STATE_PATH → .attestation-asset-policies
+  treasury_destination_address      → TREASURY_DESTINATION_ADDRESS        → (none)
+
+Top-up service:
+  YAML key                          → Env var override                    → Default
+  runtime_profile                   → FPC_RUNTIME_PROFILE                 → development
+  fpc_address                       → (none, YAML only)                   → (required)
+  aztec_node_url                    → AZTEC_NODE_URL                      → (required)
+  l1_rpc_url                        → L1_RPC_URL                          → (required)
+  l1_operator_secret_provider       → (none, YAML only)                   → auto
+  (secret value)                    → L1_OPERATOR_PRIVATE_KEY             → (required)
+  threshold                         → (none, YAML only)                   → (required)
+  top_up_amount                     → (none, YAML only)                   → (required)
+  data_dir                          → TOPUP_DATA_DIR                      → .topup-data
+  ops_port                          → TOPUP_OPS_PORT                      → 3001
+  check_interval_ms                 → (none, YAML only)                   → 60000
+  confirmation_timeout_ms           → (none, YAML only)                   → 180000
+  confirmation_poll_initial_ms      → (none, YAML only)                   → 1000
+  confirmation_poll_max_ms          → (none, YAML only)                   → 15000
+
+Auto-claim (env vars only, no YAML):
+  TOPUP_AUTOCLAIM_ENABLED               → enabled unless set to "0"
+  TOPUP_AUTOCLAIM_SECRET_KEY            → L2 claimer key (required in production)
+  TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS → sponsored FPC for claim tx fees
 
 ---
 

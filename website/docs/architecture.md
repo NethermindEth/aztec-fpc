@@ -89,7 +89,7 @@ For multi-asset deployments, each `supported_assets` entry can override the top-
 
 ### Top-up service (off-chain)
 
-[Source: `services/topup/src/index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts#L35)
+[Source: `services/topup/src/index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts#L527)
 
 A background daemon that keeps the FPC solvent.
 

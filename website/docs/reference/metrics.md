@@ -13,8 +13,8 @@ Every metric below is annotated with the source file and line where it is define
 
 | Service | Metrics defined in | Endpoints defined in |
 |---------|-------------------|---------------------|
-| Attestation | [`services/attestation/src/metrics.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/metrics.ts) | [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) |
-| Top-up | [`services/topup/src/ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts) | same file |
+| Attestation | [`services/attestation/src/metrics.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/metrics.ts#L39) | [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L568) |
+| Top-up | [`services/topup/src/ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts#L42) | same file |
 
 ## Attestation Service
 

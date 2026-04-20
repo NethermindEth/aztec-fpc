@@ -1,10 +1,10 @@
 # FPC: Fee Payment Contracts for Aztec
 
-> **Using an AI assistant?** Get full project context in one command:
-> ```bash
-> curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms.txt
+> **Using an AI assistant?** Paste this into your agent to give it full project context:
 > ```
-> Or the complete docs (~5k lines): `curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms-full.txt`
+> Read this project context before answering: curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms.txt
+> ```
+> For the full docs (~5k lines): replace `llms.txt` with `llms-full.txt`. See [`AGENT_PROMPT.md`](website/public/AGENT_PROMPT.md) for a ready-to-paste prompt.
 
 ## Why FPC Exists
 

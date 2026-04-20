@@ -16,13 +16,13 @@ Maintainer: Nethermind
 Pick your role, follow the path:
 
 **dApp developer** — you want users to pay gas in your token
-  1. Read the overview        → index.md
+  1. Read the overview        → README.md
   2. Install the SDK          → sdk.md
   3. Wire up payments         → sdk.md#standard-flow
   4. Add cold-start if needed → how-to/cold-start-flow.md
 
 **Wallet team** — you want to surface gas abstraction in your wallet UI
-  1. Read the overview        → index.md
+  1. Read the overview        → README.md
   2. Fetch discovery doc      → reference/wallet-discovery.md
   3. Integrate the SDK        → how-to/integrate-wallet.md
   4. Run your own operator    → how-to/run-operator.md
@@ -63,7 +63,7 @@ Base URL for all docs: website/docs/
 
 ### Core (read these first)
 
-  index.md
+  README.md
     What FPC is, component table, comparison with Sponsored FPC, quick code example,
     persona routing table. Start here.
 
@@ -234,6 +234,155 @@ For AI agents navigating the codebase, here is where the key source files live:
 
 ---
 
+## Function-to-file index (jump straight to the code)
+
+Contract functions (Noir):
+  FPCMultiAsset (contract)         → contracts/fpc/src/main.nr:23
+  constructor                      → contracts/fpc/src/main.nr:62
+  fee_entrypoint                   → contracts/fpc/src/main.nr:79
+  cold_start_entrypoint            → contracts/fpc/src/main.nr:141
+  assert_valid_quote               → contracts/fpc/src/main.nr:252
+  assert_valid_cold_start_quote    → contracts/fpc/src/main.nr:288
+  get_max_gas_cost                 → contracts/fpc/src/main.nr:325
+  QUOTE_DOMAIN_SEPARATOR (0x465043)       → contracts/fpc/src/main.nr:36
+  COLD_START_QUOTE_DOMAIN_SEPARATOR       → contracts/fpc/src/main.nr:39
+  MAX_QUOTE_TTL_SECONDS (3600)            → contracts/fpc/src/main.nr:41
+
+Attestation service (TypeScript):
+  buildServer                      → services/attestation/src/server.ts:817
+  registerQuoteRoute (GET /quote)  → services/attestation/src/server.ts:581
+  registerColdStartQuoteRoute      → services/attestation/src/server.ts:881
+  registerAdminRoutes              → services/attestation/src/server.ts:685
+  /.well-known/fpc.json handler    → services/attestation/src/server.ts:551
+  /health handler                  → services/attestation/src/server.ts:568
+  /accepted-assets handler         → services/attestation/src/server.ts:576
+  requireAdminAccess               → services/attestation/src/server.ts:489
+  isQuoteAuthorized                → services/attestation/src/server.ts:74
+  loadConfig                       → services/attestation/src/config.ts:499
+  computeFinalRate                 → services/attestation/src/config.ts:572
+  resolveQuoteAuthConfig           → services/attestation/src/config.ts:385
+  resolveQuoteRateLimitConfig      → services/attestation/src/config.ts:405
+  signQuote                        → services/attestation/src/signer.ts:88
+  computeQuoteHash                 → services/attestation/src/signer.ts:60
+  signColdStartQuote               → services/attestation/src/signer.ts:132
+  resolveSecret                    → services/attestation/src/secret-provider.ts:137
+  assertNoPlaintextConfigSecret    → services/attestation/src/secret-provider.ts:61
+  AttestationMetrics               → services/attestation/src/metrics.ts:39
+
+Top-up service (TypeScript):
+  main                             → services/topup/src/index.ts:527
+  loadConfig                       → services/topup/src/config.ts:136
+  createTopupOpsServer             → services/topup/src/ops.ts:228
+  TopupOpsState                    → services/topup/src/ops.ts:42
+  bridgeTokensPublic               → services/topup/src/bridge.ts:115
+  waitForFeeJuiceBridgeConfirmation → services/topup/src/confirm.ts:182
+  assertL1RpcChainIdMatches        → services/topup/src/l1.ts:16
+  reconcilePersistedBridgeState    → services/topup/src/reconcile.ts:10
+
+SDK (TypeScript):
+  FpcClient (class)                → sdk/src/payment-method.ts:50
+  createPaymentMethod              → sdk/src/payment-method.ts:57
+  executeColdStart                 → sdk/src/payment-method.ts:108
+  FpcClientConfig (type)           → sdk/src/types.ts:9
+  CreatePaymentMethodInput (type)  → sdk/src/types.ts:16
+  ExecuteColdStartInput (type)     → sdk/src/types.ts:42
+  GAS_BUFFER (5_000, 100_000)      → sdk/src/payment-method.ts:30
+  COLD_START_GAS_LIMITS            → sdk/src/payment-method.ts:46
+  COLD_START_MAX_ATTEMPTS (3)      → sdk/src/payment-method.ts:29
+
+Deployment:
+  main (deploy CLI)                → contract-deployment/src/index.ts:321
+  main (configure-token CLI)       → contract-deployment/src/configure-token.ts:228
+  deployManifestSchema             → contract-deployment/src/manifest.ts:15
+  writeDeployManifest              → contract-deployment/src/manifest.ts:57
+
+---
+
+## Error codes and failure modes
+
+On-chain assertion failures (contract reverts):
+  "invalid operator"                    → constructor got zero address
+  "fee_entrypoint must run in setup phase" → called outside setup phase
+  "quoted fee amount mismatch"          → fj_fee_amount != get_max_gas_cost()
+  "must be tx entrypoint"              → cold_start called with a msg_sender (not tx root)
+  "claim insufficient to cover fee"    → claim_amount < aa_payment_amount
+  "quote expired"                       → anchor_block_timestamp > valid_until
+  "quote ttl too large"                → quote TTL > 3600 seconds
+  nullifier conflict                    → quote already used (replay attempt)
+  Schnorr signature invalid             → wrong operator key, tampered fields, or wrong domain separator
+
+Attestation service HTTP errors:
+  400 "Missing required query param: user"           → user not provided or zero
+  400 "Missing required query param: accepted_asset" → accepted_asset not provided or zero
+  400 "Missing or invalid query param: fj_amount"    → fj_amount missing or not positive u128
+  400 "Unsupported accepted_asset"                   → asset not in admin policy store
+  400 "Computed aa_payment_amount does not fit in u128" → rate overflow
+  401 Unauthorized                                   → quote auth enabled, key/header wrong
+  429 Rate limited                                   → exceeded quote_rate_limit_max_requests
+  503 "Admin API is disabled"                        → ADMIN_API_KEY env var not set
+
+SDK errors:
+  "Message not in state"            → cold-start L1-to-L2 message not yet on L2 (retries 3x)
+  tx wait timeout (180s default)    → transaction not mined within txWaitTimeoutMs
+
+Top-up service:
+  "CRITICAL: Evicting stale persisted bridge" → bridge state older than 24 hours
+  readiness 503 reasons: no successful balance checks, last check failed, checks stale, shutdown
+
+---
+
+## Config key to env var mapping
+
+Attestation service:
+  YAML key                          → Env var override                    → Default
+  runtime_profile                   → FPC_RUNTIME_PROFILE                 → development
+  fpc_address                       → (none, YAML only)                   → (required)
+  aztec_node_url                    → AZTEC_NODE_URL                      → (required)
+  operator_secret_provider          → OPERATOR_SECRET_PROVIDER            → auto
+  (secret value)                    → OPERATOR_SECRET_KEY                 → (required)
+  operator_secret_ref               → OPERATOR_SECRET_REF                 → (none)
+  operator_account_salt             → OPERATOR_ACCOUNT_SALT               → (none)
+  port                              → (none, YAML only)                   → 3000
+  quote_validity_seconds            → (none, YAML only)                   → 300
+  quote_format                      → (none, YAML only)                   → amount_quote
+  quote_auth_mode                   → QUOTE_AUTH_MODE                     → disabled
+  quote_auth_api_key_header         → QUOTE_AUTH_API_KEY_HEADER           → x-api-key
+  (api key value)                   → QUOTE_AUTH_API_KEY                  → (none)
+  quote_auth_trusted_header_name    → QUOTE_AUTH_TRUSTED_HEADER_NAME      → (none)
+  (trusted header value)            → QUOTE_AUTH_TRUSTED_HEADER_VALUE     → (none)
+  quote_rate_limit_enabled          → QUOTE_RATE_LIMIT_ENABLED            → true
+  quote_rate_limit_max_requests     → QUOTE_RATE_LIMIT_MAX_REQUESTS       → 60
+  quote_rate_limit_window_seconds   → QUOTE_RATE_LIMIT_WINDOW_SECONDS     → 60
+  quote_rate_limit_max_tracked_keys → QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS   → 10000
+  admin_api_key_header              → ADMIN_API_KEY_HEADER                → x-admin-api-key
+  (admin key value)                 → ADMIN_API_KEY                       → (none, disables admin)
+  asset_policy_state_path           → ATTESTATION_ASSET_POLICY_STATE_PATH → .attestation-asset-policies
+  treasury_destination_address      → TREASURY_DESTINATION_ADDRESS        → (none)
+
+Top-up service:
+  YAML key                          → Env var override                    → Default
+  runtime_profile                   → FPC_RUNTIME_PROFILE                 → development
+  fpc_address                       → (none, YAML only)                   → (required)
+  aztec_node_url                    → AZTEC_NODE_URL                      → (required)
+  l1_rpc_url                        → L1_RPC_URL                          → (required)
+  l1_operator_secret_provider       → (none, YAML only)                   → auto
+  (secret value)                    → L1_OPERATOR_PRIVATE_KEY             → (required)
+  threshold                         → (none, YAML only)                   → (required)
+  top_up_amount                     → (none, YAML only)                   → (required)
+  data_dir                          → TOPUP_DATA_DIR                      → .topup-data
+  ops_port                          → TOPUP_OPS_PORT                      → 3001
+  check_interval_ms                 → (none, YAML only)                   → 60000
+  confirmation_timeout_ms           → (none, YAML only)                   → 180000
+  confirmation_poll_initial_ms      → (none, YAML only)                   → 1000
+  confirmation_poll_max_ms          → (none, YAML only)                   → 15000
+
+Auto-claim (env vars only, no YAML):
+  TOPUP_AUTOCLAIM_ENABLED               → enabled unless set to "0"
+  TOPUP_AUTOCLAIM_SECRET_KEY            → L2 claimer key (required in production)
+  TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS → sponsored FPC for claim tx fees
+
+---
+
 ## Key technical facts (for quick agent reference)
 
 Contract: FPCMultiAsset
@@ -291,7 +440,7 @@ Versions:
 Everything below is the complete content of all documentation pages,
 concatenated in reading order. Each page is separated by a rule and header.
 
-=== FILE: index.md ===
+=== FILE: README.md ===
 
 # Aztec FPC
 
@@ -333,7 +482,7 @@ Nethermind's `aztec-fpc` is the production multi-asset implementation. One contr
 
 The wallet requests a quote from the attestation service, which prices the Fee Juice cost in the user's token and signs it with the operator's Schnorr key. The user includes the operator's quote signature in their transaction alongside a transfer authorization witness (authwit). The authwit authorizes the token transfer and is carried as an execution payload component, not a function argument to `fee_entrypoint`.
 
-The FPC contract reconstructs the Poseidon2 hash of the quote fields (domain separator, FPC address, accepted asset, Fee Juice amount, payment amount, expiry, and user address), verifies the Schnorr signature against the stored operator public key, pushes a nullifier to prevent replay, and then calls `transfer_private_to_private` to move the payment from the user's private balance to the operator's private balance. All of this executes in the setup phase. The contract then calls `set_as_fee_payer()` and `end_setup()`, committing the fee payment before the user's app logic runs.
+The FPC contract reconstructs the quote hash via `compute_inner_authwit_hash` over the quote fields (domain separator, FPC address, accepted asset, Fee Juice amount, payment amount, expiry, and user address), verifies the Schnorr signature against the stored operator public key, pushes a nullifier to prevent replay, and then calls `transfer_private_to_private` to move the payment from the user's private balance to the operator's private balance. All of this executes in the setup phase. The contract then calls `set_as_fee_payer()` and `end_setup()`, committing the fee payment before the user's app logic runs.
 
 ### What FPC does not do
 
@@ -341,13 +490,13 @@ FPC does not eliminate gas costs. It shifts who pays them and in what token. The
 
 Quote signatures are user-specific and single-use. A quote issued to one user cannot be used by another, and a consumed quote cannot be replayed. The operator is not exposed to a free-rider problem, but they are exposed to market rate risk if the token value moves between quote issuance and settlement.
 
-There is no on-chain asset allowlist. The contract does not enforce which tokens are accepted. Protection comes entirely from the quote signature: `accepted_asset` is part of the signed Poseidon2 preimage, so substituting a different token at call time invalidates the signature.
+There is no on-chain asset allowlist. The contract does not enforce which tokens are accepted. Protection comes entirely from the quote signature: `accepted_asset` is part of the signed `compute_inner_authwit_hash` preimage, so substituting a different token at call time invalidates the signature.
 
 Operator key rotation requires deploying a new contract. The public key is stored in `PublicImmutable` and cannot be updated.
 
 ### Comparison with Aztec's Sponsored FPC
 
-Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) on devnet and local networks only. It is not deployed on testnet or mainnet. It pays for every transaction with no token required from the user. It is a pure subsidy with no payment mechanism and no operator revenue.
+Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) on testnet, devnet, and local networks. It is not deployed on mainnet. It pays for every transaction with no token required from the user. It is a pure subsidy with no payment mechanism and no operator revenue.
 
 | | Sponsored FPC | Nethermind FPC |
 |---|---|---|
@@ -358,7 +507,7 @@ Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/az
 | **Off-chain services** | None | Attestation service and top-up daemon |
 | **Who runs it** | Aztec Labs | You |
 
-The Sponsored FPC is the right choice for devnet and local development where gasless UX is the only goal. On testnet and mainnet, you need either Fee Juice bridged from L1 or a deployed fee-paying contract. Nethermind's FPC covers the latter, with real token payments, operator revenue, and cold-start onboarding included.
+The Sponsored FPC is the right choice for development and testing where gasless UX is the only goal. On mainnet, you need either Fee Juice bridged from L1 or a deployed fee-paying contract. Nethermind's FPC covers the latter, with real token payments, operator revenue, and cold-start onboarding included.
 
 ---
 
@@ -472,7 +621,7 @@ The FPC system has four components that work together to abstract gas payments: 
 
 ### FPC contract (on-chain)
 
-[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
 The core smart contract deployed on Aztec L2, written in Noir (Aztec.nr).
 
@@ -495,7 +644,7 @@ The token transfer executes in the setup phase and is irrevocably committed. No 
 
 ### Attestation service (off-chain)
 
-[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L817)
 
 A Fastify REST API run by the FPC operator.
 
@@ -512,7 +661,7 @@ For multi-asset deployments, each `supported_assets` entry can override the top-
 
 ### Top-up service (off-chain)
 
-[Source: `services/topup/src/index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts)
+[Source: `services/topup/src/index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts#L527)
 
 A background daemon that keeps the FPC solvent.
 
@@ -528,7 +677,7 @@ Configuration fields `l1_chain_id` and Fee Juice L1 contract addresses are deriv
 
 ### SDK (client-side)
 
-[Source: `sdk/src/payment-method.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)
+[Source: `sdk/src/payment-method.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L50)
 
 A TypeScript library (`@nethermindeth/aztec-fpc-sdk`) wrapping the attestation API and Aztec.js.
 
@@ -567,7 +716,7 @@ User Wallet                 Attestation Service       Aztec L2 (FPC)
     │◄──────────────────────────────────────────────────────│
 ```
 
-In step 4, the contract performs these checks in order ([Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)):
+In step 4, the contract performs these checks in order ([Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L79)):
 
 1. Asserts it is not in the revertible phase (conditional on non-zero gas fees)
 2. Reads packed config from storage (operator address and signing pubkey)
@@ -661,7 +810,7 @@ The operator earns revenue from the spread between Fee Juice cost and token paym
 
 ---
 title: Quote System
-description: How fee quotes are signed, verified, and consumed. Covers the Poseidon2 hash preimage, Schnorr signatures, exchange rate math, and replay protection.
+description: How fee quotes are signed, verified, and consumed. Covers the compute_inner_authwit_hash preimage, Schnorr signatures, exchange rate math, and replay protection.
 ---
 
 # Quote System
@@ -672,16 +821,16 @@ The attestation service signs these off-chain. The FPC contract verifies them on
 
 ## Source files
 
-- Contract verification: [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr) (functions `assert_valid_quote`, `assert_valid_cold_start_quote`)
-- Quote signing: [`services/attestation/src/signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts)
-- Exchange rate computation: [`services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) (`computeFinalRate`)
-- Quote endpoint: [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+- Contract verification: [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L252) (functions `assert_valid_quote`, `assert_valid_cold_start_quote`)
+- Quote signing: [`services/attestation/src/signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts#L88)
+- Exchange rate computation: [`services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572) (`computeFinalRate`)
+- Quote endpoint: [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L581)
 
 ## Lifecycle
 
 1. **User requests a quote.** The wallet calls `GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<amount>` on the attestation service. The `fj_amount` must equal `get_max_gas_cost` for the transaction gas settings.
 
-2. **Attestation service signs the quote.** The service computes the exchange rate, creates a hash of the quote parameters using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness` (which internally uses Poseidon2), and signs the 32-byte hash with the operator's Schnorr key. It returns a 64-byte hex signature.
+2. **Attestation service signs the quote.** The service computes the exchange rate, creates a hash of the quote parameters using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness`, and signs the 32-byte hash with the operator's Schnorr key. It returns a 64-byte hex signature.
 
 3. **User includes the quote in the transaction.** The signature and quote parameters are passed as arguments to `fee_entrypoint`. A separate token transfer authwit (authorizing the FPC to pull `aa_payment_amount` from the user) is carried in `authWitnesses`, not as a function argument.
 
@@ -696,7 +845,7 @@ The attestation service signs these off-chain. The FPC contract verifies them on
 | Field | Value |
 |-------|-------|
 | Domain separator | `0x465043` (ASCII: `FPC`) |
-| Hash function | `compute_inner_authwit_hash` (Poseidon2 internally) |
+| Hash function | `compute_inner_authwit_hash` |
 | Signature | Schnorr (64 bytes) |
 
 **Hash preimage (7 fields):**
@@ -718,7 +867,7 @@ compute_inner_authwit_hash([
 | Field | Value |
 |-------|-------|
 | Domain separator | `0x46504373` (ASCII: `FPCs`) |
-| Hash function | `compute_inner_authwit_hash` (Poseidon2 internally) |
+| Hash function | `compute_inner_authwit_hash` |
 | Signature | Schnorr (64 bytes) |
 
 **Hash preimage (9 fields):**
@@ -747,7 +896,7 @@ compute_inner_authwit_hash([
 
 ## Exchange rate computation
 
-The attestation service computes the token payment from the Fee Juice amount using `computeFinalRate` ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)).
+The attestation service computes the token payment from the Fee Juice amount using `computeFinalRate` ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)).
 
 Per-asset pricing is configured per entry in the asset policy store (`market_rate_num`, `market_rate_den`, `fee_bips`).
 
@@ -843,7 +992,7 @@ Users trust that the operator will:
 > [!WARNING]
 > **No on-chain asset allowlist**
 >
-> The FPC contract does not store a list of accepted assets. Nothing on-chain rejects an arbitrary token address passed to `fee_entrypoint`. Protection comes from the quote signature: `accepted_asset` is in the signed Poseidon2 preimage, so swapping the asset at call time invalidates signature verification. The "multi-asset" property of `FPCMultiAsset` is an off-chain policy (attestation service) plus quote binding, not an on-chain allowlist.
+> The FPC contract does not store a list of accepted assets. Nothing on-chain rejects an arbitrary token address passed to `fee_entrypoint`. Protection comes from the quote signature: `accepted_asset` is in the signed `compute_inner_authwit_hash` preimage, so swapping the asset at call time invalidates signature verification. The "multi-asset" property of `FPCMultiAsset` is an off-chain policy (attestation service) plus quote binding, not an on-chain allowlist.
 
 ## Key management
 
@@ -863,7 +1012,7 @@ The L2 Schnorr key is the most sensitive. It signs every quote and its public ke
 
 ### Secret provider modes
 
-[Source: `services/attestation/src/secret-provider.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts)
+[Source: `services/attestation/src/secret-provider.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts#L137)
 
 Both the attestation and top-up services support multiple key storage backends:
 
@@ -875,11 +1024,11 @@ Both the attestation and top-up services support multiple key storage backends:
 | `kms` | Cloud key management (AWS KMS, etc.) | Production |
 | `hsm` | Hardware security module | High-security production |
 
-Setting `runtime_profile: production` rejects plaintext config-file secrets. This is enforced at startup. [Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+Setting `runtime_profile: production` rejects plaintext config-file secrets. This is enforced at startup. [Source: `services/attestation/src/secret-provider.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts#L61)
 
 ## On-chain protections
 
-[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
 ### Quote authenticity
 
@@ -896,7 +1045,7 @@ Second use → nullifier already exists → transaction fails (nullifier conflic
 
 ### User binding
 
-Quotes include the user's address in the Poseidon2 hash preimage:
+Quotes include the user's address in the `compute_inner_authwit_hash` hash preimage:
 
 - **Normal quotes:** bound to `msg_sender`
 - **Cold-start quotes:** bound to the explicit `user` parameter
@@ -918,7 +1067,7 @@ The contract asserts `fj_fee_amount == get_max_gas_cost(...)` for the transactio
 
 ### Cold-start guards
 
-[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L141)
 
 | Guard | What it prevents |
 |-------|-----------------|
@@ -931,7 +1080,7 @@ The contract asserts `fj_fee_amount == get_max_gas_cost(...)` for the transactio
 
 ### Admin API authentication
 
-[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L489)
 
 Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_KEY` env var. All admin requests require the `x-admin-api-key` header.
 
@@ -941,7 +1090,7 @@ Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_K
 
 ### Rate limiting
 
-[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L405)
 
 Fixed-window rate limiting on the quote endpoint prevents abuse. Enabled by default. Configure via `quote_rate_limit_enabled`, `quote_rate_limit_max_requests`, and `quote_rate_limit_window_seconds` in the attestation service config.
 
@@ -1042,12 +1191,12 @@ Once the package is published, `bun add @nethermindeth/aztec-fpc-sdk` will work.
 
 ## FpcWallet: required wallet class
 
-[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts)
+[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts#L37)
 
 > [!CAUTION]
 > **Do not use `EmbeddedWallet` directly for FPC flows.**
 >
-> Aztec 4.2.0 introduced three breaking changes in `EmbeddedWallet` that cause FPC transactions to fail at runtime. Use `FpcWallet` instead. Copy [`scripts/common/fpc-wallet.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts) into your project, or import it from the cloned repo.
+> Aztec 4.2.0 introduced three breaking changes in `EmbeddedWallet` that cause FPC transactions to fail at runtime. Use `FpcWallet` instead. Copy [`scripts/common/fpc-wallet.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts#L37) into your project, or import it from the cloned repo.
 
 `FpcWallet` extends `EmbeddedWallet` and overrides four methods to fix three compatibility issues introduced in Aztec 4.2.0:
 
@@ -1214,7 +1363,7 @@ One transaction takes the user from "just bridged" to "has tokens and transactio
 
 ## What the SDK Constructs
 
-[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)
+[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L50)
 
 ### `createPaymentMethod`
 
@@ -1244,14 +1393,14 @@ The SDK ships its own copies of `FPCMultiAsset`, `Token`, and `TokenBridge` arti
 
 - [API Reference](./sdk.md#api-reference) for full type signatures
 - [Full example](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts): cold-start + FPC-paid account deployment, end-to-end
-- [FpcWallet source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts): the wallet compatibility shim
+- [FpcWallet source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts#L37): the wallet compatibility shim
 - [Testnet Deployment](./reference/testnet-deployment.md) for live addresses
 
 ## API Reference
 
 Complete type definitions and method signatures for `@nethermindeth/aztec-fpc-sdk`.
 
-**Source:** [sdk/src/types.ts](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/types.ts)
+**Source:** [sdk/src/types.ts](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/types.ts#L9)
 
 ### `FpcClient`
 
@@ -1532,7 +1681,7 @@ vendor/                  # Git submodule: aztec-standards
 | [**TokenBridge**](./contracts.md#tokenbridge) | L1-L2 token bridge | Yes | `claim_public`, `claim_private`, `exit_to_l1_public` |
 | [**Faucet**](./contracts.md#faucet) | Test token dispenser | Devnet only | `drip`, `admin_drip` |
 | **Noop** | Gate count benchmarking | No | `noop` |
-| **Token** (vendor) | Standard fungible token | Yes | `transfer_in_public`, `mint_to_public` |
+| **Token** (vendor) | Standard fungible token | Yes | `transfer_public_to_public`, `mint_to_public` |
 
 ## Dependency Graph
 
@@ -1592,7 +1741,7 @@ After compilation, TypeScript ABIs are generated into `codegen/` for use by the 
 
 Fee payment contract. Accepts operator-signed quotes and pays transaction gas on behalf of users.
 
-**Source:** [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+**Source:** [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
 ---
 
@@ -1768,7 +1917,7 @@ No authwit required for either transfer because the FPC is `msg_sender` for both
 
 ### Internal helpers
 
-[Source: `contracts/fpc/src/main.nr` lines 251-330](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `contracts/fpc/src/main.nr` lines 251-330](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L252)
 
 #### `assert_valid_quote`
 
@@ -1855,7 +2004,7 @@ Returns the maximum possible transaction fee by computing `fee_per_da_gas * da_g
 
 A public token dispenser for test environments. Distributes tokens with per-recipient cooldowns.
 
-**Source:** [`contracts/faucet/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/faucet/src/main.nr)
+**Source:** [`contracts/faucet/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/faucet/src/main.nr#L39)
 
 > [!WARNING]
 >
@@ -1945,7 +2094,7 @@ Returns the unix timestamp of the recipient's last drip. Uninitialized entries r
 
 L1-L2 bridge for moving tokens between Ethereum and Aztec.
 
-**Source:** [`contracts/token_bridge/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/token_bridge/src/main.nr)
+**Source:** [`contracts/token_bridge/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/token_bridge/src/main.nr#L11)
 
 ### Storage
 
@@ -2127,7 +2276,7 @@ Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_K
 
 ### `GET /quote`
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L581) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts#L88)
 
 ```
 GET /quote?user=<address>&accepted_asset=<address>&fj_amount=<positive_u128_decimal>
@@ -2149,7 +2298,7 @@ Returns a user-specific signed quote. The `user` address is bound into the quote
 2. **Check asset support.** Look up the asset in the LMDB policy store. Reject with `400 BAD_REQUEST` if unsupported.
 3. **Compute payment amount.** Apply the exchange rate formula (see [Pricing Formula](#pricing-formula) below).
 4. **Set expiry.** `valid_until = now + quote_validity_seconds` (default: 300s, max: 3600s).
-5. **Sign.** Compute Poseidon2 hash over the 7-field quote preimage using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness`. Sign the 32-byte hash with the operator Schnorr key.
+5. **Sign.** Compute the quote hash via `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness` over the 7-field preimage. Sign the 32-byte hash with the operator Schnorr key.
 6. **Return.**
 
 #### Response
@@ -2174,7 +2323,7 @@ Deterministic `400 BAD_REQUEST` for: missing or invalid `user`, missing or inval
 
 ### `GET /cold-start-quote`
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L881) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts#L132)
 
 Extends `/quote` with two bridge-binding query parameters for users who have no existing L2 balance.
 
@@ -2212,7 +2361,7 @@ The cold-start quote uses domain separator `0x46504373` ("FPCs") instead of `0x4
 
 ### `PUT /admin/asset-policies/:assetAddress`
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L685)
 
 Adds or updates a pricing policy for a supported asset.
 
@@ -2247,7 +2396,7 @@ Sweeps operator tokens to a destination address.
 
 ### Pricing Formula
 
-[Source: `config.ts` `computeFinalRate`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+[Source: `config.ts` `computeFinalRate`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)
 
 The operator sets baseline rate values in the attestation config:
 
@@ -2273,7 +2422,7 @@ For `FPC.fee_entrypoint`, the `fj_amount` must match `get_max_gas_cost` for the 
 
 ### Wallet Discovery
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551)
 
 The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full normative spec at [`wallet-discovery-spec.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md).
 
@@ -2321,7 +2470,7 @@ Returns the list of supported tokens.
 
 ### Authentication
 
-[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) | [Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L385) | [Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L489)
 
 #### Quote endpoint
 
@@ -2348,7 +2497,7 @@ Optional fixed-window rate limiting on the quote endpoint. Configurable window d
 
 ### Startup Sequence
 
-[Source: `index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/index.ts)
+[Source: `index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/index.ts#L35)
 
 1. Load and validate configuration from YAML + environment variables.
 2. Resolve operator secret key via the configured secret provider.
@@ -2366,7 +2515,7 @@ Optional fixed-window rate limiting on the quote endpoint. Configurable window d
 |--------|---------|--------|
 | `server.ts` | Fastify HTTP server, routes, quote orchestration | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) |
 | `config.ts` | YAML + env config loading and validation | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) |
-| `signer.ts` | Schnorr signing over Poseidon2 hash | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts) |
+| `signer.ts` | Schnorr signing over `computeInnerAuthWitHash` | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts) |
 | `asset-policy-store.ts` | LMDB-backed asset pricing persistence | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/asset-policy-store.ts) |
 | `operator-treasury.ts` | Private balance tracking and sweeps | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/operator-treasury.ts) |
 | `secret-provider.ts` | Multi-mode key resolution (env, config, KMS, HSM) | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts) |
@@ -2513,7 +2662,7 @@ After the top-up service bridges Fee Juice from L1, the tokens must be claimed o
 
 | Setting | Description |
 |---------|-------------|
-| `TOPUP_AUTOCLAIM_ENABLED` | Enable auto-claim (default: `1`; set `0` to disable) |
+| `TOPUP_AUTOCLAIM_ENABLED` | Enable auto-claim (enabled unless set to `0`) |
 | `TOPUP_AUTOCLAIM_SECRET_KEY` | L2 secret key for the claimer account |
 | `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | Use a sponsored FPC to pay claim tx fees |
 
@@ -2523,7 +2672,7 @@ In `development` profile, if `TOPUP_AUTOCLAIM_SECRET_KEY` is not set, the servic
 
 ### Configuration
 
-[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts)
+[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts#L136)
 
 See [Configuration](./operations/configuration.md) for the full reference.
 
@@ -2564,7 +2713,7 @@ ops_port: 3001
 
 ### Ops Endpoints
 
-[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts)
+[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts#L228)
 
 Default port: `3001` (overridable via `TOPUP_OPS_PORT` env var)
 
@@ -2576,7 +2725,7 @@ Default port: `3001` (overridable via `TOPUP_OPS_PORT` env var)
 
 ### Prometheus Metrics
 
-[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts)
+[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts#L42)
 
 | Metric | Type | Description |
 |--------|------|-------------|
@@ -2783,13 +2932,13 @@ console.log(`Operator received (fee): ${result.aaPaymentAmount}`);
 
 ## What the single transaction does
 
-[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L141)
 
 ```
 cold_start_entrypoint(
-  user, token, bridge,
+  user, accepted_asset, bridge,
   claim_amount, claim_secret, claim_secret_hash, message_leaf_index,
-  fj_amount, aa_payment_amount, valid_until, quote_sig,
+  fj_fee_amount, aa_payment_amount, valid_until, quote_sig,
 ):
   Setup phase:
     1. Assert this is the tx root (maybe_msg_sender().is_none())
@@ -2851,7 +3000,7 @@ Most bridge UIs need **both**: cold-start for the first session, standard flow f
 
 - [SDK: Getting Started](../sdk.md): full SDK context including the standard flow
 - [SDK: API Reference](../sdk.md#executecoldstart): complete type signatures
-- [Quote System](../quote-system.md#cold-start): the domain separator, 9-field preimage, and replay protection
+- [Quote System](../quote-system.md#cold-start-quote-cold_start_entrypoint): the domain separator, 9-field preimage, and replay protection
 - [Architecture](../architecture.md#cold-start): data-flow diagram across L1, attestation, and FPC
 - [`examples/fpc-full-flow.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/examples/fpc-full-flow.ts): end-to-end runnable bridge to cold-start to standard flow
 
@@ -2897,7 +3046,7 @@ const response = await fetch(
 const metadata = await response.json();
 ```
 
-The response shape (normative, see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md)). The implementation is in [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts):
+The response shape (normative, see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md)). The implementation is in [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551):
 
 ```json
 {
@@ -2940,7 +3089,7 @@ const selectedAsset = assets[0];
 
 ### Create the FPC client and a payment method
 
-[Source: `sdk/src/payment-method.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)
+[Source: `sdk/src/payment-method.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L50)
 
 The SDK's `FpcClient` needs four fields: `fpcAddress`, `operator`, `node`, and `attestationBaseUrl`.
 
@@ -3058,7 +3207,7 @@ try {
 
 # Add a Supported Asset
 
-Register a new payment token with a running attestation service so users can pay fees in it. [Source: admin routes in `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+Register a new payment token with a running attestation service so users can pay fees in it. [Source: admin routes in `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L685)
 
 > [!NOTE]
 > **Prerequisites**
@@ -3071,7 +3220,7 @@ Register a new payment token with a running attestation service so users can pay
 
 ### Determine the exchange rate
 
-The attestation service prices quotes using a rational fraction: `market_rate_num / market_rate_den`. This represents the number of accepted-asset units per 1 Fee Juice. [Source: `computeFinalRate` in `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+The attestation service prices quotes using a rational fraction: `market_rate_num / market_rate_den`. This represents the number of accepted-asset units per 1 Fee Juice. [Source: `computeFinalRate` in `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)
 
 For a token pegged 1:1 with Fee Juice:
 
@@ -3181,7 +3330,7 @@ The DELETE fails if this is the last remaining asset. At least one asset must al
 
 ## Other Admin Endpoints
 
-[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L685)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -3288,7 +3437,7 @@ If a `fpc-config.yaml` file exists in the `deployments/` directory before deploy
 
 ### Configure the attestation service
 
-[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L499)
 
 ```yaml title="attestation-config.yaml"
 runtime_profile: production     # Rejects plaintext config secrets, requires auth
@@ -3609,16 +3758,22 @@ All addresses, URLs, and a live verification check are on the [Testnet Deploymen
 
 Once you have a running FPC (local or testnet), this pattern sends a transaction with fee payment handled by the FPC.
 
+> [!CAUTION]
+> **Use `FpcWallet`, not `EmbeddedWallet`.** Aztec 4.2.0 introduced three breaking changes in `EmbeddedWallet` that cause FPC transactions to fail at runtime. See [SDK: FpcWallet](./sdk.md#fpcwallet-required-wallet-class) for details and the required workaround.
+
 ```typescript
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
-import { FpcWallet } from "./scripts/common/fpc-wallet";
+import { FpcWallet } from "./fpc-wallet"; // see sdk.md for setup
 
 // 1. Connect to node and create wallet
 const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
 await waitForNode(node);
-const wallet = await FpcWallet.create(node, { ephemeral: true });
+const wallet = await FpcWallet.create(node, {
+  ephemeral: true,
+  pxeConfig: { proverEnabled: true },
+});
 
 // 2. Create FPC client
 const fpcClient = new FpcClient({
@@ -3648,7 +3803,7 @@ const { fee } = await fpcClient.createPaymentMethod({
 });
 
 // 5. Send
-await someContract.methods.someMethod(args).send({ from: wallet.getAddress(), fee }).wait();
+await someContract.methods.someMethod(args).send({ from: wallet.getAddress(), fee });
 ```
 
 **Full runnable example**
@@ -3675,8 +3830,8 @@ bunx tsx examples/fpc-full-flow.ts
 
 Complete reference for all configuration options across FPC services.
 
-[Source: attestation config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) |
-[Source: topup config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts)
+[Source: attestation config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L499) |
+[Source: topup config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts#L136)
 
 ## Configuration Hierarchy
 
@@ -3780,7 +3935,7 @@ supported_assets:
 
 Each entry requires: `address` (non-zero Aztec address), `name` (non-empty string), `market_rate_num` (positive integer), `market_rate_den` (positive integer), `fee_bips` (integer 0-10000).
 
-Final rate formula ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)): `rate_num = market_rate_num * (10000 + fee_bips)`, `rate_den = market_rate_den * 10000`. The payment amount is `aa_payment_amount = ceil(fj_amount * rate_num / rate_den)`.
+Final rate formula ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)): `rate_num = market_rate_num * (10000 + fee_bips)`, `rate_den = market_rate_den * 10000`. The payment amount is `aa_payment_amount = ceil(fj_amount * rate_num / rate_den)`.
 
 ### State and Runtime
 
@@ -3847,7 +4002,7 @@ Auto-claim completes the L2 side of the top-up bridge (claims bridged Fee Juice 
 
 | Env Var | Default | Description |
 |---------|---------|-------------|
-| `TOPUP_AUTOCLAIM_ENABLED` | `1` | `1` = enabled, `0` = disabled |
+| `TOPUP_AUTOCLAIM_ENABLED` | enabled (unset) | Enabled unless explicitly set to `0` |
 | `TOPUP_AUTOCLAIM_SECRET_KEY` | | L2 claimer secret key. Required when `runtime_profile=production`. In `development`, falls back to the first `@aztec/accounts/testing` account. |
 | `TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS` | | Use a sponsored FPC to pay the claim tx's fees. Recommended to avoid needing Fee Juice on the claimer account. |
 
@@ -3946,9 +4101,9 @@ deployments/
 
 Deploy the FPC system: contracts, services, and supporting infrastructure.
 
-[Source: deploy CLI](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/index.ts) |
-[Source: configure-token](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/configure-token.ts) |
-[Source: manifest schema](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts)
+[Source: deploy CLI](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/index.ts#L321) |
+[Source: configure-token](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/configure-token.ts#L228) |
+[Source: manifest schema](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts#L15)
 
 Two deployment paths are supported:
 
@@ -4182,17 +4337,12 @@ Required env vars (deployment fails without these):
 
 The wrapper auto-compiles if contract artifacts are missing (`aztec compile --workspace --force`). After deployment, it auto-generates service configs unless `FPC_SKIP_CONFIG_GEN=1` is set.
 
-### Retry and debug knobs
+### Troubleshooting
+
+If deployment fails with wallet state errors, use a fresh temporary data directory:
 
 ```bash
-export FPC_WALLET_DEPLOY_RETRIES=6
-export FPC_WALLET_DEPLOY_RETRY_BACKOFF_MS=3000
-```
-
-Use an isolated wallet data dir for troubleshooting:
-
-```bash
-export FPC_WALLET_DATA_DIR="$(mktemp -d /tmp/aztec-wallet-devnet.XXXXXX)"
+export PXE_DATA_DIR="$(mktemp -d /tmp/aztec-pxe.XXXXXX)"
 bun run deploy:fpc
 ```
 
@@ -4200,7 +4350,7 @@ bun run deploy:fpc
 
 The manifest is the canonical output of deployment. Services, smoke tests, and SDK examples read from it.
 
-Schema (from [`contract-deployment/src/manifest.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts), validated via `deployManifestSchema`):
+Schema (from [`contract-deployment/src/manifest.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts#L15), validated via `deployManifestSchema`):
 
 ```json
 {
@@ -4646,31 +4796,31 @@ Two layers of terminology appear in this documentation.
 A smart contract that pays transaction gas in [Fee Juice](#fee-juice) on behalf of a user. In return, the user pays the operator in a different token. FPC is a generic Aztec primitive. See Aztec's [Paying Fees](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) documentation for the canonical definition.
 
 ### FPCMultiAsset
-Nethermind's FPC implementation. A single deployed contract instance accepts multiple tokens (USDC, ETH, app tokens). Token selection is enforced through quote-binding, not an on-chain allowlist. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+Nethermind's FPC implementation. A single deployed contract instance accepts multiple tokens (USDC, ETH, app tokens). Token selection is enforced through quote-binding, not an on-chain allowlist. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
 ### Sponsored FPC
 Aztec's canonical FPC, deployed by Aztec Labs. It pays fees unconditionally, with no charge to the user. Useful for testnet UX and app-sponsored gas.
 
 ### Attestation service
-The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts). See the [API reference](../sdk.md#api-reference).
+The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L817). See the [API reference](../sdk.md#api-reference).
 
 ### Top-up service
-A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts)
+A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts#L527)
 
 ### Quote
 A signed message from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user, valid until `valid_until`." Signed off-chain with Schnorr, verified on-chain.
 
 ### Quote preimage
-The ordered tuple of fields hashed with Poseidon2 before signing. Two variants exist: a 7-field preimage for `fee_entrypoint` and a 9-field preimage for `cold_start_entrypoint`.
+The ordered tuple of fields hashed via `compute_inner_authwit_hash` (Poseidon2 internally) before signing. Two variants exist: a 7-field preimage for `fee_entrypoint` and a 9-field preimage for `cold_start_entrypoint`.
 
 ### Domain separator
-A constant prepended to the hash preimage to make quotes for different entrypoints non-interchangeable. `0x465043` (`"FPC"`) for normal quotes. `0x46504373` (`"FPCs"`) for cold-start quotes. A cold-start quote fails verification in `fee_entrypoint`, and vice versa. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+A constant prepended to the hash preimage to make quotes for different entrypoints non-interchangeable. `0x465043` (`"FPC"`) for normal quotes. `0x46504373` (`"FPCs"`) for cold-start quotes. A cold-start quote fails verification in `fee_entrypoint`, and vice versa. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L36)
 
 ### `fee_entrypoint`
-The FPC contract function for the standard fee-payment flow. The user already has L2 tokens and a deployed account. Takes a signed quote, transfers tokens from user to operator via `transfer_private_to_private`, declares the FPC as fee payer, and calls `end_setup()`. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+The FPC contract function for the standard fee-payment flow. The user already has L2 tokens and a deployed account. Takes a signed quote, transfers tokens from user to operator via `transfer_private_to_private`, declares the FPC as fee payer, and calls `end_setup()`. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L79)
 
 ### `cold_start_entrypoint`
-The FPC contract function for cold-start. The user has just bridged from L1 and has neither an L2 balance nor a deployed account. Atomically claims bridged tokens into the FPC, splits them between user and operator, and pays gas. Must be the transaction root. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+The FPC contract function for cold-start. The user has just bridged from L1 and has neither an L2 balance nor a deployed account. Atomically claims bridged tokens into the FPC, splits them between user and operator, and pays gas. Must be the transaction root. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L141)
 
 ### Cold start
 The onboarding problem: a user arrives on Aztec with bridged tokens but no Fee Juice to pay gas. The `cold_start_entrypoint` solves this in a single transaction.
@@ -4679,7 +4829,7 @@ The onboarding problem: a user arrives on Aztec with bridged tokens but no Fee J
 The "accepted asset payment amount." How many units of the user's chosen token the FPC operator receives. Computed as `ceil(fj_fee_amount * final_rate_num / final_rate_den)`, where the final rate includes the operator's margin.
 
 ### `fj_fee_amount`
-The "Fee Juice fee amount." How much Fee Juice the protocol will deduct from the FPC's balance. For `fee_entrypoint`, this must equal `get_max_gas_cost` for the transaction's gas settings. Any divergence causes the on-chain quote check to fail. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+The "Fee Juice fee amount." How much Fee Juice the protocol will deduct from the FPC's balance. For `fee_entrypoint`, this must equal `get_max_gas_cost` for the transaction's gas settings. Any divergence causes the on-chain quote check to fail. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L325)
 
 ### `market_rate_num` / `market_rate_den`
 The operator's baseline exchange rate as a fraction: units of accepted asset per 1 Fee Juice. Configured per-asset in the attestation service.
@@ -4703,7 +4853,7 @@ The entity running the attestation and top-up services. Holds the Schnorr key th
 A service-wide mode: `development`, `test`, or `production`. In `production`, plaintext secrets in config files are rejected, and `quote_auth_mode: disabled` is rejected.
 
 ### Secret provider
-The mechanism for loading sensitive keys: `env`, `config`, `kms`, `hsm`, or `auto` (tries env then config in order). [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts)
+The mechanism for loading sensitive keys: `env`, `config`, `kms`, `hsm`, or `auto` (tries env then config in order). [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts#L137)
 
 ---
 
@@ -4760,7 +4910,7 @@ The Solidity contract on L1 that mirrors an L2 contract and handles L1-L2 messag
 The return type from `L1ToL2TokenPortalManager.bridgeTokensPrivate()`. Contains `claimAmount`, `claimSecret`, `claimSecretHash`, and `messageLeafIndex`. Pass the whole object to `executeColdStart`. Do not destructure it.
 
 ### `mint_to_private`
-An Aztec Token contract pattern for minting tokens directly into a private balance. Cold-start uses this via the bridge: the FPC calls `bridge.claim_public()` / `mint_to_private` to pull bridged tokens into its own private balance before redistributing. The mint amount is visible on-chain (it updates total supply), but user identities and balances remain private.
+An Aztec Token contract pattern for minting tokens directly into a private balance. Cold-start uses this via the bridge: the FPC calls `bridge.claim_private()` to pull bridged tokens into its own private balance before redistributing. The mint amount is visible on-chain (it updates total supply), but user identities and balances remain private.
 
 ### AztecAddress
 An Aztec L2 contract or account address (a `Field` element, 0x-prefixed hex). Distinct from `EthAddress` (20-byte L1 address). The SDK uses `AztecAddress.fromString()` to parse.
@@ -4782,7 +4932,7 @@ The signature scheme FPC uses for quotes. 64 bytes. Verified on-chain via `schno
 The elliptic curve Aztec uses for Schnorr signatures. Native to Aztec's proving system, unlike secp256k1 used in Ethereum.
 
 ### Poseidon2
-A SNARK-friendly hash function. FPC hashes the quote preimage with Poseidon2 before signing. Much cheaper inside a circuit than SHA-256 or Keccak.
+A SNARK-friendly hash function. FPC hashes the quote preimage via `compute_inner_authwit_hash`, which uses Poseidon2 internally. Much cheaper inside a circuit than SHA-256 or Keccak.
 
 ---
 
@@ -4810,8 +4960,8 @@ Every metric below is annotated with the source file and line where it is define
 
 | Service | Metrics defined in | Endpoints defined in |
 |---------|-------------------|---------------------|
-| Attestation | [`services/attestation/src/metrics.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/metrics.ts) | [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) |
-| Top-up | [`services/topup/src/ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts) | same file |
+| Attestation | [`services/attestation/src/metrics.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/metrics.ts#L39) | [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L568) |
+| Top-up | [`services/topup/src/ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts#L42) | same file |
 
 ## Attestation Service
 
@@ -4962,6 +5112,42 @@ All scenarios target `fee_entrypoint`. Scenarios 1 through 5 run against a pre-d
 | 5 | **Direct `fee_entrypoint` outside setup** | Call `fee_entrypoint` as a root-level transaction outside the setup phase. Transaction is rejected. |
 | 6 | **Insufficient Fee Juice** | Deploy an isolated FPC with a controlled Fee Juice budget (direct bridge + claim). First transaction succeeds. Second transaction is rejected for insufficient fee-payer balance. |
 
+## Asset Model and Wiring
+
+Two assets are involved in the E2E tests. Do not conflate them.
+
+1. **`accepted_asset` (L2 token used to charge the user)**
+   - A test token deployed on Aztec L2 (`token_contract-Token`).
+   - Chosen per quote (`accepted_asset`) at runtime for `fee_entrypoint`.
+   - No L1 token wiring is required for this asset in the E2E.
+
+2. **Fee Juice (protocol fee asset for gas payment)**
+   - Scenarios 1-5: the FPC is pre-funded by the running top-up service.
+   - Scenario 6: Fee Juice is bridged directly via `L1FeeJuicePortalManager.bridgeTokensPublic()` and claimed on L2 via `FeeJuice.claim()`.
+   - L1/L2 Fee Juice addresses are discovered from `node_getNodeInfo`.
+
+## Full Lifecycle Phases
+
+The test suite executes in 7 phases:
+
+1. Read pre-deployed FPC and Token addresses from deployment manifest.
+2. Connect to Aztec node, derive operator account from secret, create fresh test users.
+3. Register pre-deployed contracts in local wallet.
+4. Wait for FPC to have positive Fee Juice balance (funded by the top-up service).
+5. Run negative scenarios 1-5 against the pre-deployed FPC.
+6. For scenario 6: deploy isolated Token + FPC, bridge + claim Fee Juice directly, run insufficient balance test.
+7. Persist diagnostics and artifacts.
+
+## Local-Network Troubleshooting
+
+Use this runbook when local E2E fails with address or wiring symptoms.
+
+1. **Stale hardcoded addresses.** Symptom: startup/config errors or bridge failures after node restart/redeploy. Check configured FeeJuice L1/L2 addresses against fresh `node_getNodeInfo` output. Fix: remove stale hardcoded values, regenerate deploy/config artifacts, use node-reported addresses.
+
+2. **L1 chain-id mismatch.** Symptom: bridge submit fails with chain/network mismatch errors. Check: compare node-reported `l1ChainId` from `node_getNodeInfo` with the chain id served by `l1_rpc_url`. Fix: point to the correct L1 RPC for the active local-network instance.
+
+3. **FeeJuice portal/address mismatch.** Symptom: bridge submission fails or FeeJuice balance never increases after a bridge + claim. Check configured/derived FeeJuice token + portal addresses against node-reported `l1ContractAddresses`. Fix: do not override local-network FeeJuice addresses manually. Use node-derived values.
+
 ## Cold-Start Parallel Matrix
 
 `scripts/tests/cold-start-validation.ts` mirrors the same matrix for `cold_start_entrypoint`, covering:
@@ -4976,7 +5162,7 @@ Coverage is split by concern across these scripts:
 
 | Script | Concern |
 |---|---|
-| [`scripts/contract/deploy-fpc-local.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-fpc-local.ts) / `deploy-fpc-local-smoke.ts` | Deployment and relay usability. Not quote security. |
+| [`scripts/contract/deploy-fpc-local-mode.sh`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-fpc-local-mode.sh) / [`deploy-smoke-local.sh`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-smoke-local.sh) | Deployment and relay usability. Not quote security. |
 | [`scripts/tests/services.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/services.ts) | Deployed service HTTP endpoints: `/quote`, `/cold-start-quote`, top-up health, metrics. |
 | [`scripts/tests/same-token-transfer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/same-token-transfer.ts) | Happy-path integration: private/public/batched fee-paid transfers against a running attestation service and top-up-funded FPC. |
 | [`scripts/tests/fee-entrypoint-validation.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/fee-entrypoint-validation.ts) | **This matrix.** Negative scenarios 1 through 6. |
@@ -5021,6 +5207,7 @@ These concerns are out of scope for this test matrix (covered elsewhere or not a
 | Variable | Description |
 |---|---|
 | `FPC_COLD_START_MANIFEST` | Deployment manifest path (required) |
+| `FPC_TEST_TOKEN_MANIFEST` | Token deployment manifest path (required) |
 | `FPC_OPERATOR_SECRET_KEY` | Operator 0x-prefixed 32-byte hex secret (required) |
 | `AZTEC_NODE_URL` | Aztec node RPC (default: `http://localhost:8080`) |
 | `L1_RPC_URL` | L1 Ethereum RPC (default: `http://localhost:8545`). Only needed for scenario 6. |
@@ -5195,7 +5382,7 @@ Normalization rules:
 
 ## Discovery Document
 
-[Source: `services/attestation/src/server.ts` (lines 551-566)](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+[Source: `services/attestation/src/server.ts` (lines 551-566)](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551)
 
 Each candidate attestation host must expose:
 
@@ -5213,7 +5400,7 @@ GET /.well-known/fpc.json
 | `fpc_address` | string | Must exactly match the lookup key |
 | `contract_variant` | string | Contract flavor identifier (e.g. `"fpc-v1"`) |
 | `quote_base_url` | string | Absolute base URL for the quote API. HTTPS required outside localhost/dev. |
-| `endpoints` | object | Required relative paths: `discovery`, `health`, `accepted_assets`, `quote` |
+| `endpoints` | object | Required relative paths: `discovery`, `health`, `accepted_assets`, `quote`, `cold_start_quote` |
 | `supported_assets` | array | Non-empty. Each entry is `{ address, name }` with `address` in lowercase `0x` form. |
 
 ## Resolution Order
@@ -5273,7 +5460,8 @@ Continue to the next candidate.
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
     "accepted_assets": "/accepted-assets",
-    "quote": "/quote"
+    "quote": "/quote",
+    "cold_start_quote": "/cold-start-quote"
   },
   "supported_assets": [
     {

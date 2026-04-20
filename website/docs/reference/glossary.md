@@ -36,7 +36,7 @@ A background daemon that watches the FPC contract's Fee Juice balance on L2 and 
 A signed message from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user, valid until `valid_until`." Signed off-chain with Schnorr, verified on-chain.
 
 ### Quote preimage
-The ordered tuple of fields hashed via `compute_inner_authwit_hash` (Poseidon2 internally) before signing. Two variants exist: a 7-field preimage for `fee_entrypoint` and a 9-field preimage for `cold_start_entrypoint`.
+The ordered tuple of fields hashed via `compute_inner_authwit_hash` before signing. Two variants exist: a 7-field preimage for `fee_entrypoint` and a 9-field preimage for `cold_start_entrypoint`.
 
 ### Domain separator
 A constant prepended to the hash preimage to make quotes for different entrypoints non-interchangeable. `0x465043` (`"FPC"`) for normal quotes. `0x46504373` (`"FPCs"`) for cold-start quotes. A cold-start quote fails verification in `fee_entrypoint`, and vice versa. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L36)
@@ -151,7 +151,7 @@ Aztec storage types. `PublicImmutable` is write-once (initialized in the constru
 ## Cryptographic primitives
 
 ### Schnorr signature
-The signature scheme FPC uses for quotes. 64 bytes. Verified on-chain via `schnorr::verify_signature` against the operator's public key stored in the FPC contract's immutable config.
+The signature scheme FPC uses for quotes. 64 bytes. Verified on-chain via `schnorr::assert_valid_signature` against the operator's public key stored in the FPC contract's immutable config.
 
 ### Grumpkin curve
 The elliptic curve Aztec uses for Schnorr signatures. Native to Aztec's proving system, unlike secp256k1 used in Ethereum.
