@@ -117,6 +117,7 @@ These concerns are out of scope for this test matrix (covered elsewhere or not a
 | Variable | Description |
 |---|---|
 | `FPC_COLD_START_MANIFEST` | Deployment manifest path (required) |
+| `FPC_TEST_TOKEN_MANIFEST` | Token deployment manifest path (required) |
 | `FPC_OPERATOR_SECRET_KEY` | Operator 0x-prefixed 32-byte hex secret (required) |
 | `AZTEC_NODE_URL` | Aztec node RPC (default: `http://localhost:8080`) |
 | `L1_RPC_URL` | L1 Ethereum RPC (default: `http://localhost:8545`). Only needed for scenario 6. |
