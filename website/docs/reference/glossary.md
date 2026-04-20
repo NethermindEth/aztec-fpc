@@ -21,16 +21,16 @@ Two layers of terminology appear in this documentation.
 A smart contract that pays transaction gas in [Fee Juice](#fee-juice) on behalf of a user. In return, the user pays the operator in a different token. FPC is a generic Aztec primitive. See Aztec's [Paying Fees](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) documentation for the canonical definition.
 
 ### FPCMultiAsset
-Nethermind's FPC implementation. A single deployed contract instance accepts multiple tokens (USDC, ETH, app tokens). Token selection is enforced through quote-binding, not an on-chain allowlist.
+Nethermind's FPC implementation. A single deployed contract instance accepts multiple tokens (USDC, ETH, app tokens). Token selection is enforced through quote-binding, not an on-chain allowlist. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
 
 ### Sponsored FPC
 Aztec's canonical FPC, deployed by Aztec Labs. It pays fees unconditionally, with no charge to the user. Useful for testnet UX and app-sponsored gas.
 
 ### Attestation service
-The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. See the [API reference](../sdk.md#api-reference).
+The off-chain REST API run by an FPC operator. It signs per-user [quotes](#quote) with the operator's Schnorr key, serves [wallet discovery](#wallet-discovery) metadata, and exposes admin endpoints for asset policy management. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts). See the [API reference](../sdk.md#api-reference).
 
 ### Top-up service
-A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold.
+A background daemon that watches the FPC contract's Fee Juice balance on L2 and bridges more from L1 when it drops below a configured threshold. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts)
 
 ### Quote
 A signed message from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user, valid until `valid_until`." Signed off-chain with Schnorr, verified on-chain.
@@ -39,13 +39,13 @@ A signed message from the operator: "I will accept `aa_payment_amount` of `accep
 The ordered tuple of fields hashed with Poseidon2 before signing. Two variants exist: a 7-field preimage for `fee_entrypoint` and a 9-field preimage for `cold_start_entrypoint`.
 
 ### Domain separator
-A constant prepended to the hash preimage to make quotes for different entrypoints non-interchangeable. `0x465043` (`"FPC"`) for normal quotes. `0x46504373` (`"FPCs"`) for cold-start quotes. A cold-start quote fails verification in `fee_entrypoint`, and vice versa.
+A constant prepended to the hash preimage to make quotes for different entrypoints non-interchangeable. `0x465043` (`"FPC"`) for normal quotes. `0x46504373` (`"FPCs"`) for cold-start quotes. A cold-start quote fails verification in `fee_entrypoint`, and vice versa. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
 
 ### `fee_entrypoint`
-The FPC contract function for the standard fee-payment flow. The user already has L2 tokens and a deployed account. Takes a signed quote, transfers tokens from user to operator via `transfer_private_to_private`, declares the FPC as fee payer, and calls `end_setup()`.
+The FPC contract function for the standard fee-payment flow. The user already has L2 tokens and a deployed account. Takes a signed quote, transfers tokens from user to operator via `transfer_private_to_private`, declares the FPC as fee payer, and calls `end_setup()`. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
 
 ### `cold_start_entrypoint`
-The FPC contract function for cold-start. The user has just bridged from L1 and has neither an L2 balance nor a deployed account. Atomically claims bridged tokens into the FPC, splits them between user and operator, and pays gas. Must be the transaction root.
+The FPC contract function for cold-start. The user has just bridged from L1 and has neither an L2 balance nor a deployed account. Atomically claims bridged tokens into the FPC, splits them between user and operator, and pays gas. Must be the transaction root. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
 
 ### Cold start
 The onboarding problem: a user arrives on Aztec with bridged tokens but no Fee Juice to pay gas. The `cold_start_entrypoint` solves this in a single transaction.
@@ -54,7 +54,7 @@ The onboarding problem: a user arrives on Aztec with bridged tokens but no Fee J
 The "accepted asset payment amount." How many units of the user's chosen token the FPC operator receives. Computed as `ceil(fj_fee_amount * final_rate_num / final_rate_den)`, where the final rate includes the operator's margin.
 
 ### `fj_fee_amount`
-The "Fee Juice fee amount." How much Fee Juice the protocol will deduct from the FPC's balance. For `fee_entrypoint`, this must equal `max_gas_cost_no_teardown` for the transaction's gas settings. Any divergence causes the on-chain quote check to fail.
+The "Fee Juice fee amount." How much Fee Juice the protocol will deduct from the FPC's balance. For `fee_entrypoint`, this must equal `get_max_gas_cost` for the transaction's gas settings. Any divergence causes the on-chain quote check to fail. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
 
 ### `market_rate_num` / `market_rate_den`
 The operator's baseline exchange rate as a fraction: units of accepted asset per 1 Fee Juice. Configured per-asset in the attestation service.
@@ -66,7 +66,7 @@ The operator's margin in basis points (100 = 1%, 200 = 2%). Applied on top of th
 Any token the attestation service is willing to accept as payment. Managed via `PUT /admin/asset-policies/:addr`. No on-chain change required to add or remove assets.
 
 ### Wallet discovery
-The `GET /.well-known/fpc.json` endpoint that lets wallets auto-configure for a given `(network_id, asset_address, fpc_address)` tuple. See the [wallet discovery specification](../reference/wallet-discovery.md).
+The `GET /.well-known/fpc.json` endpoint that lets wallets auto-configure for a given `(network_id, asset_address, fpc_address)` tuple. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md). See the [wallet discovery specification](../reference/wallet-discovery.md).
 
 ### Auto-claim
 An optional feature of the top-up service. After bridging Fee Juice from L1, it automatically submits the L2 `FeeJuice.claim()` so the FPC's balance reflects the bridged amount.
@@ -78,7 +78,7 @@ The entity running the attestation and top-up services. Holds the Schnorr key th
 A service-wide mode: `development`, `test`, or `production`. In `production`, plaintext secrets in config files are rejected, and `quote_auth_mode: disabled` is rejected.
 
 ### Secret provider
-The mechanism for loading sensitive keys: `env`, `config`, `kms`, `hsm`, or `auto` (tries each in order).
+The mechanism for loading sensitive keys: `env`, `config`, `kms`, `hsm`, or `auto` (tries env then config in order). [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts)
 
 ---
 
@@ -117,13 +117,13 @@ The first phase of an Aztec transaction. Non-revertible. Execution failures here
 The main phase of a transaction, where the user's application logic runs. Revertible: if it fails, side-effects are rolled back, but the transaction is still included in a block.
 
 ### Teardown phase
-An optional final phase for refund or settlement logic. FPC does not use teardown. Quotes are priced exactly (`fj_fee_amount` == `max_gas_cost_no_teardown`), so there is no refund mechanism. Official doc: [Setup & teardown](https://docs.aztec.network/protocol-specs/gas-and-fees/tx-setup-and-teardown).
+An optional final phase for refund or settlement logic. FPC does not use teardown. Quotes are priced exactly (`fj_fee_amount` == `get_max_gas_cost`), so there is no refund mechanism. Official doc: [Setup & teardown](https://docs.aztec.network/protocol-specs/gas-and-fees/tx-setup-and-teardown).
 
 ### `fee_payer`
 The account or contract that pays a transaction's Fee Juice. The FPC declares itself as `fee_payer` via `set_as_fee_payer()` during setup. Official doc: [Paying Fees](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees).
 
 ### `msg_sender`
-The caller of a function. In FPC, `fee_entrypoint` binds `msg_sender` into the quote hash, so User A's quote cannot be used by User B. `cold_start_entrypoint` requires `msg_sender.is_none()`, meaning the function must be the transaction root with no parent caller.
+The caller of a function. In FPC, `fee_entrypoint` binds `msg_sender` into the quote hash, so User A's quote cannot be used by User B. `cold_start_entrypoint` requires `context.maybe_msg_sender().is_none()`, meaning the function must be the transaction root with no parent caller.
 
 ### L1-L2 message
 Aztec's cross-chain communication primitive. A message posted by an L1 portal contract is later consumable on L2 (and vice versa). Cold-start depends on this: the bridge deposit becomes an L1-to-L2 message that `cold_start_entrypoint` consumes. Official doc: [L1-L2 communication](https://docs.aztec.network/developers/docs/foundational-topics/ethereum-aztec-messaging).

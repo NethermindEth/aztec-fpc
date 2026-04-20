@@ -53,19 +53,23 @@ The L2 Schnorr key is the most sensitive. It signs every quote and its public ke
 
 ### Secret provider modes
 
+[Source: `services/attestation/src/secret-provider.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts)
+
 Both the attestation and top-up services support multiple key storage backends:
 
 | Mode | Description | Environment |
 |------|-------------|-------------|
-| `auto` | Try env, config, KMS, HSM in order | Default |
+| `auto` | Try env then config in order; throws if neither is set | Default |
 | `env` | `OPERATOR_SECRET_KEY` / `L1_OPERATOR_PRIVATE_KEY` environment variable | Simple deployments |
 | `config` | Plaintext in YAML config file | **Development only** |
 | `kms` | Cloud key management (AWS KMS, etc.) | Production |
 | `hsm` | Hardware security module | High-security production |
 
-Setting `runtime_profile: production` rejects plaintext config-file secrets. This is enforced at startup.
+Setting `runtime_profile: production` rejects plaintext config-file secrets. This is enforced at startup. [Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
 
 ## On-chain protections
+
+[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
 
 ### Quote authenticity
 
@@ -100,13 +104,15 @@ The default `quote_validity_seconds` in the attestation service is 300 seconds (
 
 ### Fee Juice amount binding
 
-The contract asserts `fj_fee_amount == get_max_gas_cost_no_teardown(...)` for the transaction's gas settings. If the wallet requests a quote with an `fj_amount` that does not match the gas settings used at submission, `fee_entrypoint` rejects with a quoted-fee mismatch.
+The contract asserts `fj_fee_amount == get_max_gas_cost(...)` for the transaction's gas settings. If the wallet requests a quote with an `fj_amount` that does not match the gas settings used at submission, `fee_entrypoint` rejects with a quoted-fee mismatch.
 
 ### Cold-start guards
 
+[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+
 | Guard | What it prevents |
 |-------|-----------------|
-| `msg_sender.is_none()` | Must be transaction root, no nested calls |
+| `context.maybe_msg_sender().is_none()` | Must be transaction root, no nested calls |
 | `claim_amount >= aa_payment_amount` | User cannot be charged more than they are claiming |
 | Extended hash preimage | Quote is bound to specific claim details (`claim_amount`, `claim_secret_hash`) |
 | Different domain separator (`0x46504373`) | Normal quotes cannot be used for cold-start, and vice versa |
@@ -114,6 +120,8 @@ The contract asserts `fj_fee_amount == get_max_gas_cost_no_teardown(...)` for th
 ## Off-chain protections
 
 ### Admin API authentication
+
+[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
 
 Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_KEY` env var. All admin requests require the `x-admin-api-key` header.
 
@@ -123,7 +131,9 @@ Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_K
 
 ### Rate limiting
 
-Optional fixed-window rate limiting on the quote endpoint prevents abuse. Configure via `quote_rate_limit_enabled`, `quote_rate_limit_max_requests`, and `quote_rate_limit_window_seconds` in the attestation service config.
+[Source: `services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+
+Fixed-window rate limiting on the quote endpoint prevents abuse. Enabled by default. Configure via `quote_rate_limit_enabled`, `quote_rate_limit_max_requests`, and `quote_rate_limit_window_seconds` in the attestation service config.
 
 ### Authentication modes
 
@@ -132,6 +142,8 @@ Optional fixed-window rate limiting on the quote endpoint prevents abuse. Config
 | `disabled` | Development only |
 | `api_key` | Simple production deployments |
 | `trusted_header` | Behind a reverse proxy that injects identity headers |
+| `api_key_or_trusted_header` | Either mechanism satisfies auth |
+| `api_key_and_trusted_header` | Both mechanisms required simultaneously |
 
 Setting `runtime_profile: production` requires `quote_auth_mode != disabled`.
 
@@ -160,7 +172,7 @@ These are constraints of the current design, not planned features:
 
 - **No key rotation.** The packed config is `PublicImmutable`. Operator key compromise requires contract redeployment.
 - **Operator tracks revenue off-chain.** All payments arrive as private notes in the operator's balance. The operator must use their PXE to discover incoming notes and maintain off-chain accounting.
-- **`fj_amount` must match tx gas settings.** Wallets must request a quote where `fj_amount` equals `max_gas_cost_no_teardown` for the exact gas settings used at submission. If they diverge, `fee_entrypoint` rejects.
+- **`fj_amount` must match tx gas settings.** Wallets must request a quote where `fj_amount` equals `get_max_gas_cost` for the exact gas settings used at submission. If they diverge, `fee_entrypoint` rejects.
 - **No oracle integration.** Exchange rates are set manually in the attestation service config. A service restart reloads from `config.yaml`.
 - **Single operator per contract.** There is no multi-operator or delegation model.
 

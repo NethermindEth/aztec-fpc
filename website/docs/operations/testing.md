@@ -2,50 +2,54 @@
 
 Test suites, how to run them, and what they cover.
 
+[Source: contract tests](https://github.com/NethermindEth/aztec-fpc/tree/main/contracts/fpc/src/test) |
+[Source: integration tests](https://github.com/NethermindEth/aztec-fpc/tree/main/scripts/tests) |
+[Source: vitest config](https://github.com/NethermindEth/aztec-fpc/blob/main/vitest.config.ts)
+
 **Normative source:** [docs/spec/e2e-test-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/e2e-test-spec.md). The negative-scenario test matrix is the source of truth for required FPC behavior.
 
 ## Test Layers
 
 ```
 +-------------------------------------+
-|     E2E / Integration Tests         |  Docker Compose
+|     E2E / Integration Tests         |  Docker Compose (profile: full)
 |     (scripts/tests/*.ts)            |
 +-------------------------------------+
 |     Service Unit Tests              |  Vitest
-|     (services/*/test/*.test.ts)     |
+|     (services/*/test/**/*.ts)       |
 +-------------------------------------+
 |     SDK Unit Tests                  |  Vitest
 |     (sdk/test/*.test.ts)            |
 +-------------------------------------+
-|     Contract Tests (Noir)           |  Aztec test harness
+|     Contract Tests (Noir)           |  Aztec test harness (aztec test)
 |     (contracts/fpc/src/test/*.nr)   |
 +-------------------------------------+
 ```
 
 ## Running Tests
 
-Run all tests:
+Run all tests (contracts + TypeScript):
 
 ```bash
 bun run test
 ```
 
-Run contract tests only (Noir):
+Run contract tests only (Noir, compiles workspace first):
 
 ```bash
 bun run test:contracts
 ```
 
-Run TypeScript tests only (services + SDK):
+Run TypeScript tests only (attestation + topup + SDK via Vitest):
 
 ```bash
 bun run test:ts
 ```
 
-Run full integration suite (Docker Compose, requires all services):
+Run full integration suite (Docker Compose with all services and test containers):
 
 ```bash
-bun run compose:full
+bun run smoke:services:compose
 ```
 
 ## Contract Tests
@@ -56,28 +60,30 @@ bun run compose:full
 
 | Test | What It Verifies |
 |------|-----------------|
-| Happy path | Standard fee payment succeeds |
-| Mismatched fee amount | Signature fails when amounts differ |
-| Expired quote | Rejects quotes past `valid_until` |
-| Overlong TTL | Rejects TTL > 3600 seconds |
-| Non-root caller | Context-specific constraints |
-| Wrong user binding | User A's quote fails for User B |
-| Authwit freshness | Authorization witness must be valid |
+| `constructor_rejects_zero_operator` | Constructor rejects zero-address operator |
+| `fee_entrypoint_happy_path_transfers_expected_charge` | Standard fee payment transfers correct amount from user to operator |
+| `fee_entrypoint_rejects_mismatched_fj_fee_amount` | Rejects quote when fee amount differs from actual gas cost |
+| `fee_entrypoint_requires_fresh_transfer_authwit_each_call` | Requires a fresh transfer authorization witness per call (replay protection) |
+| `fee_entrypoint_rejects_expired_quote` | Rejects quotes past `valid_until` timestamp |
+| `fee_entrypoint_rejects_overlong_quote_ttl` | Rejects TTL > 3600 seconds from anchor timestamp |
+| `fee_entrypoint_rejects_quote_bound_to_another_user` | User A's quote signature fails verification when User B calls |
 
 ### `cold_start_entrypoint.nr` (4 tests)
 
 | Test | What It Verifies |
 |------|-----------------|
-| Setup phase enforcement | Only runs during tx setup |
-| Root-call guard | Must be transaction root |
-| Domain separation | Cold-start quote (`"FPCs"` = `0x46504373`) fails in `fee_entrypoint` (`"FPC"` = `0x465043`) |
-| Standard quote rejection | Normal quote fails in `cold_start_entrypoint` |
+| `cold_start_happy_path` | Full cold-start flow reaches bridge claim (fails at L1-to-L2 message lookup in TXE, validating everything prior) |
+| `cold_start_rejects_non_root_caller` | Must be called as tx entrypoint (msg_sender = None) |
+| `cold_start_quote_rejected_by_fee_entrypoint` | Cold-start domain separator (`0x46504373`) fails in `fee_entrypoint` (domain `0x465043`) |
+| `regular_quote_rejected_by_cold_start_entrypoint` | Standard domain separator fails in `cold_start_entrypoint` |
 
-### Test Helpers (`utils.nr`)
+### Test Helpers ([`utils.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/test/utils.nr))
 
-- `setup()`: deploy contracts, create test accounts
-- `sign_quote()`: generate Schnorr-signed quotes
-- `compute_quote_hash()`: reproduce quote hash computation
+- `setup()`: deploy Token, TokenBridge, and FPCMultiAsset contracts; create operator and user accounts
+- `sign_quote()`: compute quote hash with `QUOTE_DOMAIN_SEPARATOR` and return a valid test Schnorr signature
+- `sign_cold_start_quote()`: compute quote hash with `COLD_START_QUOTE_DOMAIN_SEPARATOR` and return a valid test Schnorr signature
+- `test_schnorr_sign()`: low-level Schnorr signing using modular arithmetic over Grumpkin group order
+- `private_balance()`: utility to query private token balance
 
 ## Service Tests
 
@@ -129,16 +135,14 @@ Run as Docker Compose services against the full stack. All test services depend 
 
 ## Smoke Tests
 
-Two smoke-test commands are available for post-deploy validation:
+Post-deploy validation commands:
 
 ```bash
-# Full compose smoke: deploy, start services, run test suite
+# Full compose smoke: deploy, start services, run all test suites
 bun run smoke:services:compose
 
-# Fee-entrypoint negative-path smoke (requires pre-deployed contracts + node)
-FPC_COLD_START_MANIFEST=path/to/manifest.json \
-FPC_ATTESTATION_URL=http://localhost:3000 \
-  bun run smoke:fee-entrypoint
+# Local deploy + smoke (infrastructure only)
+bun run smoke:deploy:fpc:local
 ```
 
 The bun-path post-deploy smoke validates one successful FPC fee-path transaction and one L1 Fee Juice bridge/top-up cycle:
@@ -147,13 +151,12 @@ The bun-path post-deploy smoke validates one successful FPC fee-path transaction
 set -a; source .env; set +a
 export L1_OPERATOR_PRIVATE_KEY="$L1_ADDRESS_PK"
 export L1_RPC_URL=https://sepolia.infura.io/v3/<key>
-bunx tsx scripts/contract/devnet-postdeploy-smoke.ts \
-  --manifest ./deployments/devnet-manifest-v2.json
+bun run smoke:deploy:fpc:devnet
 ```
 
 ## Profiling
 
-**Location:** `profiling/`
+**Location:** `profiling/benchmarks/`
 
 | Benchmark | What It Measures |
 |-----------|-----------------|

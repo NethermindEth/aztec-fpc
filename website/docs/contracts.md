@@ -52,9 +52,11 @@ Contracts are compiled as a Noir workspace:
 members = [
     "contracts/fpc",
     "contracts/faucet",
-    "contracts/token_bridge",
     "contracts/noop",
-    "mock/counter"
+    "contracts/token_bridge",
+    "mock/counter",
+    "vendor/aztec-standards/src/generic_proxy",
+    "vendor/aztec-standards/src/token_contract",
 ]
 ```
 
@@ -113,7 +115,7 @@ All fields are packed into a single `PublicImmutable<Config>` slot and set once 
 ### `constructor`
 
 ```noir
-#[public]
+#[external("public")]
 #[initializer]
 fn constructor(
     operator: AztecAddress,
@@ -122,7 +124,7 @@ fn constructor(
 )
 ```
 
-Writes `Config` to `PublicImmutable`. Called once at deployment. Rejects a zero `operator` address.
+Writes `Config` to `PublicImmutable`. Called once at deployment. Rejects a zero `operator` address. Validates that the provided public key point lies on the Grumpkin curve (`y^2 == x^3 - 17`).
 
 ---
 
@@ -149,21 +151,23 @@ fn fee_entrypoint(
 |------|------|-------------|
 | `accepted_asset` | `AztecAddress` | Token contract the user pays in |
 | `authwit_nonce` | `Field` | Nonce for the token transfer authorization witness |
-| `fj_fee_amount` | `u128` | Gas cost in Fee Juice (must equal `max_gas_cost_no_teardown` for the transaction gas settings) |
+| `fj_fee_amount` | `u128` | Gas cost in Fee Juice (must equal `get_max_gas_cost` for the transaction gas settings) |
 | `aa_payment_amount` | `u128` | Token amount the user pays |
 | `valid_until` | `u64` | Quote expiry (unix seconds) |
 | `quote_sig` | `[u8; 64]` | Operator Schnorr signature over the quote preimage |
 
 **Execution steps**
 
-1. Reads packed `config` from storage (`operator`, signing pubkey).
-2. Computes the quote hash and verifies the Schnorr signature. Binds `user_address = msg_sender`, so a quote signed for one user cannot be used by another.
-3. Pushes a nullifier derived from the quote hash. Duplicate quotes fail via nullifier conflict.
-4. Asserts `anchor_block_timestamp <= valid_until`.
-5. Asserts `(valid_until - anchor_block_timestamp) <= 3600` seconds.
-6. Asserts `fj_fee_amount == get_max_gas_cost_no_teardown(...)`.
-7. Calls `Token::at(accepted_asset).transfer_private_to_private(sender, operator, aa_payment_amount, nonce)`.
-8. Asserts setup-phase execution (`!in_revertible_phase`), then calls `set_as_fee_payer()` + `end_setup()`.
+1. Checks whether the transaction has non-zero max fees; if so, asserts setup-phase execution (`!in_revertible_phase`).
+2. Reads packed `config` from storage (`operator`, signing pubkey).
+3. Computes the quote hash via `compute_inner_authwit_hash` and verifies the Schnorr signature. Binds `user_address = msg_sender`, so a quote signed for one user cannot be used by another.
+4. Pushes a nullifier derived from the quote hash. Duplicate quotes fail via nullifier conflict.
+5. Asserts `anchor_block_timestamp <= valid_until`.
+6. Asserts `(valid_until - anchor_block_timestamp) <= 3600` seconds.
+7. Sets the context expiration timestamp to `valid_until`.
+8. Asserts `fj_fee_amount == get_max_gas_cost(...)`.
+9. Calls `Token::at(accepted_asset).transfer_private_to_private(sender, operator, aa_payment_amount, authwit_nonce)`.
+10. Calls `set_as_fee_payer()` + `end_setup()`.
 
 The token transfer executes in the setup phase, before `end_setup()`. It is irrevocably committed. If the user's app logic subsequently reverts, the fee has still been paid. This is unavoidable in the Aztec FPC model.
 
@@ -215,7 +219,11 @@ fn cold_start_entrypoint(
 
 #### Assert transaction root
 
-`msg_sender.is_none()`. Must be called as the transaction entrypoint, not from another contract.
+`context.maybe_msg_sender().is_none()`. Must be called as the transaction entrypoint, not from another contract.
+
+#### Assert setup phase
+
+Checks whether the transaction has non-zero max fees; if so, asserts `!in_revertible_phase`.
 
 #### Assert claim covers fee
 
@@ -223,11 +231,19 @@ fn cold_start_entrypoint(
 
 #### Verify quote
 
-`assert_valid_cold_start_quote` verifies a 9-field Poseidon2 preimage with domain separator `0x46504373`. Schnorr signature verified, nullifier pushed.
+`assert_valid_cold_start_quote` verifies a 9-field preimage hashed via `compute_inner_authwit_hash` with domain separator `0x46504373`. Schnorr signature verified, nullifier pushed, expiration timestamp set.
+
+#### Assert fee amount
+
+`fj_fee_amount == get_max_gas_cost(...)`.
 
 #### Declare fee payer
 
-`set_as_fee_payer()`. The FPC pays gas in Fee Juice.
+`set_as_fee_payer()` + `end_setup()`. The FPC pays gas in Fee Juice.
+
+#### Set sender for tags
+
+`set_sender_for_tags(fpc_address)`. Since this function is the transaction root (no account entrypoint), the FPC must register itself as the tag sender so downstream notes are discoverable by the PXE.
 
 #### Claim from bridge
 
@@ -244,14 +260,16 @@ No authwit required for either transfer because the FPC is `msg_sender` for both
 
 ### Internal helpers
 
+[Source: `contracts/fpc/src/main.nr` lines 251-330](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+
 #### `assert_valid_quote`
 
-Verifies a standard quote. Computes a 7-field Poseidon2 hash, verifies the Schnorr signature against the stored operator pubkey, pushes a nullifier, checks expiry and TTL cap (max 3600 seconds).
+Verifies a standard quote. Computes a 7-field hash via `compute_inner_authwit_hash`, verifies the Schnorr signature against the stored operator pubkey, pushes a nullifier, checks expiry and TTL cap (max 3600 seconds), and sets the context expiration timestamp.
 
 **Preimage:**
 
 ```
-poseidon2([
+compute_inner_authwit_hash([
     0x465043,          // domain separator ("FPC")
     fpc_address,
     accepted_asset,
@@ -269,7 +287,7 @@ Same as above with a 9-field preimage. Adds `claim_amount` and `claim_secret_has
 **Preimage:**
 
 ```
-poseidon2([
+compute_inner_authwit_hash([
     0x46504373,        // domain separator ("FPCs")
     fpc_address,
     accepted_asset,
@@ -284,7 +302,7 @@ poseidon2([
 
 #### `get_max_gas_cost`
 
-Returns the maximum possible transaction fee using protocol gas parameters. Used internally to validate `fj_fee_amount` against the transaction's gas settings.
+Returns the maximum possible transaction fee by computing `fee_per_da_gas * da_gas + fee_per_l2_gas * l2_gas` from the context's gas settings. Used internally to validate `fj_fee_amount` against the transaction's gas settings.
 
 ---
 
@@ -329,7 +347,7 @@ Returns the maximum possible transaction fee using protocol gas parameters. Used
 
 A public token dispenser for test environments. Distributes tokens with per-recipient cooldowns.
 
-**Source:** `contracts/faucet/src/main.nr`
+**Source:** [`contracts/faucet/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/faucet/src/main.nr)
 
 > [!WARNING]
 >
@@ -352,7 +370,7 @@ struct Storage {
 ### Constructor
 
 ```noir
-#[public]
+#[external("public")]
 #[initializer]
 fn constructor(
     token: AztecAddress,
@@ -369,6 +387,8 @@ fn constructor(
 | `drip_amount` | `u128` | Amount per drip in base units |
 | `cooldown_seconds` | `u64` | Minimum seconds between drips per recipient |
 
+Rejects zero `token`, zero `admin`, and non-positive `drip_amount`.
+
 ### Functions
 
 #### `drip`
@@ -378,7 +398,7 @@ fn constructor(
 fn drip(recipient: AztecAddress)
 ```
 
-Transfers `drip_amount` to the recipient's public balance. Reverts if the cooldown has not elapsed since the recipient's last drip.
+Transfers `drip_amount` to the recipient's public balance via `transfer_public_to_public`. Reverts if the cooldown has not elapsed since the recipient's last drip. Rejects a zero recipient address.
 
 #### `admin_drip`
 
@@ -387,7 +407,7 @@ Transfers `drip_amount` to the recipient's public balance. Reverts if the cooldo
 fn admin_drip(recipient: AztecAddress, amount: u128)
 ```
 
-Operator bypass: no cooldown, arbitrary amount. Only callable by the configured `admin`. Does not update `last_drip`, so it never blocks the recipient's regular drip cooldown.
+Operator bypass: no cooldown, arbitrary amount. Only callable by the configured `admin`. Does not update `last_drip`, so it never blocks the recipient's regular drip cooldown. Rejects zero recipient and non-positive amount.
 
 #### `get_config`
 
@@ -417,7 +437,7 @@ Returns the unix timestamp of the recipient's last drip. Uninitialized entries r
 
 L1-L2 bridge for moving tokens between Ethereum and Aztec.
 
-**Source:** `contracts/token_bridge/src/main.nr`
+**Source:** [`contracts/token_bridge/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/token_bridge/src/main.nr)
 
 ### Storage
 
@@ -430,14 +450,14 @@ struct Storage {
 | Field | Type | Description |
 |-------|------|-------------|
 | `token` | `AztecAddress` | The L2 token contract this bridge serves |
-| `portal` | `AztecAddress` | The L1 portal contract address |
+| `portal` | `EthAddress` | The L1 portal contract address |
 
 ### Functions
 
 #### `constructor`
 
 ```noir
-#[public]
+#[external("public")]
 #[initializer]
 fn constructor()
 ```
@@ -447,8 +467,8 @@ Empty initializer. Config must be set via `set_config` before the bridge can pro
 #### `set_config`
 
 ```noir
-#[public]
-fn set_config(token: AztecAddress, portal: AztecAddress)
+#[external("public")]
+fn set_config(token: AztecAddress, portal: EthAddress)
 ```
 
 One-time initialization linking the bridge to its L2 token and L1 portal. Call this immediately after deployment.
@@ -456,10 +476,10 @@ One-time initialization linking the bridge to its L2 token and L1 portal. Call t
 #### `claim_public`
 
 ```noir
-#[public]
+#[external("public")]
 fn claim_public(
     to: AztecAddress,
-    amount: Field,
+    amount: u128,
     secret: Field,
     message_leaf_index: Field,
 )
@@ -478,24 +498,28 @@ Claims tokens from an L1-to-L2 deposit into the recipient's **public** balance.
 #### `claim_private`
 
 ```noir
-#[public]
+#[external("private")]
 fn claim_private(
-    to: AztecAddress,
-    amount: Field,
-    secret: Field,
+    recipient: AztecAddress,
+    amount: u128,
+    secret_for_L1_to_L2_message_consumption: Field,
     message_leaf_index: Field,
 )
 ```
 
-Same as `claim_public` but mints to the recipient's **private** balance. Used by `FPCMultiAsset.cold_start_entrypoint`.
+Claims bridged tokens and makes them accessible in private. Mints to the recipient's **private** balance. Used by `FPCMultiAsset.cold_start_entrypoint`.
+
+1. Constructs the mint-to-private content hash.
+2. Consumes the L1-to-L2 message from the inbox.
+3. Mints `amount` tokens to `recipient`'s private balance.
 
 #### `exit_to_l1_public`
 
 ```noir
-#[public]
+#[external("public")]
 fn exit_to_l1_public(
     recipient: EthAddress,
-    amount: Field,
+    amount: u128,
     caller_on_l1: EthAddress,
     authwit_nonce: Field,
 )
@@ -503,9 +527,24 @@ fn exit_to_l1_public(
 
 Burns L2 tokens and sends an L2-to-L1 withdrawal message.
 
-1. Burns `amount` from the caller's public balance.
-2. Sends a message to the L1 portal encoding the recipient and amount.
+1. Sends an L2-to-L1 message to the portal encoding the recipient, amount, and L1 caller.
+2. Burns `amount` from the caller's public balance.
 3. The L1 portal releases corresponding ERC-20 tokens after the message is consumed.
+
+#### `exit_to_l1_private`
+
+```noir
+#[external("private")]
+fn exit_to_l1_private(
+    token: AztecAddress,
+    recipient: EthAddress,
+    amount: u128,
+    caller_on_l1: EthAddress,
+    authwit_nonce: Field,
+)
+```
+
+Burns L2 tokens from private balance and sends an L2-to-L1 withdrawal message. Asserts the provided `token` matches the stored config. Requires an authwit from `msg_sender` authorizing the burn.
 
 ### Role in Cold Start
 
@@ -522,4 +561,4 @@ FPC.cold_start_entrypoint ──► TokenBridge.claim_private(fpc_address, claim
                               └──► operator gets aa_payment_amount
 ```
 
-The FPC passes its own address (not the user's) as the `to` argument to `claim_private`. Tokens land in the FPC's private balance first, then the FPC distributes them. This design is intentional: the user's account may not exist on L2 yet, so the protocol cannot write notes directly to the user. Routing through the FPC sidesteps the need for an authwit from a non-existent account.
+The FPC passes its own address (not the user's) as the `recipient` argument to `claim_private`. Tokens land in the FPC's private balance first, then the FPC distributes them. This design is intentional: the user's account may not exist on L2 yet, so the protocol cannot write notes directly to the user. Routing through the FPC sidesteps the need for an authwit from a non-existent account.

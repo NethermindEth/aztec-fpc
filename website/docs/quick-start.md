@@ -39,7 +39,7 @@ bun install
 bun run compose:full
 ```
 
-`compose:full` starts the following services.
+`compose:full` starts the following services ([Source: `docker-compose.yaml`](https://github.com/NethermindEth/aztec-fpc/blob/main/docker-compose.yaml)).
 
 | Service | Port |
 |---------|------|

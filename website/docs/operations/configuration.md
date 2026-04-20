@@ -2,11 +2,14 @@
 
 Complete reference for all configuration options across FPC services.
 
+[Source: attestation config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) |
+[Source: topup config](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts)
+
 ## Configuration Hierarchy
 
 All services follow the same precedence:
 
-1. **YAML config file**: base configuration (path from `CONFIG_PATH` env var or `/app/config.yaml` in Docker)
+1. **YAML config file**: base configuration (path from `--config` CLI flag or `/app/config.yaml` in Docker)
 2. **Environment variables**: override specific YAML values
 3. **CLI arguments**: highest precedence, override at runtime
 
@@ -22,19 +25,19 @@ Environment variables always take precedence over YAML values. CLI arguments ove
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `network_id` | `NETWORK_ID` | (required) | Aztec network identifier, a **string** such as `"aztec-testnet"` (not a numeric chain id) |
-| `fpc_address` | `FPC_ADDRESS` | (required) | Deployed FPC contract address |
+| `network_id` | | `"aztec-alpha-local"` | Aztec network identifier, a **string** such as `"aztec-testnet"` (not a numeric chain id). No env override; set in YAML. |
+| `fpc_address` | | (required) | Deployed FPC contract address. No env override; set in YAML. |
 | `contract_variant` | | `"fpc-v1"` | Contract flavour identifier emitted in discovery |
 | `aztec_node_url` | `AZTEC_NODE_URL` | (required) | Aztec node PXE endpoint |
-| `quote_base_url` | `QUOTE_BASE_URL` | derived from request headers | Public base URL emitted in `/.well-known/fpc.json`. Set this explicitly when behind a reverse proxy. |
+| `quote_base_url` | | | Optional externally reachable base URL override for discovery clients. No env override; set in YAML. |
 
 ### Operator
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
 | `operator_secret_provider` | `OPERATOR_SECRET_PROVIDER` | `auto` | Key source: `auto`, `env`, `config`, `kms`, `hsm` |
-| `operator_address` | | | Operator L2 address (only needed when account salt is non-zero) |
-| `operator_account_salt` | `OPERATOR_ACCOUNT_SALT` | | Account salt (optional) |
+| `operator_address` | | | Operator L2 address (only needed when account salt is non-zero). No env override; set in YAML. |
+| `operator_account_salt` | `OPERATOR_ACCOUNT_SALT` | | Account salt (optional, 32-byte 0x-prefixed hex field) |
 | `operator_secret_ref` | `OPERATOR_SECRET_REF` | | KMS or secret-manager reference for the key (preferred in production) |
 | | `OPERATOR_SECRET_KEY` | | L2 operator Schnorr private key (plaintext, avoid in production) |
 
@@ -47,7 +50,7 @@ Environment variables always take precedence over YAML values. CLI arguments ove
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `quote_validity_seconds` | `QUOTE_VALIDITY_SECONDS` | `300` | Quote lifetime in seconds. The on-chain contract caps TTL at 3600 seconds regardless of this setting. |
+| `quote_validity_seconds` | | `300` | Quote lifetime in seconds. The on-chain contract caps TTL at 3600 seconds regardless of this setting. No env override; set in YAML. |
 
 ### Quote Format
 
@@ -80,29 +83,21 @@ Fixed-window rate limiting on `/quote`. Defaults are defined in the attestation 
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `admin_api_key_header` | | `x-admin-api-key` | Header name for admin auth |
+| `admin_api_key_header` | `ADMIN_API_KEY_HEADER` | `x-admin-api-key` | Header name for admin auth |
 | | `ADMIN_API_KEY` | | Admin API key value (constant-time compared). Admin endpoints are disabled unless this is set. |
-| `treasury_destination_address` | | | Default destination for `POST /admin/sweeps` when the request body omits `destination` |
+| `treasury_destination_address` | `TREASURY_DESTINATION_ADDRESS` | | Default destination for `POST /admin/sweeps` when the request body omits `destination` |
 
 ### Assets
 
-Single-asset mode uses the top-level `accepted_asset_*` and `market_rate_*` fields. For multi-asset, define `supported_assets` entries. Per-asset pricing fields are optional and inherit from top-level defaults when omitted.
+Assets are configured via the `supported_assets` array. Each entry defines an accepted token with its pricing. Asset policies can also be managed at runtime via the admin API (`PUT /admin/asset-policies/:address`).
 
 ```yaml
-# Top-level defaults (used when supported_assets entries omit pricing)
-accepted_asset_name: "humanUSDC"
-accepted_asset_address: "0x..."
-market_rate_num: 1
-market_rate_den: 1000
-fee_bips: 200
-
-# Multi-asset support (optional)
 supported_assets:
   - address: "0x..."
     name: "humanUSDC"           # Human-readable name surfaced in /accepted-assets
-    market_rate_num: 1          # Override: asset units per 1 FeeJuice (numerator)
-    market_rate_den: 1000       # Override: denominator
-    fee_bips: 200               # Override: operator margin (200 bips = 2%)
+    market_rate_num: 1          # Asset units per 1 FeeJuice (numerator)
+    market_rate_den: 1000       # Denominator
+    fee_bips: 200               # Operator margin (200 bips = 2%)
   - address: "0x..."
     name: "ravenETH"
     market_rate_num: 3
@@ -110,16 +105,18 @@ supported_assets:
     fee_bips: 25
 ```
 
-Final rate formula: `rate_num = market_rate_num * (10000 + fee_bips)`, `rate_den = market_rate_den * 10000`. The payment amount is `aa_payment_amount = ceil(fj_amount * rate_num / rate_den)`.
+Each entry requires: `address` (non-zero Aztec address), `name` (non-empty string), `market_rate_num` (positive integer), `market_rate_den` (positive integer), `fee_bips` (integer 0-10000).
+
+Final rate formula ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)): `rate_num = market_rate_num * (10000 + fee_bips)`, `rate_den = market_rate_den * 10000`. The payment amount is `aa_payment_amount = ceil(fj_amount * rate_num / rate_den)`.
 
 ### State and Runtime
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `asset_policy_state_path` | | `.attestation-data` | LMDB directory for persisted asset policies |
+| `asset_policy_state_path` | `ATTESTATION_ASSET_POLICY_STATE_PATH` | `.attestation-asset-policies` | LMDB directory for persisted asset policies |
 | `runtime_profile` | `FPC_RUNTIME_PROFILE` | `development` | `development`, `test`, or `production` |
-| `pxe_data_directory` | `PXE_DATA_DIRECTORY` | | PXE data dir for embedded wallet (recommended for production to persist operator notes) |
-| `port` | | `3000` | HTTP listen port |
+| `pxe_data_directory` | | | PXE data dir for embedded wallet (recommended for production to persist operator notes). No env override; set in YAML. |
+| `port` | | `3000` | HTTP listen port. No env override; set in YAML. |
 
 ---
 
@@ -140,26 +137,26 @@ The service validates that `l1_rpc_url` matches the L1 chain id reported by the 
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `fpc_address` | `FPC_ADDRESS` | (required) | FPC contract to monitor |
-| `threshold` | `TOPUP_THRESHOLD` | (required) | Bridge when FPC Fee Juice balance drops below this (wei) |
-| `top_up_amount` | `TOPUP_AMOUNT` | (required) | Amount to bridge each time (wei) |
+| `fpc_address` | | (required) | FPC contract to monitor. No env override; set in YAML. |
+| `threshold` | | (required) | Bridge when FPC Fee Juice balance drops below this (unsigned integer string, wei). No env override; set in YAML. |
+| `top_up_amount` | | (required) | Amount to bridge each time (unsigned integer string, wei). Must be >= `threshold`. No env override; set in YAML. |
 
 ### State and Polling
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
 | `data_dir` | `TOPUP_DATA_DIR` | `.topup-data` | LMDB directory for in-flight bridge state and crash recovery |
-| `check_interval_ms` | `TOPUP_CHECK_INTERVAL_MS` | `60000` | FPC balance check interval (ms) |
+| `check_interval_ms` | | `60000` | FPC balance check interval (ms). No env override; set in YAML. |
 | `confirmation_timeout_ms` | | `180000` | Max wait for L1-to-L2 message + balance settlement after a bridge tx. No env override; set in YAML. |
-| `confirmation_poll_initial_ms` | | `1000` | Initial poll interval during confirmation |
-| `confirmation_poll_max_ms` | | `15000` | Max poll interval (exponential backoff cap) |
+| `confirmation_poll_initial_ms` | | `1000` | Initial poll interval during confirmation. No env override; set in YAML. |
+| `confirmation_poll_max_ms` | | `15000` | Max poll interval (exponential backoff cap). No env override; set in YAML. |
 
 ### Operator
 
 | YAML Key | Env Var | Default | Description |
 |----------|---------|---------|-------------|
-| `l1_operator_secret_provider` | | `auto` | L1 key source: `auto`, `env`, `config`, `kms`, `hsm` |
-| `l1_operator_secret_ref` | | | KMS or secret-manager reference (preferred in production) |
+| `l1_operator_secret_provider` | | `auto` | L1 key source: `auto`, `env`, `config`, `kms`, `hsm`. No env override; set in YAML. |
+| `l1_operator_secret_ref` | | | KMS or secret-manager reference (preferred in production). No env override; set in YAML. |
 | `l1_operator_private_key` | `L1_OPERATOR_PRIVATE_KEY` | | L1 operator private key (plaintext, avoid in production) |
 
 The L1 operator account must hold ETH (for bridge gas) and Fee Juice tokens (the ERC-20 that gets bridged to L2). Fund it before starting the service. A helper script is available:

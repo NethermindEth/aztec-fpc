@@ -23,12 +23,12 @@ Every value below is annotated with the repo file and JSON path it was read from
 
 All values are drawn from files checked into the repository:
 
-| File | Path in repo |
-|------|-------------|
-| Deployment manifest | [`deployments/testnet/manifest.json`](https://github.com/NethermindEth/aztec-fpc/blob/main/deployments/testnet/manifest.json) |
-| Attestation config | [`deployments/testnet/attestation/config.yaml`](https://github.com/NethermindEth/aztec-fpc/blob/main/deployments/testnet/attestation/config.yaml) |
-| Top-up config | [`deployments/testnet/topup/config.yaml`](https://github.com/NethermindEth/aztec-fpc/blob/main/deployments/testnet/topup/config.yaml) |
-| Shared FPC config | [`deployments/testnet/fpc-config.yaml`](https://github.com/NethermindEth/aztec-fpc/blob/main/deployments/testnet/fpc-config.yaml) |
+| File | Path in repo | Verified |
+|------|-------------|----------|
+| Deployment manifest | [`deployments/testnet/manifest.json`](https://github.com/NethermindEth/aztec-fpc/blob/main/deployments/testnet/manifest.json) | All addresses below match |
+| Attestation config | [`deployments/testnet/attestation/config.yaml`](https://github.com/NethermindEth/aztec-fpc/blob/main/deployments/testnet/attestation/config.yaml) | |
+| Top-up config | [`deployments/testnet/topup/config.yaml`](https://github.com/NethermindEth/aztec-fpc/blob/main/deployments/testnet/topup/config.yaml) | |
+| Shared FPC config | [`deployments/testnet/fpc-config.yaml`](https://github.com/NethermindEth/aztec-fpc/blob/main/deployments/testnet/fpc-config.yaml) | |
 
 ## L2 Addresses
 

@@ -9,15 +9,22 @@ A fee quote is a signed commitment from the operator: "I will accept `aa_payment
 
 The attestation service signs these off-chain. The FPC contract verifies them on-chain. This page covers the hash format, signing mechanics, exchange rate computation, and security properties.
 
+## Source files
+
+- Contract verification: [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr) (functions `assert_valid_quote`, `assert_valid_cold_start_quote`)
+- Quote signing: [`services/attestation/src/signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts)
+- Exchange rate computation: [`services/attestation/src/config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) (`computeFinalRate`)
+- Quote endpoint: [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+
 ## Lifecycle
 
-1. **User requests a quote.** The wallet calls `GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<amount>` on the attestation service. The `fj_amount` must equal `max_gas_cost_no_teardown` for the transaction gas settings.
+1. **User requests a quote.** The wallet calls `GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<amount>` on the attestation service. The `fj_amount` must equal `get_max_gas_cost` for the transaction gas settings.
 
-2. **Attestation service signs the quote.** The service computes the exchange rate, creates a Poseidon2 hash of the quote parameters using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness`, and signs the 32-byte hash with the operator's Schnorr key. It returns a 64-byte hex signature.
+2. **Attestation service signs the quote.** The service computes the exchange rate, creates a hash of the quote parameters using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness` (which internally uses Poseidon2), and signs the 32-byte hash with the operator's Schnorr key. It returns a 64-byte hex signature.
 
 3. **User includes the quote in the transaction.** The signature and quote parameters are passed as arguments to `fee_entrypoint`. A separate token transfer authwit (authorizing the FPC to pull `aa_payment_amount` from the user) is carried in `authWitnesses`, not as a function argument.
 
-4. **Contract verifies on-chain.** The FPC contract reconstructs the hash, verifies the Schnorr signature against the stored operator public key (`operator_pubkey_x`, `operator_pubkey_y` from the packed immutable config), and pushes the quote hash as a nullifier.
+4. **Contract verifies on-chain.** The FPC contract reconstructs the hash using `compute_inner_authwit_hash` (the Noir equivalent), verifies the Schnorr signature against the stored operator public key (`operator_pubkey_x`, `operator_pubkey_y` from the packed immutable config), and pushes the quote hash as a nullifier.
 
 5. **Quote is consumed.** The nullifier prevents the same quote from being used again. The contract transfers tokens and calls `set_as_fee_payer()`.
 
@@ -28,13 +35,13 @@ The attestation service signs these off-chain. The FPC contract verifies them on
 | Field | Value |
 |-------|-------|
 | Domain separator | `0x465043` (ASCII: `FPC`) |
-| Hash function | Poseidon2 |
+| Hash function | `compute_inner_authwit_hash` (Poseidon2 internally) |
 | Signature | Schnorr (64 bytes) |
 
 **Hash preimage (7 fields):**
 
 ```noir
-poseidon2([
+compute_inner_authwit_hash([
     0x465043,           // domain separator
     fpc_address,        // this contract's address
     accepted_asset,     // token contract address
@@ -50,13 +57,13 @@ poseidon2([
 | Field | Value |
 |-------|-------|
 | Domain separator | `0x46504373` (ASCII: `FPCs`) |
-| Hash function | Poseidon2 |
+| Hash function | `compute_inner_authwit_hash` (Poseidon2 internally) |
 | Signature | Schnorr (64 bytes) |
 
 **Hash preimage (9 fields):**
 
 ```noir
-poseidon2([
+compute_inner_authwit_hash([
     0x46504373,          // different domain separator
     fpc_address,
     accepted_asset,
@@ -79,9 +86,9 @@ poseidon2([
 
 ## Exchange rate computation
 
-The attestation service computes the token payment from the Fee Juice amount.
+The attestation service computes the token payment from the Fee Juice amount using `computeFinalRate` ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)).
 
-Per-asset pricing can be configured either at the top level (`market_rate_num`, `market_rate_den`, `fee_bips`) or overridden per entry in the `supported_assets` list.
+Per-asset pricing is configured per entry in the asset policy store (`market_rate_num`, `market_rate_den`, `fee_bips`).
 
 ```
 final_rate_num = market_rate_num × (10000 + fee_bips)
@@ -106,11 +113,12 @@ The on-chain contract has no knowledge of `fee_bips`, `market_rate_num`, or `mar
 | Property | How it is enforced |
 |----------|-------------------|
 | **Authenticity** | Schnorr signature verified against immutable on-chain pubkey |
-| **Integrity** | Poseidon2 hash covers all parameters; any change breaks the signature |
+| **Integrity** | `compute_inner_authwit_hash` covers all parameters; any change breaks the signature |
 | **Replay protection** | Quote hash pushed as nullifier; duplicates fail via nullifier conflict |
 | **User binding** | Hash includes user address; User A cannot use User B's quote |
 | **Freshness** | `anchor_block_timestamp <= valid_until` |
 | **TTL cap** | `(valid_until - anchor_block_timestamp) <= 3600` seconds (max 1 hour lifetime) |
+| **Expiration enforcement** | `context.set_expiration_timestamp(valid_until)` prevents inclusion after expiry |
 | **Domain separation** | Different domain separators per entrypoint (`0x465043` vs `0x46504373`) |
 | **Asset binding** | `accepted_asset` is in the signed preimage; substituting a different token at call time invalidates the signature |
 

@@ -11,7 +11,7 @@ These are the negative scenarios an FPC implementation must enforce. Happy-path 
 
 ## Required Negative Scenarios
 
-All scenarios target `fee_entrypoint`. Scenarios 1 through 5 run against a pre-deployed FPC from a deployment manifest, already funded by the running top-up service. Scenario 6 deploys an isolated FPC with a controlled Fee Juice budget.
+All scenarios target `fee_entrypoint`. Scenarios 1 through 5 run against a pre-deployed FPC from a deployment manifest, already funded by the running top-up service. Scenario 6 deploys an isolated FPC with a controlled Fee Juice budget. Contract-level unit tests are in [`contracts/fpc/src/test/`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/test/).
 
 | # | Scenario | Expected behavior |
 |---|---|---|
@@ -36,11 +36,11 @@ Coverage is split by concern across these scripts:
 
 | Script | Concern |
 |---|---|
-| `scripts/contract/deploy-fpc-local.ts` / `deploy-fpc-local-smoke.ts` | Deployment and relay usability. Not quote security. |
-| `scripts/tests/services.ts` | Deployed service HTTP endpoints: `/quote`, `/cold-start-quote`, top-up health, metrics. |
-| `scripts/tests/same-token-transfer.ts` | Happy-path integration: private/public/batched fee-paid transfers against a running attestation service and top-up-funded FPC. |
-| `scripts/tests/fee-entrypoint-validation.ts` | **This matrix.** Negative scenarios 1 through 6. |
-| `scripts/tests/cold-start-validation.ts` | Cold-start parallel matrix and L1 bridge/claim validation. |
+| [`scripts/contract/deploy-fpc-local.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-fpc-local.ts) / `deploy-fpc-local-smoke.ts` | Deployment and relay usability. Not quote security. |
+| [`scripts/tests/services.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/services.ts) | Deployed service HTTP endpoints: `/quote`, `/cold-start-quote`, top-up health, metrics. |
+| [`scripts/tests/same-token-transfer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/same-token-transfer.ts) | Happy-path integration: private/public/batched fee-paid transfers against a running attestation service and top-up-funded FPC. |
+| [`scripts/tests/fee-entrypoint-validation.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/fee-entrypoint-validation.ts) | **This matrix.** Negative scenarios 1 through 6. |
+| [`scripts/tests/cold-start-validation.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/cold-start-validation.ts) | Cold-start parallel matrix and L1 bridge/claim validation. |
 
 ## Mandatory Assertions
 

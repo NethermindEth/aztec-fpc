@@ -8,10 +8,10 @@ FPC (Fee Payment Contract) is a smart contract on Aztec that pays transaction ga
 
 | Component | Role |
 |-----------|------|
-| **FPC Contract** (`FPCMultiAsset`) | On-chain fee payer. Verifies operator-signed quotes, transfers tokens from user to operator, pays Fee Juice to the protocol. |
-| **Attestation Service** | REST API that signs per-user fee quotes with the operator's Schnorr key. Serves wallet discovery metadata at `/.well-known/fpc.json`. |
-| **Top-up Service** | Monitors the FPC's Fee Juice balance on L2 and bridges more from L1 when it drops below a threshold. |
-| **SDK** (`@nethermindeth/aztec-fpc-sdk`) | TypeScript client that handles quote fetching, auth-witness construction, and transaction submission. |
+| **[FPC Contract](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)** (`FPCMultiAsset`) | On-chain fee payer. Verifies operator-signed quotes, transfers tokens from user to operator, pays Fee Juice to the protocol. |
+| **[Attestation Service](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)** | REST API that signs per-user fee quotes with the operator's Schnorr key. Serves wallet discovery metadata at `/.well-known/fpc.json`. |
+| **[Top-up Service](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts)** | Monitors the FPC's Fee Juice balance on L2 and bridges more from L1 when it drops below a threshold. |
+| **[SDK](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)** (`@nethermindeth/aztec-fpc-sdk`) | TypeScript client that handles quote fetching, auth-witness construction, and transaction submission. |
 
 | | |
 |---|---|

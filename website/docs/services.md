@@ -6,7 +6,7 @@ Two off-chain services support the FPC contract: the attestation service (quote 
 
 The off-chain REST API that signs fee quotes for users. Run by the FPC operator.
 
-**Source:** `services/attestation/`
+**Source:** [`services/attestation/`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/)
 
 ### What It Does
 
@@ -22,6 +22,8 @@ The attestation service is the operator's quote engine.
 
 ### HTTP Endpoints
 
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+
 #### Public
 
 | Method | Path | Description |
@@ -35,19 +37,21 @@ The attestation service is the operator's quote engine.
 
 #### Admin
 
-Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_KEY` environment variable. All admin requests require the `x-admin-api-key` header with constant-time comparison.
+Admin endpoints are disabled by default. Enable them by setting the `ADMIN_API_KEY` environment variable. All admin requests require the `x-admin-api-key` header with constant-time comparison. When disabled, admin endpoints return `503 Service Unavailable`.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/admin/asset-policies` | List all pricing policies |
-| `PUT` | `/admin/asset-policies/:addr` | Create or update an asset policy |
-| `DELETE` | `/admin/asset-policies/:addr` | Remove an asset policy (fails if it is the last one) |
+| `PUT` | `/admin/asset-policies/:assetAddress` | Create or update an asset policy |
+| `DELETE` | `/admin/asset-policies/:assetAddress` | Remove an asset policy (fails if it is the last one) |
 | `GET` | `/admin/operator-balances` | Operator's private token balances |
 | `POST` | `/admin/sweeps` | Sweep operator tokens to a destination |
 
 ---
 
 ### `GET /quote`
+
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts)
 
 ```
 GET /quote?user=<address>&accepted_asset=<address>&fj_amount=<positive_u128_decimal>
@@ -68,7 +72,7 @@ Returns a user-specific signed quote. The `user` address is bound into the quote
 1. **Validate inputs.** Parse and validate user address, asset address, and Fee Juice amount.
 2. **Check asset support.** Look up the asset in the LMDB policy store. Reject with `400 BAD_REQUEST` if unsupported.
 3. **Compute payment amount.** Apply the exchange rate formula (see [Pricing Formula](#pricing-formula) below).
-4. **Set expiry.** `valid_until = now + quote_validity_seconds` (default: 300s).
+4. **Set expiry.** `valid_until = now + quote_validity_seconds` (default: 300s, max: 3600s).
 5. **Sign.** Compute Poseidon2 hash over the 7-field quote preimage using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness`. Sign the 32-byte hash with the operator Schnorr key.
 6. **Return.**
 
@@ -93,6 +97,8 @@ Deterministic `400 BAD_REQUEST` for: missing or invalid `user`, missing or inval
 ---
 
 ### `GET /cold-start-quote`
+
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) | [Signer: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts)
 
 Extends `/quote` with two bridge-binding query parameters for users who have no existing L2 balance.
 
@@ -130,6 +136,8 @@ The cold-start quote uses domain separator `0x46504373` ("FPCs") instead of `0x4
 
 ### `PUT /admin/asset-policies/:assetAddress`
 
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+
 Adds or updates a pricing policy for a supported asset.
 
 ```json
@@ -163,6 +171,8 @@ Sweeps operator tokens to a destination address.
 
 ### Pricing Formula
 
+[Source: `config.ts` `computeFinalRate`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
+
 The operator sets baseline rate values in the attestation config:
 
 - `market_rate_num / market_rate_den`: base exchange rate (accepted-asset units per 1 Fee Juice)
@@ -181,11 +191,13 @@ aa_payment_amount = ceil(fj_amount * final_rate_num / final_rate_den)
 
 Example: if `market_rate_num=1`, `market_rate_den=1000`, `fee_bips=200` (2%), then 1 Fee Juice = 0.00102 accepted-asset units.
 
-For `FPC.fee_entrypoint`, the `fj_amount` must match `max_gas_cost_no_teardown` for the transaction gas settings.
+For `FPC.fee_entrypoint`, the `fj_amount` must match `get_max_gas_cost` for the transaction gas settings.
 
 ---
 
 ### Wallet Discovery
+
+[Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
 
 The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full normative spec at [`wallet-discovery-spec.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md).
 
@@ -233,6 +245,8 @@ Returns the list of supported tokens.
 
 ### Authentication
 
+[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) | [Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+
 #### Quote endpoint
 
 Configurable via `quote_auth_mode`:
@@ -258,9 +272,11 @@ Optional fixed-window rate limiting on the quote endpoint. Configurable window d
 
 ### Startup Sequence
 
+[Source: `index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/index.ts)
+
 1. Load and validate configuration from YAML + environment variables.
 2. Resolve operator secret key via the configured secret provider.
-3. Connect to the Aztec node (PXE).
+3. Connect to the Aztec node (PXE) and wait for readiness.
 4. Validate the FPC contract on-chain, confirming the operator pubkey matches.
 5. Initialize the LMDB asset policy store.
 6. Register configured assets.
@@ -270,20 +286,22 @@ Optional fixed-window rate limiting on the quote endpoint. Configurable window d
 
 ### Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `server.ts` | Fastify HTTP server, routes, quote orchestration |
-| `config.ts` | YAML + env config loading and validation |
-| `signer.ts` | Schnorr signing over Poseidon2 hash |
-| `asset-policy-store.ts` | LMDB-backed asset pricing persistence |
-| `operator-treasury.ts` | Private balance tracking and sweeps |
-| `secret-provider.ts` | Multi-mode key resolution (env, config, KMS, HSM) |
-| `request-schemas.ts` | Input validation schemas |
-| `metrics.ts` | Prometheus instrumentation |
+| Module | Purpose | Source |
+|--------|---------|--------|
+| `server.ts` | Fastify HTTP server, routes, quote orchestration | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts) |
+| `config.ts` | YAML + env config loading and validation | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts) |
+| `signer.ts` | Schnorr signing over Poseidon2 hash | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts) |
+| `asset-policy-store.ts` | LMDB-backed asset pricing persistence | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/asset-policy-store.ts) |
+| `operator-treasury.ts` | Private balance tracking and sweeps | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/operator-treasury.ts) |
+| `secret-provider.ts` | Multi-mode key resolution (env, config, KMS, HSM) | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/secret-provider.ts) |
+| `request-schemas.ts` | Input validation schemas | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/request-schemas.ts) |
+| `metrics.ts` | Prometheus instrumentation | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/metrics.ts) |
 
 ---
 
 ### Configuration
+
+[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts)
 
 See [Configuration](./operations/configuration.md) for the full reference.
 
@@ -318,7 +336,7 @@ supported_assets:
 
 Background daemon that monitors the FPC's Fee Juice balance on L2 and bridges more from L1 when it runs low.
 
-**Source:** `services/topup/`
+**Source:** [`services/topup/`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/)
 
 ### What It Does
 
@@ -429,6 +447,8 @@ In `development` profile, if `TOPUP_AUTOCLAIM_SECRET_KEY` is not set, the servic
 
 ### Configuration
 
+[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts)
+
 See [Configuration](./operations/configuration.md) for the full reference.
 
 | Field | Description |
@@ -439,14 +459,14 @@ See [Configuration](./operations/configuration.md) for the full reference.
 | `l1_operator_private_key` | L1 wallet key (can be supplied via env, config, or secret provider) |
 | `l1_operator_secret_provider` | Secret source strategy (`auto`, `env`, `config`, `kms`, `hsm`) |
 | `runtime_profile` | `development`, `test`, or `production` (production rejects plaintext config secrets) |
-| `threshold` | Bridge when balance below this value (in wei) |
-| `top_up_amount` | Amount to bridge per event (in wei) |
-| `check_interval_ms` | Polling interval in milliseconds |
-| `data_dir` | LMDB directory for crash-recovery state |
-| `confirmation_timeout_ms` | Max wait for L1-to-L2 settlement (default 180s) |
-| `confirmation_poll_initial_ms` | Initial poll interval (default 1s) |
-| `confirmation_poll_max_ms` | Max poll interval with backoff (default 15s) |
-| `ops_port` | Health/readiness/metrics port (default 3001) |
+| `threshold` | Bridge when balance below this value (bigint string, wei units) |
+| `top_up_amount` | Amount to bridge per event (bigint string, wei units); must be >= threshold |
+| `check_interval_ms` | Polling interval in milliseconds (default 60000) |
+| `data_dir` | LMDB directory for crash-recovery state (default `.topup-data`) |
+| `confirmation_timeout_ms` | Max wait for L1-to-L2 settlement (default 180000ms) |
+| `confirmation_poll_initial_ms` | Initial poll interval (default 1000ms) |
+| `confirmation_poll_max_ms` | Max poll interval with backoff (default 15000ms) |
+| `ops_port` | Health/readiness/metrics port (default 3001, env: `TOPUP_OPS_PORT`) |
 
 Example config:
 
@@ -468,7 +488,9 @@ ops_port: 3001
 
 ### Ops Endpoints
 
-Default port: `3001`
+[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts)
+
+Default port: `3001` (overridable via `TOPUP_OPS_PORT` env var)
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -478,31 +500,33 @@ Default port: `3001`
 
 ### Prometheus Metrics
 
+[Source: `ops.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts)
+
 | Metric | Type | Description |
 |--------|------|-------------|
 | `topup_bridge_events_total` | Counter | Bridge lifecycle events (submitted, confirmed, timeout, aborted, failed) |
-| `topup_balance_checks_total` | Counter | Balance checks by outcome |
+| `topup_balance_checks_total` | Counter | Balance checks by outcome (success, error) |
 | `topup_readiness_status` | Gauge | 1 = ready, 0 = not ready |
-| `topup_uptime_seconds` | Gauge | Service uptime |
+| `topup_uptime_seconds` | Gauge | Service uptime in seconds |
 
 ---
 
 ### Key Modules
 
-| Module | Purpose |
-|--------|---------|
-| `checker.ts` | Periodic balance check loop |
-| `bridge.ts` | L1 portal bridge submission |
-| `confirm.ts` | L1-to-L2 message confirmation polling |
-| `state.ts` | LMDB state management |
-| `reconcile.ts` | Startup bridge reconciliation |
-| `autoclaim.ts` | Automatic L2 token claiming |
-| `fund-claimer-l2.ts` | Fund the autoclaim account |
-| `l1.ts` | L1 chain ID validation against Aztec node |
-| `monitor.ts` | Fee Juice balance reader (wraps Aztec node) |
-| `config.ts` | YAML + env config loading |
-| `secret-provider.ts` | L1 operator key resolution |
-| `ops.ts` | Health, readiness, and metrics endpoints |
+| Module | Purpose | Source |
+|--------|---------|--------|
+| `checker.ts` | Periodic balance check loop | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/checker.ts) |
+| `bridge.ts` | L1 portal bridge submission | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/bridge.ts) |
+| `confirm.ts` | L1-to-L2 message confirmation polling | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/confirm.ts) |
+| `state.ts` | LMDB state management | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/state.ts) |
+| `reconcile.ts` | Startup bridge reconciliation | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/reconcile.ts) |
+| `autoclaim.ts` | Automatic L2 token claiming | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/autoclaim.ts) |
+| `fund-claimer-l2.ts` | Fund the autoclaim account | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/fund-claimer-l2.ts) |
+| `l1.ts` | L1 chain ID validation against Aztec node | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/l1.ts) |
+| `monitor.ts` | Fee Juice balance reader (wraps Aztec node) | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/monitor.ts) |
+| `config.ts` | YAML + env config loading | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/config.ts) |
+| `secret-provider.ts` | L1 operator key resolution | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/secret-provider.ts) |
+| `ops.ts` | Health, readiness, and metrics endpoints | [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/ops.ts) |
 
 ---
 

@@ -2,16 +2,20 @@
 
 Container builds, compose orchestration, and CI pipeline for the FPC stack.
 
+[Source: docker-bake.hcl](https://github.com/NethermindEth/aztec-fpc/blob/main/docker-bake.hcl) |
+[Source: docker-compose.yaml](https://github.com/NethermindEth/aztec-fpc/blob/main/docker-compose.yaml)
+
 ## Docker Images
 
-Four images are built via Docker Buildx Bake (`docker-bake.hcl`):
+Five images are built via Docker Buildx Bake ([`docker-bake.hcl`](https://github.com/NethermindEth/aztec-fpc/blob/main/docker-bake.hcl)):
 
-| Image | Source | Purpose |
-|-------|--------|---------|
-| `nethermind/aztec-fpc-attestation` | `services/attestation/` | Quote-signing REST API |
-| `nethermind/aztec-fpc-topup` | `services/topup/` | Fee Juice bridge daemon |
-| `nethermind/aztec-fpc-contract-deployment` | `contract-deployment/` | Contract deployment CLI + token configuration |
-| `nethermind/aztec-fpc-test` | `scripts/tests/` | Integration test runner |
+| Image | Bake Target | Source | Purpose |
+|-------|-------------|--------|---------|
+| `nethermind/aztec-fpc-attestation` | `attestation` | `services/attestation/` | Quote-signing REST API |
+| `nethermind/aztec-fpc-topup` | `topup` | `services/topup/` | Fee Juice bridge daemon |
+| `nethermind/aztec-fpc-contract-deployment` | `deploy` | `contract-deployment/` | Contract deployment CLI + token configuration |
+| `nethermind/aztec-fpc-contract-artifact` | `contract` | `scripts/contract/` | Compiled contract artifacts (utility image used by block-producer) |
+| `nethermind/aztec-fpc-test` | `test` | `scripts/tests/` | Integration test runner |
 
 ### Building images
 
@@ -55,18 +59,19 @@ Adds to infrastructure:
 | Service | Role | Port | Depends On |
 |---------|------|------|------------|
 | `deploy` | Deploys FPC + generates configs | | aztec-node |
-| `configure-token` | Deploys test tokens + registers with attestation | | deploy, attestation |
+| `fund-l1-fee-juice` | Funds L1 operator with Fee Juice ERC-20 | | aztec-node |
+| `configure-token` | Deploys test tokens + registers with attestation | | fund-l1-fee-juice |
 | `attestation` | Quote API | 3000 | deploy |
-| `topup` | Bridge daemon | 3001 | deploy |
+| `topup` | Bridge daemon | 3001 | deploy, fund-l1-fee-juice |
 | `block-producer` | Local block production | | aztec-node |
 
 ### Startup Order
 
 ```
-anvil -> aztec-node -> deploy -> attestation -> configure-token
-                         |
-                         |-> topup
-                         |-> block-producer
+anvil -> aztec-node -> deploy -> attestation
+                   |         |-> topup (also waits for fund-l1-fee-juice)
+                   |-> fund-l1-fee-juice -> configure-token
+                   |-> block-producer
 
                       (after configure-token)
                          |-> tests-*
@@ -111,11 +116,13 @@ bun run ci
 
 Runs in order:
 
-1. **`format`**: Biome format check
-2. **`lint`**: Biome lint
-3. **`typecheck`**: TypeScript type checking
+1. **`format`**: Biome format (auto-fix)
+2. **`biome:ci`**: Biome CI check (no auto-fix, fails on violations)
+3. **`lint`**: Biome lint
 4. **`build`**: Build all TypeScript packages
-5. **`test`**: Run contract + TS tests
+5. **`typecheck`**: TypeScript type checking
+6. **`test:ts`**: TypeScript service + SDK tests
+7. **`test:contracts`**: Compile Noir workspace + run contract tests
 
 ## Build Configuration Files
 

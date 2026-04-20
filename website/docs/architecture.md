@@ -49,6 +49,8 @@ The FPC system has four components that work together to abstract gas payments: 
 
 ### FPC contract (on-chain)
 
+[Source: `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+
 The core smart contract deployed on Aztec L2, written in Noir (Aztec.nr).
 
 Storage is a single packed immutable config slot containing `operator`, `operator_pubkey_x`, and `operator_pubkey_y`. There is no mutable admin state after deployment.
@@ -70,6 +72,8 @@ The token transfer executes in the setup phase and is irrevocably committed. No 
 
 ### Attestation service (off-chain)
 
+[Source: `services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+
 A Fastify REST API run by the FPC operator.
 
 **Responsibilities:**
@@ -85,6 +89,8 @@ For multi-asset deployments, each `supported_assets` entry can override the top-
 
 ### Top-up service (off-chain)
 
+[Source: `services/topup/src/index.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/topup/src/index.ts)
+
 A background daemon that keeps the FPC solvent.
 
 **Responsibilities:**
@@ -98,6 +104,8 @@ A background daemon that keeps the FPC solvent.
 Configuration fields `l1_chain_id` and Fee Juice L1 contract addresses are derived from `nodeInfo`. The service validates that the configured `l1_rpc_url` matches the node's L1 chain ID.
 
 ### SDK (client-side)
+
+[Source: `sdk/src/payment-method.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)
 
 A TypeScript library (`@nethermindeth/aztec-fpc-sdk`) wrapping the attestation API and Aztec.js.
 
@@ -136,16 +144,14 @@ User Wallet                 Attestation Service       Aztec L2 (FPC)
     │◄──────────────────────────────────────────────────────│
 ```
 
-In step 4, the contract performs these checks in order:
+In step 4, the contract performs these checks in order ([Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)):
 
-1. Reads packed config from storage (operator address and signing pubkey)
-2. Verifies the Schnorr quote signature, binding `user_address = msg_sender`
-3. Pushes the quote hash as a nullifier (duplicate quotes fail via nullifier conflict)
-4. Asserts `anchor_block_timestamp <= valid_until`
-5. Asserts `(valid_until - anchor_block_timestamp) <= 3600` seconds
-6. Asserts `fj_fee_amount == get_max_gas_cost_no_teardown(...)` for the transaction gas settings
-7. Calls `Token::at(accepted_asset).transfer_private_to_private(sender, operator, aa_payment_amount, nonce)`
-8. Asserts it is not in the revertible phase (`!in_revertible_phase`), then calls `set_as_fee_payer()` + `end_setup()`
+1. Asserts it is not in the revertible phase (conditional on non-zero gas fees)
+2. Reads packed config from storage (operator address and signing pubkey)
+3. Verifies the Schnorr quote signature, binding `user_address = msg_sender`, pushes the quote hash as a nullifier (duplicate quotes fail via nullifier conflict), asserts `anchor_block_timestamp <= valid_until`, and asserts `(valid_until - anchor_block_timestamp) <= 3600` seconds
+4. Asserts `fj_fee_amount == get_max_gas_cost(...)` for the transaction gas settings
+5. Calls `Token::at(accepted_asset).transfer_private_to_private(sender, operator, aa_payment_amount, nonce)`
+6. Calls `set_as_fee_payer()` + `end_setup()`
 
 ### Cold start
 

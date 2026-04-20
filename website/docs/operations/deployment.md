@@ -2,6 +2,10 @@
 
 Deploy the FPC system: contracts, services, and supporting infrastructure.
 
+[Source: deploy CLI](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/index.ts) |
+[Source: configure-token](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/configure-token.ts) |
+[Source: manifest schema](https://github.com/NethermindEth/aztec-fpc/blob/main/contract-deployment/src/manifest.ts)
+
 Two deployment paths are supported:
 
 - **Docker (recommended)**: pre-compiled artifacts, two-phase deploy, ships the full `nethermind/aztec-fpc-*` image set. Best for testnet, devnet, and production.
@@ -138,11 +142,9 @@ Test-token manifests land in `deployments/tokens/<TokenName>.json` and contain: 
 ### Smoke test
 
 ```bash
-bun run smoke:services:compose              # full compose smoke
+bun run smoke:services:compose              # full compose smoke (all test suites)
 # or
-FPC_COLD_START_MANIFEST=path/to/manifest.json \
-FPC_ATTESTATION_URL=http://localhost:3000 \
-  bun run smoke:fee-entrypoint
+bun run smoke:deploy:fpc:devnet             # post-deploy runtime smoke
 ```
 
 ### Docker Compose for public networks
@@ -194,7 +196,7 @@ export FPC_SPONSORED_FPC_ADDRESS=0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca
 bun run deploy:fpc
 ```
 
-Manifest written to `deployments/devnet-manifest-v2.json`.
+Manifest written to `deployments/manifest.json` (the default for `FPC_OUT`).
 
 Reuse an existing token (skip test-token deploy):
 
@@ -227,14 +229,14 @@ bunx tsx scripts/contract/devnet-postdeploy-smoke.ts --manifest ./deployments/de
 ### Bun path defaults
 
 If unset, the `deploy:fpc` wrapper uses:
-- `FPC_SPONSORED_FPC_ADDRESS=0x09a4df73aa47f82531a038d1d51abfc85b27665c4b7ca751e2d4fa9f19caffb2`
-- `FPC_OUT=./deployments/devnet-manifest-v2.json`
+- `FPC_DATA_DIR=./deployments`
+- `FPC_OUT=$FPC_DATA_DIR/manifest.json` (i.e., `./deployments/manifest.json`)
 
 Required env vars (deployment fails without these):
 - `AZTEC_NODE_URL`
 - `FPC_DEPLOYER_SECRET_KEY` (or `FPC_DEPLOYER_SECRET_KEY_REF`)
 
-The wrapper aligns `vendor/aztec-standards` version pins before deploying. If contract artifacts are missing, it runs `aztec compile --workspace --force` automatically.
+The wrapper auto-compiles if contract artifacts are missing (`aztec compile --workspace --force`). After deployment, it auto-generates service configs unless `FPC_SKIP_CONFIG_GEN=1` is set.
 
 ### Retry and debug knobs
 
@@ -307,9 +309,8 @@ Manifest file locations by path:
 
 | Path | Manifest location |
 |------|-------------------|
-| Docker | `deployments/manifest.json` |
-| Bun (`deploy:fpc`) | `deployments/devnet-manifest-v2.json` |
-| Bun (`deploy:fpc:local`) | `./tmp/deploy-fpc-local.json` (via `FPC_LOCAL_OUT`) |
+| Docker | `deployments/manifest.json` (default `$FPC_DATA_DIR/manifest.json`) |
+| Bun (`deploy:fpc`) | `deployments/manifest.json` (default `$FPC_DATA_DIR/manifest.json`) |
 | Docker Compose public | `deployments/${DEPLOYMENT}/manifest.json` |
 
 ## Verify Deployment

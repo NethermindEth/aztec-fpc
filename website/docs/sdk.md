@@ -33,6 +33,8 @@ Once the package is published, `bun add @nethermindeth/aztec-fpc-sdk` will work.
 
 ## FpcWallet: required wallet class
 
+[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/common/fpc-wallet.ts)
+
 > [!CAUTION]
 > **Do not use `EmbeddedWallet` directly for FPC flows.**
 >
@@ -203,6 +205,8 @@ One transaction takes the user from "just bridged" to "has tokens and transactio
 
 ## What the SDK Constructs
 
+[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)
+
 ### `createPaymentMethod`
 
 1. Attaches FPC + Token contract instances to the wallet via `node.getContract`
@@ -219,13 +223,13 @@ One transaction takes the user from "just bridged" to "has tokens and transactio
 2. Builds `cold_start_entrypoint` call with `bridgeClaim` fields and quote signature
 3. Uses hardcoded gas limits `Gas(5_000, 1_000_000)` because simulation is not possible before account deployment. Uses `DefaultEntrypoint` instead of the user's account entrypoint (the account may not exist yet).
 4. Proves, sends, and waits. Retries up to 3x on `"Message not in state"` errors from PXE sync races.
-5. Returns `{ txHash, txFee, aaPaymentAmount }`.
+5. Returns `{ txHash, txFee, fjAmount, aaPaymentAmount, quoteValidUntil }`.
 
 An optional `txWaitTimeoutMs` parameter controls how long `executeColdStart` waits for the transaction to be mined (default: 180,000ms).
 
 ## Contract Artifacts
 
-The SDK ships its own copies of `FPCMultiAsset`, `Token`, and `TokenBridge` artifacts via `codegen/`. Building from source produces them with `aztec compile --workspace --force`.
+The SDK ships its own copies of `FPCMultiAsset`, `Token`, and `TokenBridge` artifacts via [`codegen/`](https://github.com/NethermindEth/aztec-fpc/tree/main/codegen). Building from source produces them with `aztec compile --workspace --force`.
 
 ## Next Steps
 
@@ -241,6 +245,8 @@ Complete type definitions and method signatures for `@nethermindeth/aztec-fpc-sd
 **Source:** [sdk/src/types.ts](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/types.ts)
 
 ### `FpcClient`
+
+[Source](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L50)
 
 The main class for interacting with FPC.
 
@@ -460,11 +466,11 @@ interface ColdStartQuoteResponse extends QuoteResponse {
 
 #### `createPaymentMethod`
 
-The SDK uses `estimatedGas.gasLimits` and `teardownGasLimits` from your simulation. Internally it adds a fixed `GAS_BUFFER` of `Gas(5_000, 100_000)` to `gasLimits` before computing `fj_amount` as `daGas * feePerDaGas + l2Gas * feePerL2Gas` against the node's `getCurrentMinFees()`.
+The SDK uses `estimatedGas.gasLimits` and `teardownGasLimits` from your simulation. Internally it adds a fixed [`GAS_BUFFER` of `Gas(5_000, 100_000)`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L30) to `gasLimits` before computing `fj_amount` as `daGas * feePerDaGas + l2Gas * feePerL2Gas` against the node's `getCurrentMinFees()`.
 
 #### `executeColdStart`
 
-Uses hardcoded gas limits because simulation is not possible before account deployment.
+Uses [hardcoded gas limits](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L46) because simulation is not possible before account deployment.
 
 The two reasons simulation cannot work:
 
@@ -486,4 +492,4 @@ The SDK propagates errors from three sources:
 - **Aztec.js:** Simulation failures, on-chain reverts (expired quote, sender-binding failure, insufficient Fee Juice)
 - **Network:** Connection failures to the attestation service or Aztec node
 
-All errors are thrown as standard JavaScript exceptions. Cold-start retries up to 3 times on `"Message not in state"` errors (PXE sync race). All other errors propagate immediately.
+All errors are thrown as standard JavaScript exceptions. Cold-start [retries up to 3 times](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts#L29) on `"Message not in state"` errors (PXE sync race). All other errors propagate immediately.

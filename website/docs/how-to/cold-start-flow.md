@@ -146,20 +146,27 @@ console.log(`Operator received (fee): ${result.aaPaymentAmount}`);
 
 ## What the single transaction does
 
+[Source: `cold_start_entrypoint` in `contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
+
 ```
 cold_start_entrypoint(
   user, token, bridge,
   claim_amount, claim_secret, claim_secret_hash, message_leaf_index,
   fj_amount, aa_payment_amount, valid_until, quote_sig,
 ):
-  1. Verify the cold-start quote (Schnorr, domain sep "FPCs", bound to msg_sender)
-  2. Push quote nullifier (replay protection)
-  3. Call bridge.claim_private(message_leaf_index, claim_amount, claim_secret)
-     -> mints claim_amount of the token to the contract
-  4. Transfer aa_payment_amount (token) -> operator (private)
-  5. Transfer (claim_amount - aa_payment_amount) -> user (private)
-  6. set_as_fee_payer() + end_setup()
-  7. Protocol deducts fj_amount Fee Juice from FPC's balance to pay gas
+  Setup phase:
+    1. Assert this is the tx root (maybe_msg_sender().is_none())
+    2. Assert claim_amount >= aa_payment_amount
+    3. Verify the cold-start quote (Schnorr, domain sep "FPCs", bound to `user` parameter)
+    4. Push quote nullifier (replay protection)
+    5. Assert fj_fee_amount == get_max_gas_cost(...)
+    6. set_as_fee_payer() + end_setup()
+  App phase:
+    7. Call bridge.claim_private(fpc_address, claim_amount, claim_secret, message_leaf_index)
+       -> mints claim_amount of the token to the FPC
+    8. Transfer (claim_amount - aa_payment_amount) -> user (private)
+    9. Transfer aa_payment_amount (token) -> operator (private)
+    10. Protocol deducts fj_amount Fee Juice from FPC's balance to pay gas
 ```
 
 One proof, one transaction, three private transfers (claim + user split + operator split). Fees are paid from the claim itself. The user never needs prior L2 state.
@@ -184,7 +191,7 @@ Re-measure after contract changes:
 | Scenario | What happens | UI should |
 |---|---|---|
 | Claim amount too small to cover fee | Attestation returns HTTP 400 before signing | Tell user "bridge more" or add a subsidy |
-| L1-to-L2 message not yet ready | SDK throws `"Message not in state"`, retries 3x internally | Show "waiting for L1 confirmation" spinner. The SDK handles retry. |
+| L1-to-L2 message not yet ready | SDK throws `"Message not in state"`, retries up to 3 attempts total | Show "waiting for L1 confirmation" spinner. The SDK handles retry. |
 | Quote expired between fetch and submit | On-chain revert | Re-fetch and retry. Quotes typically live ~5 minutes, capped at 1 hour. |
 | User already has an L2 account | Still works. Cold-start is usable by any user, not just new accounts. | Prefer `createPaymentMethod` if the user already has an L2 balance (cheaper, supports gas estimation). |
 | Same `bridgeClaim` submitted twice | Second transaction reverts (nullifier conflict) | Track submission state in your UI |

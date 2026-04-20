@@ -28,6 +28,8 @@ Normalization rules:
 
 ## Discovery Document
 
+[Source: `services/attestation/src/server.ts` (lines 551-566)](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts)
+
 Each candidate attestation host must expose:
 
 ```

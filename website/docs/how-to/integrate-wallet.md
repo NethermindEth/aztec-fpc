@@ -37,7 +37,7 @@ const response = await fetch(
 const metadata = await response.json();
 ```
 
-The response shape (normative, see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md)):
+The response shape (normative, see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/wallet-discovery-spec.md)). The implementation is in [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts):
 
 ```json
 {
@@ -79,6 +79,8 @@ const selectedAsset = assets[0];
 ```
 
 ### Create the FPC client and a payment method
+
+[Source: `sdk/src/payment-method.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/sdk/src/payment-method.ts)
 
 The SDK's `FpcClient` needs four fields: `fpcAddress`, `operator`, `node`, and `attestationBaseUrl`.
 
@@ -182,7 +184,7 @@ try {
 ## Known Limitations
 
 - The token transfer executes in the setup phase before `end_setup()`. It is irrevocably committed. If the user's application logic reverts, the fee has still been paid. This is inherent to the Aztec FPC model.
-- `fj_amount` must match `max_gas_cost_no_teardown` for the transaction gas settings. The SDK handles this, but if you build the payment method manually, a mismatch causes `fee_entrypoint` to revert.
+- `fj_amount` must match `get_max_gas_cost` for the transaction gas settings. The SDK handles this, but if you build the payment method manually, a mismatch causes `fee_entrypoint` to revert.
 - No teardown or refund phase exists. Unused Fee Juice stays in the FPC's balance.
 
 ## Next Steps
