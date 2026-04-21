@@ -8,6 +8,9 @@ Test suites, how to run them, and what they cover.
 
 **Normative source:** [docs/spec/e2e-test-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/e2e-test-spec.md). The negative-scenario test matrix is the source of truth for required FPC behavior.
 
+> [!NOTE]
+> Contract tests require compiled artifacts. Run `aztec compile --workspace --force` before `bun run test:contracts` on a fresh checkout. The integration tests (Docker Compose) handle this automatically.
+
 ## Test Layers
 
 ```

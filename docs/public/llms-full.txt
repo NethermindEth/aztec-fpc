@@ -22,12 +22,12 @@
 | operations/configuration.md | 3471 |
 | operations/deployment.md | 3749 |
 | operations/docker.md | 4095 |
-| operations/testing.md | 4247 |
-| reference/glossary.md | 4438 |
-| reference/metrics.md | 4610 |
-| reference/e2e-test-matrix.md | 4759 |
-| reference/testnet-deployment.md | 4914 |
-| reference/wallet-discovery.md | 5042 |
+| operations/testing.md | 4249 |
+| reference/glossary.md | 4443 |
+| reference/metrics.md | 4615 |
+| reference/e2e-test-matrix.md | 4767 |
+| reference/testnet-deployment.md | 4923 |
+| reference/wallet-discovery.md | 5051 |
 
 ---
 
@@ -4227,7 +4227,9 @@ Runs in order:
 
 ## Security Notes
 
-- **Never pass secrets as CLI arguments or inline `-e KEY=VALUE`.** Export secrets first and pass by name. Non-secret values like `AZTEC_NODE_URL` and `L1_RPC_URL` are fine to pass inline.
+> [!WARNING]
+> **Never pass secrets as CLI arguments or inline `-e KEY=VALUE`.** Export secrets first and pass by name (`-e FPC_DEPLOYER_SECRET_KEY`). Inline values are visible in `ps`, `docker inspect`, and shell history. Non-secret values like `AZTEC_NODE_URL` and `L1_RPC_URL` are fine to pass inline.
+
 - The deployment manifest (`manifest.json`) may contain raw private keys. Treat it as secret material.
 - Do not commit manifests with plaintext keys to version control.
 
@@ -4249,6 +4251,9 @@ Test suites, how to run them, and what they cover.
 [Source: vitest config](https://github.com/NethermindEth/aztec-fpc/blob/main/vitest.config.ts)
 
 **Normative source:** [docs/spec/e2e-test-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/e2e-test-spec.md). The negative-scenario test matrix is the source of truth for required FPC behavior.
+
+> [!NOTE]
+> Contract tests require compiled artifacts. Run `aztec compile --workspace --force` before `bun run test:contracts` on a fresh checkout. The integration tests (Docker Compose) handle this automatically.
 
 ## Test Layers
 
@@ -4720,6 +4725,9 @@ Source: `ops.ts:158-160`
 
 ## Recommended Alerts
 
+> [!TIP]
+> At minimum, set up the **Critical** alerts below. A silent `topup_readiness_status == 0` means the FPC will stop processing transactions once its Fee Juice runs out.
+
 | Alert | Expression | Severity |
 |---|---|---|
 | FPC will run out of Fee Juice | `topup_readiness_status == 0 for 5m` | Critical |
@@ -4765,7 +4773,8 @@ These are the negative scenarios an FPC implementation must enforce. Happy-path 
 
 ## Required Negative Scenarios
 
-All scenarios target `fee_entrypoint`. All run against a pre-deployed FPC from a deployment manifest, already funded by the running top-up service. Contract-level unit tests are in [`contracts/fpc/src/test/`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/test/).
+> [!NOTE]
+> All scenarios target `fee_entrypoint` and run against a pre-deployed FPC from a deployment manifest, already funded by the running top-up service. Contract-level unit tests are in [`contracts/fpc/src/test/`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/test/).
 
 | # | Scenario | Expected behavior |
 |---|---|---|

@@ -11,7 +11,8 @@ These are the negative scenarios an FPC implementation must enforce. Happy-path 
 
 ## Required Negative Scenarios
 
-All scenarios target `fee_entrypoint`. All run against a pre-deployed FPC from a deployment manifest, already funded by the running top-up service. Contract-level unit tests are in [`contracts/fpc/src/test/`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/test/).
+> [!NOTE]
+> All scenarios target `fee_entrypoint` and run against a pre-deployed FPC from a deployment manifest, already funded by the running top-up service. Contract-level unit tests are in [`contracts/fpc/src/test/`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/test/).
 
 | # | Scenario | Expected behavior |
 |---|---|---|

@@ -115,6 +115,9 @@ Source: `ops.ts:158-160`
 
 ## Recommended Alerts
 
+> [!TIP]
+> At minimum, set up the **Critical** alerts below. A silent `topup_readiness_status == 0` means the FPC will stop processing transactions once its Fee Juice runs out.
+
 | Alert | Expression | Severity |
 |---|---|---|
 | FPC will run out of Fee Juice | `topup_readiness_status == 0 for 5m` | Critical |
