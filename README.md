@@ -2,6 +2,13 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+> [!TIP]
+> **Scoping this repo with an AI agent?** Give it full context in one shot:
+> ```
+> curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/docs/public/llms.txt
+> ```
+> This returns a structured project summary, source code map with line numbers, function index, error codes, and config reference. For the complete docs (~5k lines), replace `llms.txt` with `llms-full.txt`.
+
 Users pay gas in the token they already hold. The operator covers the Fee Juice.
 
 FPC is a smart contract on [Aztec](https://aztec.network/) that sits between users and the protocol's gas layer. Instead of acquiring Fee Juice, users pay the FPC operator in any accepted token (USDC, ETH, app tokens) at a rate locked by a signed quote. One contract instance handles any number of tokens with no redeployment.
@@ -82,9 +89,6 @@ Full table:
 | **Ops** | [Deployment](docs/operations/deployment.md), [Docker](docs/operations/docker.md), [Testing](docs/operations/testing.md) |
 | **Reference** | [Glossary](docs/reference/glossary.md), [Metrics](docs/reference/metrics.md), [Testnet](docs/reference/testnet-deployment.md), [Wallet Discovery](docs/reference/wallet-discovery.md) |
 | **Specs** | [Protocol](docs/specs/spec/protocol-spec.md), [E2E Tests](docs/specs/spec/e2e-test-spec.md), [ADR-0001](docs/specs/spec/adr-0001-alpha-asset-model.md) |
-
-> **AI agents:** Get full project context with `curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/docs/public/llms.txt`
-> For the complete docs (~5k lines): replace `llms.txt` with `llms-full.txt`.
 
 ## Repository layout
 
