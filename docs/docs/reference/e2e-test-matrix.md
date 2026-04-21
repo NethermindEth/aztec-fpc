@@ -5,7 +5,7 @@ description: Required negative-scenario test suite for FPC, covering replay, exp
 
 # E2E Test Matrix
 
-**Normative source:** [docs/spec/e2e-test-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/spec/e2e-test-spec.md)
+**Normative source:** [docs/spec/e2e-test-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/docs-legacy/spec/e2e-test-spec.md)
 
 These are the negative scenarios an FPC implementation must enforce. Happy-path coverage is provided by [`scripts/tests/same-token-transfer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/same-token-transfer.ts).
 

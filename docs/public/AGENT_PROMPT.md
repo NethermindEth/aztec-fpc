@@ -18,11 +18,11 @@ Before answering any question or writing any code, read the project context belo
 
 Fetch the context now:
 
-curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms.txt
+curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/docs/public/llms.txt
 
 If you need the full documentation (all 21 pages, ~5k lines):
 
-curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/website/public/llms-full.txt
+curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/docs/public/llms-full.txt
 
 After reading, use the function-to-file index to navigate directly to source code.
 When referencing code, always cite the exact file and line number.

@@ -59,7 +59,7 @@ Two entry points:
 ## Documentation map
 
 Below is every documentation page, what it covers, and who it is for.
-Base URL for all docs: website/docs/
+Base URL for all docs: docs/docs/
 
 ### Core (read these first)
 
