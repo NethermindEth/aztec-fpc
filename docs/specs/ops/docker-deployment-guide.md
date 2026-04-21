@@ -111,7 +111,7 @@ Key fields:
 | `topup` | `top_up_amount` | Amount to bridge each time (wei) |
 | `topup` | `check_interval_ms` | Balance poll interval (default 60000) |
 
-See [`deployments/fpc-config.example.yaml`](../../deployments/fpc-config.example.yaml) for the full reference with comments.
+See [`deployments/fpc-config.example.yaml`](../../../deployments/fpc-config.example.yaml) for the full reference with comments.
 
 If the master config is not present at deploy time, deployment still succeeds but config generation is skipped.
 

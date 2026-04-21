@@ -476,7 +476,7 @@ bun run smoke:services:compose
 
 ## For Users (SDK Integration)
 
-> For a complete runnable example covering cold-start and FPC-paid deployment, see [`examples/fpc-full-flow.ts`](../examples/fpc-full-flow.ts). Run it from the repo root with:
+> For a complete runnable example covering cold-start and FPC-paid deployment, see [`examples/fpc-full-flow.ts`](../../examples/fpc-full-flow.ts). Run it from the repo root with:
 >
 > ```bash
 > bun run examples/fpc-full-flow.ts
