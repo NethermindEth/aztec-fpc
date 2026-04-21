@@ -37,7 +37,7 @@ const { fee } = await fpcClient.createPaymentMethod({
 });
 await contract.methods.transfer(recipient, amount).send({ fee });
 
-// User just bridged from L1 — no account, no Fee Juice
+// User just bridged from L1, no account, no Fee Juice
 const result = await fpcClient.executeColdStart({
   wallet, userAddress, tokenAddress, bridgeAddress, bridgeClaim,
 });
