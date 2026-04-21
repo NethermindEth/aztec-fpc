@@ -9,25 +9,25 @@
 |------|:----:|
 | README.md | 40 |
 | quick-start.md | 177 |
-| architecture.md | 371 |
-| security.md | 563 |
-| quote-system.md | 762 |
-| sdk.md | 968 |
-| contracts.md | 1471 |
-| services.md | 2037 |
-| how-to/run-operator.md | 2577 |
-| how-to/integrate-wallet.md | 2845 |
-| how-to/add-supported-asset.md | 3043 |
-| how-to/cold-start-flow.md | 3209 |
-| operations/configuration.md | 3419 |
-| operations/deployment.md | 3690 |
-| operations/docker.md | 4036 |
-| operations/testing.md | 4182 |
-| reference/glossary.md | 4366 |
-| reference/metrics.md | 4538 |
-| reference/e2e-test-matrix.md | 4681 |
-| reference/testnet-deployment.md | 4830 |
-| reference/wallet-discovery.md | 4951 |
+| architecture.md | 374 |
+| security.md | 573 |
+| quote-system.md | 779 |
+| sdk.md | 991 |
+| contracts.md | 1499 |
+| services.md | 2077 |
+| how-to/run-operator.md | 2629 |
+| how-to/integrate-wallet.md | 2898 |
+| how-to/add-supported-asset.md | 3096 |
+| how-to/cold-start-flow.md | 3263 |
+| operations/configuration.md | 3471 |
+| operations/deployment.md | 3749 |
+| operations/docker.md | 4095 |
+| operations/testing.md | 4247 |
+| reference/glossary.md | 4438 |
+| reference/metrics.md | 4610 |
+| reference/e2e-test-matrix.md | 4759 |
+| reference/testnet-deployment.md | 4914 |
+| reference/wallet-discovery.md | 5042 |
 
 ---
 
@@ -196,6 +196,9 @@ One command starts the full stack locally.
 - Docker and Docker Compose
 - Bun `1.3.11`
 - Aztec CLI `4.2.0-aztecnr-rc.2`
+
+> [!NOTE]
+> These versions are pinned in `package.json` (`packageManager`) and `docker-compose.yaml` (`aztec-node` image tag). If they drift from what's shown here, trust the repo files.
 
 ```bash
 VERSION=4.2.0-aztecnr-rc.2 bash -i <(curl -sL https://install.aztec.network/$VERSION)
@@ -553,6 +556,13 @@ The operator earns revenue from the spread between Fee Juice cost and token paym
 >
 > For production deployments, use KMS or HSM for operator keys. See [Security Model](./security.md) for key management details and the production checklist.
 
+## Next Steps
+
+- Review the [Security Model](./security.md) for trust assumptions, threat mitigations, and the production checklist.
+- Explore the [Contracts](./contracts.md) page for detailed function signatures and on-chain verification logic.
+- Use the [SDK](./sdk.md) to integrate fee abstraction into a wallet or dApp.
+- Follow the [Quick Start](./quick-start.md) to deploy and test the full stack locally.
+
 
 <!-- FILE: security.md -->
 
@@ -751,6 +761,13 @@ These are constraints of the current design, not planned features:
 > - [ ] Keep operator L1 account funded with ETH and Fee Juice tokens for bridge transactions
 > - [ ] Review top-up logs for `CRITICAL` bridge failures
 > - [ ] Never commit manifests or config files containing plaintext keys to version control
+
+## Next Steps
+
+- Follow [Run an FPC Operator](./how-to/run-operator.md) to apply these security practices in a production deployment.
+- Read the [Quote System](./quote-system.md) for details on how quotes are signed, bound, and replay-protected.
+- See [Contracts](./contracts.md) for the on-chain enforcement code behind each protection listed above.
+- Review the [Configuration Reference](./operations/configuration.md) for `runtime_profile`, secret provider modes, and auth settings.
 
 
 <!-- FILE: quote-system.md -->
@@ -958,6 +975,12 @@ Deterministic `400 BAD_REQUEST` responses cover missing or invalid `user`, missi
 
 This response is consumed directly by the SDK's `createPaymentMethod()` or `executeColdStart()`.
 
+## Next Steps
+
+- See the [Contracts](./contracts.md) page for the on-chain verification logic in `assert_valid_quote` and `assert_valid_cold_start_quote`.
+- Review the [Security Model](./security.md) for the full threat mitigation matrix covering quote forgery, replay, and key compromise.
+- Read [SDK](./sdk.md) to understand how the SDK fetches quotes and constructs `FeePaymentMethod` objects for Aztec.js.
+
 
 <!-- FILE: sdk.md -->
 
@@ -965,6 +988,11 @@ This response is consumed directly by the SDK's `createPaymentMethod()` or `exec
 
 **Package:** `@nethermindeth/aztec-fpc-sdk`
 **Source:** [sdk/](https://github.com/NethermindEth/aztec-fpc/tree/main/sdk)
+
+**On this page:**
+[Installation](#installation) | [FpcWallet](#fpcwallet-required-wallet-class) | [Standard Flow](#standard-flow-user-has-tokens-on-l2) | [Cold-Start Flow](#cold-start-flow-user-just-bridged-from-l1) | [What the SDK Constructs](#what-the-sdk-constructs) | [API Reference](#api-reference) | [Types](#types) | [Gas Handling](#gas-handling) | [Error Handling](#error-handling)
+
+---
 
 Two methods cover the full integration surface. `createPaymentMethod()` handles users who already hold L2 tokens. `executeColdStart()` handles users arriving from L1 with no Fee Juice or deployed account.
 
@@ -977,7 +1005,7 @@ Two methods cover the full integration surface. `createPaymentMethod()` handles 
 
 Nethermind-operated testnet URLs, addresses, and live discovery check: **[Testnet Deployment](./reference/testnet-deployment.md)**.
 
-Compatibility: Aztec `4.2.0-aztecnr-rc.2`, Bun `1.3.11`. All `@aztec/*` peer dependencies must match the node version.
+Compatibility: Aztec `4.2.0-aztecnr-rc.2`, Bun `1.3.11`. All `@aztec/*` peer dependencies must match the node version. These versions are pinned in `package.json` and `docker-compose.yaml`; if they drift from what's shown here, trust the repo files.
 
 ## Installation
 
@@ -1467,6 +1495,11 @@ All errors are thrown as standard JavaScript exceptions. Cold-start [retries up 
 # Contracts
 
 All smart contracts in the FPC system are written in Noir using the Aztec.nr framework.
+
+**On this page:**
+[Contract Map](#contract-map) | [At a Glance](#at-a-glance) | [Build System](#build-system) | [FPCMultiAsset](#fpcmultiasset) | [Faucet](#faucet) | [TokenBridge](#tokenbridge)
+
+---
 
 ## Contract Map
 
@@ -2027,12 +2060,24 @@ flowchart LR
 
 The FPC passes its own address (not the user's) as the `recipient` argument to `claim_private`. Tokens land in the FPC's private balance first, then the FPC distributes them. This design is intentional: the user's account may not exist on L2 yet, so the protocol cannot write notes directly to the user. Routing through the FPC sidesteps the need for an authwit from a non-existent account.
 
+## Next Steps
+
+- Read [Services](./services.md) for the off-chain attestation and top-up services that support the contracts.
+- See the [Quote System](./quote-system.md) for how quotes are signed, hashed, and verified on-chain.
+- Use the [SDK](./sdk.md) to build transactions that call `fee_entrypoint` and `cold_start_entrypoint`.
+- Run the contract test suite with the [Testing guide](./operations/testing.md).
+
 
 <!-- FILE: services.md -->
 
 # Services
 
 Two off-chain services support the FPC contract: the attestation service (quote signing) and the top-up service (Fee Juice bridging).
+
+**On this page:**
+[Attestation Service](#attestation-service) | [GET /quote](#get-quote) | [GET /cold-start-quote](#get-cold-start-quote) | [Admin Endpoints](#put-adminasset-policiesassetaddress) | [Pricing Formula](#pricing-formula) | [Wallet Discovery](#wallet-discovery) | [Authentication](#authentication) | [Top-up Service](#top-up-service) | [Operational Flow](#operational-flow) | [Crash Recovery](#crash-recovery) | [Auto-Claim](#auto-claim) | [Ops Endpoints](#ops-endpoints) | [Prometheus Metrics](#prometheus-metrics)
+
+---
 
 ## Attestation Service
 
@@ -2567,6 +2612,13 @@ Default port: `3001` (overridable via `TOPUP_OPS_PORT` env var)
 
 **Fix:** Use node-derived Fee Juice addresses. Avoid manual overrides for local-network.
 
+## Next Steps
+
+- See the [Configuration Reference](./operations/configuration.md) for all attestation and top-up config keys and environment variables.
+- Follow [Run an FPC Operator](./how-to/run-operator.md) for production deployment, reverse proxy setup, and monitoring.
+- Read [Add a Supported Asset](./how-to/add-supported-asset.md) to register new payment tokens at runtime.
+- Check the [Metrics Reference](./reference/metrics.md) for every Prometheus metric exposed by both services.
+
 
 <!-- FILE: how-to/run-operator.md -->
 
@@ -2828,12 +2880,13 @@ Both services persist state in LMDB directories. Back these up regularly:
 >
 > Loss of the top-up `data_dir` can leave in-flight bridges untracked. At minimum, keep daily backups and verify restores.
 
-## See also
+## Next Steps
 
 - [Add a Supported Asset](./add-supported-asset.md): register tokens after deployment
+- [Deployment](../operations/deployment.md): Docker-based and bare-metal deployment workflows
+- [Configuration Reference](../operations/configuration.md): all config keys and env vars
 - [Metrics Reference](../reference/metrics.md): every Prometheus metric with labels and types
 - [Security Model](../security.md): trust assumptions and threat matrix
-- [Configuration Reference](../operations/configuration.md): all config keys and env vars
 
 
 <!-- FILE: how-to/integrate-wallet.md -->
@@ -3193,11 +3246,12 @@ The sweep endpoint accepts `accepted_asset` (required), `destination` (optional 
 
 </details>
 
-## See also
+## Next Steps
 
 - [Exchange rate formula](../quote-system.md#exchange-rate-computation): how `fee_bips` translates to payment amounts
-- [Configuration reference](../operations/configuration.md): all attestation config keys
-- [Run an Operator](./run-operator.md): full operator deployment and monitoring guide
+- [Services](../services.md): full attestation API reference, including all admin endpoints
+- [Configuration Reference](../operations/configuration.md): all attestation config keys and env vars
+- [Run an Operator](./run-operator.md): production deployment, monitoring, and checklist
 
 
 <!-- FILE: how-to/cold-start-flow.md -->
@@ -3214,7 +3268,9 @@ description: How bridge UIs and cross-chain onboarding teams can deliver one-tra
 >
 > Bridge builders (Substance Labs, TRAIN Protocol, Wormhole) and cross-chain wallet teams. The cold-start flow solves the onboarding gap between "funds arrived on L2" and "first transaction."
 
-## Overview
+## What cold-start does
+
+Without cold-start, onboarding from L1 requires multiple steps: bridge tokens, acquire Fee Juice separately, claim, then transact. Cold-start collapses this into one transaction: claim bridged tokens, pay the FPC operator for gas, and deliver the remainder to the user's private balance.
 
 ```mermaid
 flowchart LR
@@ -3230,10 +3286,6 @@ flowchart LR
     end
     G --> H["User has tokens + tx history"]
 ```
-
-## What cold-start does
-
-Without cold-start, onboarding from L1 requires multiple steps: bridge tokens, acquire Fee Juice separately, claim, then transact. Cold-start collapses this into one transaction: claim bridged tokens, pay the FPC operator for gas, and deliver the remainder to the user's private balance.
 
 <details>
 <summary>How it differs from the standard fee flow</summary>
@@ -3679,6 +3731,13 @@ deployments/
 ├── devnet/fpc-config.yaml     # Devnet
 └── testnet/fpc-config.yaml    # Testnet
 ```
+
+## Next Steps
+
+- [Deploy the configured services](./deployment.md) using Docker Compose or manual steps
+- [Run an FPC operator node](../how-to/run-operator.md) with these configuration options applied
+- [Review the services architecture](../services.md) to understand how attestation and top-up interact
+- [Set up monitoring](../reference/metrics.md) with the Prometheus metrics each service exposes
 
 
 <!-- FILE: operations/deployment.md -->
@@ -4172,6 +4231,12 @@ Runs in order:
 - The deployment manifest (`manifest.json`) may contain raw private keys. Treat it as secret material.
 - Do not commit manifests with plaintext keys to version control.
 
+## Next Steps
+
+- [Deploy contracts and generate manifests](./deployment.md) for local, devnet, or testnet environments
+- [Run the integration test suites](./testing.md) against the full Docker Compose stack
+- [Configure services](./configuration.md) with YAML, environment variables, and runtime profiles
+
 
 <!-- FILE: operations/testing.md -->
 
@@ -4355,6 +4420,13 @@ The `noop` contract provides a baseline for measuring FPC-specific overhead. Re-
 | Docker Compose | Integration orchestration |
 | Anvil | Local L1 chain (Foundry) |
 | Aztec Sandbox | Local Aztec node |
+
+## Next Steps
+
+- [Review the E2E test matrix](../reference/e2e-test-matrix.md) for the full list of required negative scenarios
+- [Set up Docker Compose](./docker.md) to run integration tests against the full stack
+- [Understand the contract internals](../contracts.md) that the contract-level tests exercise
+- [Check the security model](../security.md) to see which threat scenarios the tests enforce
 
 
 <!-- FILE: reference/glossary.md -->
@@ -4671,6 +4743,12 @@ scrape_configs:
     metrics_path: /metrics
 ```
 
+## Next Steps
+
+- [Set up an operator node](../how-to/run-operator.md) and connect monitoring to these metric endpoints
+- [Review the services architecture](../services.md) to understand which service emits each metric
+- [Configure thresholds and alert parameters](../operations/configuration.md) for the attestation and top-up services
+
 
 <!-- FILE: reference/e2e-test-matrix.md -->
 
@@ -4820,6 +4898,12 @@ AZTEC_NODE_URL=http://localhost:8080 \
   bunx tsx scripts/tests/fee-entrypoint-validation.ts
 ```
 
+## Next Steps
+
+- [Read the full testing guide](../operations/testing.md) for all test layers and how to run them
+- [Review the contract design](../contracts.md) to understand the constraints these tests enforce
+- [See the security model](../security.md) for the threat scenarios behind each negative test case
+
 
 <!-- FILE: reference/testnet-deployment.md -->
 
@@ -4940,6 +5024,13 @@ Nethermind does not operate a public FPC on Aztec Alpha Mainnet. Teams deploying
 > **Alpha Mainnet context**
 >
 > Aztec Alpha Mainnet is in early access. Keep key management strict and monitor the [Aztec security advisories](https://github.com/AztecProtocol/aztec-packages/security/advisories) for updates before deploying.
+
+## Next Steps
+
+- [Use the SDK](../sdk.md) to build transactions against this testnet deployment
+- [Integrate a wallet](../how-to/integrate-wallet.md) using the discovery document and addresses listed above
+- [Follow the quick-start guide](../quick-start.md) to run a complete fee-paid transaction end to end
+- [Understand wallet discovery](./wallet-discovery.md) to resolve attestation endpoints programmatically
 
 
 <!-- FILE: reference/wallet-discovery.md -->
@@ -5079,4 +5170,10 @@ Sources for the operator address:
 - The operator's documentation or integration guide
 - Token manifest (if tokens were deployed via `configure-token`)
 - Reading the FPC contract's `config` storage slot on-chain
+
+## Next Steps
+
+- [Integrate wallet discovery into your wallet](../how-to/integrate-wallet.md) using the resolution order above
+- [Review the attestation service API](../services.md) that serves the discovery document and quote endpoints
+- [Check the testnet deployment](./testnet-deployment.md) for a live example of a discovery document and known addresses
 

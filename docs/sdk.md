@@ -19,7 +19,7 @@ Two methods cover the full integration surface. `createPaymentMethod()` handles 
 
 Nethermind-operated testnet URLs, addresses, and live discovery check: **[Testnet Deployment](./reference/testnet-deployment.md)**.
 
-Compatibility: Aztec `4.2.0-aztecnr-rc.2`, Bun `1.3.11`. All `@aztec/*` peer dependencies must match the node version.
+Compatibility: Aztec `4.2.0-aztecnr-rc.2`, Bun `1.3.11`. All `@aztec/*` peer dependencies must match the node version. These versions are pinned in `package.json` and `docker-compose.yaml`; if they drift from what's shown here, trust the repo files.
 
 ## Installation
 

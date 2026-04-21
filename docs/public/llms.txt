@@ -434,6 +434,6 @@ SDK surface:
   client.createPaymentMethod({ wallet, user, tokenAddress, estimatedGas })
   client.executeColdStart({ wallet, userAddress, tokenAddress, bridgeAddress, bridgeClaim })
 
-Versions:
+Versions (pinned in package.json and docker-compose.yaml; trust repo files if these drift):
   Aztec: 4.2.0-aztecnr-rc.2
   Bun: 1.3.11

@@ -25,6 +25,9 @@ One command starts the full stack locally.
 - Bun `1.3.11`
 - Aztec CLI `4.2.0-aztecnr-rc.2`
 
+> [!NOTE]
+> These versions are pinned in `package.json` (`packageManager`) and `docker-compose.yaml` (`aztec-node` image tag). If they drift from what's shown here, trust the repo files.
+
 ```bash
 VERSION=4.2.0-aztecnr-rc.2 bash -i <(curl -sL https://install.aztec.network/$VERSION)
 ```
