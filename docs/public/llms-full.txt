@@ -3913,7 +3913,7 @@ Schema (from [`contract-deployment/src/manifest.ts`](https://github.com/Nethermi
     "node_url": "https://rpc.testnet.aztec-labs.com/",
     "node_version": "4.1.0-rc.2",
     "l1_chain_id": 11155111,
-    "rollup_version": 1
+    "rollup_version": 4127419662
   },
   "aztec_required_addresses": {
     "sponsored_fpc_address": "0x..."
