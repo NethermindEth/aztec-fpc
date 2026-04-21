@@ -222,16 +222,16 @@ const coldStart = await client.executeColdStart({
 
 | Document | Description |
 |----------|-------------|
-| **[docs/aztec-deployer-user-guide.md](docs/specs/aztec-deployer-user-guide.md)** | **Full guide** — manual deployment, custom config, SDK integration, API reference |
+| **[docs/specs/aztec-deployer-user-guide.md](docs/specs/aztec-deployer-user-guide.md)** | **Full guide** — manual deployment, custom config, SDK integration, API reference |
 | [sdk/README.md](sdk/README.md) | SDK integration guide |
-| [docs/ops/docker-deployment-guide.md](docs/specs/ops/docker-deployment-guide.md) | Docker image CLI arguments, config generation, Compose examples |
-| [docs/ops/devnet-deployment-how-to.md](docs/specs/ops/devnet-deployment-how-to.md) | Non-Docker devnet deployment via `bun run deploy:fpc` |
-| [docs/ops/operator-runbook.md](docs/specs/ops/operator-runbook.md) | 30-minute local operator quick-start |
-| [docs/ops/operational-metrics.md](docs/specs/ops/operational-metrics.md) | Prometheus metrics and health probes reference |
-| [docs/spec/protocol-spec.md](docs/specs/spec/protocol-spec.md) | Full protocol specification |
-| [docs/spec/wallet-discovery-spec.md](docs/specs/spec/wallet-discovery-spec.md) | Wallet discovery (`GET /.well-known/fpc.json`) |
-| [docs/spec/e2e-test-spec.md](docs/specs/spec/e2e-test-spec.md) | E2E test definition and runbook |
-| [docs/spec/adr-0001-alpha-asset-model.md](docs/specs/spec/adr-0001-alpha-asset-model.md) | Alpha asset model decision record |
+| [docs/specs/ops/docker-deployment-guide.md](docs/specs/ops/docker-deployment-guide.md) | Docker image CLI arguments, config generation, Compose examples |
+| [docs/specs/ops/devnet-deployment-how-to.md](docs/specs/ops/devnet-deployment-how-to.md) | Non-Docker devnet deployment via `bun run deploy:fpc` |
+| [docs/specs/ops/operator-runbook.md](docs/specs/ops/operator-runbook.md) | 30-minute local operator quick-start |
+| [docs/specs/ops/operational-metrics.md](docs/specs/ops/operational-metrics.md) | Prometheus metrics and health probes reference |
+| [docs/specs/spec/protocol-spec.md](docs/specs/spec/protocol-spec.md) | Full protocol specification |
+| [docs/specs/spec/wallet-discovery-spec.md](docs/specs/spec/wallet-discovery-spec.md) | Wallet discovery (`GET /.well-known/fpc.json`) |
+| [docs/specs/spec/e2e-test-spec.md](docs/specs/spec/e2e-test-spec.md) | E2E test definition and runbook |
+| [docs/specs/spec/adr-0001-alpha-asset-model.md](docs/specs/spec/adr-0001-alpha-asset-model.md) | Alpha asset model decision record |
 
 ---
 

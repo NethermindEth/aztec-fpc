@@ -1,33 +1,33 @@
 # Aztec FPC - Full Documentation
 
-> Auto-generated. Do not edit manually.
-> Regenerate: `bash scripts/generate-llms-full.sh` from repo root.
+> Auto-generated from docs/. Do not edit manually.
+> Regenerate with: bash scripts/generate-llms-full.sh
 
 ## Table of Contents (line numbers for fast navigation)
 
 | File | Line |
 |------|:----:|
 | README.md | 40 |
-| quick-start.md | 176 |
-| architecture.md | 370 |
-| security.md | 562 |
-| quote-system.md | 761 |
-| sdk.md | 924 |
-| contracts.md | 1427 |
-| services.md | 1993 |
-| how-to/run-operator.md | 2533 |
-| how-to/integrate-wallet.md | 2801 |
-| how-to/add-supported-asset.md | 2999 |
-| how-to/cold-start-flow.md | 3165 |
-| operations/configuration.md | 3375 |
-| operations/deployment.md | 3646 |
-| operations/docker.md | 3992 |
-| operations/testing.md | 4138 |
-| reference/glossary.md | 4322 |
-| reference/metrics.md | 4494 |
-| reference/e2e-test-matrix.md | 4637 |
-| reference/testnet-deployment.md | 4786 |
-| reference/wallet-discovery.md | 4907 |
+| quick-start.md | 177 |
+| architecture.md | 371 |
+| security.md | 563 |
+| quote-system.md | 762 |
+| sdk.md | 925 |
+| contracts.md | 1428 |
+| services.md | 1994 |
+| how-to/run-operator.md | 2534 |
+| how-to/integrate-wallet.md | 2802 |
+| how-to/add-supported-asset.md | 3000 |
+| how-to/cold-start-flow.md | 3166 |
+| operations/configuration.md | 3376 |
+| operations/deployment.md | 3647 |
+| operations/docker.md | 3993 |
+| operations/testing.md | 4139 |
+| reference/glossary.md | 4323 |
+| reference/metrics.md | 4495 |
+| reference/e2e-test-matrix.md | 4638 |
+| reference/testnet-deployment.md | 4787 |
+| reference/wallet-discovery.md | 4908 |
 
 ---
 
@@ -161,6 +161,7 @@ const result = await fpcClient.executeColdStart({
 | **How-to** | [Run an Operator](./how-to/run-operator.md), [Integrate Wallet](./how-to/integrate-wallet.md), [Add Supported Asset](./how-to/add-supported-asset.md), [Cold-Start Flow](./how-to/cold-start-flow.md) |
 | **Operations** | [Configuration](./operations/configuration.md), [Deployment](./operations/deployment.md), [Docker](./operations/docker.md), [Testing](./operations/testing.md) |
 | **Reference** | [Glossary](./reference/glossary.md), [Metrics](./reference/metrics.md), [E2E Test Matrix](./reference/e2e-test-matrix.md), [Testnet Deployment](./reference/testnet-deployment.md), [Wallet Discovery](./reference/wallet-discovery.md), [Asset Model ADR](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/adr-0001-alpha-asset-model.md) |
+| **Help** | [Get Help](./support.md) |
 
 ---
 
