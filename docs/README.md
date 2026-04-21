@@ -130,4 +130,4 @@ const result = await fpcClient.executeColdStart({
 
 ---
 
-*Aztec FPC, Nethermind, MIT License*
+*Aztec FPC, Nethermind, Apache-2.0*

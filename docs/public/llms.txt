@@ -6,7 +6,7 @@
 
 Project: https://github.com/NethermindEth/aztec-fpc
 Docs site: https://nethermindeth.github.io/aztec-fpc
-License: MIT
+License: Apache-2.0
 Maintainer: Nethermind
 
 ---
