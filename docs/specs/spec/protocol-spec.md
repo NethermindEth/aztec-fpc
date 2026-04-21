@@ -79,7 +79,7 @@ inner_hash = poseidon2([
 ])
 ```
 
-The operator signs this hash off-chain with Schnorr (64-byte signature). The user passes signature bytes as `quote_sig` to `fee_entrypoint`, and the FPC verifies it inline with `schnorr::verify_signature` against the stored operator pubkey.
+The operator signs this hash off-chain with Schnorr (64-byte signature). The user passes signature bytes as `quote_sig` to `fee_entrypoint`, and the FPC verifies it inline with `schnorr::assert_valid_signature` against the stored operator pubkey.
 
 The contract pushes `quote_hash` as a nullifier, so consumed quotes cannot be replayed.
 
