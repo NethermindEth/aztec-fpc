@@ -84,20 +84,20 @@ For testnet deployment, manual bring-up, or SDK-only integration: **[Quick Start
 | **Auditor** | [Security Model](docs/security.md) |
 
 </td>
-<td valign="top">
+<td valign="top" width="60%">
 
 **Full docs**
 
 | Section | Pages |
 |---------|-------|
-| **Core** | [Architecture](docs/architecture.md), [Quote System](docs/quote-system.md), [Security](docs/security.md) |
+| **Core** | [Architecture](docs/architecture.md) &#183; [Quotes](docs/quote-system.md) &#183; [Security](docs/security.md) |
 | **SDK** | [Getting Started](docs/sdk.md) |
-| **Contracts** | [FPCMultiAsset, Faucet, TokenBridge](docs/contracts.md) |
-| **Services** | [Attestation + Top-up](docs/services.md), [Configuration](docs/operations/configuration.md) |
-| **How-to** | [Run Operator](docs/how-to/run-operator.md), [Integrate Wallet](docs/how-to/integrate-wallet.md), [Add Asset](docs/how-to/add-supported-asset.md), [Cold-Start](docs/how-to/cold-start-flow.md) |
-| **Ops** | [Deployment](docs/operations/deployment.md), [Docker](docs/operations/docker.md), [Testing](docs/operations/testing.md) |
-| **Reference** | [Glossary](docs/reference/glossary.md), [Metrics](docs/reference/metrics.md), [Testnet](docs/reference/testnet-deployment.md), [Wallet Discovery](docs/reference/wallet-discovery.md) |
-| **Specs** | [Protocol](docs/specs/spec/protocol-spec.md), [E2E Tests](docs/specs/spec/e2e-test-spec.md), [ADR-0001](docs/specs/spec/adr-0001-alpha-asset-model.md) |
+| **Contracts** | [All contracts](docs/contracts.md) |
+| **Services** | [Attestation + Top-up](docs/services.md) &#183; [Config](docs/operations/configuration.md) |
+| **How-to** | [Operator](docs/how-to/run-operator.md) &#183; [Wallet](docs/how-to/integrate-wallet.md) &#183; [Assets](docs/how-to/add-supported-asset.md) &#183; [Cold-start](docs/how-to/cold-start-flow.md) |
+| **Ops** | [Deploy](docs/operations/deployment.md) &#183; [Docker](docs/operations/docker.md) &#183; [Test](docs/operations/testing.md) |
+| **Reference** | [Glossary](docs/reference/glossary.md) &#183; [Metrics](docs/reference/metrics.md) &#183; [Testnet](docs/reference/testnet-deployment.md) &#183; [Discovery](docs/reference/wallet-discovery.md) |
+| **Specs** | [Protocol](docs/specs/spec/protocol-spec.md) &#183; [E2E](docs/specs/spec/e2e-test-spec.md) &#183; [ADR-0001](docs/specs/spec/adr-0001-alpha-asset-model.md) |
 
 </td>
 </tr>
