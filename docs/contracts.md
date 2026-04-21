@@ -2,6 +2,11 @@
 
 All smart contracts in the FPC system are written in Noir using the Aztec.nr framework.
 
+**On this page:**
+[Contract Map](#contract-map) | [At a Glance](#at-a-glance) | [Build System](#build-system) | [FPCMultiAsset](#fpcmultiasset) | [Faucet](#faucet) | [TokenBridge](#tokenbridge)
+
+---
+
 ## Contract Map
 
 ```
@@ -560,3 +565,10 @@ flowchart LR
 ```
 
 The FPC passes its own address (not the user's) as the `recipient` argument to `claim_private`. Tokens land in the FPC's private balance first, then the FPC distributes them. This design is intentional: the user's account may not exist on L2 yet, so the protocol cannot write notes directly to the user. Routing through the FPC sidesteps the need for an authwit from a non-existent account.
+
+## Next Steps
+
+- Read [Services](./services.md) for the off-chain attestation and top-up services that support the contracts.
+- See the [Quote System](./quote-system.md) for how quotes are signed, hashed, and verified on-chain.
+- Use the [SDK](./sdk.md) to build transactions that call `fee_entrypoint` and `cold_start_entrypoint`.
+- Run the contract test suite with the [Testing guide](./operations/testing.md).

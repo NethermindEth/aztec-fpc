@@ -10,7 +10,9 @@ description: How bridge UIs and cross-chain onboarding teams can deliver one-tra
 >
 > Bridge builders (Substance Labs, TRAIN Protocol, Wormhole) and cross-chain wallet teams. The cold-start flow solves the onboarding gap between "funds arrived on L2" and "first transaction."
 
-## Overview
+## What cold-start does
+
+Without cold-start, onboarding from L1 requires multiple steps: bridge tokens, acquire Fee Juice separately, claim, then transact. Cold-start collapses this into one transaction: claim bridged tokens, pay the FPC operator for gas, and deliver the remainder to the user's private balance.
 
 ```mermaid
 flowchart LR
@@ -26,10 +28,6 @@ flowchart LR
     end
     G --> H["User has tokens + tx history"]
 ```
-
-## What cold-start does
-
-Without cold-start, onboarding from L1 requires multiple steps: bridge tokens, acquire Fee Juice separately, claim, then transact. Cold-start collapses this into one transaction: claim bridged tokens, pay the FPC operator for gas, and deliver the remainder to the user's private balance.
 
 <details>
 <summary>How it differs from the standard fee flow</summary>

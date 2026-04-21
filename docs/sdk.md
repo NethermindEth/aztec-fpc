@@ -3,6 +3,11 @@
 **Package:** `@nethermindeth/aztec-fpc-sdk`
 **Source:** [sdk/](https://github.com/NethermindEth/aztec-fpc/tree/main/sdk)
 
+**On this page:**
+[Installation](#installation) | [FpcWallet](#fpcwallet-required-wallet-class) | [Standard Flow](#standard-flow-user-has-tokens-on-l2) | [Cold-Start Flow](#cold-start-flow-user-just-bridged-from-l1) | [What the SDK Constructs](#what-the-sdk-constructs) | [API Reference](#api-reference) | [Types](#types) | [Gas Handling](#gas-handling) | [Error Handling](#error-handling)
+
+---
+
 Two methods cover the full integration surface. `createPaymentMethod()` handles users who already hold L2 tokens. `executeColdStart()` handles users arriving from L1 with no Fee Juice or deployed account.
 
 > [!NOTE]

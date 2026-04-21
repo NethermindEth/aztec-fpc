@@ -2,6 +2,11 @@
 
 Two off-chain services support the FPC contract: the attestation service (quote signing) and the top-up service (Fee Juice bridging).
 
+**On this page:**
+[Attestation Service](#attestation-service) | [GET /quote](#get-quote) | [GET /cold-start-quote](#get-cold-start-quote) | [Admin Endpoints](#put-adminasset-policiesassetaddress) | [Pricing Formula](#pricing-formula) | [Wallet Discovery](#wallet-discovery) | [Authentication](#authentication) | [Top-up Service](#top-up-service) | [Operational Flow](#operational-flow) | [Crash Recovery](#crash-recovery) | [Auto-Claim](#auto-claim) | [Ops Endpoints](#ops-endpoints) | [Prometheus Metrics](#prometheus-metrics)
+
+---
+
 ## Attestation Service
 
 The off-chain REST API that signs fee quotes for users. Run by the FPC operator.
@@ -534,3 +539,10 @@ Default port: `3001` (overridable via `TOPUP_OPS_PORT` env var)
 **Check:** Verify Fee Juice token and portal addresses against the node-reported L1 contract addresses.
 
 **Fix:** Use node-derived Fee Juice addresses. Avoid manual overrides for local-network.
+
+## Next Steps
+
+- See the [Configuration Reference](./operations/configuration.md) for all attestation and top-up config keys and environment variables.
+- Follow [Run an FPC Operator](./how-to/run-operator.md) for production deployment, reverse proxy setup, and monitoring.
+- Read [Add a Supported Asset](./how-to/add-supported-asset.md) to register new payment tokens at runtime.
+- Check the [Metrics Reference](./reference/metrics.md) for every Prometheus metric exposed by both services.
