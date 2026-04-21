@@ -37,7 +37,7 @@ const response = await fetch(
 const metadata = await response.json();
 ```
 
-The response shape (normative, see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/docs-legacy/spec/wallet-discovery-spec.md)). The implementation is in [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551):
+The response shape (normative, see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/wallet-discovery-spec.md)). The implementation is in [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551):
 
 ```json
 {

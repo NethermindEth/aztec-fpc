@@ -90,7 +90,7 @@ Fee payment contract. Accepts operator-signed quotes and pays transaction gas on
 
 ### Design
 
-The contract holds no on-chain token allowlist. Multi-asset support comes from quote binding: `accepted_asset` is included in the signed quote preimage, so substituting a different token at call time invalidates the Schnorr signature. Asset policy (rates, fees, which tokens are accepted) lives entirely in the off-chain attestation service. See [ADR-0001](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/docs-legacy/spec/adr-0001-alpha-asset-model.md).
+The contract holds no on-chain token allowlist. Multi-asset support comes from quote binding: `accepted_asset` is included in the signed quote preimage, so substituting a different token at call time invalidates the Schnorr signature. Asset policy (rates, fees, which tokens are accepted) lives entirely in the off-chain attestation service. See [ADR-0001](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/adr-0001-alpha-asset-model.md).
 
 ---
 

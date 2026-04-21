@@ -199,7 +199,7 @@ For `FPC.fee_entrypoint`, the `fj_amount` must match `get_max_gas_cost` for the 
 
 [Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551)
 
-The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full normative spec at [`wallet-discovery-spec.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/docs-legacy/spec/wallet-discovery-spec.md).
+The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full normative spec at [`wallet-discovery-spec.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/wallet-discovery-spec.md).
 
 ```json
 {

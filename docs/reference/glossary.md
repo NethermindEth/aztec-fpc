@@ -66,7 +66,7 @@ The operator's margin in basis points (100 = 1%, 200 = 2%). Applied on top of th
 Any token the attestation service is willing to accept as payment. Managed via `PUT /admin/asset-policies/:addr`. No on-chain change required to add or remove assets.
 
 ### Wallet discovery
-The `GET /.well-known/fpc.json` endpoint that lets wallets auto-configure for a given `(network_id, asset_address, fpc_address)` tuple. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/docs-legacy/spec/wallet-discovery-spec.md). See the [wallet discovery specification](../reference/wallet-discovery.md).
+The `GET /.well-known/fpc.json` endpoint that lets wallets auto-configure for a given `(network_id, asset_address, fpc_address)` tuple. [Source](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/wallet-discovery-spec.md). See the [wallet discovery specification](../reference/wallet-discovery.md).
 
 ### Auto-claim
 An optional feature of the top-up service. After bridging Fee Juice from L1, it automatically submits the L2 `FeeJuice.claim()` so the FPC's balance reflects the bridged amount.

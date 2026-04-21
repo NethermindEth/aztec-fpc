@@ -6,7 +6,7 @@
 > ```
 > For the complete docs (~5k lines): replace `llms.txt` with `llms-full.txt`.
 
-> **Developer?** Start here: **[FPC Documentation](docs/docs/README.md)** -- overview, component map, quick code example, and persona-based routing to the page you need.
+> **Developer?** Start here: **[FPC Documentation](docs/README.md)** -- overview, component map, quick code example, and persona-based routing to the page you need.
 
 ## Why FPC Exists
 
@@ -109,7 +109,7 @@ The top-up service holds an L1 wallet key with ETH + Fee Juice. It polls the FPC
 
 \* The cold start path claims bridged tokens via `Token::mint_to_private`, which enqueues a public call to update the token's total supply — so the minted amount is visible on-chain. User identity and balances remain private. This is an inherent property of Aztec's `mint_to_private` design, not specific to the FPC.
 
-See [docs/spec/protocol-spec.md](docs/docs-legacy/spec/protocol-spec.md) for the full protocol specification, quote format, and security model.
+See [docs/spec/protocol-spec.md](docs/specs/spec/protocol-spec.md) for the full protocol specification, quote format, and security model.
 
 ---
 
@@ -125,7 +125,7 @@ docker buildx bake
 
 #### 2. Review the master config
 
-The repo ships `deployments/testnet/fpc-config.yaml` with sensible defaults — no changes needed for a standard testnet deployment. See the [full guide](docs/docs-legacy/aztec-deployer-user-guide.md#master-config) for customization options.
+The repo ships `deployments/testnet/fpc-config.yaml` with sensible defaults — no changes needed for a standard testnet deployment. See the [full guide](docs/specs/aztec-deployer-user-guide.md#master-config) for customization options.
 
 #### 3. Required keys
 
@@ -178,7 +178,7 @@ curl http://localhost:3001/ready           # topup
 curl http://localhost:3000/accepted-assets # registered tokens
 ```
 
-For manual step-by-step deployment, custom configuration, SDK integration, and API reference, see the **[Full Deployer & User Guide](docs/docs-legacy/aztec-deployer-user-guide.md)**.
+For manual step-by-step deployment, custom configuration, SDK integration, and API reference, see the **[Full Deployer & User Guide](docs/specs/aztec-deployer-user-guide.md)**.
 
 ---
 
@@ -222,16 +222,16 @@ const coldStart = await client.executeColdStart({
 
 | Document | Description |
 |----------|-------------|
-| **[docs/aztec-deployer-user-guide.md](docs/docs-legacy/aztec-deployer-user-guide.md)** | **Full guide** — manual deployment, custom config, SDK integration, API reference |
+| **[docs/aztec-deployer-user-guide.md](docs/specs/aztec-deployer-user-guide.md)** | **Full guide** — manual deployment, custom config, SDK integration, API reference |
 | [sdk/README.md](sdk/README.md) | SDK integration guide |
-| [docs/ops/docker-deployment-guide.md](docs/docs-legacy/ops/docker-deployment-guide.md) | Docker image CLI arguments, config generation, Compose examples |
-| [docs/ops/devnet-deployment-how-to.md](docs/docs-legacy/ops/devnet-deployment-how-to.md) | Non-Docker devnet deployment via `bun run deploy:fpc` |
-| [docs/ops/operator-runbook.md](docs/docs-legacy/ops/operator-runbook.md) | 30-minute local operator quick-start |
-| [docs/ops/operational-metrics.md](docs/docs-legacy/ops/operational-metrics.md) | Prometheus metrics and health probes reference |
-| [docs/spec/protocol-spec.md](docs/docs-legacy/spec/protocol-spec.md) | Full protocol specification |
-| [docs/spec/wallet-discovery-spec.md](docs/docs-legacy/spec/wallet-discovery-spec.md) | Wallet discovery (`GET /.well-known/fpc.json`) |
-| [docs/spec/e2e-test-spec.md](docs/docs-legacy/spec/e2e-test-spec.md) | E2E test definition and runbook |
-| [docs/spec/adr-0001-alpha-asset-model.md](docs/docs-legacy/spec/adr-0001-alpha-asset-model.md) | Alpha asset model decision record |
+| [docs/ops/docker-deployment-guide.md](docs/specs/ops/docker-deployment-guide.md) | Docker image CLI arguments, config generation, Compose examples |
+| [docs/ops/devnet-deployment-how-to.md](docs/specs/ops/devnet-deployment-how-to.md) | Non-Docker devnet deployment via `bun run deploy:fpc` |
+| [docs/ops/operator-runbook.md](docs/specs/ops/operator-runbook.md) | 30-minute local operator quick-start |
+| [docs/ops/operational-metrics.md](docs/specs/ops/operational-metrics.md) | Prometheus metrics and health probes reference |
+| [docs/spec/protocol-spec.md](docs/specs/spec/protocol-spec.md) | Full protocol specification |
+| [docs/spec/wallet-discovery-spec.md](docs/specs/spec/wallet-discovery-spec.md) | Wallet discovery (`GET /.well-known/fpc.json`) |
+| [docs/spec/e2e-test-spec.md](docs/specs/spec/e2e-test-spec.md) | E2E test definition and runbook |
+| [docs/spec/adr-0001-alpha-asset-model.md](docs/specs/spec/adr-0001-alpha-asset-model.md) | Alpha asset model decision record |
 
 ---
 
@@ -258,11 +258,11 @@ aztec-fpc/
 │   └── tests/                  ← Integration and E2E test suites
 ├── vendor/
 │   └── aztec-standards/        ← Git submodule (token contract dependency)
-└── docs/
-    ├── docs/                         ← Documentation site pages (start here)
-    ├── docs-legacy/                  ← Original specs, ADRs, and operator runbooks
-    │   ├── spec/                     ← Protocol & design specs
-    │   └── ops/                      ← Operator runbooks & deployment guides
+└── docs/                          ← Documentation site (start with README.md)
+    ├── how-to/                       ← Task-oriented guides
+    ├── operations/                   ← Deployment, config, Docker, testing
+    ├── reference/                    ← Glossary, metrics, test matrix, testnet
+    ├── specs/                        ← Protocol specs, ADRs, operator runbooks
     └── public/                       ← llms.txt, llms-full.txt for AI agents
 ```
 

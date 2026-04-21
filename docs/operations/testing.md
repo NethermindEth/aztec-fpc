@@ -6,7 +6,7 @@ Test suites, how to run them, and what they cover.
 [Source: integration tests](https://github.com/NethermindEth/aztec-fpc/tree/main/scripts/tests) |
 [Source: vitest config](https://github.com/NethermindEth/aztec-fpc/blob/main/vitest.config.ts)
 
-**Normative source:** [docs/spec/e2e-test-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/docs-legacy/spec/e2e-test-spec.md). The negative-scenario test matrix is the source of truth for required FPC behavior.
+**Normative source:** [docs/spec/e2e-test-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/e2e-test-spec.md). The negative-scenario test matrix is the source of truth for required FPC behavior.
 
 ## Test Layers
 

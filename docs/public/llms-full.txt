@@ -1,6 +1,6 @@
 # Aztec FPC - Full Documentation
 
-> Auto-generated from docs/docs/. Do not edit manually.
+> Auto-generated from docs/. Do not edit manually.
 > Regenerate with: python3 scripts to concatenate all .md files.
 
 ---
