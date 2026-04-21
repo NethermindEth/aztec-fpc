@@ -12,6 +12,9 @@ on:
       - "docs/**/*.md"
       - "scripts/generate-llms-full.sh"
 
+permissions:
+  contents: read
+
 jobs:
   check-llms-full:
     runs-on: ubuntu-latest
