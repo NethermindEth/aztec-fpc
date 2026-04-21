@@ -122,6 +122,49 @@ aa_payment_amount = ceil(1,000,000 × 10200 / 10000000) = ceil(1020) = 1020
 
 The on-chain contract has no knowledge of `fee_bips`, `market_rate_num`, or `market_rate_den`. It receives and enforces the final `aa_payment_amount` as signed by the operator. Rate changes take effect at quote signing time and require no contract interaction.
 
+## Quote format: `amount_quote` vs `rate_quote`
+
+[Source: `config.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L33) | [Source: `signer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/signer.ts#L72)
+
+The attestation service supports two quote preimage formats, controlled by the `quote_format` config key (default: `amount_quote`).
+
+**`amount_quote` (default):** Signs concrete amounts. Positions 3-4 in the preimage are `fj_fee_amount` and `aa_payment_amount`. This is what the on-chain contract verifies.
+
+**`rate_quote`:** Signs the exchange rate instead. Positions 3-4 in the preimage are `rate_num` and `rate_den`.
+
+```noir
+// amount_quote preimage (7 fields) -- default
+compute_inner_authwit_hash([
+    0x465043, fpc_address, accepted_asset,
+    fj_fee_amount, aa_payment_amount,     // <-- concrete amounts
+    valid_until, user_address,
+])
+
+// rate_quote preimage (7 fields)
+compute_inner_authwit_hash([
+    0x465043, fpc_address, accepted_asset,
+    rate_num, rate_den,                    // <-- exchange rate
+    valid_until, user_address,
+])
+```
+
+Both formats use the same domain separator (`0x465043`) and produce a 7-field preimage. The response for `rate_quote` includes two extra fields:
+
+```json
+{
+  "accepted_asset": "0x...",
+  "fj_amount": "1000000",
+  "aa_payment_amount": "1020",
+  "valid_until": "1700000300",
+  "signature": "0x...",
+  "rate_num": "10200",
+  "rate_den": "10000000"
+}
+```
+
+> [!NOTE]
+> The `rate_quote` format requires a contract that verifies rate-based preimages. The current `FPCMultiAsset` contract verifies `amount_quote` only. Use `rate_quote` only if your contract fork expects `(rate_num, rate_den)` in the preimage.
+
 ## Security properties
 
 | Property | How it is enforced |
