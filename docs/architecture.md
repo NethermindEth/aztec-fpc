@@ -21,7 +21,7 @@ graph TD
     W["User / Wallet<br/>1. User wants to transact on Aztec L2<br/>2. Wallet uses SDK to fetch a fee quote<br/>3. Transaction includes FPC as fee payer"]
     W --> A["Attestation Service<br/>Signs fee quotes"]
     W --> F["FPC Contract (on-chain)<br/>Verifies signatures, pays gas"]
-    W --> T["Top-up Service<br/>Monitors FPC balance<br/>Bridges Fee Juice from L1 when low"]
+    T["Top-up Service<br/>Monitors FPC balance<br/>Bridges Fee Juice from L1 when low"] --> F
     T --> L1["L1 (Ethereum)<br/>Fee Juice Portal"]
 ```
 
@@ -126,11 +126,12 @@ In step 4, the contract performs these checks in order ([Source](https://github.
 
 ```mermaid
 sequenceDiagram
-    participant U as User (from L1)
+    participant U as User
+    participant L1 as L1 (Ethereum Portal)
     participant A as Attestation Service
     participant F as Aztec L2 (FPC + Bridge)
 
-    U->>F: 0. Bridge tokens L1 to L2
+    U->>L1: 0. Bridge tokens L1 to L2
     U->>A: 1. GET /cold-start-quote
     A-->>U: 2. Signed cold-start quote
     U->>F: 3. Submit cold_start tx

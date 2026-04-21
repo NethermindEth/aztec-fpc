@@ -24,7 +24,7 @@ vendor/                  # Git submodule: aztec-standards
 | [**TokenBridge**](./contracts.md#tokenbridge) | L1-L2 token bridge | Yes | `claim_public`, `claim_private`, `exit_to_l1_public` |
 | [**Faucet**](./contracts.md#faucet) | Test token dispenser | Devnet only | `drip`, `admin_drip` |
 | **Noop** | Gate count benchmarking | No | `noop` |
-| **Token** (vendor) | Standard fungible token | Yes | `transfer_public_to_public`, `mint_to_public` |
+| **Token** (vendor) | Standard fungible token | Yes | `transfer_private_to_private`, `transfer_public_to_public`, `mint_to_public` |
 
 ## Dependency Graph
 
