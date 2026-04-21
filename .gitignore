@@ -163,3 +163,6 @@ local-docs/
 # Research notes
 info/
 
+# Claude Code
+.claude/
+

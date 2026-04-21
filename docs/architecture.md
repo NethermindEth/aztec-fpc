@@ -186,3 +186,10 @@ The operator earns revenue from the spread between Fee Juice cost and token paym
 > [!TIP]
 >
 > For production deployments, use KMS or HSM for operator keys. See [Security Model](./security.md) for key management details and the production checklist.
+
+## Next Steps
+
+- Review the [Security Model](./security.md) for trust assumptions, threat mitigations, and the production checklist.
+- Explore the [Contracts](./contracts.md) page for detailed function signatures and on-chain verification logic.
+- Use the [SDK](./sdk.md) to integrate fee abstraction into a wallet or dApp.
+- Follow the [Quick Start](./quick-start.md) to deploy and test the full stack locally.

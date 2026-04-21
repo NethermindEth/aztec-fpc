@@ -115,3 +115,10 @@ Nethermind does not operate a public FPC on Aztec Alpha Mainnet. Teams deploying
 > **Alpha Mainnet context**
 >
 > Aztec Alpha Mainnet is in early access. Keep key management strict and monitor the [Aztec security advisories](https://github.com/AztecProtocol/aztec-packages/security/advisories) for updates before deploying.
+
+## Next Steps
+
+- [Use the SDK](../sdk.md) to build transactions against this testnet deployment
+- [Integrate a wallet](../how-to/integrate-wallet.md) using the discovery document and addresses listed above
+- [Follow the quick-start guide](../quick-start.md) to run a complete fee-paid transaction end to end
+- [Understand wallet discovery](./wallet-discovery.md) to resolve attestation endpoints programmatically

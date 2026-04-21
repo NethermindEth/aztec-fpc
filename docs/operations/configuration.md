@@ -265,3 +265,10 @@ deployments/
 ├── devnet/fpc-config.yaml     # Devnet
 └── testnet/fpc-config.yaml    # Testnet
 ```
+
+## Next Steps
+
+- [Deploy the configured services](./deployment.md) using Docker Compose or manual steps
+- [Run an FPC operator node](../how-to/run-operator.md) with these configuration options applied
+- [Review the services architecture](../services.md) to understand how attestation and top-up interact
+- [Set up monitoring](../reference/metrics.md) with the Prometheus metrics each service exposes

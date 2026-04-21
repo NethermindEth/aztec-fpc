@@ -143,3 +143,9 @@ FPC_OPERATOR_SECRET_KEY=0x... \
 AZTEC_NODE_URL=http://localhost:8080 \
   bunx tsx scripts/tests/fee-entrypoint-validation.ts
 ```
+
+## Next Steps
+
+- [Read the full testing guide](../operations/testing.md) for all test layers and how to run them
+- [Review the contract design](../contracts.md) to understand the constraints these tests enforce
+- [See the security model](../security.md) for the threat scenarios behind each negative test case

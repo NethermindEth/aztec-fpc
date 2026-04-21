@@ -140,3 +140,9 @@ Runs in order:
 - **Never pass secrets as CLI arguments or inline `-e KEY=VALUE`.** Export secrets first and pass by name. Non-secret values like `AZTEC_NODE_URL` and `L1_RPC_URL` are fine to pass inline.
 - The deployment manifest (`manifest.json`) may contain raw private keys. Treat it as secret material.
 - Do not commit manifests with plaintext keys to version control.
+
+## Next Steps
+
+- [Deploy contracts and generate manifests](./deployment.md) for local, devnet, or testnet environments
+- [Run the integration test suites](./testing.md) against the full Docker Compose stack
+- [Configure services](./configuration.md) with YAML, environment variables, and runtime profiles

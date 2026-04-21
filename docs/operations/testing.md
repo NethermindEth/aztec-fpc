@@ -178,3 +178,10 @@ The `noop` contract provides a baseline for measuring FPC-specific overhead. Re-
 | Docker Compose | Integration orchestration |
 | Anvil | Local L1 chain (Foundry) |
 | Aztec Sandbox | Local Aztec node |
+
+## Next Steps
+
+- [Review the E2E test matrix](../reference/e2e-test-matrix.md) for the full list of required negative scenarios
+- [Set up Docker Compose](./docker.md) to run integration tests against the full stack
+- [Understand the contract internals](../contracts.md) that the contract-level tests exercise
+- [Check the security model](../security.md) to see which threat scenarios the tests enforce

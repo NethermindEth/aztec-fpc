@@ -200,3 +200,9 @@ The cold-start quote endpoint (`GET /cold-start-quote`) returns the same fields 
 Deterministic `400 BAD_REQUEST` responses cover missing or invalid `user`, missing or invalid `accepted_asset`, unsupported `accepted_asset`, missing or invalid `fj_amount`, and computed overflow for `aa_payment_amount`.
 
 This response is consumed directly by the SDK's `createPaymentMethod()` or `executeColdStart()`.
+
+## Next Steps
+
+- See the [Contracts](./contracts.md) page for the on-chain verification logic in `assert_valid_quote` and `assert_valid_cold_start_quote`.
+- Review the [Security Model](./security.md) for the full threat mitigation matrix covering quote forgery, replay, and key compromise.
+- Read [SDK](./sdk.md) to understand how the SDK fetches quotes and constructs `FeePaymentMethod` objects for Aztec.js.

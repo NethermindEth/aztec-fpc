@@ -193,3 +193,10 @@ These are constraints of the current design, not planned features:
 > - [ ] Keep operator L1 account funded with ETH and Fee Juice tokens for bridge transactions
 > - [ ] Review top-up logs for `CRITICAL` bridge failures
 > - [ ] Never commit manifests or config files containing plaintext keys to version control
+
+## Next Steps
+
+- Follow [Run an FPC Operator](./how-to/run-operator.md) to apply these security practices in a production deployment.
+- Read the [Quote System](./quote-system.md) for details on how quotes are signed, bound, and replay-protected.
+- See [Contracts](./contracts.md) for the on-chain enforcement code behind each protection listed above.
+- Review the [Configuration Reference](./operations/configuration.md) for `runtime_profile`, secret provider modes, and auth settings.

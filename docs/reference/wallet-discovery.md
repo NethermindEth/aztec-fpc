@@ -133,3 +133,9 @@ Sources for the operator address:
 - The operator's documentation or integration guide
 - Token manifest (if tokens were deployed via `configure-token`)
 - Reading the FPC contract's `config` storage slot on-chain
+
+## Next Steps
+
+- [Integrate wallet discovery into your wallet](../how-to/integrate-wallet.md) using the resolution order above
+- [Review the attestation service API](../services.md) that serves the discovery document and quote endpoints
+- [Check the testnet deployment](./testnet-deployment.md) for a live example of a discovery document and known addresses

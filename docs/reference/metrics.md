@@ -137,3 +137,9 @@ scrape_configs:
       - targets: ['topup:3001']
     metrics_path: /metrics
 ```
+
+## Next Steps
+
+- [Set up an operator node](../how-to/run-operator.md) and connect monitoring to these metric endpoints
+- [Review the services architecture](../services.md) to understand which service emits each metric
+- [Configure thresholds and alert parameters](../operations/configuration.md) for the attestation and top-up services
