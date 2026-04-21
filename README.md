@@ -13,7 +13,7 @@ Users pay gas in the token they already hold. The operator covers the Fee Juice.
 
 FPC is a smart contract on [Aztec](https://aztec.network/) that sits between users and the protocol's gas layer. Instead of acquiring Fee Juice, users pay the FPC operator in any accepted token (USDC, ETH, app tokens) at a rate locked by a signed quote. One contract instance handles any number of tokens with no redeployment.
 
-**[Read the docs](docs/README.md)** | **[Testnet addresses](docs/reference/testnet-deployment.md)** | **[SDK reference](docs/sdk.md)**
+<p align="center"><b><a href="docs/README.md">Read the docs</a></b> &nbsp;|&nbsp; <b><a href="docs/reference/testnet-deployment.md">Testnet addresses</a></b> &nbsp;|&nbsp; <b><a href="docs/sdk.md">SDK reference</a></b></p>
 
 ## How it works
 
