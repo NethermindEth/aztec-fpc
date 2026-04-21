@@ -21,8 +21,8 @@ flowchart LR
     C --> D["executeColdStart()"]
     subgraph L2 ["Aztec L2 (one transaction)"]
         D --> E["Claim bridged tokens into FPC"]
-        E --> F["Pay operator fee in tokens"]
-        E --> G["Deliver remainder to user"]
+        E --> F["Transfer remainder to user"]
+        F --> G["Transfer fee to operator"]
     end
     G --> H["User has tokens + tx history"]
 ```

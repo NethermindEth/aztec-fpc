@@ -109,7 +109,7 @@ sequenceDiagram
     W->>A: 1. GET /quote
     A-->>W: 2. Signed quote
     W->>F: 3. Submit tx with FPC fee payer
-    Note over F: 4. fee_entrypoint()<br/>Verify Schnorr sig<br/>Push nullifier<br/>Check timestamps<br/>Transfer token<br/>set_as_fee_payer()<br/>end_setup()
+    Note over F: 4. fee_entrypoint()<br/>Verify Schnorr sig<br/>Push nullifier<br/>Check timestamps<br/>Assert fj_fee_amount == max_fee<br/>Transfer token<br/>set_as_fee_payer()<br/>end_setup()
     F-->>W: 5. Tx confirmed
 ```
 
@@ -135,7 +135,7 @@ sequenceDiagram
     U->>A: 1. GET /cold-start-quote
     A-->>U: 2. Signed cold-start quote
     U->>F: 3. Submit cold_start tx
-    Note over F: 4. cold_start_entrypoint()<br/>Claim from bridge<br/>Split: user + operator<br/>Pay gas
+    Note over F: 4. cold_start_entrypoint()<br/>Assert tx root (no nested calls)<br/>Assert claim >= fee<br/>Verify quote + push nullifier<br/>Assert fj_fee_amount == max_fee<br/>set_as_fee_payer() + end_setup()<br/>Claim from bridge into FPC<br/>Transfer remainder to user<br/>Transfer fee to operator
     F-->>U: 5. User has L2 tokens
 ```
 
