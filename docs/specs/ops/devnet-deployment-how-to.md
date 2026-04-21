@@ -1,5 +1,9 @@
 # Devnet Deployment How-To
 
+> [!CAUTION]
+> **This document is deprecated.** It may contain outdated function names, wrong default values, or references to scripts that no longer exist. For accurate, source-verified documentation, see [docs/README.md](../../README.md).
+
+
 > Non-Docker deployment flow for Aztec devnet using shell scripts and `bun`.
 > For Docker-based deployment, see [aztec-deployer-user-guide.md](../aztec-deployer-user-guide.md).
 

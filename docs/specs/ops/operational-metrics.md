@@ -1,5 +1,9 @@
 # Operational Endpoints and Metrics
 
+> [!CAUTION]
+> **This document is deprecated.** It may contain outdated function names, wrong default values, or references to scripts that no longer exist. For accurate, source-verified documentation, see [docs/README.md](../../README.md).
+
+
 This document defines the baseline liveness/readiness probes and Prometheus-style
 metrics exposed by the two services.
 

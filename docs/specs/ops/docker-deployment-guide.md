@@ -1,5 +1,9 @@
 # Docker Deployment Guide
 
+> [!CAUTION]
+> **This document is deprecated.** It may contain outdated function names, wrong default values, or references to scripts that no longer exist. For accurate, source-verified documentation, see [docs/README.md](../../README.md).
+
+
 Deploy the FPC contract and configure tokens using the `nethermind/aztec-fpc-contract-deployment` Docker image. The image ships with pre-compiled contract artifacts and all required tooling — no local Aztec CLI, Bun, or Noir installation needed.
 
 Deployment is a two-phase process:

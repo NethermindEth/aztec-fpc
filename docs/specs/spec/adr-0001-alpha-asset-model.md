@@ -1,5 +1,8 @@
 # ADR-0001: Alpha Asset Model
 
+> [!NOTE]
+> This ADR is the original design decision record. For the current documentation covering the multi-asset model, see [docs/README.md](../../README.md).
+
 - Status: Accepted
 - Date: 2026-03-02
 - Owners: FPC maintainers
