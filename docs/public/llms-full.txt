@@ -14,19 +14,19 @@
 | quote-system.md | 792 |
 | sdk.md | 1004 |
 | contracts.md | 1446 |
-| services.md | 1988 |
-| how-to/run-operator.md | 2538 |
-| how-to/integrate-wallet.md | 2807 |
-| how-to/add-supported-asset.md | 2987 |
-| how-to/cold-start-flow.md | 3154 |
-| operations/configuration.md | 3348 |
-| operations/deployment.md | 3626 |
-| operations/docker.md | 3972 |
-| operations/testing.md | 4126 |
-| reference/metrics.md | 4320 |
-| reference/e2e-test-matrix.md | 4472 |
-| reference/testnet-deployment.md | 4614 |
-| reference/wallet-discovery.md | 4742 |
+| services.md | 1986 |
+| how-to/run-operator.md | 2536 |
+| how-to/integrate-wallet.md | 2805 |
+| how-to/add-supported-asset.md | 2985 |
+| how-to/cold-start-flow.md | 3152 |
+| operations/configuration.md | 3346 |
+| operations/deployment.md | 3624 |
+| operations/docker.md | 3970 |
+| operations/testing.md | 4124 |
+| reference/metrics.md | 4318 |
+| reference/e2e-test-matrix.md | 4470 |
+| reference/testnet-deployment.md | 4612 |
+| reference/wallet-discovery.md | 4740 |
 
 ---
 
@@ -399,9 +399,9 @@ The FPC system uses four components: a smart contract on Aztec L2, two operator-
 > [!TIP]
 > **Where do you fit?**
 >
-> - **Wallet team** (Azguard, Obsidion): deploy the contract, run attestation + top-up, integrate the SDK in your wallet UI.
-> - **dApp or DEX** (Shieldswap, Nemi): use the SDK against an operator you trust, or run your own attestation service. You never touch the contract directly.
-> - **Bridge builder** (Substance Labs, TRAIN, Wormhole): use the SDK's `executeColdStart()`. The [Cold-Start flow diagram](#cold-start) below is what matters to you.
+> - **Wallet team**: deploy the contract, run attestation + top-up, integrate the SDK in your wallet UI.
+> - **dApp or DEX**: use the SDK against an operator you trust, or run your own attestation service. You never touch the contract directly.
+> - **Bridge builder**: use the SDK's `executeColdStart()`. The [Cold-Start flow diagram](#cold-start) below is what matters to you.
 
 ## System diagram
 
@@ -437,7 +437,7 @@ Storage is a single packed immutable config slot containing `operator`, `operato
 - `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` for users with an existing L2 token balance
 - `cold_start_entrypoint` for new users claiming bridged L1 tokens and paying in one transaction
 
-The token transfer executes in the setup phase and is irrevocably committed. No teardown is scheduled. No tokens accumulate in this contract's balance.
+The token transfer is irrevocably committed in the setup phase. No teardown is scheduled. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions).
 
 ### Attestation service (off-chain)
 
@@ -1605,9 +1605,7 @@ fn fee_entrypoint(
 9. Calls `Token::at(accepted_asset).transfer_private_to_private(sender, operator, aa_payment_amount, authwit_nonce)`.
 10. Calls `set_as_fee_payer()` + `end_setup()`.
 
-The token transfer executes in the setup phase, before `end_setup()`. It is irrevocably committed. If the user's app logic subsequently reverts, the fee has still been paid. This is unavoidable in the Aztec FPC model.
-
-No teardown is scheduled. No tokens accumulate in this contract's balance. All fee payments arrive directly in the operator's private balance.
+The token transfer is irrevocably committed in the setup phase. No teardown is scheduled. No tokens accumulate in this contract's balance. All fee payments arrive directly in the operator's private balance. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions) for implications.
 
 The caller must provide a valid authwit for the token transfer before submitting.
 
@@ -2543,7 +2541,7 @@ This guide covers production deployment of the FPC operator stack: key managemen
 > [!NOTE]
 > **Who runs their own FPC today**
 >
-> Wallets like [Azguard](https://azguardwallet.io/) and [Obsidion](https://app.obsidion.xyz/) run their own FPC on Aztec testnet as both operator and integrator. If you are a wallet team, this guide and [Integrate in a Wallet](../how-to/integrate-wallet.md) together cover your full deployment.
+> Wallet teams typically run their own FPC as both operator and integrator. If that is you, this guide and [Integrate in a Wallet](../how-to/integrate-wallet.md) together cover your full deployment.
 
 ## Prerequisites
 
@@ -2807,7 +2805,7 @@ Add FPC-based fee payment to an Aztec wallet so users can pay fees in any suppor
 > [!NOTE]
 > **Audience**
 >
-> Wallet engineers who already integrate Aztec.js and want to add FPC as a payment option. [Azguard Wallet](https://azguardwallet.io/) and [Obsidion Wallet](https://app.obsidion.xyz/), two live wallets on Aztec testnet, both run their own FPC stack using this pattern.
+> Wallet engineers who already integrate Aztec.js and want to add FPC as a payment option.
 
 ## What You'll Build
 
@@ -2967,7 +2965,7 @@ Key errors to surface in your wallet UI:
 
 ## Known Limitations
 
-- The token transfer executes in the setup phase before `end_setup()`. It is irrevocably committed. If the user's application logic reverts, the fee has still been paid. This is inherent to the Aztec FPC model.
+- The fee is paid in the setup phase and is irrevocable, even if the user's app logic reverts. See [Security Model: setup-phase irreversibility](../security.md#trust-assumptions).
 - `fj_amount` must match `get_max_gas_cost` for the transaction gas settings. The SDK handles this, but if you build the payment method manually, a mismatch causes `fee_entrypoint` to revert.
 - No teardown or refund phase exists. Unused Fee Juice stays in the FPC's balance.
 
@@ -3157,7 +3155,7 @@ description: How bridge UIs and cross-chain onboarding teams can deliver one-tra
 > [!NOTE]
 > **Audience**
 >
-> Bridge builders (Substance Labs, TRAIN Protocol, Wormhole) and cross-chain wallet teams. The cold-start flow solves the onboarding gap between "funds arrived on L2" and "first transaction."
+> Bridge builders and cross-chain wallet teams. The cold-start flow solves the onboarding gap between "funds arrived on L2" and "first transaction."
 
 ## What cold-start does
 

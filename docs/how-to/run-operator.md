@@ -10,7 +10,7 @@ This guide covers production deployment of the FPC operator stack: key managemen
 > [!NOTE]
 > **Who runs their own FPC today**
 >
-> Wallets like [Azguard](https://azguardwallet.io/) and [Obsidion](https://app.obsidion.xyz/) run their own FPC on Aztec testnet as both operator and integrator. If you are a wallet team, this guide and [Integrate in a Wallet](../how-to/integrate-wallet.md) together cover your full deployment.
+> Wallet teams typically run their own FPC as both operator and integrator. If that is you, this guide and [Integrate in a Wallet](../how-to/integrate-wallet.md) together cover your full deployment.
 
 ## Prerequisites
 

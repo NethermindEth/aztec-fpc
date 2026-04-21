@@ -10,9 +10,9 @@ The FPC system uses four components: a smart contract on Aztec L2, two operator-
 > [!TIP]
 > **Where do you fit?**
 >
-> - **Wallet team** (Azguard, Obsidion): deploy the contract, run attestation + top-up, integrate the SDK in your wallet UI.
-> - **dApp or DEX** (Shieldswap, Nemi): use the SDK against an operator you trust, or run your own attestation service. You never touch the contract directly.
-> - **Bridge builder** (Substance Labs, TRAIN, Wormhole): use the SDK's `executeColdStart()`. The [Cold-Start flow diagram](#cold-start) below is what matters to you.
+> - **Wallet team**: deploy the contract, run attestation + top-up, integrate the SDK in your wallet UI.
+> - **dApp or DEX**: use the SDK against an operator you trust, or run your own attestation service. You never touch the contract directly.
+> - **Bridge builder**: use the SDK's `executeColdStart()`. The [Cold-Start flow diagram](#cold-start) below is what matters to you.
 
 ## System diagram
 
@@ -48,7 +48,7 @@ Storage is a single packed immutable config slot containing `operator`, `operato
 - `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` for users with an existing L2 token balance
 - `cold_start_entrypoint` for new users claiming bridged L1 tokens and paying in one transaction
 
-The token transfer executes in the setup phase and is irrevocably committed. No teardown is scheduled. No tokens accumulate in this contract's balance.
+The token transfer is irrevocably committed in the setup phase. No teardown is scheduled. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions).
 
 ### Attestation service (off-chain)
 

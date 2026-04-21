@@ -8,7 +8,7 @@ description: How bridge UIs and cross-chain onboarding teams can deliver one-tra
 > [!NOTE]
 > **Audience**
 >
-> Bridge builders (Substance Labs, TRAIN Protocol, Wormhole) and cross-chain wallet teams. The cold-start flow solves the onboarding gap between "funds arrived on L2" and "first transaction."
+> Bridge builders and cross-chain wallet teams. The cold-start flow solves the onboarding gap between "funds arrived on L2" and "first transaction."
 
 ## What cold-start does
 

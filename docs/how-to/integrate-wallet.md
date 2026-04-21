@@ -5,7 +5,7 @@ Add FPC-based fee payment to an Aztec wallet so users can pay fees in any suppor
 > [!NOTE]
 > **Audience**
 >
-> Wallet engineers who already integrate Aztec.js and want to add FPC as a payment option. [Azguard Wallet](https://azguardwallet.io/) and [Obsidion Wallet](https://app.obsidion.xyz/), two live wallets on Aztec testnet, both run their own FPC stack using this pattern.
+> Wallet engineers who already integrate Aztec.js and want to add FPC as a payment option.
 
 ## What You'll Build
 
@@ -165,7 +165,7 @@ Key errors to surface in your wallet UI:
 
 ## Known Limitations
 
-- The token transfer executes in the setup phase before `end_setup()`. It is irrevocably committed. If the user's application logic reverts, the fee has still been paid. This is inherent to the Aztec FPC model.
+- The fee is paid in the setup phase and is irrevocable, even if the user's app logic reverts. See [Security Model: setup-phase irreversibility](../security.md#trust-assumptions).
 - `fj_amount` must match `get_max_gas_cost` for the transaction gas settings. The SDK handles this, but if you build the payment method manually, a mismatch causes `fee_entrypoint` to revert.
 - No teardown or refund phase exists. Unused Fee Juice stays in the FPC's balance.
 
