@@ -164,4 +164,6 @@ Questions, bugs, or feedback:
 
 [Apache-2.0](LICENSE)
 
-Built by [Nethermind](https://nethermind.io/).
+---
+
+<p align="center">Built by <a href="https://nethermind.io/">Nethermind</a></p>
