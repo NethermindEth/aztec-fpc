@@ -25,7 +25,6 @@ FILES=(
   "operations/deployment.md"
   "operations/docker.md"
   "operations/testing.md"
-  "reference/glossary.md"
   "reference/metrics.md"
   "reference/e2e-test-matrix.md"
   "reference/testnet-deployment.md"

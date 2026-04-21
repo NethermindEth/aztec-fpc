@@ -1,6 +1,6 @@
 # Integrate FPC in Your Wallet
 
-Add FPC-based fee payment to an Aztec wallet so users can pay gas in any supported token instead of native Fee Juice.
+Add FPC-based fee payment to an Aztec wallet so users can pay fees in any supported token instead of native Fee Juice.
 
 > [!NOTE]
 > **Audience**
@@ -37,7 +37,7 @@ const response = await fetch(
 const metadata = await response.json();
 ```
 
-The response shape (normative, see [wallet-discovery-spec](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/wallet-discovery-spec.md)). The implementation is in [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551):
+The response shape (see [Wallet Discovery spec](../reference/wallet-discovery.md)). The implementation is in [`services/attestation/src/server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551):
 
 ```json
 {
@@ -153,33 +153,15 @@ After this single transaction, the user has an L2 balance and transaction histor
 
 ## Error Handling
 
-The SDK propagates HTTP errors from the attestation service and on-chain reverts from Aztec.js.
+The SDK propagates errors from the attestation service (HTTP), Aztec.js (simulation/revert), and network layers. See [SDK: Error Handling](../sdk.md#error-handling) for the full error taxonomy.
 
-> [!TIP]
-> **User-facing errors**
->
-> - **Asset not supported (HTTP 400)**: refresh `/accepted-assets`. The asset may have been removed, though previously-signed quotes remain valid until `valid_until`.
-> - **Unauthorized (HTTP 401)**: the attestation service is in `api_key` auth mode. Ensure your wallet backend holds the key.
-> - **Rate limited (HTTP 429)**: back off. Consider caching the quote for its TTL.
-> - **Quote expired (on-chain revert)**: re-fetch. Quotes typically live ~5 minutes, capped at 3600 seconds on-chain.
-> - **Sender-binding failure (on-chain revert)**: the quote was signed for a different user address.
+Key errors to surface in your wallet UI:
 
-```typescript
-try {
-  const { fee } = await fpcClient.createPaymentMethod({ /* ... */ });
-  const tx = await contract.methods.someMethod(args).send({ from, fee });
-  await tx.wait();
-} catch (error) {
-  const msg = error instanceof Error ? error.message : String(error);
-  if (msg.includes("400")) {
-    // Asset unsupported or fj_amount overflow
-  } else if (msg.includes("429")) {
-    // Rate limited
-  } else if (msg.includes("Quote") || msg.includes("sender")) {
-    // On-chain quote validation failure
-  }
-}
-```
+- **HTTP 400** (asset not supported): refresh `/accepted-assets`. The asset may have been removed.
+- **HTTP 401** (unauthorized): the attestation service requires an API key. Ensure your wallet backend holds it.
+- **HTTP 429** (rate limited): back off. Consider caching the quote for its TTL.
+- **On-chain revert** (quote expired): re-fetch. Quotes typically live ~5 minutes, capped at 3600 seconds.
+- **On-chain revert** (sender-binding failure): the quote was signed for a different user address.
 
 ## Known Limitations
 

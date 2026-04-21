@@ -95,7 +95,7 @@ Assets are configured via the `supported_assets` array. Each entry defines an ac
 supported_assets:
   - address: "0x..."
     name: "humanUSDC"           # Human-readable name surfaced in /accepted-assets
-    market_rate_num: 1          # Asset units per 1 FeeJuice (numerator)
+    market_rate_num: 1          # Asset units per 1 Fee Juice (numerator)
     market_rate_den: 1000       # Denominator
     fee_bips: 200               # Operator margin (200 bips = 2%)
   - address: "0x..."
@@ -159,7 +159,7 @@ The service validates that `l1_rpc_url` matches the L1 chain id reported by the 
 | `l1_operator_secret_ref` | | | KMS or secret-manager reference (preferred in production). No env override; set in YAML. |
 | `l1_operator_private_key` | `L1_OPERATOR_PRIVATE_KEY` | | L1 operator private key (plaintext, avoid in production) |
 
-The L1 operator account must hold ETH (for bridge gas) and Fee Juice tokens (the ERC-20 that gets bridged to L2). Fund it before starting the service. A helper script is available:
+The L1 operator account must hold ETH (for L1 transaction fees) and Fee Juice tokens (the ERC-20 that gets bridged to L2). Fund it before starting the service. A helper script is available:
 
 ```bash
 export AZTEC_NODE_URL=<AZTEC_NODE_URL>
@@ -237,7 +237,7 @@ Key sections:
 |---------|-------|-------------|
 | `tokens` | `name` / `symbol` | Token identity (used for test token deployment and attestation registration) |
 | `tokens` | `address` | Existing token address (omit to deploy a test token) |
-| `tokens` | `market_rate_num` / `market_rate_den` | Exchange rate: accepted_asset per 1 FeeJuice |
+| `tokens` | `market_rate_num` / `market_rate_den` | Exchange rate: accepted_asset per 1 Fee Juice |
 | `tokens` | `fee_bips` | Operator margin in basis points (200 = 2%) |
 | `attestation` | `quote_validity_seconds` | Quote TTL (default 300) |
 | `attestation` | `quote_auth_mode` | Auth mode: `disabled`, `api_key`, `trusted_header`, etc. |

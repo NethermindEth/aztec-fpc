@@ -5,8 +5,6 @@ description: Three paths to a running FPC stack. Docker Compose for local dev, m
 
 # Quick Start
 
-Three paths to a working FPC. Pick based on what you need.
-
 | Option | Best for |
 |--------|----------|
 | [Docker Compose](#option-1-docker-compose) | Local dev, fastest setup |
@@ -101,7 +99,7 @@ L1_OPERATOR_PRIVATE_KEY=0x<l1_key> bun run start
 ```
 
 > [!NOTE]
-> For `aztec start --local-network`, FeeJuice L1 contract addresses are provisioned by the local network bootstrap. Do not add a manual custom L1 FeeJuice deployment step. The top-up service discovers these addresses from the Aztec node's `nodeInfo`.
+> For `aztec start --local-network`, Fee Juice L1 contract addresses are provisioned by the local network bootstrap. Do not add a manual custom L1 Fee Juice deployment step. The top-up service discovers these addresses from the Aztec node's `nodeInfo`.
 
 **Verify**
 

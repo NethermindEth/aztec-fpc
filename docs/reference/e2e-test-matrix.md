@@ -5,8 +5,6 @@ description: Required negative-scenario test suite for FPC, covering replay, exp
 
 # E2E Test Matrix
 
-**Normative source:** [docs/spec/e2e-test-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/e2e-test-spec.md)
-
 These are the negative scenarios an FPC implementation must enforce. Happy-path coverage is provided by [`scripts/tests/same-token-transfer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/same-token-transfer.ts).
 
 ## Required Negative Scenarios
@@ -32,7 +30,7 @@ Two assets are involved in the E2E tests. Do not conflate them.
    - Chosen per quote (`accepted_asset`) at runtime for `fee_entrypoint`.
    - No L1 token wiring is required for this asset in the E2E.
 
-2. **Fee Juice (protocol fee asset for gas payment)**
+2. **Fee Juice (protocol fee asset for fee payment)**
    - Scenarios 1-5: the FPC is pre-funded by the running top-up service.
    - Scenario 6: uses the same pre-funded FPC but inflates gas fees beyond its balance.
    - L1/L2 Fee Juice addresses are discovered from `node_getNodeInfo`.
@@ -53,11 +51,11 @@ The test suite executes in 7 phases:
 
 Use this runbook when local E2E fails with address or wiring symptoms.
 
-1. **Stale hardcoded addresses.** Symptom: startup/config errors or bridge failures after node restart/redeploy. Check configured FeeJuice L1/L2 addresses against fresh `node_getNodeInfo` output. Fix: remove stale hardcoded values, regenerate deploy/config artifacts, use node-reported addresses.
+1. **Stale hardcoded addresses.** Symptom: startup/config errors or bridge failures after node restart/redeploy. Check configured Fee Juice L1/L2 addresses against fresh `node_getNodeInfo` output. Fix: remove stale hardcoded values, regenerate deploy/config artifacts, use node-reported addresses.
 
 2. **L1 chain-id mismatch.** Symptom: bridge submit fails with chain/network mismatch errors. Check: compare node-reported `l1ChainId` from `node_getNodeInfo` with the chain id served by `l1_rpc_url`. Fix: point to the correct L1 RPC for the active local-network instance.
 
-3. **FeeJuice portal/address mismatch.** Symptom: bridge submission fails or FeeJuice balance never increases after a bridge + claim. Check configured/derived FeeJuice token + portal addresses against node-reported `l1ContractAddresses`. Fix: do not override local-network FeeJuice addresses manually. Use node-derived values.
+3. **Fee Juice portal/address mismatch.** Symptom: bridge submission fails or Fee Juice balance never increases after a bridge + claim. Check configured/derived Fee Juice token + portal addresses against node-reported `l1ContractAddresses`. Fix: do not override local-network Fee Juice addresses manually. Use node-derived values.
 
 ## Cold-Start Parallel Matrix
 
@@ -66,18 +64,6 @@ Use this runbook when local E2E fails with address or wiring symptoms.
 - 9-field quote preimage validation
 - Bridge claim authenticity (`claim_amount` and `claim_secret_hash` bound in the signature)
 - Domain separation: a regular `fee_entrypoint` quote must fail in `cold_start_entrypoint`, and vice versa
-
-## Test Tiering
-
-Coverage is split by concern across these scripts:
-
-| Script | Concern |
-|---|---|
-| [`scripts/contract/deploy-fpc-local-mode.sh`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-fpc-local-mode.sh) / [`deploy-smoke-local.sh`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/contract/deploy-smoke-local.sh) | Deployment and relay usability. Not quote security. |
-| [`scripts/tests/services.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/services.ts) | Deployed service HTTP endpoints: `/quote`, `/cold-start-quote`, top-up health, metrics. |
-| [`scripts/tests/same-token-transfer.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/same-token-transfer.ts) | Happy-path integration: private/public/batched fee-paid transfers against a running attestation service and top-up-funded FPC. |
-| [`scripts/tests/fee-entrypoint-validation.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/fee-entrypoint-validation.ts) | **This matrix.** Negative scenarios 1 through 6. |
-| [`scripts/tests/cold-start-validation.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/scripts/tests/cold-start-validation.ts) | Cold-start parallel matrix and L1 bridge/claim validation. |
 
 ## Mandatory Assertions
 

@@ -9,9 +9,9 @@
 > ```
 > This returns a structured project summary, source code map with line numbers, function index, error codes, and config reference. For the complete docs (~5k lines), replace `llms.txt` with `llms-full.txt`.
 
-Users pay gas in the token they already hold. The operator covers the Fee Juice.
+Users pay fees in the token they already hold. The operator covers the Fee Juice.
 
-FPC is a smart contract on [Aztec](https://aztec.network/) that sits between users and the protocol's gas layer. Instead of acquiring Fee Juice, users pay the FPC operator in any accepted token (USDC, ETH, app tokens) at a rate locked by a signed quote. One contract instance handles any number of tokens with no redeployment.
+FPC is a smart contract on [Aztec](https://aztec.network/) that pays transaction fees in Fee Juice on the user's behalf. Instead of acquiring Fee Juice themselves, users pay the FPC operator in any accepted token (USDC, ETH, app tokens) at a rate locked by a signed quote. One contract instance handles any number of tokens with no redeployment.
 
 <p align="center"><b><a href="docs/README.md">Read the docs</a></b> &nbsp;|&nbsp; <b><a href="docs/reference/testnet-deployment.md">Testnet addresses</a></b> &nbsp;|&nbsp; <b><a href="docs/sdk.md">SDK reference</a></b></p>
 
@@ -19,7 +19,7 @@ FPC is a smart contract on [Aztec](https://aztec.network/) that sits between use
 
 | Component | Role |
 |---|---|
-| **FPC contract** | Verifies operator-signed Schnorr quotes, transfers tokens from user to operator, pays gas to the protocol |
+| **FPC contract** | Verifies operator-signed Schnorr quotes, transfers tokens from user to operator, pays Fee Juice to the protocol |
 | **Attestation service** | Signs per-user fee quotes, serves wallet discovery at `/.well-known/fpc.json` |
 | **Top-up service** | Watches FPC balance on L2, bridges Fee Juice from L1 when it drops below threshold |
 | **SDK** | `createPaymentMethod()` for existing users, `executeColdStart()` for L1 onboarding |
@@ -96,7 +96,7 @@ For testnet deployment, manual bring-up, or SDK-only integration: **[Quick Start
 | **Services** | [Attestation + Top-up](docs/services.md) &#183; [Config](docs/operations/configuration.md) |
 | **How-to** | [Operator](docs/how-to/run-operator.md) &#183; [Wallet](docs/how-to/integrate-wallet.md) &#183; [Assets](docs/how-to/add-supported-asset.md) &#183; [Cold-start](docs/how-to/cold-start-flow.md) |
 | **Ops** | [Deploy](docs/operations/deployment.md) &#183; [Docker](docs/operations/docker.md) &#183; [Test](docs/operations/testing.md) |
-| **Reference** | [Glossary](docs/reference/glossary.md) &#183; [Metrics](docs/reference/metrics.md) &#183; [Testnet](docs/reference/testnet-deployment.md) &#183; [Discovery](docs/reference/wallet-discovery.md) |
+| **Reference** | [Metrics](docs/reference/metrics.md) &#183; [Testnet](docs/reference/testnet-deployment.md) &#183; [Discovery](docs/reference/wallet-discovery.md) |
 | **Specs** | [Protocol](docs/specs/spec/protocol-spec.md) &#183; [E2E](docs/specs/spec/e2e-test-spec.md) &#183; [ADR-0001](docs/specs/spec/adr-0001-alpha-asset-model.md) |
 
 </td>

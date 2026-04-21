@@ -4,11 +4,11 @@
 **Source:** [sdk/](https://github.com/NethermindEth/aztec-fpc/tree/main/sdk)
 
 **On this page:**
-[Installation](#installation) | [FpcWallet](#fpcwallet-required-wallet-class) | [Standard Flow](#standard-flow-user-has-tokens-on-l2) | [Cold-Start Flow](#cold-start-flow-user-just-bridged-from-l1) | [What the SDK Constructs](#what-the-sdk-constructs) | [API Reference](#api-reference) | [Types](#types) | [Gas Handling](#gas-handling) | [Error Handling](#error-handling)
+[Installation](#installation) | [FpcWallet](#fpcwallet-required-wallet-class) | [Common Setup](#common-setup) | [Standard Flow](#standard-flow-user-has-tokens-on-l2) | [Cold-Start Flow](#cold-start-flow-user-just-bridged-from-l1) | [What the SDK Constructs](#what-the-sdk-constructs) | [API Reference](#api-reference) | [Types](#types) | [Gas Handling](#gas-handling) | [Error Handling](#error-handling)
 
 ---
 
-Two methods cover the full integration surface. `createPaymentMethod()` handles users who already hold L2 tokens. `executeColdStart()` handles users arriving from L1 with no Fee Juice or deployed account.
+The SDK exposes two methods. `createPaymentMethod()` handles users who already hold L2 tokens. `executeColdStart()` handles users arriving from L1 with no Fee Juice or deployed account.
 
 > [!NOTE]
 > **SDK is not yet published to npm**
@@ -55,10 +55,12 @@ Once the package is published, `bun add @nethermindeth/aztec-fpc-sdk` will work.
 
 If Aztec restores zero-address handling and adds a skip-simulation option, this subclass can be removed.
 
-## Standard Flow: User Has Tokens on L2
+## Common Setup
 
 > [!TIP]
 > **Prerequisites:** Bun `1.3.11`, Aztec CLI, compiled contract artifacts. See [Quick Start](./quick-start.md) for setup.
+
+Both flows below need a node connection, wallet, and `FpcClient`. This block is shared:
 
 ```typescript
 import { AztecAddress } from "@aztec/aztec.js/addresses";
@@ -73,7 +75,6 @@ const FPC_ADDRESS = "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21
 const OPERATOR_ADDRESS = "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974";
 const TOKEN_ADDRESS = "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb";
 
-// 1. Connect to the Aztec node and create a wallet
 const node = createAztecNodeClient(AZTEC_NODE_URL);
 await waitForNode(node);
 const wallet = await FpcWallet.create(node, {
@@ -81,15 +82,20 @@ const wallet = await FpcWallet.create(node, {
   pxeConfig: { proverEnabled: true },
 });
 
-// 2. Create the FPC client
 const fpcClient = new FpcClient({
   fpcAddress: AztecAddress.fromString(FPC_ADDRESS),
   operator: AztecAddress.fromString(OPERATOR_ADDRESS),
   node,
   attestationBaseUrl: ATTESTATION_URL,
 });
+```
 
-// 3. Simulate your tx to estimate gas
+## Standard Flow: User Has Tokens on L2
+
+Assumes [Common Setup](#common-setup) above.
+
+```typescript
+// 1. Simulate your tx to estimate gas
 const { estimatedGas } = await myContract.methods
   .myMethod(arg1, arg2)
   .simulate({ from: userAddress, fee: { estimateGas: true } });
@@ -97,7 +103,7 @@ if (!estimatedGas) {
   throw new Error("Failed to estimate gas");
 }
 
-// 4. Build the FPC payment method
+// 2. Build the FPC payment method
 const payment = await fpcClient.createPaymentMethod({
   wallet,
   user: userAddress,
@@ -105,7 +111,7 @@ const payment = await fpcClient.createPaymentMethod({
   estimatedGas,
 });
 
-// 5. Send the tx with FPC fee options
+// 3. Send the tx with FPC fee options
 await myContract.methods.myMethod(arg1, arg2).send({
   from: userAddress,
   fee: payment.fee,
@@ -126,91 +132,19 @@ The SDK handles these steps internally:
 
 ## Cold-Start Flow: User Just Bridged from L1
 
-Use `executeColdStart` when the user has bridged tokens from L1 but has **no existing L2 balance** to pay fees.
+Use `executeColdStart` when the user has bridged tokens from L1 but has **no existing L2 balance** to pay fees. One transaction claims bridged tokens and pays the FPC fee atomically.
 
 ```typescript
-import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
-import { Fr } from "@aztec/aztec.js/fields";
-import { waitForL1ToL2MessageReady } from "@aztec/aztec.js/messaging";
-import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
-import { createExtendedL1Client } from "@aztec/ethereum/client";
-import { EthAddress } from "@aztec/foundation/eth-address";
-import { createLogger } from "@aztec/foundation/log";
-import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
-import { FpcWallet } from "./fpc-wallet"; // copied from scripts/common/fpc-wallet.ts
-
-// 1. Connect to the Aztec node and create a wallet
-const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
-await waitForNode(node);
-const wallet = await FpcWallet.create(node, {
-  ephemeral: true,
-  pxeConfig: { proverEnabled: true },
-});
-
-// Testnet addresses -- see reference/testnet-deployment.md for current values
-const FPC_ADDRESS = "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f";
-const OPERATOR_ADDRESS = "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974";
-const TOKEN_ADDRESS = "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb";
-const ATTESTATION_URL = "https://aztec-fpc-testnet.staging-nethermind.xyz/";
-
-const fpcClient = new FpcClient({
-  fpcAddress: AztecAddress.fromString(FPC_ADDRESS),
-  operator: AztecAddress.fromString(OPERATOR_ADDRESS),
-  node,
-  attestationBaseUrl: ATTESTATION_URL,
-});
-
-// 2. Create an L1 client and bridge tokens from L1 to L2
-const l1WalletClient = createExtendedL1Client(
-  ["https://ethereum-sepolia-rpc.publicnode.com"],
-  "0x<your_l1_private_key>",
-  l1Chain,
-);
-
-const portalManager = new L1ToL2TokenPortalManager(
-  EthAddress.fromString("0x57a426552a472e953ecc1342f25b17cc192326be"),
-  EthAddress.fromString("0xf49de848d9c00c4dfb088b2e6ba2dac81e34aa5d"),
-  undefined,
-  l1WalletClient,
-  createLogger("bridge"),
-);
-
-const bridgeClaim = await portalManager.bridgeTokensPrivate(
-  userAddress,
-  10_000_000_000_000_000n, // amount to bridge
-  false,
-);
-
-// 3. Wait for the L1-to-L2 message to be available on L2
-await waitForL1ToL2MessageReady(
-  node,
-  Fr.fromHexString(bridgeClaim.messageHash as string),
-  { timeoutSeconds: 300 },
-);
-
-// 4. Execute cold-start: claim bridged tokens + pay FPC fee in one tx
-const BRIDGE_ADDRESS = "0x19b200d772d3e9068921e6f5df7530271229e958acc9efc2c637afe64db9763f";
-
 const result = await fpcClient.executeColdStart({
   wallet,
   userAddress,
   tokenAddress: AztecAddress.fromString(TOKEN_ADDRESS),
   bridgeAddress: AztecAddress.fromString(BRIDGE_ADDRESS),
-  bridgeClaim,
+  bridgeClaim, // pass the L2AmountClaim object as-is, do not destructure
 });
-
-console.log(`Tx hash: ${result.txHash}`);
-console.log(`Tx fee: ${result.txFee}`);
-console.log(`Token charged: ${result.aaPaymentAmount}`);
 ```
 
-One transaction takes the user from "just bridged" to "has tokens and transaction history."
-
-> [!TIP]
-> **Finding `bridgeAddress`**
->
-> If the operator deployed test tokens via `configure-token`, the bridge address is in `deployments/tokens/<TokenName>.json`. For production tokens, get it from the token deployment records or the operator.
+For the full bridging sequence (L1 deposit, waiting for L1-to-L2 message, executing cold-start), see **[Cold-Start Flow](./how-to/cold-start-flow.md)**.
 
 ## What the SDK Constructs
 
@@ -234,7 +168,7 @@ One transaction takes the user from "just bridged" to "has tokens and transactio
 4. Proves, sends, and waits. Retries up to 3x on `"Message not in state"` errors from PXE sync races.
 5. Returns `{ txHash, txFee, fjAmount, aaPaymentAmount, quoteValidUntil }`.
 
-An optional `txWaitTimeoutMs` parameter controls how long `executeColdStart` waits for the transaction to be mined (default: 180,000ms).
+An optional `txWaitTimeoutMs` parameter controls how long `executeColdStart` waits for the transaction to be included in a block (default: 180,000ms).
 
 ## Contract Artifacts
 

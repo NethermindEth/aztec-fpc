@@ -36,7 +36,7 @@ The FPC contract stores the operator's Schnorr public key as an immutable config
 
 ### Set up the L1 operator account
 
-Fund an L1 account with ETH (for bridge gas) and Fee Juice tokens (the ERC-20 that gets bridged to L2). This key will be stored in the top-up service's KMS.
+Fund an L1 account with ETH (for L1 transaction fees) and Fee Juice tokens (the ERC-20 that gets bridged to L2). This key will be stored in the top-up service's KMS.
 
 > [!TIP]
 > **Sizing**

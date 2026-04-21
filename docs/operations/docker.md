@@ -9,13 +9,13 @@ Container builds, compose orchestration, and CI pipeline for the FPC stack. For 
 
 Five images are built via Docker Buildx Bake ([`docker-bake.hcl`](https://github.com/NethermindEth/aztec-fpc/blob/main/docker-bake.hcl)):
 
-| Image | Bake Target | Source | Purpose |
-|-------|-------------|--------|---------|
-| `nethermind/aztec-fpc-attestation` | `attestation` | `services/attestation/` | Quote-signing REST API |
-| `nethermind/aztec-fpc-topup` | `topup` | `services/topup/` | Fee Juice bridge daemon |
-| `nethermind/aztec-fpc-contract-deployment` | `deploy` | `contract-deployment/` | Contract deployment CLI + token configuration |
-| `nethermind/aztec-fpc-contract-artifact` | `contract` | `scripts/contract/` | Compiled contract artifacts (utility image used by block-producer) |
-| `nethermind/aztec-fpc-test` | `test` | `scripts/tests/` | Integration test runner |
+| Image | Bake Target | Purpose |
+|-------|-------------|---------|
+| `nethermind/aztec-fpc-attestation` | `attestation` | Quote-signing REST API |
+| `nethermind/aztec-fpc-topup` | `topup` | Fee Juice bridge daemon |
+| `nethermind/aztec-fpc-contract-deployment` | `deploy` | Contract deployment CLI + token configuration |
+| `nethermind/aztec-fpc-contract-artifact` | `contract` | Compiled contract artifacts (utility image used by block-producer) |
+| `nethermind/aztec-fpc-test` | `test` | Integration test runner |
 
 ### Building images
 

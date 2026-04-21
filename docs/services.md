@@ -1,6 +1,6 @@
 # Services
 
-Two off-chain services support the FPC contract: the attestation service (quote signing) and the top-up service (Fee Juice bridging).
+Two off-chain services run alongside the FPC contract: the attestation service (quote signing) and the top-up service (Fee Juice bridging).
 
 **On this page:**
 [Attestation Service](#attestation-service) | [GET /quote](#get-quote) | [GET /cold-start-quote](#get-cold-start-quote) | [Admin Endpoints](#put-adminasset-policiesassetaddress) | [Pricing Formula](#pricing-formula) | [Wallet Discovery](#wallet-discovery) | [Authentication](#authentication) | [Top-up Service](#top-up-service) | [Operational Flow](#operational-flow) | [Crash Recovery](#crash-recovery) | [Auto-Claim](#auto-claim) | [Ops Endpoints](#ops-endpoints) | [Prometheus Metrics](#prometheus-metrics)
@@ -14,8 +14,6 @@ The off-chain REST API that signs fee quotes for users. Run by the FPC operator.
 **Source:** [`services/attestation/`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/)
 
 ### What It Does
-
-The attestation service is the operator's quote engine.
 
 1. Receives quote requests from wallets and dApps.
 2. Looks up the requested token's pricing policy.
@@ -195,7 +193,7 @@ For `FPC.fee_entrypoint`, the `fj_amount` must match `get_max_gas_cost` for the 
 
 [Source: `server.ts`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/server.ts#L551)
 
-The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full normative spec at [`wallet-discovery-spec.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/wallet-discovery-spec.md).
+The `/.well-known/fpc.json` endpoint enables automatic wallet integration. Full spec at [Wallet Discovery](./reference/wallet-discovery.md).
 
 ```json
 {
@@ -336,7 +334,7 @@ Background daemon that monitors the FPC's Fee Juice balance on L2 and bridges mo
 
 ### What It Does
 
-The FPC contract needs Fee Juice to pay gas on behalf of users. Without it, all `fee_entrypoint` calls fail. The top-up service prevents that by polling the balance and bridging automatically.
+The FPC contract needs Fee Juice to pay fees on behalf of users. Without it, all `fee_entrypoint` calls fail. The top-up service prevents that by polling the balance and bridging automatically.
 
 1. Periodically reads the FPC's Fee Juice balance on L2.
 2. When the balance drops below `threshold`, bridges `top_up_amount` via `L1FeeJuicePortalManager.bridgeTokensPublic(...)` on L1.
@@ -383,7 +381,7 @@ Only one bridge operation runs at a time. An in-flight guard prevents concurrent
 
 The L1 operator account must hold:
 
-- **ETH** for L1 gas on bridge transactions
+- **ETH** for L1 transaction fees on bridge transactions
 - **Fee Juice token balance** (the ERC-20 that gets bridged to L2)
 
 Fund the L1 operator account before starting the service. The repo includes a helper:

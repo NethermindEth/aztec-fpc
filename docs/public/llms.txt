@@ -1,6 +1,6 @@
 # Aztec FPC - Fee Payment Contracts
 
-> FPC pays transaction gas on Aztec so users don't need Fee Juice.
+> FPC pays transaction fees on Aztec so users don't need Fee Juice.
 > Users pay the operator in any token they hold. The operator keeps the spread.
 > One contract, any number of tokens, no redeployment.
 
@@ -15,13 +15,13 @@ Maintainer: Nethermind
 
 Pick your role, follow the path:
 
-**dApp developer** - you want users to pay gas in your token
+**dApp developer** - you want users to pay fees in your token
   1. Read the overview        → README.md
   2. Install the SDK          → sdk.md
   3. Wire up payments         → sdk.md#standard-flow
   4. Add cold-start if needed → how-to/cold-start-flow.md
 
-**Wallet team** - you want to surface gas abstraction in your wallet UI
+**Wallet team** - you want to surface fee abstraction in your wallet UI
   1. Read the overview        → README.md
   2. Fetch discovery doc      → reference/wallet-discovery.md
   3. Integrate the SDK        → how-to/integrate-wallet.md
@@ -43,7 +43,7 @@ Pick your role, follow the path:
 
 ## How FPC works (30-second version)
 
-1. User's wallet calls the attestation service: "I want to pay gas with token X"
+1. User's wallet calls the attestation service: "I want to pay fees with token X"
 2. Attestation service returns a signed quote: "Y amount of token X covers Z Fee Juice"
 3. User submits a transaction to the FPC contract with the signed quote
 4. FPC contract verifies the Schnorr signature, transfers tokens from user to operator,
@@ -68,7 +68,7 @@ Base URL for all docs: docs/
     persona routing table. Start here.
 
   architecture.md
-    Four-layer system design: contract, attestation service, top-up service, SDK.
+    Four-component system design: contract, attestation service, top-up service, SDK.
     System diagram, data flows, interface map, operator key model.
 
   quote-system.md
@@ -92,7 +92,7 @@ Base URL for all docs: docs/
 
   contracts.md
     All Noir smart contracts. FPCMultiAsset (fee_entrypoint, cold_start_entrypoint,
-    storage layout, quote verification, preimage fields), Faucet (drip, admin_drip),
+    storage layout, quote verification), Faucet (drip, admin_drip),
     TokenBridge (claim_public, claim_private, exit_to_l1), dependency graph, build commands.
 
 ### Services
@@ -142,10 +142,6 @@ Base URL for all docs: docs/
 
 ### Reference
 
-  reference/glossary.md
-    All FPC-specific terms: domain separators, quote preimage fields, contract
-    functions, SDK types, operator concepts.
-
   reference/metrics.md
     Every Prometheus metric emitted by attestation and top-up services. Metric names,
     types, labels, and values traced to source file and line number.
@@ -165,11 +161,6 @@ Base URL for all docs: docs/
   quick-start.md
     Docker Compose one-command setup, manual bun bring-up, SDK smoke test,
     verify commands.
-
-### Help
-
-  support.md
-    Contact info and links for questions, bug reports, and discussions.
 
 ---
 
@@ -328,7 +319,7 @@ Attestation service HTTP errors:
 
 SDK errors:
   "Message not in state"            → cold-start L1-to-L2 message not yet on L2 (retries 3x)
-  tx wait timeout (180s default)    → transaction not mined within txWaitTimeoutMs
+  tx wait timeout (180s default)    → transaction not included within txWaitTimeoutMs
 
 Top-up service:
   "CRITICAL: Evicting stale persisted bridge" → bridge state older than 24 hours

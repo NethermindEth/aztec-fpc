@@ -1,11 +1,11 @@
 ---
 title: Architecture
-description: How the four components of the FPC system interact to abstract gas payments on Aztec.
+description: How the four components of the FPC system interact to abstract fee payments on Aztec.
 ---
 
 # Architecture
 
-The FPC system has four components that work together to abstract gas payments: a smart contract on Aztec L2, two operator-run off-chain services, and a client-side SDK.
+The FPC system uses four components: a smart contract on Aztec L2, two operator-run off-chain services, and a client-side SDK.
 
 > [!TIP]
 > **Where do you fit?**
@@ -20,7 +20,7 @@ The FPC system has four components that work together to abstract gas payments: 
 graph TD
     W["User / Wallet<br/>1. User wants to transact on Aztec L2<br/>2. Wallet uses SDK to fetch a fee quote<br/>3. Transaction includes FPC as fee payer"]
     W --> A["Attestation Service<br/>Signs fee quotes"]
-    W --> F["FPC Contract (on-chain)<br/>Verifies signatures, pays gas"]
+    W --> F["FPC Contract (on-chain)<br/>Verifies signatures, pays fees"]
     T["Top-up Service<br/>Monitors FPC balance<br/>Bridges Fee Juice from L1 when low"] --> F
     T --> L1["L1 (Ethereum)<br/>Fee Juice Portal"]
 ```
@@ -37,7 +37,7 @@ Storage is a single packed immutable config slot containing `operator`, `operato
 
 **Responsibilities:**
 
-- Holds a Fee Juice balance to pay gas on behalf of users
+- Holds a Fee Juice balance to pay fees on behalf of users
 - Verifies Schnorr-signed fee quotes from the operator against the stored public key
 - Calls `transfer_private_to_private` to move the user's payment token to the operator's private balance
 - Declares itself as fee payer via `set_as_fee_payer()` and ends the setup phase with `end_setup()`
@@ -109,18 +109,11 @@ sequenceDiagram
     W->>A: 1. GET /quote
     A-->>W: 2. Signed quote
     W->>F: 3. Submit tx with FPC fee payer
-    Note over F: 4. fee_entrypoint()<br/>Verify Schnorr sig<br/>Push nullifier<br/>Check timestamps<br/>Assert fj_fee_amount == max_fee<br/>Transfer token<br/>set_as_fee_payer()<br/>end_setup()
+    Note over F: 4. fee_entrypoint()<br/>Verify quote, transfer token, pay fees
     F-->>W: 5. Tx confirmed
 ```
 
-In step 4, the contract performs these checks in order ([Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L79)):
-
-1. Asserts it is not in the revertible phase (conditional on non-zero gas fees)
-2. Reads packed config from storage (operator address and signing pubkey)
-3. Verifies the Schnorr quote signature, binding `user_address = msg_sender`, pushes the quote hash as a nullifier (duplicate quotes fail via nullifier conflict), asserts `anchor_block_timestamp <= valid_until`, and asserts `(valid_until - anchor_block_timestamp) <= 3600` seconds
-4. Asserts `fj_fee_amount == get_max_gas_cost(...)` for the transaction gas settings
-5. Calls `Token::at(accepted_asset).transfer_private_to_private(sender, operator, aa_payment_amount, nonce)`
-6. Calls `set_as_fee_payer()` + `end_setup()`
+The contract verifies the Schnorr signature, pushes a nullifier for replay protection, transfers the user's token to the operator, and declares itself as fee payer. For the full step-by-step verification sequence, see [Quote System: Lifecycle](./quote-system.md#lifecycle).
 
 ### Cold start
 

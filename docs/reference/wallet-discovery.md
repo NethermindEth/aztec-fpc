@@ -1,14 +1,13 @@
 ---
 title: Wallet Discovery Specification
-description: Normative spec for .well-known/fpc.json resolution, covering lookup key, required fields, resolution order, and fallback behavior.
+description: Spec for .well-known/fpc.json resolution, covering lookup key, required fields, resolution order, and fallback behavior.
 ---
 
 # Wallet Discovery Specification (Alpha)
 
 > **Status:** Accepted for Alpha
-> **Normative source:** [docs/spec/wallet-discovery-spec.md](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/wallet-discovery-spec.md)
 
-This is the minimum wallet-discovery contract for resolving attestation endpoints. It is normative for Alpha. Wallets and SDKs must implement it exactly.
+This is the minimum wallet-discovery contract for resolving attestation endpoints. Wallets and SDKs must implement it exactly.
 
 ## Lookup Key
 

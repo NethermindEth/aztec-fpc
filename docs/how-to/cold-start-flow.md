@@ -12,7 +12,7 @@ description: How bridge UIs and cross-chain onboarding teams can deliver one-tra
 
 ## What cold-start does
 
-Without cold-start, onboarding from L1 requires multiple steps: bridge tokens, acquire Fee Juice separately, claim, then transact. Cold-start collapses this into one transaction: claim bridged tokens, pay the FPC operator for gas, and deliver the remainder to the user's private balance.
+Without cold-start, onboarding from L1 requires multiple steps: bridge tokens, acquire Fee Juice separately, claim, then transact. Cold-start collapses this into one transaction: claim bridged tokens, pay the FPC operator's fee, and deliver the remainder to the user's private balance.
 
 ```mermaid
 flowchart LR
@@ -57,27 +57,13 @@ The bridge address is recorded in the token manifest (`deployments/tokens/<Token
 
 ### 1. Bridge the tokens from L1
 
-Use the standard L1-to-L2 portal manager. The `bridgeClaim` object carries everything the cold-start quote needs.
+Use the standard Aztec.js `L1ToL2TokenPortalManager` to bridge tokens. The returned `bridgeClaim` object carries everything the cold-start quote needs.
 
 ```typescript
 import { L1ToL2TokenPortalManager } from "@aztec/aztec.js/ethereum";
-import { createExtendedL1Client } from "@aztec/ethereum/client";
-import { EthAddress } from "@aztec/foundation/eth-address";
-import { createLogger } from "@aztec/foundation/log";
 
-const l1Client = createExtendedL1Client(
-  ["https://ethereum-sepolia-rpc.publicnode.com"],
-  "0x<user_l1_private_key>",
-  l1Chain,
-);
-
-const portalManager = new L1ToL2TokenPortalManager(
-  EthAddress.fromString(L1_TOKEN_ADDRESS),
-  EthAddress.fromString(L1_PORTAL_ADDRESS),
-  undefined,
-  l1Client,
-  createLogger("bridge"),
-);
+// Set up portalManager with your L1 client, token address, and portal address.
+// See: https://docs.aztec.network/developers/tutorials/token-bridge
 
 const bridgeClaim = await portalManager.bridgeTokensPrivate(
   userAddress,         // destination on L2
@@ -151,7 +137,7 @@ cold_start_entrypoint(
        -> mints claim_amount of the token to the FPC
     8. Transfer (claim_amount - aa_payment_amount) -> user (private)
     9. Transfer aa_payment_amount (token) -> operator (private)
-    10. Protocol deducts fj_amount Fee Juice from FPC's balance to pay gas
+    10. Protocol deducts fj_amount Fee Juice from FPC's balance to pay fees
 ```
 
 One proof, one transaction, three private transfers (claim + user split + operator split). Fees are paid from the claim itself. The user never needs prior L2 state.

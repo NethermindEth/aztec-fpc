@@ -20,7 +20,7 @@ Fetch the context now:
 
 curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/docs/public/llms.txt
 
-If you need the full documentation (all 21 pages, ~5k lines):
+If you need the full documentation (all 20 pages, ~5k lines):
 
 curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/docs/public/llms-full.txt
 

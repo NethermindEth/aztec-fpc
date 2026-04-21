@@ -2,7 +2,7 @@
 
 ## TLDR
 
-FPC (Fee Payment Contract) is a smart contract on Aztec that pays transaction gas on the user's behalf. The user pays the operator back in a token they already hold, at a rate locked by a signed quote. Nethermind's `aztec-fpc` is the production multi-asset implementation: one contract instance, any number of accepted tokens, no redeployment to add a new asset. The operator funds Fee Juice, sets pricing via `fee_bips`, and keeps the spread.
+FPC (Fee Payment Contract) is a smart contract on Aztec that pays transaction fees on the user's behalf. The user pays the operator back in a token they already hold, at a rate locked by a signed quote. Nethermind's `aztec-fpc` is a multi-asset implementation deployed on testnet: one contract instance, any number of accepted tokens, no redeployment to add a new asset. The operator funds Fee Juice, sets pricing via `fee_bips`, and keeps the spread.
 
 ## Components
 
@@ -26,15 +26,15 @@ FPC (Fee Payment Contract) is a smart contract on Aztec that pays transaction ga
 
 ## What is FPC?
 
-Every Aztec transaction requires Fee Juice, the protocol's native gas token. Users who bridge assets from Ethereum, wallets serving non-technical audiences, and apps accepting their own token all face the same barrier: Fee Juice has to come from somewhere before anything else can happen.
+Every Aztec transaction requires Fee Juice, the protocol's native fee token. Users who bridge assets from Ethereum, wallets serving non-technical audiences, and apps accepting their own token all face the same barrier: Fee Juice has to come from somewhere before anything else can happen.
 
 FPC (Fee Payment Contract) moves that responsibility to an operator. The operator holds Fee Juice and pays it on the user's behalf. The user pays the operator in a token they already have, at a rate the operator sets and commits to in a signed quote. The on-chain contract verifies the quote and executes the transfer atomically.
 
-Nethermind's `aztec-fpc` is the production multi-asset implementation. One contract instance serves any number of accepted tokens. Adding a new token requires no redeployment.
+Nethermind's `aztec-fpc` is a multi-asset implementation deployed on testnet. One contract instance serves any number of accepted tokens. Adding a new token requires no redeployment.
 
 ### How a standard transaction works
 
-![FPC transaction flow: User requests a signed quote from the Attestation Service, submits a transaction to the FPC Contract which verifies the quote, transfers the user's token to the operator, and pays gas.](./assets/image.png)
+![FPC transaction flow: User requests a signed quote from the Attestation Service, submits a transaction to the FPC Contract which verifies the quote, transfers the user's token to the operator, and pays fees.](./assets/image.png)
 
 The wallet requests a quote from the attestation service, which prices the Fee Juice cost in the user's token and signs it with the operator's Schnorr key. The user includes the operator's quote signature in their transaction alongside a transfer authorization witness (authwit). The authwit authorizes the token transfer and is carried as an execution payload component, not a function argument to `fee_entrypoint`.
 
@@ -50,7 +50,7 @@ All of this executes in the setup phase.
 
 ### What FPC does not do
 
-FPC does not eliminate gas costs. It shifts who pays them and in what token. The operator takes on the operational cost of keeping the FPC funded with Fee Juice and recoups it through a configurable spread per token. The spread is set as `fee_bips` in the attestation service configuration and is applied off-chain when pricing quotes. The on-chain contract has no knowledge of `fee_bips`. It verifies and settles whatever signed amounts the attestation service produced.
+FPC does not eliminate fee costs. It shifts who pays them and in what token. The operator takes on the operational cost of keeping the FPC funded with Fee Juice and recoups it through a configurable spread per token. The spread is set as `fee_bips` in the attestation service configuration and is applied off-chain when pricing quotes. The on-chain contract has no knowledge of `fee_bips`. It verifies and settles whatever signed amounts the attestation service produced.
 
 Quote signatures are user-specific and single-use. A quote issued to one user cannot be used by another, and a consumed quote cannot be replayed. The operator is not exposed to a free-rider problem, but they are exposed to market rate risk if the token value moves between quote issuance and settlement.
 
@@ -71,7 +71,7 @@ Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/az
 | **Off-chain services** | None | Attestation service and top-up daemon |
 | **Who runs it** | Aztec Labs | You |
 
-The Sponsored FPC is the right choice for development and testing where gasless UX is the only goal. On mainnet, you need either Fee Juice bridged from L1 or a deployed fee-paying contract. Nethermind's FPC covers the latter, with real token payments, operator revenue, and cold-start onboarding included.
+The Sponsored FPC is the right choice for development and testing where fee-abstracted UX is the only goal. On mainnet, you need either Fee Juice bridged from L1 or a deployed fee-paying contract. Nethermind's FPC covers the latter, with real token payments, operator revenue, and cold-start onboarding included.
 
 ---
 
@@ -107,7 +107,7 @@ const result = await fpcClient.executeColdStart({
 |---|---|---|
 | **dApp developer** | Use an existing FPC operator or run your own | [SDK Getting Started](sdk.md) |
 | **Wallet team / operator** | Deploy the contract, configure attestation, surface FPC in your wallet | [Testnet Deployment](./reference/testnet-deployment.md) |
-| **Bridge / onboarding UX** | Claim bridged tokens, pay gas, deliver the remainder in one atomic tx | [SDK Getting Started](sdk.md#cold-start-flow-user-just-bridged-from-l1) |
+| **Bridge / onboarding UX** | Claim bridged tokens, pay fees, deliver the remainder in one atomic tx | [SDK Getting Started](sdk.md#cold-start-flow-user-just-bridged-from-l1) |
 | **Auditor** | Quote binding, setup-phase irreversibility, replay protection, operator key custody | [Security](./security.md) |
 
 > [!TIP]
@@ -125,8 +125,31 @@ const result = await fpcClient.executeColdStart({
 | **Services** | [Attestation](services.md), [Top-up](services.md#top-up-service) |
 | **How-to** | [Run an Operator](./how-to/run-operator.md), [Integrate Wallet](./how-to/integrate-wallet.md), [Add Supported Asset](./how-to/add-supported-asset.md), [Cold-Start Flow](./how-to/cold-start-flow.md) |
 | **Operations** | [Configuration](./operations/configuration.md), [Deployment](./operations/deployment.md), [Docker](./operations/docker.md), [Testing](./operations/testing.md) |
-| **Reference** | [Glossary](./reference/glossary.md), [Metrics](./reference/metrics.md), [E2E Test Matrix](./reference/e2e-test-matrix.md), [Testnet Deployment](./reference/testnet-deployment.md), [Wallet Discovery](./reference/wallet-discovery.md), [Asset Model ADR](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/adr-0001-alpha-asset-model.md) |
-| **Help** | [Get Help](./support.md) |
+| **Reference** | [Metrics](./reference/metrics.md), [E2E Test Matrix](./reference/e2e-test-matrix.md), [Testnet Deployment](./reference/testnet-deployment.md), [Wallet Discovery](./reference/wallet-discovery.md), [Asset Model ADR](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/adr-0001-alpha-asset-model.md) |
+
+---
+
+## Contributing to Docs
+
+After editing any `.md` file in `docs/`, regenerate the LLM index:
+
+```bash
+bash scripts/generate-llms-full.sh
+```
+
+Commit the updated `docs/public/llms-full.txt` alongside your changes. The `docs-freshness` CI check will fail if it's stale.
+
+When adding a new page: create the `.md` file, add it to the `FILES=()` array in `scripts/generate-llms-full.sh`, add it to the documentation table above, and add it to `docs/public/llms.txt`.
+
+Testnet addresses live in one place: `docs/reference/testnet-deployment.md`. All other pages reference it.
+
+## Get Help
+
+- **Email:** [aayush@nethermind.io](mailto:aayush@nethermind.io)
+- **GitHub Discussions:** [NethermindEth/aztec-fpc discussions](https://github.com/NethermindEth/aztec-fpc/discussions)
+- **Bug reports:** [Open an issue](https://github.com/NethermindEth/aztec-fpc/issues/new)
+
+For Aztec protocol questions (not specific to this FPC implementation), see the [Aztec docs](https://docs.aztec.network/) and [Aztec Discord](https://discord.gg/aztec).
 
 ---
 

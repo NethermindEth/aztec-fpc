@@ -7,7 +7,7 @@ description: How fee quotes are signed, verified, and consumed. Covers the compu
 
 A fee quote is a signed commitment from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user's transaction, valid until `valid_until`."
 
-The attestation service signs these off-chain. The FPC contract verifies them on-chain. This page covers the hash format, signing mechanics, exchange rate computation, and security properties.
+The attestation service signs these off-chain. The FPC contract verifies them on-chain.
 
 ## Source files
 

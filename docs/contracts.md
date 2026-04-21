@@ -3,7 +3,7 @@
 All smart contracts in the FPC system are written in Noir using the Aztec.nr framework.
 
 **On this page:**
-[Contract Map](#contract-map) | [At a Glance](#at-a-glance) | [Build System](#build-system) | [FPCMultiAsset](#fpcmultiasset) | [Faucet](#faucet) | [TokenBridge](#tokenbridge)
+[Contract Map](#contract-map) | [Build System](#build-system) | [FPCMultiAsset](#fpcmultiasset) | [Faucet](#faucet) | [TokenBridge](#tokenbridge)
 
 ---
 
@@ -20,16 +20,6 @@ vendor/                  # Git submodule: aztec-standards
 ├── Token/               # Standard fungible token
 └── GenericProxy/        # Generic proxy contract
 ```
-
-## At a Glance
-
-| Contract | Purpose | Production? | Key Functions |
-|----------|---------|:-----------:|---------------|
-| [**FPCMultiAsset**](./contracts.md#fpcmultiasset) | Core fee payment | Yes | `fee_entrypoint`, `cold_start_entrypoint` |
-| [**TokenBridge**](./contracts.md#tokenbridge) | L1-L2 token bridge | Yes | `claim_public`, `claim_private`, `exit_to_l1_public` |
-| [**Faucet**](./contracts.md#faucet) | Test token dispenser | Devnet only | `drip`, `admin_drip` |
-| **Noop** | Gate count benchmarking | No | `noop` |
-| **Token** (vendor) | Standard fungible token | Yes | `transfer_private_to_private`, `transfer_public_to_public`, `mint_to_public` |
 
 ## Dependency Graph
 
@@ -87,7 +77,7 @@ After compilation, TypeScript ABIs are generated into `codegen/` for use by the 
 
 ## FPCMultiAsset
 
-Fee payment contract. Accepts operator-signed quotes and pays transaction gas on behalf of users.
+Fee payment contract. Accepts operator-signed quotes and pays transaction fees on behalf of users.
 
 **Source:** [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L23)
 
@@ -244,7 +234,7 @@ Checks whether the transaction has non-zero max fees; if so, asserts `!in_revert
 
 #### Declare fee payer
 
-`set_as_fee_payer()` + `end_setup()`. The FPC pays gas in Fee Juice.
+`set_as_fee_payer()` + `end_setup()`. The FPC pays fees in Fee Juice.
 
 #### Set sender for tags
 
@@ -271,39 +261,13 @@ No authwit required for either transfer because the FPC is `msg_sender` for both
 
 Verifies a standard quote. Computes a 7-field hash via `compute_inner_authwit_hash`, verifies the Schnorr signature against the stored operator pubkey, pushes a nullifier, checks expiry and TTL cap (max 3600 seconds), and sets the context expiration timestamp.
 
-**Preimage:**
-
-```
-compute_inner_authwit_hash([
-    0x465043,          // domain separator ("FPC")
-    fpc_address,
-    accepted_asset,
-    fj_fee_amount,
-    aa_payment_amount,
-    valid_until,
-    user_address       // always msg_sender, never zero
-])
-```
+For the full preimage structure, see [Quote System: Normal quote](./quote-system.md#normal-quote-fee_entrypoint).
 
 #### `assert_valid_cold_start_quote`
 
 Same as above with a 9-field preimage. Adds `claim_amount` and `claim_secret_hash`. Uses domain separator `0x46504373` ("FPCs") to prevent cross-entrypoint replay. `bridge` and `message_leaf_index` are function arguments but are not signed.
 
-**Preimage:**
-
-```
-compute_inner_authwit_hash([
-    0x46504373,        // domain separator ("FPCs")
-    fpc_address,
-    accepted_asset,
-    fj_fee_amount,
-    aa_payment_amount,
-    valid_until,
-    user_address,
-    claim_amount,
-    claim_secret_hash
-])
-```
+For the full preimage structure, see [Quote System: Cold-start quote](./quote-system.md#cold-start-quote-cold_start_entrypoint).
 
 #### `get_max_gas_cost`
 
@@ -331,7 +295,7 @@ Returns the maximum possible transaction fee by computing `fee_per_da_gas * da_g
 
 | Test | What it checks |
 |------|----------------|
-| `fee_entrypoint_happy_path_transfers_expected_charge` | Correct charge deducted, gas paid |
+| `fee_entrypoint_happy_path_transfers_expected_charge` | Correct charge deducted, fees paid |
 | `fee_entrypoint_rejects_mismatched_fj_fee_amount` | Tampered amount breaks signature |
 | `fee_entrypoint_rejects_expired_quote` | `valid_until` in the past rejected |
 | `fee_entrypoint_rejects_overlong_quote_ttl` | TTL > 3600s rejected |
@@ -343,7 +307,7 @@ Returns the maximum possible transaction fee by computing `fee_per_da_gas * da_g
 
 | Test | What it checks |
 |------|----------------|
-| `cold_start_happy_path` | Tokens distributed correctly, gas paid |
+| `cold_start_happy_path` | Tokens distributed correctly, fees paid |
 | `cold_start_rejects_non_root_caller` | Reverts if not transaction root |
 | `cold_start_quote_rejected_by_fee_entrypoint` | Domain separation prevents cross-use |
 | `regular_quote_rejected_by_cold_start_entrypoint` | Standard quote invalid in cold-start |
