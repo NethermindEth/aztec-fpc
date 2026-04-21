@@ -40,14 +40,7 @@ The operator's margin is expressed in basis points (`fee_bips`), added on top of
 | 200 | 2% | 20,000 |
 | 300 | 3% | 30,000 |
 
-The final rate formula:
-
-```
-final_rate_num = market_rate_num * (10000 + fee_bips)
-final_rate_den = market_rate_den * 10000
-
-aa_payment_amount = ceil(fj_amount * final_rate_num / final_rate_den)
-```
+The final payment amount is computed using the [exchange rate formula](../quote-system.md#exchange-rate-formula). The `fee_bips` margin is folded into the rate before the payment amount is calculated.
 
 ### Register the asset via admin API
 
@@ -161,3 +154,9 @@ The sweep endpoint accepts `accepted_asset` (required), `destination` (optional 
 - Verify the header name matches (`x-admin-api-key` by default, or the value of `ADMIN_API_KEY_HEADER`)
 
 </details>
+
+## See also
+
+- [Exchange rate formula](../quote-system.md#exchange-rate-computation): how `fee_bips` translates to payment amounts
+- [Configuration reference](../operations/configuration.md): all attestation config keys
+- [Run an Operator](./run-operator.md): full operator deployment and monitoring guide

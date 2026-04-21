@@ -44,9 +44,9 @@ The response shape (normative, see [wallet-discovery-spec](https://github.com/Ne
   "discovery_version": "1.0",
   "attestation_api_version": "1.0",
   "network_id": "aztec-testnet",
-  "fpc_address": "0x1be2cae6...",
+  "fpc_address": "<FPC_ADDRESS>",
   "contract_variant": "fpc-v1",
-  "quote_base_url": "https://aztec-fpc-testnet.staging-nethermind.xyz",
+  "quote_base_url": "https://<ATTESTATION_HOST>",
   "endpoints": {
     "discovery": "/.well-known/fpc.json",
     "health": "/health",
@@ -55,7 +55,7 @@ The response shape (normative, see [wallet-discovery-spec](https://github.com/Ne
     "cold_start_quote": "/cold-start-quote"
   },
   "supported_assets": [
-    { "address": "0x07348d12a...", "name": "humanUSDC" }
+    { "address": "<TOKEN_ADDRESS>", "name": "humanUSDC" }
   ]
 }
 ```

@@ -107,7 +107,7 @@ supported_assets:
 
 Each entry requires: `address` (non-zero Aztec address), `name` (non-empty string), `market_rate_num` (positive integer), `market_rate_den` (positive integer), `fee_bips` (integer 0-10000).
 
-Final rate formula ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)): `rate_num = market_rate_num * (10000 + fee_bips)`, `rate_den = market_rate_den * 10000`. The payment amount is `aa_payment_amount = ceil(fj_amount * rate_num / rate_den)`.
+The payment amount is computed using the [exchange rate formula](../quote-system.md#exchange-rate-formula) ([source](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/src/config.ts#L572)).
 
 ### State and Runtime
 

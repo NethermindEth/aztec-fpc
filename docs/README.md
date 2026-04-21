@@ -38,7 +38,15 @@ Nethermind's `aztec-fpc` is the production multi-asset implementation. One contr
 
 The wallet requests a quote from the attestation service, which prices the Fee Juice cost in the user's token and signs it with the operator's Schnorr key. The user includes the operator's quote signature in their transaction alongside a transfer authorization witness (authwit). The authwit authorizes the token transfer and is carried as an execution payload component, not a function argument to `fee_entrypoint`.
 
-The FPC contract reconstructs the quote hash via `compute_inner_authwit_hash` over the quote fields (domain separator, FPC address, accepted asset, Fee Juice amount, payment amount, expiry, and user address), verifies the Schnorr signature against the stored operator public key, pushes a nullifier to prevent replay, and then calls `transfer_private_to_private` to move the payment from the user's private balance to the operator's private balance. All of this executes in the setup phase. The contract then calls `set_as_fee_payer()` and `end_setup()`, committing the fee payment before the user's app logic runs.
+The FPC contract then:
+
+1. Reconstructs the quote hash via `compute_inner_authwit_hash` over the 7-field preimage (domain separator, FPC address, accepted asset, Fee Juice amount, payment amount, expiry, user address)
+2. Verifies the Schnorr signature against the stored operator public key
+3. Pushes a nullifier to prevent replay
+4. Calls `transfer_private_to_private` to move the payment from user to operator
+5. Calls `set_as_fee_payer()` and `end_setup()`, committing the fee before the user's app logic runs
+
+All of this executes in the setup phase.
 
 ### What FPC does not do
 
@@ -118,6 +126,7 @@ const result = await fpcClient.executeColdStart({
 | **How-to** | [Run an Operator](./how-to/run-operator.md), [Integrate Wallet](./how-to/integrate-wallet.md), [Add Supported Asset](./how-to/add-supported-asset.md), [Cold-Start Flow](./how-to/cold-start-flow.md) |
 | **Operations** | [Configuration](./operations/configuration.md), [Deployment](./operations/deployment.md), [Docker](./operations/docker.md), [Testing](./operations/testing.md) |
 | **Reference** | [Glossary](./reference/glossary.md), [Metrics](./reference/metrics.md), [E2E Test Matrix](./reference/e2e-test-matrix.md), [Testnet Deployment](./reference/testnet-deployment.md), [Wallet Discovery](./reference/wallet-discovery.md), [Asset Model ADR](https://github.com/NethermindEth/aztec-fpc/blob/main/docs/specs/spec/adr-0001-alpha-asset-model.md) |
+| **Help** | [Get Help](./support.md) |
 
 ---
 

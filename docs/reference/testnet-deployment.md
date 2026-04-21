@@ -66,8 +66,14 @@ All values are drawn from files checked into the repository:
 | Field | Value | Source |
 |-------|-------|--------|
 | Aztec node version | `4.1.0-rc.2` | `manifest.json` → `network.node_version` |
+| SDK compatibility | `4.2.0-aztecnr-rc.2` | `package.json`, `docker-compose.yaml` |
 | L1 chain | Sepolia (`11155111`) | `manifest.json` → `network.l1_chain_id` |
 | Manifest generated | 2026-03-17 | `manifest.json` → `generated_at` |
+
+> [!NOTE]
+> **Node version vs SDK version**
+>
+> The testnet node runs `4.1.0-rc.2` (the version at deployment time). The SDK and local dev tooling target `4.2.0-aztecnr-rc.2`. The SDK is backwards-compatible with this node version. When the testnet is redeployed, these versions will converge.
 
 > [!WARNING]
 > **network_id from the live discovery document**

@@ -255,3 +255,10 @@ Both services persist state in LMDB directories. Back these up regularly:
 > [!TIP]
 >
 > Loss of the top-up `data_dir` can leave in-flight bridges untracked. At minimum, keep daily backups and verify restores.
+
+## See also
+
+- [Add a Supported Asset](./add-supported-asset.md): register tokens after deployment
+- [Metrics Reference](../reference/metrics.md): every Prometheus metric with labels and types
+- [Security Model](../security.md): trust assumptions and threat matrix
+- [Configuration Reference](../operations/configuration.md): all config keys and env vars

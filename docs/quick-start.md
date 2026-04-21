@@ -141,15 +141,16 @@ const wallet = await FpcWallet.create(node, {
 });
 
 // 2. Create FPC client
+// Testnet addresses -- see reference/testnet-deployment.md for current values
+const FPC_ADDRESS = "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f";
+const OPERATOR_ADDRESS = "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974";
+const ATTESTATION_URL = "https://aztec-fpc-testnet.staging-nethermind.xyz/";
+
 const fpcClient = new FpcClient({
-  fpcAddress: AztecAddress.fromString(
-    "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f",
-  ),
-  operator: AztecAddress.fromString(
-    "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
-  ),
+  fpcAddress: AztecAddress.fromString(FPC_ADDRESS),
+  operator: AztecAddress.fromString(OPERATOR_ADDRESS),
   node,
-  attestationBaseUrl: "https://aztec-fpc-testnet.staging-nethermind.xyz/",
+  attestationBaseUrl: ATTESTATION_URL,
 });
 
 // 3. Simulate to get gas estimate
@@ -162,7 +163,7 @@ const { fee } = await fpcClient.createPaymentMethod({
   wallet,
   user: wallet.getAddress(),
   tokenAddress: AztecAddress.fromString(
-    "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb",
+    "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb", // see reference/testnet-deployment.md
   ),
   estimatedGas,
 });

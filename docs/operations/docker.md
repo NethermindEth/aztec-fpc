@@ -1,6 +1,6 @@
 # Docker and CI
 
-Container builds, compose orchestration, and CI pipeline for the FPC stack.
+Container builds, compose orchestration, and CI pipeline for the FPC stack. For contract deployment steps and manifest generation, see [Deployment](./deployment.md).
 
 [Source: docker-bake.hcl](https://github.com/NethermindEth/aztec-fpc/blob/main/docker-bake.hcl) |
 [Source: docker-compose.yaml](https://github.com/NethermindEth/aztec-fpc/blob/main/docker-compose.yaml)

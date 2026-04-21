@@ -52,14 +52,24 @@ If Aztec restores zero-address handling and adds a skip-simulation option, this 
 
 ## Standard Flow: User Has Tokens on L2
 
+> [!TIP]
+> **Prerequisites:** Bun `1.3.11`, Aztec CLI, compiled contract artifacts. See [Quick Start](./quick-start.md) for setup.
+
 ```typescript
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient, waitForNode } from "@aztec/aztec.js/node";
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 import { FpcWallet } from "./fpc-wallet"; // copied from scripts/common/fpc-wallet.ts
 
+// Testnet addresses -- see reference/testnet-deployment.md for current values
+const AZTEC_NODE_URL = "https://rpc.testnet.aztec-labs.com/";
+const ATTESTATION_URL = "https://aztec-fpc-testnet.staging-nethermind.xyz/";
+const FPC_ADDRESS = "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f";
+const OPERATOR_ADDRESS = "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974";
+const TOKEN_ADDRESS = "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb";
+
 // 1. Connect to the Aztec node and create a wallet
-const node = createAztecNodeClient("https://rpc.testnet.aztec-labs.com/");
+const node = createAztecNodeClient(AZTEC_NODE_URL);
 await waitForNode(node);
 const wallet = await FpcWallet.create(node, {
   ephemeral: true,
@@ -68,14 +78,10 @@ const wallet = await FpcWallet.create(node, {
 
 // 2. Create the FPC client
 const fpcClient = new FpcClient({
-  fpcAddress: AztecAddress.fromString(
-    "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f",
-  ),
-  operator: AztecAddress.fromString(
-    "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
-  ),
+  fpcAddress: AztecAddress.fromString(FPC_ADDRESS),
+  operator: AztecAddress.fromString(OPERATOR_ADDRESS),
   node,
-  attestationBaseUrl: "https://aztec-fpc-testnet.staging-nethermind.xyz/",
+  attestationBaseUrl: ATTESTATION_URL,
 });
 
 // 3. Simulate your tx to estimate gas
@@ -90,9 +96,7 @@ if (!estimatedGas) {
 const payment = await fpcClient.createPaymentMethod({
   wallet,
   user: userAddress,
-  tokenAddress: AztecAddress.fromString(
-    "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb",
-  ),
+  tokenAddress: AztecAddress.fromString(TOKEN_ADDRESS),
   estimatedGas,
 });
 
@@ -139,15 +143,17 @@ const wallet = await FpcWallet.create(node, {
   pxeConfig: { proverEnabled: true },
 });
 
+// Testnet addresses -- see reference/testnet-deployment.md for current values
+const FPC_ADDRESS = "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f";
+const OPERATOR_ADDRESS = "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974";
+const TOKEN_ADDRESS = "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb";
+const ATTESTATION_URL = "https://aztec-fpc-testnet.staging-nethermind.xyz/";
+
 const fpcClient = new FpcClient({
-  fpcAddress: AztecAddress.fromString(
-    "0x1be2cae678e1eddd712682948119b3fe2c3ff3f381d78ebea06162f21487d60f",
-  ),
-  operator: AztecAddress.fromString(
-    "0x0aa818ff7e9bb59334e0106eeeacc5ce8d32610d34917b213f305a30a87cf974",
-  ),
+  fpcAddress: AztecAddress.fromString(FPC_ADDRESS),
+  operator: AztecAddress.fromString(OPERATOR_ADDRESS),
   node,
-  attestationBaseUrl: "https://aztec-fpc-testnet.staging-nethermind.xyz/",
+  attestationBaseUrl: ATTESTATION_URL,
 });
 
 // 2. Create an L1 client and bridge tokens from L1 to L2
@@ -179,15 +185,13 @@ await waitForL1ToL2MessageReady(
 );
 
 // 4. Execute cold-start: claim bridged tokens + pay FPC fee in one tx
+const BRIDGE_ADDRESS = "0x19b200d772d3e9068921e6f5df7530271229e958acc9efc2c637afe64db9763f";
+
 const result = await fpcClient.executeColdStart({
   wallet,
   userAddress,
-  tokenAddress: AztecAddress.fromString(
-    "0x07348d12aae72d1c2ff67cb2bf6b0e54f2ac39484f21cad7247d4e27b4822afb",
-  ),
-  bridgeAddress: AztecAddress.fromString(
-    "0x19b200d772d3e9068921e6f5df7530271229e958acc9efc2c637afe64db9763f",
-  ),
+  tokenAddress: AztecAddress.fromString(TOKEN_ADDRESS),
+  bridgeAddress: AztecAddress.fromString(BRIDGE_ADDRESS),
   bridgeClaim,
 });
 
