@@ -16,33 +16,13 @@ The FPC system has four components that work together to abstract gas payments: 
 
 ## System diagram
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      USER / WALLET                       │
-│                                                         │
-│  1. User wants to transact on Aztec L2                  │
-│  2. Wallet uses SDK to fetch a fee quote                │
-│  3. Transaction includes FPC as fee payer               │
-└────────────────────────┬────────────────────────────────┘
-                         │
-           ┌─────────────┼─────────────────┐
-           │             │                 │
-           ▼             ▼                 ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐
-│  Attestation │ │ FPC Contract │ │  Top-up Service      │
-│  Service     │ │  (on-chain)  │ │                      │
-│              │ │              │ │  Monitors FPC balance │
-│  Signs fee   │ │  Verifies    │ │  Bridges Fee Juice   │
-│  quotes      │ │  signatures  │ │  from L1 when low    │
-│              │ │  Pays gas    │ │                      │
-└──────────────┘ └──────────────┘ └──────────┬───────────┘
-                                              │
-                                              ▼
-                                    ┌──────────────────┐
-                                    │   L1 (Ethereum)  │
-                                    │   Fee Juice      │
-                                    │   Portal         │
-                                    └──────────────────┘
+```mermaid
+graph TD
+    W["User / Wallet<br/>1. User wants to transact on Aztec L2<br/>2. Wallet uses SDK to fetch a fee quote<br/>3. Transaction includes FPC as fee payer"]
+    W --> A["Attestation Service<br/>Signs fee quotes"]
+    W --> F["FPC Contract (on-chain)<br/>Verifies signatures, pays gas"]
+    W --> T["Top-up Service<br/>Monitors FPC balance<br/>Bridges Fee Juice from L1 when low"]
+    T --> L1["L1 (Ethereum)<br/>Fee Juice Portal"]
 ```
 
 ## Component roles
@@ -120,28 +100,17 @@ A TypeScript library (`@nethermindeth/aztec-fpc-sdk`) wrapping the attestation A
 
 ### Standard fee payment
 
-```
-User Wallet                 Attestation Service       Aztec L2 (FPC)
-    │                              │                        │
-    │  1. GET /quote               │                        │
-    │─────────────────────────────►│                        │
-    │                              │                        │
-    │  2. Signed quote             │                        │
-    │◄─────────────────────────────│                        │
-    │                              │                        │
-    │  3. Submit tx with FPC fee payer                      │
-    │──────────────────────────────────────────────────────►│
-    │                              │                        │
-    │                              │  4. fee_entrypoint()   │
-    │                              │  - Verify Schnorr sig  │
-    │                              │  - Push nullifier      │
-    │                              │  - Check timestamps    │
-    │                              │  - Transfer token      │
-    │                              │  - set_as_fee_payer()  │
-    │                              │  - end_setup()         │
-    │                              │                        │
-    │  5. Tx confirmed                                      │
-    │◄──────────────────────────────────────────────────────│
+```mermaid
+sequenceDiagram
+    participant W as User Wallet
+    participant A as Attestation Service
+    participant F as Aztec L2 (FPC)
+
+    W->>A: 1. GET /quote
+    A-->>W: 2. Signed quote
+    W->>F: 3. Submit tx with FPC fee payer
+    Note over F: 4. fee_entrypoint()<br/>Verify Schnorr sig<br/>Push nullifier<br/>Check timestamps<br/>Transfer token<br/>set_as_fee_payer()<br/>end_setup()
+    F-->>W: 5. Tx confirmed
 ```
 
 In step 4, the contract performs these checks in order ([Source](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L79)):
@@ -155,53 +124,37 @@ In step 4, the contract performs these checks in order ([Source](https://github.
 
 ### Cold start
 
-```
-User (from L1)              Attestation Service       Aztec L2 (FPC + Bridge)
-    │                              │                        │
-    │  0. Bridge tokens L1→L2     │                        │
-    │                              │                        │
-    │  1. GET /cold-start-quote   │                        │
-    │─────────────────────────────►│                        │
-    │                              │                        │
-    │  2. Signed cold-start quote │                        │
-    │◄─────────────────────────────│                        │
-    │                              │                        │
-    │  3. Submit cold_start tx                              │
-    │──────────────────────────────────────────────────────►│
-    │                              │                        │
-    │                              │  4. cold_start_entry() │
-    │                              │  - Claim from bridge   │
-    │                              │  - Split: user + op    │
-    │                              │  - Pay gas             │
-    │                              │                        │
-    │  5. User has L2 tokens                                │
-    │◄──────────────────────────────────────────────────────│
+```mermaid
+sequenceDiagram
+    participant U as User (from L1)
+    participant A as Attestation Service
+    participant F as Aztec L2 (FPC + Bridge)
+
+    U->>F: 0. Bridge tokens L1 to L2
+    U->>A: 1. GET /cold-start-quote
+    A-->>U: 2. Signed cold-start quote
+    U->>F: 3. Submit cold_start tx
+    Note over F: 4. cold_start_entrypoint()<br/>Claim from bridge<br/>Split: user + operator<br/>Pay gas
+    F-->>U: 5. User has L2 tokens
 ```
 
 The cold-start quote uses a different domain separator (`0x46504373`, ASCII `FPCs`) and includes `claim_amount` and `claim_secret_hash` in the hash preimage. This prevents cross-entrypoint quote reuse.
 
 ### Top-up
 
-```
-Top-up Service              L1 (Ethereum)             Aztec L2
-    │                              │                        │
-    │  1. Check FPC balance                                 │
-    │──────────────────────────────────────────────────────►│
-    │                              │                        │
-    │  2. Balance < threshold      │                        │
-    │                              │                        │
-    │  3. Bridge Fee Juice         │                        │
-    │─────────────────────────────►│                        │
-    │                              │                        │
-    │  4. Persist to LMDB          │                        │
-    │                              │                        │
-    │  5. Poll for confirmation                             │
-    │──────────────────────────────────────────────────────►│
-    │                              │                        │
-    │  6. Auto-claim (optional)                             │
-    │──────────────────────────────────────────────────────►│
-    │                              │                        │
-    │  7. Clear state              │                        │
+```mermaid
+sequenceDiagram
+    participant T as Top-up Service
+    participant L1 as L1 (Ethereum)
+    participant L2 as Aztec L2
+
+    T->>L2: 1. Check FPC balance
+    Note over T: 2. Balance < threshold
+    T->>L1: 3. Bridge Fee Juice
+    Note over T: 4. Persist to LMDB
+    T->>L2: 5. Poll for confirmation
+    T->>L2: 6. Auto-claim (optional)
+    Note over T: 7. Clear state
 ```
 
 The service uses `L1FeeJuicePortalManager.new(node, client, logger)` to build the L1 client. After submitting the bridge transaction, it waits for L1-to-L2 message readiness via `waitForL1ToL2MessageReady`, then continues polling the FPC Fee Juice balance as a final fallback confirmation signal. An in-flight guard prevents multiple concurrent bridges. If the process crashes mid-bridge, the L1 transaction still completes and L2 receives the funds.

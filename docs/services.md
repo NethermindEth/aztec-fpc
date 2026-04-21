@@ -180,16 +180,7 @@ The operator sets baseline rate values in the attestation config:
 
 For multi-asset deployments, each entry in `supported_assets` may override these values with asset-specific `market_rate_num`, `market_rate_den`, and `fee_bips`.
 
-The service computes the final rate:
-
-```
-final_rate_num = market_rate_num * (10000 + fee_bips)
-final_rate_den = market_rate_den * 10000
-
-aa_payment_amount = ceil(fj_amount * final_rate_num / final_rate_den)
-```
-
-Example: if `market_rate_num=1`, `market_rate_den=1000`, `fee_bips=200` (2%), then 1 Fee Juice = 0.00102 accepted-asset units.
+The service computes the final payment amount using the [exchange rate formula](./quote-system.md#exchange-rate-formula). In short: `aa_payment_amount = ceil(fj_amount * rate_num / rate_den)` where `rate_num` and `rate_den` incorporate the operator's `fee_bips` margin.
 
 For `FPC.fee_entrypoint`, the `fj_amount` must match `get_max_gas_cost` for the transaction gas settings.
 
@@ -352,28 +343,16 @@ The FPC contract needs Fee Juice to pay gas on behalf of users. Without it, all 
 
 ### Operational Flow
 
-```
-┌─────────────────────────────────────────┐
-│ 1. Reconcile persisted state (startup)  │
-│    Check LMDB for in-flight bridges     │
-├─────────────────────────────────────────┤
-│ 2. Read FPC Fee Juice balance on L2     │
-├─────────────────────────────────────────┤
-│ 3. Balance < threshold?                 │
-│    NO  → sleep, go to 2                 │
-│    YES → continue                       │
-├─────────────────────────────────────────┤
-│ 4. Bridge top_up_amount via L1 portal   │
-├─────────────────────────────────────────┤
-│ 5. Persist bridge metadata to LMDB      │
-├─────────────────────────────────────────┤
-│ 6. Poll for confirmation               │
-│    (L1→L2 message ready + balance up)   │
-├─────────────────────────────────────────┤
-│ 7. Auto-claim on L2 (if enabled)        │
-├─────────────────────────────────────────┤
-│ 8. Clear state → go to 2               │
-└─────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["1. Reconcile persisted state (startup)<br/>Check LMDB for in-flight bridges"] --> B["2. Read FPC Fee Juice balance on L2"]
+    B --> C{"3. Balance < threshold?"}
+    C -- No --> D["Sleep"] --> B
+    C -- Yes --> E["4. Bridge top_up_amount via L1 portal"]
+    E --> F["5. Persist bridge metadata to LMDB"]
+    F --> G["6. Poll for confirmation<br/>(L1-to-L2 message ready + balance up)"]
+    G --> H["7. Auto-claim on L2 (if enabled)"]
+    H --> I["8. Clear state"] --> B
 ```
 
 Only one bridge operation runs at a time. An in-flight guard prevents concurrent bridges.

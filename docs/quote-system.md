@@ -18,6 +18,20 @@ The attestation service signs these off-chain. The FPC contract verifies them on
 
 ## Lifecycle
 
+```mermaid
+sequenceDiagram
+    participant W as Wallet (SDK)
+    participant A as Attestation Service
+    participant F as FPC Contract (on-chain)
+
+    W->>A: 1. GET /quote (user, asset, fj_amount)
+    Note over A: Compute exchange rate<br/>Hash preimage via computeInnerAuthWitHash<br/>Sign with Schnorr key
+    A-->>W: 2. Signed quote (signature + amounts)
+    W->>F: 3. Submit tx (quote params + signature as fee_entrypoint args)
+    Note over F: 4. Reconstruct hash (compute_inner_authwit_hash)<br/>Verify Schnorr signature<br/>Push nullifier (replay protection)
+    Note over F: 5. Transfer tokens, set_as_fee_payer()
+```
+
 1. **User requests a quote.** The wallet calls `GET /quote?user=<addr>&accepted_asset=<addr>&fj_amount=<amount>` on the attestation service. The `fj_amount` must equal `get_max_gas_cost` for the transaction gas settings.
 
 2. **Attestation service signs the quote.** The service computes the exchange rate, creates a hash of the quote parameters using `computeInnerAuthWitHash` from `@aztec/stdlib/auth-witness`, and signs the 32-byte hash with the operator's Schnorr key. It returns a 64-byte hex signature.

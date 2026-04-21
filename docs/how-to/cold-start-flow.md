@@ -10,44 +10,29 @@ description: How bridge UIs and cross-chain onboarding teams can deliver one-tra
 >
 > Bridge builders (Substance Labs, TRAIN Protocol, Wormhole) and cross-chain wallet teams. The cold-start flow solves the onboarding gap between "funds arrived on L2" and "first transaction."
 
-## The UX problem
+## Overview
 
-Before cold-start, bridging a user from L1 to Aztec L2 looked like this:
-
-```
-User bridges USDC from L1
-  |
-Tokens appear on L2 (private, claimable)
-  |
-User can't do anything yet, needs Fee Juice to pay gas
-  |
-User must acquire Fee Juice somehow (second bridge? faucet? DEX?)
-  |
-User claims bridged USDC
-  |
-User does their first L2 action
-```
-
-Four steps, three of them UX dead ends. For a bridge UI this is the core onboarding failure, and it is why most cross-chain flows abandon users between "funds arrived" and "first transaction."
-
-## What cold-start gives you
-
-```
-User bridges USDC from L1
-  |
-Bridge UI calls executeColdStart()
-  |
-One L2 transaction:
-  - Claims bridged USDC from the bridge
-  - Pays FPC operator in USDC for gas (operator covers the Fee Juice)
-  - Leaves the remainder in the user's private balance
-  |
-User has tokens AND a transaction history, ready for subsequent actions
+```mermaid
+flowchart LR
+    subgraph L1 [Ethereum L1]
+        A["User deposits tokens"] --> B["L1 Portal"]
+    end
+    B -->|"L1-to-L2 message"| C["Aztec Inbox"]
+    C --> D["executeColdStart()"]
+    subgraph L2 ["Aztec L2 (one transaction)"]
+        D --> E["Claim bridged tokens into FPC"]
+        E --> F["Pay operator fee in tokens"]
+        E --> G["Deliver remainder to user"]
+    end
+    G --> H["User has tokens + tx history"]
 ```
 
-One step. No intermediate "get Fee Juice somehow" cliff.
+## What cold-start does
 
-## How it differs from the standard fee flow
+Without cold-start, onboarding from L1 requires multiple steps: bridge tokens, acquire Fee Juice separately, claim, then transact. Cold-start collapses this into one transaction: claim bridged tokens, pay the FPC operator for gas, and deliver the remainder to the user's private balance.
+
+<details>
+<summary>How it differs from the standard fee flow</summary>
 
 | | Standard `fee_entrypoint` | `cold_start_entrypoint` |
 |---|---|---|
@@ -58,6 +43,8 @@ One step. No intermediate "get Fee Juice somehow" cliff.
 | Gas simulation | Yes (`simulate({fee:{estimateGas:true}})`) | No. Uses hardcoded `Gas(5_000, 1_000_000)` because the user's account may not exist, so the PXE cannot simulate. |
 
 The attestation service validates `claim_amount >= aa_payment_amount` before signing. A cold-start quote whose claim is too small to cover the fee is rejected by the service, not on-chain.
+
+</details>
 
 ## Integration step by step
 

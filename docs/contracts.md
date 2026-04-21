@@ -548,17 +548,15 @@ Burns L2 tokens from private balance and sends an L2-to-L1 withdrawal message. A
 
 ### Role in Cold Start
 
-```
-User (L1) ──bridge──► L1 Portal ──message──► Aztec Inbox
-                                                   │
-FPC.cold_start_entrypoint ──► TokenBridge.claim_private(fpc_address, claim_amount, ...)
-                                    │
-                                    ▼
-                              Tokens minted to FPC's private balance
-                                    │
-                              FPC distributes via transfer_private_to_private:
-                              ├──► user gets (claim_amount - aa_payment_amount)
-                              └──► operator gets aa_payment_amount
+```mermaid
+flowchart LR
+    U["User (L1)"] -->|bridge| P["L1 Portal"]
+    P -->|L1-to-L2 message| I["Aztec Inbox"]
+    I --> C["FPC.cold_start_entrypoint"]
+    C -->|"claim_private(fpc, amount, ...)"| B["TokenBridge"]
+    B --> M["Tokens minted to FPC's private balance"]
+    M -->|"claim_amount - aa_payment_amount"| USER["User"]
+    M -->|"aa_payment_amount"| OP["Operator"]
 ```
 
 The FPC passes its own address (not the user's) as the `recipient` argument to `claim_private`. Tokens land in the FPC's private balance first, then the FPC distributes them. This design is intentional: the user's account may not exist on L2 yet, so the protocol cannot write notes directly to the user. Routing through the FPC sidesteps the need for an authwit from a non-existent account.
