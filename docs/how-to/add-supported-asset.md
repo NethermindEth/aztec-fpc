@@ -155,8 +155,9 @@ The sweep endpoint accepts `accepted_asset` (required), `destination` (optional 
 
 </details>
 
-## See also
+## Next Steps
 
 - [Exchange rate formula](../quote-system.md#exchange-rate-computation): how `fee_bips` translates to payment amounts
-- [Configuration reference](../operations/configuration.md): all attestation config keys
-- [Run an Operator](./run-operator.md): full operator deployment and monitoring guide
+- [Services](../services.md): full attestation API reference, including all admin endpoints
+- [Configuration Reference](../operations/configuration.md): all attestation config keys and env vars
+- [Run an Operator](./run-operator.md): production deployment, monitoring, and checklist
