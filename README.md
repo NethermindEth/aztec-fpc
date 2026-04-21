@@ -70,14 +70,23 @@ For testnet deployment, manual bring-up, or SDK-only integration: **[Quick Start
 
 **[docs/README.md](docs/README.md)** is the entry point. It routes you by role:
 
-| You are... | Start here |
+<table>
+<tr>
+<td valign="top">
+
+**Start here**
+
+| You are... | Go to |
 |---|---|
 | **dApp developer** | [SDK Getting Started](docs/sdk.md) |
 | **Wallet team** | [Integrate Wallet](docs/how-to/integrate-wallet.md) |
 | **Operator** | [Run an Operator](docs/how-to/run-operator.md) |
 | **Auditor** | [Security Model](docs/security.md) |
 
-Full table:
+</td>
+<td valign="top">
+
+**Full docs**
 
 | Section | Pages |
 |---------|-------|
@@ -89,6 +98,10 @@ Full table:
 | **Ops** | [Deployment](docs/operations/deployment.md), [Docker](docs/operations/docker.md), [Testing](docs/operations/testing.md) |
 | **Reference** | [Glossary](docs/reference/glossary.md), [Metrics](docs/reference/metrics.md), [Testnet](docs/reference/testnet-deployment.md), [Wallet Discovery](docs/reference/wallet-discovery.md) |
 | **Specs** | [Protocol](docs/specs/spec/protocol-spec.md), [E2E Tests](docs/specs/spec/e2e-test-spec.md), [ADR-0001](docs/specs/spec/adr-0001-alpha-asset-model.md) |
+
+</td>
+</tr>
+</table>
 
 ## Repository layout
 
