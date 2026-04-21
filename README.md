@@ -220,18 +220,18 @@ const coldStart = await client.executeColdStart({
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| **[docs/specs/aztec-deployer-user-guide.md](docs/specs/aztec-deployer-user-guide.md)** | **Full guide** — manual deployment, custom config, SDK integration, API reference |
-| [sdk/README.md](sdk/README.md) | SDK integration guide |
-| [docs/specs/ops/docker-deployment-guide.md](docs/specs/ops/docker-deployment-guide.md) | Docker image CLI arguments, config generation, Compose examples |
-| [docs/specs/ops/devnet-deployment-how-to.md](docs/specs/ops/devnet-deployment-how-to.md) | Non-Docker devnet deployment via `bun run deploy:fpc` |
-| [docs/specs/ops/operator-runbook.md](docs/specs/ops/operator-runbook.md) | 30-minute local operator quick-start |
-| [docs/specs/ops/operational-metrics.md](docs/specs/ops/operational-metrics.md) | Prometheus metrics and health probes reference |
-| [docs/specs/spec/protocol-spec.md](docs/specs/spec/protocol-spec.md) | Full protocol specification |
-| [docs/specs/spec/wallet-discovery-spec.md](docs/specs/spec/wallet-discovery-spec.md) | Wallet discovery (`GET /.well-known/fpc.json`) |
-| [docs/specs/spec/e2e-test-spec.md](docs/specs/spec/e2e-test-spec.md) | E2E test definition and runbook |
-| [docs/specs/spec/adr-0001-alpha-asset-model.md](docs/specs/spec/adr-0001-alpha-asset-model.md) | Alpha asset model decision record |
+**[Full documentation](docs/README.md)** — architecture, SDK reference, contract reference, operator guides, and more.
+
+| Section | Key pages |
+|---------|-----------|
+| **Getting started** | [Quick Start](docs/quick-start.md), [SDK](docs/sdk.md), [Architecture](docs/architecture.md) |
+| **Contracts** | [FPCMultiAsset, Faucet, TokenBridge](docs/contracts.md) |
+| **Services** | [Attestation + Top-up](docs/services.md), [Configuration](docs/operations/configuration.md) |
+| **How-to** | [Run an Operator](docs/how-to/run-operator.md), [Integrate Wallet](docs/how-to/integrate-wallet.md), [Cold-Start Flow](docs/how-to/cold-start-flow.md) |
+| **Operations** | [Deployment](docs/operations/deployment.md), [Docker](docs/operations/docker.md), [Testing](docs/operations/testing.md) |
+| **Reference** | [Glossary](docs/reference/glossary.md), [Metrics](docs/reference/metrics.md), [Testnet Deployment](docs/reference/testnet-deployment.md) |
+| **Security** | [Security Model](docs/security.md), [Quote System](docs/quote-system.md) |
+| **Specs** | [Protocol Spec](docs/specs/spec/protocol-spec.md), [E2E Test Spec](docs/specs/spec/e2e-test-spec.md), [ADR-0001](docs/specs/spec/adr-0001-alpha-asset-model.md) |
 
 ---
 
