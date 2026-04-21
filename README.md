@@ -127,7 +127,8 @@ aztec-fpc/
 
 ## Development
 
-Prerequisites: [Bun](https://bun.sh/) `1.3.11`, [Aztec CLI](https://docs.aztec.network/) `4.2.0-aztecnr-rc.2`
+> [!NOTE]
+> **Prerequisites:** [Bun](https://bun.sh/) `1.3.11`, [Aztec CLI](https://docs.aztec.network/) `4.2.0-aztecnr-rc.2`
 
 ```bash
 aztec compile --workspace --force   # compile all Noir contracts
