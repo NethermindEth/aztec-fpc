@@ -1,34 +1,52 @@
 # FPC: Fee Payment Contracts for Aztec
 
-> **Using an AI agent?** Give it full project context in one command:
-> ```
-> curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/docs/public/llms.txt
-> ```
-> For the complete docs (~5k lines): replace `llms.txt` with `llms-full.txt`.
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> **Developer?** Start here: **[FPC Documentation](docs/README.md)** -- overview, component map, quick code example, and persona-based routing to the page you need.
+Users pay gas in the token they already hold. The operator covers the Fee Juice.
 
-## What FPC Does
+FPC is a smart contract on [Aztec](https://aztec.network/) that sits between users and the protocol's gas layer. Instead of acquiring Fee Juice, users pay the FPC operator in any accepted token (USDC, ETH, app tokens) at a rate locked by a signed quote. One contract instance handles any number of tokens with no redeployment.
 
-Every Aztec transaction costs gas in Fee Juice. Users don't have Fee Juice. FPC pays it for them. The user pays the operator in whatever token they hold (USDC, ETH, app tokens). The operator keeps the spread.
+**[Read the docs](docs/README.md)** | **[Testnet addresses](docs/reference/testnet-deployment.md)** | **[SDK reference](docs/sdk.md)**
 
-One contract, any number of tokens, no redeployment to add a new asset.
+## How it works
 
-| Component | What it does |
+| Component | Role |
 |---|---|
-| **FPC contract** (`FPCMultiAsset`) | Verifies operator-signed quotes, transfers tokens from user to operator, pays gas |
-| **Attestation service** | Signs per-user fee quotes, serves wallet discovery metadata |
-| **Top-up service** | Monitors FPC balance, bridges Fee Juice from L1 when low |
-| **SDK** (`@nethermindeth/aztec-fpc-sdk`) | 2 methods: `createPaymentMethod()` and `executeColdStart()` |
+| **FPC contract** | Verifies operator-signed Schnorr quotes, transfers tokens from user to operator, pays gas to the protocol |
+| **Attestation service** | Signs per-user fee quotes, serves wallet discovery at `/.well-known/fpc.json` |
+| **Top-up service** | Watches FPC balance on L2, bridges Fee Juice from L1 when it drops below threshold |
+| **SDK** | `createPaymentMethod()` for existing users, `executeColdStart()` for L1 onboarding |
 
-## Quick Start
+## Usage
+
+```typescript
+import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
+
+const fpcClient = new FpcClient({ fpcAddress, operator, node, attestationBaseUrl });
+
+// User already has L2 tokens
+const { fee } = await fpcClient.createPaymentMethod({
+  wallet, user: userAddress, tokenAddress, estimatedGas,
+});
+await contract.methods.transfer(recipient, amount).send({ fee });
+
+// User just bridged from L1 — no account, no Fee Juice
+const result = await fpcClient.executeColdStart({
+  wallet, userAddress, tokenAddress, bridgeAddress, bridgeClaim,
+});
+```
+
+Two methods. That's the entire SDK surface.
+
+## Quick start
+
+Run the full stack locally in one command:
 
 ```bash
 git clone --recurse-submodules https://github.com/NethermindEth/aztec-fpc.git
-cd aztec-fpc
-bun install
+cd aztec-fpc && bun install
 docker buildx bake
-bun run compose:full
+docker compose --profile full up wait --wait
 ```
 
 Verify:
@@ -39,24 +57,36 @@ curl http://localhost:3001/ready           # topup
 curl http://localhost:3000/accepted-assets # registered tokens
 ```
 
-For testnet deployment, manual bring-up, or SDK-only integration, see [Quick Start](docs/quick-start.md).
+For testnet deployment, manual bring-up, or SDK-only integration: **[Quick Start guide](docs/quick-start.md)**.
 
 ## Documentation
 
-**[Full documentation](docs/README.md)** -- architecture, SDK reference, contract reference, operator guides, and more.
+**[docs/README.md](docs/README.md)** is the entry point. It routes you by role:
 
-| Section | Key pages |
-|---------|-----------|
-| **Getting started** | [Quick Start](docs/quick-start.md), [SDK](docs/sdk.md), [Architecture](docs/architecture.md) |
+| You are... | Start here |
+|---|---|
+| **dApp developer** | [SDK Getting Started](docs/sdk.md) |
+| **Wallet team** | [Integrate Wallet](docs/how-to/integrate-wallet.md) |
+| **Operator** | [Run an Operator](docs/how-to/run-operator.md) |
+| **Auditor** | [Security Model](docs/security.md) |
+
+Full table:
+
+| Section | Pages |
+|---------|-------|
+| **Core** | [Architecture](docs/architecture.md), [Quote System](docs/quote-system.md), [Security](docs/security.md) |
+| **SDK** | [Getting Started](docs/sdk.md) |
 | **Contracts** | [FPCMultiAsset, Faucet, TokenBridge](docs/contracts.md) |
 | **Services** | [Attestation + Top-up](docs/services.md), [Configuration](docs/operations/configuration.md) |
-| **How-to** | [Run an Operator](docs/how-to/run-operator.md), [Integrate Wallet](docs/how-to/integrate-wallet.md), [Cold-Start Flow](docs/how-to/cold-start-flow.md) |
-| **Operations** | [Deployment](docs/operations/deployment.md), [Docker](docs/operations/docker.md), [Testing](docs/operations/testing.md) |
-| **Reference** | [Glossary](docs/reference/glossary.md), [Metrics](docs/reference/metrics.md), [Testnet Deployment](docs/reference/testnet-deployment.md) |
-| **Security** | [Security Model](docs/security.md), [Quote System](docs/quote-system.md) |
-| **Specs** | [Protocol Spec](docs/specs/spec/protocol-spec.md), [E2E Test Spec](docs/specs/spec/e2e-test-spec.md), [ADR-0001](docs/specs/spec/adr-0001-alpha-asset-model.md) |
+| **How-to** | [Run Operator](docs/how-to/run-operator.md), [Integrate Wallet](docs/how-to/integrate-wallet.md), [Add Asset](docs/how-to/add-supported-asset.md), [Cold-Start](docs/how-to/cold-start-flow.md) |
+| **Ops** | [Deployment](docs/operations/deployment.md), [Docker](docs/operations/docker.md), [Testing](docs/operations/testing.md) |
+| **Reference** | [Glossary](docs/reference/glossary.md), [Metrics](docs/reference/metrics.md), [Testnet](docs/reference/testnet-deployment.md), [Wallet Discovery](docs/reference/wallet-discovery.md) |
+| **Specs** | [Protocol](docs/specs/spec/protocol-spec.md), [E2E Tests](docs/specs/spec/e2e-test-spec.md), [ADR-0001](docs/specs/spec/adr-0001-alpha-asset-model.md) |
 
-## Repository Layout
+> **AI agents:** Get full project context with `curl -sL https://raw.githubusercontent.com/NethermindEth/aztec-fpc/main/docs/public/llms.txt`
+> For the complete docs (~5k lines): replace `llms.txt` with `llms-full.txt`.
+
+## Repository layout
 
 ```text
 aztec-fpc/
@@ -76,25 +106,20 @@ aztec-fpc/
 ├── vendor/
 │   └── aztec-standards/       ← Git submodule (token contract)
 └── docs/                      ← Documentation (start with README.md)
-    ├── how-to/                ← Task-oriented guides
-    ├── operations/            ← Deployment, config, Docker, testing
-    ├── reference/             ← Glossary, metrics, test matrix, testnet
-    ├── specs/                 ← Protocol specs, ADRs, operator runbooks
-    └── public/                ← llms.txt, llms-full.txt for AI agents
 ```
 
 ## Development
 
-Prerequisites: Bun `1.3.11`, [Aztec CLI](https://docs.aztec.network/) `4.2.0-aztecnr-rc.2`
+Prerequisites: [Bun](https://bun.sh/) `1.3.11`, [Aztec CLI](https://docs.aztec.network/) `4.2.0-aztecnr-rc.2`
 
 ```bash
 aztec compile --workspace --force   # compile all Noir contracts
-bun run test:contracts              # contract tests
-bun run test:ts                     # service + SDK tests
-bun run ci                          # full CI pipeline (format, lint, typecheck, build, test)
+bun run test:contracts              # Noir contract tests
+bun run test:ts                     # service + SDK unit tests
+bun run ci                          # full pipeline: format, lint, typecheck, build, test
 ```
 
-Docker integration tests (same as CI):
+Docker integration tests (same flow as CI):
 
 ```bash
 docker buildx bake
@@ -104,12 +129,21 @@ docker compose --profile full down -v --remove-orphans
 
 ## Security
 
-- **Operator key**: single Schnorr key, signs all quotes, receives all revenue. Use KMS/HSM in production. Compromise requires contract redeployment (no on-chain rotation).
-- **L1 operator key**: used only by the top-up service for bridging. Keep minimal ETH balance.
-- **Runtime profile**: set `runtime_profile=production` to reject plaintext secrets and require auth on quote endpoints.
+- **Operator key**: single Schnorr keypair signs all quotes and receives all revenue. Use KMS/HSM in production. Compromise requires contract redeployment (no on-chain key rotation).
+- **L1 key**: used only by the top-up service for bridging. Keep minimal ETH balance.
+- **Production mode**: `runtime_profile=production` rejects plaintext secrets and requires auth on quote endpoints.
 
-See [Security Model](docs/security.md) for the full threat matrix and production checklist.
+Full threat matrix and production checklist: **[Security Model](docs/security.md)**.
+
+## Support
+
+Questions, bugs, or feedback:
+
+- **Email**: aayush@nethermind.io
+- **GitHub**: [Open an issue](https://github.com/NethermindEth/aztec-fpc/issues/new) or [start a discussion](https://github.com/NethermindEth/aztec-fpc/discussions)
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)
+
+Built by [Nethermind](https://nethermind.io/).
