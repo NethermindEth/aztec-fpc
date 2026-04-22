@@ -164,7 +164,7 @@ fn fee_entrypoint(
 9. Calls `Token::at(accepted_asset).transfer_private_to_private(sender, operator, aa_payment_amount, authwit_nonce)`.
 10. Calls `set_as_fee_payer()` + `end_setup()`.
 
-The token transfer is irrevocably committed in the setup phase. No teardown is scheduled. No tokens accumulate in this contract's balance. All fee payments arrive directly in the operator's private balance. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions) for implications.
+The token transfer is irrevocably committed in the setup phase (the non-revertible phase). `aztec-fpc` does not schedule a teardown phase. No tokens accumulate in this contract's balance. All fee payments arrive directly in the operator's private balance. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions) for implications.
 
 The caller must provide a valid authwit for the token transfer before submitting.
 

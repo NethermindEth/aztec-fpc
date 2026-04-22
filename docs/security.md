@@ -21,9 +21,9 @@ Users trust that the operator will:
 > [!CAUTION]
 > **Setup-phase irreversibility: the fee is paid even if your app logic reverts**
 >
-> The user-to-operator token transfer executes directly inside the Aztec setup phase, before `end_setup()`. It is irrevocably committed at that point.
+> The user-to-operator token transfer executes directly inside the Aztec setup phase (the non-revertible phase), before `end_setup()`. It is irrevocably committed at that point.
 >
-> If the user's subsequent app logic reverts, the fee has still been paid. There is no teardown phase and no refund. This is inherent to the Aztec FPC model, not a Nethermind design choice.
+> If the user's subsequent app logic reverts, the fee has still been paid. Aztec supports an optional teardown phase that some FPC designs use to compute refunds; `aztec-fpc` deliberately does not use teardown. It charges a fixed quoted amount; any unused Fee Juice stays in the FPC's balance for future transactions. This is our design choice, not a protocol limitation.
 >
 > Implications for integrators:
 > - **Wallets** must surface this clearly. "Fee charged even on app-level failure" is a truthful description.

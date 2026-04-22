@@ -425,7 +425,7 @@ The two reasons simulation cannot work:
 | DA gas | 5,000 | 1,568 | ~3.2x |
 | L2 gas | 1,000,000 | 711,103 | ~1.4x |
 
-Unused Fee Juice stays in the FPC's balance. There is no teardown/refund phase. Re-measure after contract changes with `./profiling/setup.sh && ./profiling/run.sh`.
+Unused Fee Juice stays in the FPC's balance. `aztec-fpc` does not use the teardown phase, so there is no refund. Re-measure after contract changes with `./profiling/setup.sh && ./profiling/run.sh`.
 
 ### Error Handling
 

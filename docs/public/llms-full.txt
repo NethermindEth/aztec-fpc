@@ -12,21 +12,21 @@
 | architecture.md | 410 |
 | security.md | 602 |
 | quote-system.md | 808 |
-| sdk.md | 1020 |
-| contracts.md | 1462 |
-| services.md | 2002 |
-| how-to/run-operator.md | 2552 |
-| how-to/integrate-wallet.md | 2821 |
-| how-to/add-supported-asset.md | 3001 |
-| how-to/cold-start-flow.md | 3168 |
-| operations/configuration.md | 3362 |
-| operations/deployment.md | 3640 |
-| operations/docker.md | 3986 |
-| operations/testing.md | 4140 |
-| reference/metrics.md | 4334 |
-| reference/e2e-test-matrix.md | 4486 |
-| reference/testnet-deployment.md | 4628 |
-| reference/wallet-discovery.md | 4756 |
+| sdk.md | 1029 |
+| contracts.md | 1471 |
+| services.md | 2011 |
+| how-to/run-operator.md | 2561 |
+| how-to/integrate-wallet.md | 2830 |
+| how-to/add-supported-asset.md | 3010 |
+| how-to/cold-start-flow.md | 3177 |
+| operations/configuration.md | 3371 |
+| operations/deployment.md | 3649 |
+| operations/docker.md | 3995 |
+| operations/testing.md | 4149 |
+| reference/metrics.md | 4343 |
+| reference/e2e-test-matrix.md | 4495 |
+| reference/testnet-deployment.md | 4637 |
+| reference/wallet-discovery.md | 4765 |
 
 ---
 
@@ -453,7 +453,7 @@ Storage is a single packed immutable config slot containing `operator`, `operato
 - `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` for users with an existing L2 token balance
 - `cold_start_entrypoint` for new users claiming bridged L1 tokens and paying in one transaction
 
-The token transfer is irrevocably committed in the setup phase. No teardown is scheduled. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions).
+The token transfer is irrevocably committed in the setup phase (the non-revertible phase). `aztec-fpc` does not schedule a teardown phase. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions).
 
 ### Attestation service (off-chain)
 
@@ -618,9 +618,9 @@ Users trust that the operator will:
 > [!CAUTION]
 > **Setup-phase irreversibility: the fee is paid even if your app logic reverts**
 >
-> The user-to-operator token transfer executes directly inside the Aztec setup phase, before `end_setup()`. It is irrevocably committed at that point.
+> The user-to-operator token transfer executes directly inside the Aztec setup phase (the non-revertible phase), before `end_setup()`. It is irrevocably committed at that point.
 >
-> If the user's subsequent app logic reverts, the fee has still been paid. There is no teardown phase and no refund. This is inherent to the Aztec FPC model, not a Nethermind design choice.
+> If the user's subsequent app logic reverts, the fee has still been paid. Aztec supports an optional teardown phase that some FPC designs use to compute refunds; `aztec-fpc` deliberately does not use teardown. It charges a fixed quoted amount; any unused Fee Juice stays in the FPC's balance for future transactions. This is our design choice, not a protocol limitation.
 >
 > Implications for integrators:
 > - **Wallets** must surface this clearly. "Fee charged even on app-level failure" is a truthful description.
@@ -811,6 +811,15 @@ description: How fee quotes are signed, verified, and consumed. Covers the compu
 A fee quote is a signed commitment from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user's transaction, valid until `valid_until`."
 
 The attestation service signs these off-chain. The FPC contract verifies them on-chain.
+
+> [!NOTE]
+> **Quote signature vs token transfer authwit**
+>
+> The quote signature is produced by the operator and commits the operator to specific pricing terms. It is not an authwit.
+>
+> Separately, the user provides an authwit authorizing the FPC to transfer `aa_payment_amount` tokens from their account to the operator. This follows Aztec's standard authwit pattern ([Authentication Witness docs](https://docs.aztec.network/)).
+>
+> The contract reuses the Aztec stdlib's `compute_inner_authwit_hash` function (a domain-separated Poseidon hash) to hash the quote preimage, but this is only a hash utility choice. The quote itself is a Schnorr-signed commitment, not an authwit.
 
 ## Source files
 
@@ -1440,7 +1449,7 @@ The two reasons simulation cannot work:
 | DA gas | 5,000 | 1,568 | ~3.2x |
 | L2 gas | 1,000,000 | 711,103 | ~1.4x |
 
-Unused Fee Juice stays in the FPC's balance. There is no teardown/refund phase. Re-measure after contract changes with `./profiling/setup.sh && ./profiling/run.sh`.
+Unused Fee Juice stays in the FPC's balance. `aztec-fpc` does not use the teardown phase, so there is no refund. Re-measure after contract changes with `./profiling/setup.sh && ./profiling/run.sh`.
 
 ### Error Handling
 
@@ -1621,7 +1630,7 @@ fn fee_entrypoint(
 9. Calls `Token::at(accepted_asset).transfer_private_to_private(sender, operator, aa_payment_amount, authwit_nonce)`.
 10. Calls `set_as_fee_payer()` + `end_setup()`.
 
-The token transfer is irrevocably committed in the setup phase. No teardown is scheduled. No tokens accumulate in this contract's balance. All fee payments arrive directly in the operator's private balance. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions) for implications.
+The token transfer is irrevocably committed in the setup phase (the non-revertible phase). `aztec-fpc` does not schedule a teardown phase. No tokens accumulate in this contract's balance. All fee payments arrive directly in the operator's private balance. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions) for implications.
 
 The caller must provide a valid authwit for the token transfer before submitting.
 
@@ -2983,7 +2992,7 @@ Key errors to surface in your wallet UI:
 
 - The fee is paid in the setup phase and is irrevocable, even if the user's app logic reverts. See [Security Model: setup-phase irreversibility](../security.md#trust-assumptions).
 - `fj_amount` must match `get_max_gas_cost` for the transaction gas settings. The SDK handles this, but if you build the payment method manually, a mismatch causes `fee_entrypoint` to revert.
-- No teardown or refund phase exists. Unused Fee Juice stays in the FPC's balance.
+- `aztec-fpc` does not use the optional teardown phase, so there is no refund. Unused Fee Juice stays in the FPC's balance.
 
 ## Next Steps
 
@@ -3312,7 +3321,7 @@ One proof, one transaction, three private transfers (claim + user split + operat
 1. The user's **account may not exist on L2 yet**, so the PXE cannot simulate through a normal account entrypoint.
 2. The **quote signature is a function argument**, but the quote is needed to simulate. This is a circular dependency.
 
-The hardcoded limits come from the cold-start benchmark's worst case (measured DA 1,568, L2 711,103) with safety margin. Unused Fee Juice stays in the FPC's balance. There is no teardown or refund phase.
+The hardcoded limits come from the cold-start benchmark's worst case (measured DA 1,568, L2 711,103) with safety margin. Unused Fee Juice stays in the FPC's balance; `aztec-fpc` does not use the optional teardown phase, so there is no refund.
 
 Re-measure after contract changes:
 

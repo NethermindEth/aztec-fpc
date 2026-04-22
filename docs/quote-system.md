@@ -9,6 +9,15 @@ A fee quote is a signed commitment from the operator: "I will accept `aa_payment
 
 The attestation service signs these off-chain. The FPC contract verifies them on-chain.
 
+> [!NOTE]
+> **Quote signature vs token transfer authwit**
+>
+> The quote signature is produced by the operator and commits the operator to specific pricing terms. It is not an authwit.
+>
+> Separately, the user provides an authwit authorizing the FPC to transfer `aa_payment_amount` tokens from their account to the operator. This follows Aztec's standard authwit pattern ([Authentication Witness docs](https://docs.aztec.network/)).
+>
+> The contract reuses the Aztec stdlib's `compute_inner_authwit_hash` function (a domain-separated Poseidon hash) to hash the quote preimage, but this is only a hash utility choice. The quote itself is a Schnorr-signed commitment, not an authwit.
+
 ## Source files
 
 - Contract verification: [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr#L252) (functions `assert_valid_quote`, `assert_valid_cold_start_quote`)

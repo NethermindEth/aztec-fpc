@@ -149,7 +149,7 @@ One proof, one transaction, three private transfers (claim + user split + operat
 1. The user's **account may not exist on L2 yet**, so the PXE cannot simulate through a normal account entrypoint.
 2. The **quote signature is a function argument**, but the quote is needed to simulate. This is a circular dependency.
 
-The hardcoded limits come from the cold-start benchmark's worst case (measured DA 1,568, L2 711,103) with safety margin. Unused Fee Juice stays in the FPC's balance. There is no teardown or refund phase.
+The hardcoded limits come from the cold-start benchmark's worst case (measured DA 1,568, L2 711,103) with safety margin. Unused Fee Juice stays in the FPC's balance; `aztec-fpc` does not use the optional teardown phase, so there is no refund.
 
 Re-measure after contract changes:
 

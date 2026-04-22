@@ -167,7 +167,7 @@ Key errors to surface in your wallet UI:
 
 - The fee is paid in the setup phase and is irrevocable, even if the user's app logic reverts. See [Security Model: setup-phase irreversibility](../security.md#trust-assumptions).
 - `fj_amount` must match `get_max_gas_cost` for the transaction gas settings. The SDK handles this, but if you build the payment method manually, a mismatch causes `fee_entrypoint` to revert.
-- No teardown or refund phase exists. Unused Fee Juice stays in the FPC's balance.
+- `aztec-fpc` does not use the optional teardown phase, so there is no refund. Unused Fee Juice stays in the FPC's balance.
 
 ## Next Steps
 

@@ -48,7 +48,7 @@ Storage is a single packed immutable config slot containing `operator`, `operato
 - `fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` for users with an existing L2 token balance
 - `cold_start_entrypoint` for new users claiming bridged L1 tokens and paying in one transaction
 
-The token transfer is irrevocably committed in the setup phase. No teardown is scheduled. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions).
+The token transfer is irrevocably committed in the setup phase (the non-revertible phase). `aztec-fpc` does not schedule a teardown phase. See [Security Model: setup-phase irreversibility](./security.md#trust-assumptions).
 
 ### Attestation service (off-chain)
 
