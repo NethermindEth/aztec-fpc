@@ -5,7 +5,7 @@ description: Trust assumptions, key management, threat mitigations, and producti
 
 # Security Model
 
-FPC operates under a trusted operator model. The operator signs all fee quotes, receives all token payments, funds the FPC with Fee Juice, and runs the attestation and top-up services.
+`aztec-fpc` operates under a trusted operator model. The operator signs all fee quotes, receives all token payments, funds the FPC with Fee Juice, and runs the attestation and top-up services.
 
 ## Trust assumptions
 

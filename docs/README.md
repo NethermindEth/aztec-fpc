@@ -2,7 +2,9 @@
 
 ## TLDR
 
-FPC (Fee Payment Contract) is a smart contract on Aztec that pays transaction fees on the user's behalf. The user pays the operator back in a token they already hold, at a rate locked by a signed quote. Nethermind's `aztec-fpc` is a multi-asset implementation deployed on testnet: one contract instance, any number of accepted tokens, no redeployment to add a new asset. The operator funds Fee Juice, sets pricing via `fee_bips`, and keeps the spread.
+FPC (Fee Payment Contract) is an Aztec primitive: a smart contract that pays Fee Juice on a user's behalf. The protocol supports several FPC designs (sponsored, private, third-party-token) and doesn't dictate what the operator receives in return.
+
+Nethermind's `aztec-fpc` is one such implementation: a **private, multi-asset, quote-based FPC** deployed on testnet. Users pay the operator in any accepted token, at a rate locked by an operator-signed Schnorr quote. One contract instance serves any number of tokens; new tokens are added via the attestation service without redeploying.
 
 ## Components
 
@@ -26,11 +28,25 @@ FPC (Fee Payment Contract) is a smart contract on Aztec that pays transaction fe
 
 ## What is FPC?
 
-Every Aztec transaction requires Fee Juice, the protocol's native fee token. Users who bridge assets from Ethereum, wallets serving non-technical audiences, and apps accepting their own token all face the same barrier: Fee Juice has to come from somewhere before anything else can happen.
+Every Aztec transaction requires Fee Juice, the protocol's native fee token. Fee Juice is non-transferable on L2 and must be bridged from L1 or paid on a user's behalf by another contract.
 
-FPC (Fee Payment Contract) moves that responsibility to an operator. The operator holds Fee Juice and pays it on the user's behalf. The user pays the operator in a token they already have, at a rate the operator sets and commits to in a signed quote. The on-chain contract verifies the quote and executes the transfer atomically.
+FPC is the Aztec pattern for the second option: a smart contract that holds Fee Juice and pays it for the user. The protocol doesn't prescribe what (if anything) the operator receives back. Existing FPC designs include:
 
-Nethermind's `aztec-fpc` is a multi-asset implementation deployed on testnet. One contract instance serves any number of accepted tokens. Adding a new token requires no redeployment.
+- **Sponsored FPC**: pays unconditionally for free transactions (testnet, devnet, local networks only)
+- **Private FPC**: routes fee payments through private notes so fee activity stays off the public state
+- **Third-party token FPCs**: accept a specific token in exchange for covering the Fee Juice cost
+
+## What `aztec-fpc` is
+
+Nethermind's `aztec-fpc` is a **private, multi-asset, quote-based FPC** deployed on testnet. Three properties define it:
+
+- **Multi-asset**: one contract instance serves any number of accepted tokens. The asset is selected per-quote, not hard-coded at deploy time. New tokens are added through the attestation service's admin API without redeploying.
+- **Private**: fee payments move as private notes via `transfer_private_to_private`. Fee activity is not visible in public state. (Exception: the cold-start path calls `mint_to_private`, which enqueues a public `update_total_supply` call — the minted amount is visible even though the user's identity and balances remain private.)
+- **Quote-based**: an operator-run attestation service signs per-user quotes binding the FPC address, accepted asset, payment amount, Fee Juice amount, expiry, and user address. The on-chain contract verifies the Schnorr signature before executing the transfer.
+
+A **cold-start entrypoint** lets a brand-new account bridge tokens from L1, claim on L2, and pay the fee in one transaction.
+
+The operator holds Fee Juice (auto-topped-up from L1 by the top-up service), sets pricing via a configurable `fee_bips` spread in the attestation service, and keeps the margin.
 
 ### How a standard transaction works
 
@@ -48,9 +64,9 @@ The FPC contract then:
 
 All of this executes in the setup phase.
 
-### What FPC does not do
+### What `aztec-fpc` does not do
 
-FPC does not eliminate fee costs. It shifts who pays them and in what token. The operator takes on the operational cost of keeping the FPC funded with Fee Juice and recoups it through a configurable spread per token. The spread is set as `fee_bips` in the attestation service configuration and is applied off-chain when pricing quotes. The on-chain contract has no knowledge of `fee_bips`. It verifies and settles whatever signed amounts the attestation service produced.
+It does not eliminate fee costs. It shifts who pays them and in what token. The operator takes on the operational cost of keeping the FPC funded with Fee Juice and recoups it through a configurable spread per token. The spread is set as `fee_bips` in the attestation service configuration and is applied off-chain when pricing quotes. The on-chain contract has no knowledge of `fee_bips`. It verifies and settles whatever signed amounts the attestation service produced.
 
 Quote signatures are user-specific and single-use. A quote issued to one user cannot be used by another, and a consumed quote cannot be replayed. The operator is not exposed to a free-rider problem, but they are exposed to market rate risk if the token value moves between quote issuance and settlement.
 
