@@ -1,5 +1,9 @@
 # Alpha Ad-Hoc FPC Operator Runbook (30 Minutes)
 
+> [!CAUTION]
+> **This document is deprecated.** It may contain outdated function names, wrong default values, or references to scripts that no longer exist. For accurate, source-verified documentation, see [docs/README.md](../../README.md).
+
+
 Date: 2026-03-02  
 Repository root: `<repo-root>`
 

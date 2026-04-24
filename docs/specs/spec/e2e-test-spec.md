@@ -1,5 +1,9 @@
 # Full E2E Test Definition
 
+> [!CAUTION]
+> **This document is deprecated.** It may contain outdated function names, wrong default values, or references to scripts that no longer exist. For accurate, source-verified documentation, see [docs/README.md](../../README.md).
+
+
 ## Scope
 This document defines the end-to-end negative-scenario test for the FPC lifecycle.
 
