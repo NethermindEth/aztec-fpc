@@ -2,6 +2,9 @@
 
 All smart contracts in the FPC system are written in Noir using the Aztec.nr framework.
 
+> [!NOTE]
+> This page is the contract-level reference for developers and auditors. For an architectural overview, see [architecture.md](architecture.md). For SDK usage, see [sdk.md](sdk.md).
+
 **On this page:**
 [Contract Map](#contract-map) | [Build System](#build-system) | [FPCMultiAsset](#fpcmultiasset) | [Faucet](#faucet) | [TokenBridge](#tokenbridge)
 

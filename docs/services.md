@@ -2,6 +2,9 @@
 
 Two off-chain services run alongside the FPC contract: the attestation service (quote signing) and the top-up service (Fee Juice bridging).
 
+> [!NOTE]
+> This page is the operator-facing reference for the attestation and top-up services. For setup, see [Run an Operator](how-to/run-operator.md). For SDK consumers, see [sdk.md](sdk.md). Implementation-level sections (startup sequence, crash recovery, ops endpoints) are aimed at developers and operators, not integrators.
+
 **On this page:**
 [Attestation Service](#attestation-service) | [GET /quote](#get-quote) | [GET /cold-start-quote](#get-cold-start-quote) | [Admin Endpoints](#put-adminasset-policiesassetaddress) | [Pricing Formula](#pricing-formula) | [Wallet Discovery](#wallet-discovery) | [Authentication](#authentication) | [Top-up Service](#top-up-service) | [Operational Flow](#operational-flow) | [Crash Recovery](#crash-recovery) | [Auto-Claim](#auto-claim) | [Ops Endpoints](#ops-endpoints) | [Prometheus Metrics](#prometheus-metrics)
 

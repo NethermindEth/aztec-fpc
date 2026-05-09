@@ -17,7 +17,7 @@ Nethermind's `aztec-fpc` is one such implementation: a **private, multi-asset, q
 
 | | |
 |---|---|
-| **Tokens accepted** | Any token the operator configures |
+| **Tokens accepted** | Any operator-accepted token (added via the admin API, no redeployment) |
 | **Cold-start** | 1 tx from L1 bridge to active L2 account |
 | **On-chain allowlist** | None required (quote-binding enforces asset selection) |
 | **SDK surface** | 2 methods |
@@ -76,18 +76,9 @@ Operator key rotation requires deploying a new contract. The public key is store
 
 ### Comparison with Aztec's Sponsored FPC
 
-Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) on testnet, devnet, and local networks. It is not deployed on mainnet. It pays for every transaction with no token required from the user. It is a pure subsidy with no payment mechanism and no operator revenue.
+Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) for development and testing only. It is available on testnet, devnet, and local networks, not on mainnet. It is a pure subsidy run by Aztec Labs with no payment mechanism, no operator revenue, no cold-start, and no off-chain services.
 
-| | Sponsored FPC | Nethermind FPC |
-|---|---|---|
-| **Accepted tokens** | None, fully sponsored | Any token the operator configures |
-| **Operator revenue** | None | Configurable `fee_bips` spread per asset |
-| **Quote system** | None | Schnorr-signed, single-use, user-bound |
-| **Cold-start (L1 to first tx)** | Not supported | Supported via `cold_start_entrypoint` |
-| **Off-chain services** | None | Attestation service and top-up daemon |
-| **Who runs it** | Aztec Labs | You |
-
-The Sponsored FPC is the right choice for development and testing where fee-abstracted UX is the only goal. On mainnet, you need either Fee Juice bridged from L1 or a deployed fee-paying contract. Nethermind's FPC covers the latter, with real token payments, operator revenue, and cold-start onboarding included.
+Nethermind's `aztec-fpc` is the production-oriented variant. The operator runs it, accepts payment in any operator-accepted token via Schnorr-signed single-use quotes, earns a configurable `fee_bips` spread, and supports cold-start onboarding from L1 via `cold_start_entrypoint`.
 
 ---
 
@@ -96,7 +87,7 @@ The Sponsored FPC is the right choice for development and testing where fee-abst
 ```typescript
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 
-// Standard flow: user already has L2 tokens
+// Standard flow: user already holds an operator-accepted token on L2
 const { fee } = await fpcClient.createPaymentMethod({
   wallet,
   user: userAddress,
@@ -105,7 +96,7 @@ const { fee } = await fpcClient.createPaymentMethod({
 });
 await contract.methods.transfer(recipient, amount).send({ fee });
 
-// Cold-start: user just bridged from L1
+// Cold-start: user just bridged an operator-accepted token from L1 to L2
 const result = await fpcClient.executeColdStart({
   wallet,
   userAddress,

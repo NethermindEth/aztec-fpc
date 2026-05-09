@@ -7,7 +7,12 @@ description: How fee quotes are signed, verified, and consumed. Covers the compu
 
 A fee quote is a signed commitment from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user's transaction, valid until `valid_until`."
 
+Exchange rates are fixed by the operator per accepted token in the asset policy store (`market_rate_num / market_rate_den`) and updated manually via the admin API. There is no on-chain oracle and no live price feed. The operator carries market-rate risk between updates.
+
 The attestation service signs these off-chain. The FPC contract verifies them on-chain.
+
+> [!NOTE]
+> This page covers the on-chain verification format and signing details. For an integration overview, start with [SDK Getting Started](sdk.md). For the security model, see [Security](security.md).
 
 > [!NOTE]
 > **Quote signature vs token transfer authwit**

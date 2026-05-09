@@ -8,25 +8,25 @@
 | File | Line |
 |------|:----:|
 | README.md | 39 |
-| quick-start.md | 215 |
-| architecture.md | 410 |
-| security.md | 602 |
-| quote-system.md | 808 |
-| sdk.md | 1029 |
-| contracts.md | 1471 |
-| services.md | 2011 |
-| how-to/run-operator.md | 2561 |
-| how-to/integrate-wallet.md | 2830 |
-| how-to/add-supported-asset.md | 3010 |
-| how-to/cold-start-flow.md | 3177 |
-| operations/configuration.md | 3371 |
-| operations/deployment.md | 3649 |
-| operations/docker.md | 3995 |
-| operations/testing.md | 4149 |
-| reference/metrics.md | 4343 |
-| reference/e2e-test-matrix.md | 4495 |
-| reference/testnet-deployment.md | 4637 |
-| reference/wallet-discovery.md | 4765 |
+| quick-start.md | 206 |
+| architecture.md | 401 |
+| security.md | 593 |
+| quote-system.md | 799 |
+| sdk.md | 1025 |
+| contracts.md | 1467 |
+| services.md | 2010 |
+| how-to/run-operator.md | 2563 |
+| how-to/integrate-wallet.md | 2832 |
+| how-to/add-supported-asset.md | 3012 |
+| how-to/cold-start-flow.md | 3179 |
+| operations/configuration.md | 3373 |
+| operations/deployment.md | 3651 |
+| operations/docker.md | 3997 |
+| operations/testing.md | 4151 |
+| reference/metrics.md | 4345 |
+| reference/e2e-test-matrix.md | 4497 |
+| reference/testnet-deployment.md | 4639 |
+| reference/wallet-discovery.md | 4767 |
 
 ---
 
@@ -51,7 +51,7 @@ Nethermind's `aztec-fpc` is one such implementation: a **private, multi-asset, q
 
 | | |
 |---|---|
-| **Tokens accepted** | Any token the operator configures |
+| **Tokens accepted** | Any operator-accepted token (added via the admin API, no redeployment) |
 | **Cold-start** | 1 tx from L1 bridge to active L2 account |
 | **On-chain allowlist** | None required (quote-binding enforces asset selection) |
 | **SDK surface** | 2 methods |
@@ -110,18 +110,9 @@ Operator key rotation requires deploying a new contract. The public key is store
 
 ### Comparison with Aztec's Sponsored FPC
 
-Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) on testnet, devnet, and local networks. It is not deployed on mainnet. It pays for every transaction with no token required from the user. It is a pure subsidy with no payment mechanism and no operator revenue.
+Aztec Labs ships a [Sponsored FPC](https://docs.aztec.network/developers/docs/aztec-js/how_to_pay_fees) for development and testing only. It is available on testnet, devnet, and local networks, not on mainnet. It is a pure subsidy run by Aztec Labs with no payment mechanism, no operator revenue, no cold-start, and no off-chain services.
 
-| | Sponsored FPC | Nethermind FPC |
-|---|---|---|
-| **Accepted tokens** | None, fully sponsored | Any token the operator configures |
-| **Operator revenue** | None | Configurable `fee_bips` spread per asset |
-| **Quote system** | None | Schnorr-signed, single-use, user-bound |
-| **Cold-start (L1 to first tx)** | Not supported | Supported via `cold_start_entrypoint` |
-| **Off-chain services** | None | Attestation service and top-up daemon |
-| **Who runs it** | Aztec Labs | You |
-
-The Sponsored FPC is the right choice for development and testing where fee-abstracted UX is the only goal. On mainnet, you need either Fee Juice bridged from L1 or a deployed fee-paying contract. Nethermind's FPC covers the latter, with real token payments, operator revenue, and cold-start onboarding included.
+Nethermind's `aztec-fpc` is the production-oriented variant. The operator runs it, accepts payment in any operator-accepted token via Schnorr-signed single-use quotes, earns a configurable `fee_bips` spread, and supports cold-start onboarding from L1 via `cold_start_entrypoint`.
 
 ---
 
@@ -130,7 +121,7 @@ The Sponsored FPC is the right choice for development and testing where fee-abst
 ```typescript
 import { FpcClient } from "@nethermindeth/aztec-fpc-sdk";
 
-// Standard flow: user already has L2 tokens
+// Standard flow: user already holds an operator-accepted token on L2
 const { fee } = await fpcClient.createPaymentMethod({
   wallet,
   user: userAddress,
@@ -139,7 +130,7 @@ const { fee } = await fpcClient.createPaymentMethod({
 });
 await contract.methods.transfer(recipient, amount).send({ fee });
 
-// Cold-start: user just bridged from L1
+// Cold-start: user just bridged an operator-accepted token from L1 to L2
 const result = await fpcClient.executeColdStart({
   wallet,
   userAddress,
@@ -810,7 +801,12 @@ description: How fee quotes are signed, verified, and consumed. Covers the compu
 
 A fee quote is a signed commitment from the operator: "I will accept `aa_payment_amount` of `accepted_asset` in exchange for paying `fj_fee_amount` of Fee Juice for this user's transaction, valid until `valid_until`."
 
+Exchange rates are fixed by the operator per accepted token in the asset policy store (`market_rate_num / market_rate_den`) and updated manually via the admin API. There is no on-chain oracle and no live price feed. The operator carries market-rate risk between updates.
+
 The attestation service signs these off-chain. The FPC contract verifies them on-chain.
+
+> [!NOTE]
+> This page covers the on-chain verification format and signing details. For an integration overview, start with [SDK Getting Started](sdk.md). For the security model, see [Security](security.md).
 
 > [!NOTE]
 > **Quote signature vs token transfer authwit**
@@ -1468,6 +1464,9 @@ All errors are thrown as standard JavaScript exceptions. Cold-start [retries up 
 
 All smart contracts in the FPC system are written in Noir using the Aztec.nr framework.
 
+> [!NOTE]
+> This page is the contract-level reference for developers and auditors. For an architectural overview, see [architecture.md](architecture.md). For SDK usage, see [sdk.md](sdk.md).
+
 **On this page:**
 [Contract Map](#contract-map) | [Build System](#build-system) | [FPCMultiAsset](#fpcmultiasset) | [Faucet](#faucet) | [TokenBridge](#tokenbridge)
 
@@ -2007,6 +2006,9 @@ The FPC passes its own address (not the user's) as the `recipient` argument to `
 # Services
 
 Two off-chain services run alongside the FPC contract: the attestation service (quote signing) and the top-up service (Fee Juice bridging).
+
+> [!NOTE]
+> This page is the operator-facing reference for the attestation and top-up services. For setup, see [Run an Operator](how-to/run-operator.md). For SDK consumers, see [sdk.md](sdk.md). Implementation-level sections (startup sequence, crash recovery, ops endpoints) are aimed at developers and operators, not integrators.
 
 **On this page:**
 [Attestation Service](#attestation-service) | [GET /quote](#get-quote) | [GET /cold-start-quote](#get-cold-start-quote) | [Admin Endpoints](#put-adminasset-policiesassetaddress) | [Pricing Formula](#pricing-formula) | [Wallet Discovery](#wallet-discovery) | [Authentication](#authentication) | [Top-up Service](#top-up-service) | [Operational Flow](#operational-flow) | [Crash Recovery](#crash-recovery) | [Auto-Claim](#auto-claim) | [Ops Endpoints](#ops-endpoints) | [Prometheus Metrics](#prometheus-metrics)
