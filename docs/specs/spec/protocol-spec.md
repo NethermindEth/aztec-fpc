@@ -1,5 +1,9 @@
 # FPC Protocol — Specification
 
+> [!CAUTION]
+> **This document is deprecated.** It may contain outdated function names, wrong default values, or references to scripts that no longer exist. For accurate, source-verified documentation, see [docs/README.md](../../README.md).
+
+
 > **Status:** Alpha / MVP
 > **Last updated:** 2026-03-02
 
@@ -75,7 +79,7 @@ inner_hash = poseidon2([
 ])
 ```
 
-The operator signs this hash off-chain with Schnorr (64-byte signature). The user passes signature bytes as `quote_sig` to `fee_entrypoint`, and the FPC verifies it inline with `schnorr::verify_signature` against the stored operator pubkey.
+The operator signs this hash off-chain with Schnorr (64-byte signature). The user passes signature bytes as `quote_sig` to `fee_entrypoint`, and the FPC verifies it inline with `schnorr::assert_valid_signature` against the stored operator pubkey.
 
 The contract pushes `quote_hash` as a nullifier, so consumed quotes cannot be replayed.
 

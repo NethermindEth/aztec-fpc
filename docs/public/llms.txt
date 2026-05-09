@@ -1,0 +1,430 @@
+# Aztec FPC - Fee Payment Contracts
+
+> FPC pays transaction fees on Aztec so users don't need Fee Juice.
+> Users pay the operator in any token they hold. The operator keeps the spread.
+> One contract, any number of tokens, no redeployment.
+
+Project: https://github.com/NethermindEth/aztec-fpc
+Docs site: https://nethermindeth.github.io/aztec-fpc
+License: Apache-2.0
+Maintainer: Nethermind
+
+---
+
+## If you are a human, start here
+
+Pick your role, follow the path:
+
+**dApp developer** - you want users to pay fees in your token
+  1. Read the overview        → README.md
+  2. Install the SDK          → sdk.md
+  3. Wire up payments         → sdk.md#standard-flow
+  4. Add cold-start if needed → how-to/cold-start-flow.md
+
+**Wallet team** - you want to surface fee abstraction in your wallet UI
+  1. Read the overview        → README.md
+  2. Fetch discovery doc      → reference/wallet-discovery.md
+  3. Integrate the SDK        → how-to/integrate-wallet.md
+  4. Run your own operator    → how-to/run-operator.md
+
+**Operator** - you want to deploy and run the full FPC stack
+  1. Quick start (Docker)     → quick-start.md
+  2. Deploy contracts         → operations/deployment.md
+  3. Configure services       → operations/configuration.md
+  4. Monitor with metrics     → reference/metrics.md
+
+**Auditor / security researcher** - you want to understand trust and attack surface
+  1. Security model           → security.md
+  2. Quote system internals   → quote-system.md
+  3. Contract source          → contracts.md
+  4. E2E test matrix          → reference/e2e-test-matrix.md
+
+---
+
+## How FPC works (30-second version)
+
+1. User's wallet calls the attestation service: "I want to pay fees with token X"
+2. Attestation service returns a signed quote: "Y amount of token X covers Z Fee Juice"
+3. User submits a transaction to the FPC contract with the signed quote
+4. FPC contract verifies the Schnorr signature, transfers tokens from user to operator,
+   pays Fee Juice to the protocol, and the user's app logic runs
+5. The top-up service watches the FPC's Fee Juice balance and bridges more from L1
+
+Two entry points:
+- `fee_entrypoint` - user already has L2 tokens
+- `cold_start_entrypoint` - user just bridged from L1, has no account or balance yet
+
+---
+
+## Documentation map
+
+Below is every documentation page, what it covers, and who it is for.
+Base URL for all docs: docs/
+
+### Core (read these first)
+
+  README.md
+    What FPC is, component table, comparison with Sponsored FPC, quick code example,
+    persona routing table. Start here.
+
+  architecture.md
+    Four-component system design: contract, attestation service, top-up service, SDK.
+    System diagram, data flows, interface map, operator key model.
+
+  quote-system.md
+    How fee quotes are constructed, signed (Schnorr over compute_inner_authwit_hash), and verified
+    on-chain. 7-field normal preimage, 9-field cold-start preimage, domain separators,
+    exchange rate formula, TTL cap (3600s).
+
+  security.md
+    Trust assumptions, key management, secret provider modes, on-chain protections
+    (replay via nullifier, user binding, freshness, domain separation), off-chain
+    protections (admin auth, rate limiting), threat matrix, production checklist.
+
+### SDK
+
+  sdk.md
+    Full SDK reference. FpcClient constructor, createPaymentMethod(), executeColdStart(),
+    all input/output types, gas buffer values, cold-start retry logic, installation.
+    Package: @nethermindeth/aztec-fpc-sdk
+
+### Contracts
+
+  contracts.md
+    All Noir smart contracts. FPCMultiAsset (fee_entrypoint, cold_start_entrypoint,
+    storage layout, quote verification), Faucet (drip, admin_drip),
+    TokenBridge (claim_public, claim_private, exit_to_l1), dependency graph, build commands.
+
+### Services
+
+  services.md
+    Attestation service: REST endpoints (GET /quote, GET /cold-start-quote,
+    GET /.well-known/fpc.json, admin API), signing flow, auth modes, config keys.
+    Top-up service: balance monitoring, L1 bridging, LMDB crash recovery, auto-claim,
+    ops endpoints.
+
+### How-to guides
+
+  how-to/add-supported-asset.md
+    Add or remove accepted tokens via the admin API. PUT/DELETE endpoints, pricing
+    formula, configure-token batch mode.
+
+  how-to/cold-start-flow.md
+    End-to-end cold-start: L1 bridge deposit, SDK executeColdStart(), contract claim,
+    fee payment, and token delivery in one atomic transaction.
+
+  how-to/integrate-wallet.md
+    Wallet integration: fetch discovery document, resolve operator, wire SDK into
+    transaction flow, handle quote expiry.
+
+  how-to/run-operator.md
+    Full operator guide: deploy contract, configure attestation + top-up, set up
+    monitoring, production hardening checklist.
+
+### Operations
+
+  operations/configuration.md
+    All config keys for attestation and top-up services. YAML structure, env var
+    overrides, runtime profiles (development/test/production), rate limiting,
+    secret provider options.
+
+  operations/deployment.md
+    Contract deployment: Docker two-phase deploy, bun path, configure-token,
+    manifest schema, verification, public-network compose.
+
+  operations/docker.md
+    Docker Buildx Bake targets, compose services (infra + full stack), CI pipeline,
+    image names, port mappings, build commands.
+
+  operations/testing.md
+    Test layers: Noir contract tests, TS service/SDK unit tests, 7 Docker integration
+    suites, profiling benchmarks, smoke tests.
+
+### Reference
+
+  reference/metrics.md
+    Every Prometheus metric emitted by attestation and top-up services. Metric names,
+    types, labels, and values traced to source file and line number.
+
+  reference/e2e-test-matrix.md
+    Six negative test scenarios (replay, expiry, TTL, sender binding, phase enforcement,
+    insufficient Fee Juice) plus happy path and cold-start suites.
+
+  reference/testnet-deployment.md
+    All testnet addresses and URLs traced to deployments/testnet/manifest.json with
+    exact JSON paths. Operator public key, network metadata, verification commands.
+
+  reference/wallet-discovery.md
+    GET /.well-known/fpc.json schema, required fields, resolution order, supported
+    asset format, operator address absence by design.
+
+  quick-start.md
+    Docker Compose one-command setup, manual bun bring-up, SDK smoke test,
+    verify commands.
+
+---
+
+## Source code map
+
+For AI agents navigating the codebase, here is where the key source files live:
+
+### Contracts (Noir)
+  contracts/fpc/src/main.nr              - FPCMultiAsset contract (fee_entrypoint, cold_start_entrypoint)
+  contracts/fpc/src/test/fee_entrypoint.nr       - 7 contract tests for fee_entrypoint
+  contracts/fpc/src/test/cold_start_entrypoint.nr - 4 contract tests for cold_start_entrypoint
+  contracts/fpc/src/test/utils.nr                 - Test helpers, domain separators
+  contracts/faucet/src/main.nr           - Faucet contract (drip, admin_drip)
+  contracts/token_bridge/src/main.nr     - TokenBridge contract (claim_public, claim_private)
+  contracts/noop/src/main.nr             - Noop contract (profiling baseline)
+
+### Attestation service (TypeScript)
+  services/attestation/src/server.ts     - Fastify HTTP server, all REST endpoints
+  services/attestation/src/config.ts     - Config schema, Zod validation, env overrides
+  services/attestation/src/signer.ts     - Schnorr signing, computeInnerAuthWitHash
+  services/attestation/src/metrics.ts    - Prometheus metric definitions
+  services/attestation/src/request-schemas.ts  - Request validation schemas
+  services/attestation/src/asset-policy-store.ts - LMDB asset policy persistence
+  services/attestation/src/operator-treasury.ts  - Sweep and balance operations
+  services/attestation/src/secret-provider.ts    - Secret resolution (env/config/kms/hsm)
+
+### Top-up service (TypeScript)
+  services/topup/src/index.ts            - Main loop, reconciliation, auto-claim toggle
+  services/topup/src/checker.ts          - Balance check and bridge trigger logic
+  services/topup/src/bridge.ts           - L1FeeJuicePortalManager bridge calls
+  services/topup/src/confirm.ts          - L1-to-L2 confirmation (message + balance-delta)
+  services/topup/src/state.ts            - LMDB bridge state persistence
+  services/topup/src/reconcile.ts        - Stale bridge eviction (24h)
+  services/topup/src/autoclaim.ts        - Auto-claim logic and key resolution
+  services/topup/src/config.ts           - Config schema and env overrides
+  services/topup/src/ops.ts              - Health, readiness, metrics endpoints
+  services/topup/src/monitor.ts          - Fee Juice balance reader
+  services/topup/src/l1.ts               - L1 chain ID validation
+
+### SDK (TypeScript)
+  sdk/src/index.ts                       - Public exports (FpcClient)
+  sdk/src/payment-method.ts              - createPaymentMethod(), executeColdStart()
+  sdk/src/types.ts                       - FpcClientConfig, all input/output types
+
+### Deployment
+  contract-deployment/src/index.ts       - CLI deploy orchestrator
+  contract-deployment/src/manifest.ts    - Manifest schema and writer
+  contract-deployment/src/verify.ts      - On-chain deployment verification
+
+### Config and infrastructure
+  deployments/testnet/manifest.json      - Testnet deployment addresses (source of truth)
+  deployments/testnet/fpc-config.yaml    - Testnet master config
+  deployments/testnet/attestation/config.yaml - Testnet attestation config
+  deployments/testnet/topup/config.yaml  - Testnet top-up config
+  docker-bake.hcl                        - Docker Buildx Bake targets
+  docker-compose.yaml                    - Local dev compose (infra + full stack)
+  docker-compose.public.yaml             - Public network compose (testnet/devnet)
+
+### Tests
+  scripts/tests/services.ts              - Service health and API tests
+  scripts/tests/cold-start.ts            - Cold-start integration test
+  scripts/tests/cold-start-validation.ts - Cold-start negative scenarios
+  scripts/tests/fee-entrypoint-validation.ts - fee_entrypoint negative scenarios
+  scripts/tests/concurrent.ts            - Concurrent transaction stress test
+  scripts/tests/same-token-transfer.ts   - Same-token transfer flow
+  scripts/tests/always-revert.ts         - Revert behavior validation
+
+---
+
+## Function-to-file index (jump straight to the code)
+
+Contract functions (Noir):
+  FPCMultiAsset (contract)         → contracts/fpc/src/main.nr:23
+  constructor                      → contracts/fpc/src/main.nr:62
+  fee_entrypoint                   → contracts/fpc/src/main.nr:79
+  cold_start_entrypoint            → contracts/fpc/src/main.nr:141
+  assert_valid_quote               → contracts/fpc/src/main.nr:252
+  assert_valid_cold_start_quote    → contracts/fpc/src/main.nr:288
+  get_max_gas_cost                 → contracts/fpc/src/main.nr:325
+  QUOTE_DOMAIN_SEPARATOR (0x465043)       → contracts/fpc/src/main.nr:36
+  COLD_START_QUOTE_DOMAIN_SEPARATOR       → contracts/fpc/src/main.nr:39
+  MAX_QUOTE_TTL_SECONDS (3600)            → contracts/fpc/src/main.nr:41
+
+Attestation service (TypeScript):
+  buildServer                      → services/attestation/src/server.ts:817
+  registerQuoteRoute (GET /quote)  → services/attestation/src/server.ts:581
+  registerColdStartQuoteRoute      → services/attestation/src/server.ts:881
+  registerAdminRoutes              → services/attestation/src/server.ts:685
+  /.well-known/fpc.json handler    → services/attestation/src/server.ts:551
+  /health handler                  → services/attestation/src/server.ts:568
+  /accepted-assets handler         → services/attestation/src/server.ts:576
+  requireAdminAccess               → services/attestation/src/server.ts:489
+  isQuoteAuthorized                → services/attestation/src/server.ts:74
+  loadConfig                       → services/attestation/src/config.ts:499
+  computeFinalRate                 → services/attestation/src/config.ts:572
+  resolveQuoteAuthConfig           → services/attestation/src/config.ts:385
+  resolveQuoteRateLimitConfig      → services/attestation/src/config.ts:405
+  signQuote                        → services/attestation/src/signer.ts:88
+  computeQuoteHash                 → services/attestation/src/signer.ts:60
+  signColdStartQuote               → services/attestation/src/signer.ts:132
+  resolveSecret                    → services/attestation/src/secret-provider.ts:137
+  assertNoPlaintextConfigSecret    → services/attestation/src/secret-provider.ts:61
+  AttestationMetrics               → services/attestation/src/metrics.ts:39
+
+Top-up service (TypeScript):
+  main                             → services/topup/src/index.ts:527
+  loadConfig                       → services/topup/src/config.ts:136
+  createTopupOpsServer             → services/topup/src/ops.ts:228
+  TopupOpsState                    → services/topup/src/ops.ts:42
+  bridgeTokensPublic               → services/topup/src/bridge.ts:115
+  waitForFeeJuiceBridgeConfirmation → services/topup/src/confirm.ts:182
+  assertL1RpcChainIdMatches        → services/topup/src/l1.ts:16
+  reconcilePersistedBridgeState    → services/topup/src/reconcile.ts:10
+
+SDK (TypeScript):
+  FpcClient (class)                → sdk/src/payment-method.ts:50
+  createPaymentMethod              → sdk/src/payment-method.ts:57
+  executeColdStart                 → sdk/src/payment-method.ts:108
+  FpcClientConfig (type)           → sdk/src/types.ts:9
+  CreatePaymentMethodInput (type)  → sdk/src/types.ts:16
+  ExecuteColdStartInput (type)     → sdk/src/types.ts:42
+  GAS_BUFFER (5_000, 100_000)      → sdk/src/payment-method.ts:30
+  COLD_START_GAS_LIMITS            → sdk/src/payment-method.ts:46
+  COLD_START_MAX_ATTEMPTS (3)      → sdk/src/payment-method.ts:29
+
+Deployment:
+  main (deploy CLI)                → contract-deployment/src/index.ts:321
+  main (configure-token CLI)       → contract-deployment/src/configure-token.ts:228
+  deployManifestSchema             → contract-deployment/src/manifest.ts:15
+  writeDeployManifest              → contract-deployment/src/manifest.ts:57
+
+---
+
+## Error codes and failure modes
+
+On-chain assertion failures (contract reverts):
+  "invalid operator"                    → constructor got zero address
+  "fee_entrypoint must run in setup phase" → called outside setup phase
+  "quoted fee amount mismatch"          → fj_fee_amount != get_max_gas_cost()
+  "must be tx entrypoint"              → cold_start called with a msg_sender (not tx root)
+  "claim insufficient to cover fee"    → claim_amount < aa_payment_amount
+  "quote expired"                       → anchor_block_timestamp > valid_until
+  "quote ttl too large"                → quote TTL > 3600 seconds
+  nullifier conflict                    → quote already used (replay attempt)
+  Schnorr signature invalid             → wrong operator key, tampered fields, or wrong domain separator
+
+Attestation service HTTP errors:
+  400 "Missing required query param: user"           → user not provided or zero
+  400 "Missing required query param: accepted_asset" → accepted_asset not provided or zero
+  400 "Missing or invalid query param: fj_amount"    → fj_amount missing or not positive u128
+  400 "Unsupported accepted_asset"                   → asset not in admin policy store
+  400 "Computed aa_payment_amount does not fit in u128" → rate overflow
+  401 Unauthorized                                   → quote auth enabled, key/header wrong
+  429 Rate limited                                   → exceeded quote_rate_limit_max_requests
+  503 "Admin API is disabled"                        → ADMIN_API_KEY env var not set
+
+SDK errors:
+  "Message not in state"            → cold-start L1-to-L2 message not yet on L2 (retries 3x)
+  tx wait timeout (180s default)    → transaction not included within txWaitTimeoutMs
+
+Top-up service:
+  "CRITICAL: Evicting stale persisted bridge" → bridge state older than 24 hours
+  readiness 503 reasons: no successful balance checks, last check failed, checks stale, shutdown
+
+---
+
+## Config key to env var mapping
+
+Attestation service:
+  YAML key                          → Env var override                    → Default
+  runtime_profile                   → FPC_RUNTIME_PROFILE                 → development
+  fpc_address                       → (none, YAML only)                   → (required)
+  aztec_node_url                    → AZTEC_NODE_URL                      → (required)
+  operator_secret_provider          → OPERATOR_SECRET_PROVIDER            → auto
+  (secret value)                    → OPERATOR_SECRET_KEY                 → (required)
+  operator_secret_ref               → OPERATOR_SECRET_REF                 → (none)
+  operator_account_salt             → OPERATOR_ACCOUNT_SALT               → (none)
+  port                              → (none, YAML only)                   → 3000
+  quote_validity_seconds            → (none, YAML only)                   → 300
+  quote_format                      → (none, YAML only)                   → amount_quote
+  quote_auth_mode                   → QUOTE_AUTH_MODE                     → disabled
+  quote_auth_api_key_header         → QUOTE_AUTH_API_KEY_HEADER           → x-api-key
+  (api key value)                   → QUOTE_AUTH_API_KEY                  → (none)
+  quote_auth_trusted_header_name    → QUOTE_AUTH_TRUSTED_HEADER_NAME      → (none)
+  (trusted header value)            → QUOTE_AUTH_TRUSTED_HEADER_VALUE     → (none)
+  quote_rate_limit_enabled          → QUOTE_RATE_LIMIT_ENABLED            → true
+  quote_rate_limit_max_requests     → QUOTE_RATE_LIMIT_MAX_REQUESTS       → 60
+  quote_rate_limit_window_seconds   → QUOTE_RATE_LIMIT_WINDOW_SECONDS     → 60
+  quote_rate_limit_max_tracked_keys → QUOTE_RATE_LIMIT_MAX_TRACKED_KEYS   → 10000
+  admin_api_key_header              → ADMIN_API_KEY_HEADER                → x-admin-api-key
+  (admin key value)                 → ADMIN_API_KEY                       → (none, disables admin)
+  asset_policy_state_path           → ATTESTATION_ASSET_POLICY_STATE_PATH → .attestation-asset-policies
+  treasury_destination_address      → TREASURY_DESTINATION_ADDRESS        → (none)
+
+Top-up service:
+  YAML key                          → Env var override                    → Default
+  runtime_profile                   → FPC_RUNTIME_PROFILE                 → development
+  fpc_address                       → (none, YAML only)                   → (required)
+  aztec_node_url                    → AZTEC_NODE_URL                      → (required)
+  l1_rpc_url                        → L1_RPC_URL                          → (required)
+  l1_operator_secret_provider       → (none, YAML only)                   → auto
+  (secret value)                    → L1_OPERATOR_PRIVATE_KEY             → (required)
+  threshold                         → (none, YAML only)                   → (required)
+  top_up_amount                     → (none, YAML only)                   → (required)
+  data_dir                          → TOPUP_DATA_DIR                      → .topup-data
+  ops_port                          → TOPUP_OPS_PORT                      → 3001
+  check_interval_ms                 → (none, YAML only)                   → 60000
+  confirmation_timeout_ms           → (none, YAML only)                   → 180000
+  confirmation_poll_initial_ms      → (none, YAML only)                   → 1000
+  confirmation_poll_max_ms          → (none, YAML only)                   → 15000
+
+Auto-claim (env vars only, no YAML):
+  TOPUP_AUTOCLAIM_ENABLED               → enabled unless set to "0"
+  TOPUP_AUTOCLAIM_SECRET_KEY            → L2 claimer key (required in production)
+  TOPUP_AUTOCLAIM_SPONSORED_FPC_ADDRESS → sponsored FPC for claim tx fees
+
+---
+
+## Key technical facts (for quick agent reference)
+
+Contract: FPCMultiAsset
+  Storage: PublicImmutable<Config> with operator, operator_pubkey_x, operator_pubkey_y
+  Key rotation: requires redeployment (PublicImmutable cannot be updated)
+  Asset allowlist: none (quote signature binds the asset)
+
+Quote signing:
+  Hash function: computeInnerAuthWitHash
+  Normal preimage (7 fields): [0x465043, fpc_address, accepted_asset, fj_fee_amount,
+    aa_payment_amount, valid_until, user_address]
+  Cold-start preimage (9 fields): [0x46504373, fpc_address, accepted_asset,
+    fj_fee_amount, aa_payment_amount, valid_until, user_address,
+    claim_amount, claim_secret_hash]
+  Signature: Schnorr on Grumpkin curve, 64 bytes, hex-encoded, 0x-prefixed
+  Replay protection: nullifier pushed per quote hash
+  On-chain TTL cap: 3600 seconds (MAX_QUOTE_TTL_SECONDS)
+
+Exchange rate formula:
+  rate_num = market_rate_num * (10000 + fee_bips)
+  rate_den = market_rate_den * 10000
+  aa_payment_amount = ceil(fj_amount * rate_num / rate_den)
+
+Attestation REST API:
+  GET  /health                           - liveness probe
+  GET  /metrics                          - Prometheus metrics
+  GET  /.well-known/fpc.json             - wallet discovery document
+  GET  /accepted-assets                  - list configured tokens
+  GET  /quote?user=&accepted_asset=&fj_amount=  - request signed quote
+  GET  /cold-start-quote?...&claim_amount=&claim_secret_hash=  - cold-start quote
+  GET  /admin/asset-policies             - list all policies (admin)
+  PUT  /admin/asset-policies/:assetAddress  - upsert policy (admin)
+  DELETE /admin/asset-policies/:assetAddress - remove policy (admin)
+  GET  /admin/operator-balances          - token balances (admin)
+  POST /admin/sweeps                     - sweep tokens to destination (admin)
+
+Top-up ops API (default port 3001):
+  GET  /health                           - liveness probe
+  GET  /ready                            - readiness (200 or 503)
+  GET  /metrics                          - Prometheus metrics
+
+SDK surface:
+  new FpcClient({ fpcAddress, operator, node, attestationBaseUrl })
+  client.createPaymentMethod({ wallet, user, tokenAddress, estimatedGas })
+  client.executeColdStart({ wallet, userAddress, tokenAddress, bridgeAddress, bridgeClaim })
+
+Versions (pinned in package.json and docker-compose.yaml; trust repo files if these drift):
+  Aztec: 4.2.0-aztecnr-rc.2
+  Bun: 1.3.11

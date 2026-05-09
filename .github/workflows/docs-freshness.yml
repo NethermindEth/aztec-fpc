@@ -1,0 +1,34 @@
+name: Docs freshness
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**/*.md"
+      - "scripts/generate-llms-full.sh"
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "docs/**/*.md"
+      - "scripts/generate-llms-full.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  check-llms-full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate llms-full.txt
+        run: bash scripts/generate-llms-full.sh
+
+      - name: Check for drift
+        run: |
+          if ! git diff --quiet docs/public/llms-full.txt; then
+            echo "::error::docs/public/llms-full.txt is out of date. Run 'bash scripts/generate-llms-full.sh' and commit the result."
+            git diff --stat docs/public/llms-full.txt
+            exit 1
+          fi
+          echo "llms-full.txt is up to date."

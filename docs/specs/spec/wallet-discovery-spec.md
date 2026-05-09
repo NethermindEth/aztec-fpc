@@ -1,5 +1,9 @@
 # Wallet Discovery Spec (Alpha)
 
+> [!CAUTION]
+> **This document is deprecated.** It may contain outdated function names, wrong default values, or references to scripts that no longer exist. For accurate, source-verified documentation, see [docs/README.md](../../README.md).
+
+
 > **Status:** Accepted for Alpha
 > **Last updated:** 2026-03-02
 > **Related:** #134, #135, [ADR-0001](./adr-0001-alpha-asset-model.md)

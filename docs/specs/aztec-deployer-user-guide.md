@@ -1,5 +1,9 @@
 # Aztec FPC — Deployer & User Guide
 
+> [!CAUTION]
+> **This document is deprecated.** It may contain outdated function names, wrong default values, or references to scripts that no longer exist. For accurate, source-verified documentation, see [docs/README.md](../README.md).
+
+
 > Single reference for deploying, operating, and integrating with the Nethermind Fee Payment Contract (FPC) on Aztec testnet.
 >
 > **Placeholders** are marked `<PLACEHOLDER>` — fill them at deployment time.
@@ -476,7 +480,7 @@ bun run smoke:services:compose
 
 ## For Users (SDK Integration)
 
-> For a complete runnable example covering cold-start and FPC-paid deployment, see [`examples/fpc-full-flow.ts`](../examples/fpc-full-flow.ts). Run it from the repo root with:
+> For a complete runnable example covering cold-start and FPC-paid deployment, see [`examples/fpc-full-flow.ts`](../../examples/fpc-full-flow.ts). Run it from the repo root with:
 >
 > ```bash
 > bun run examples/fpc-full-flow.ts
