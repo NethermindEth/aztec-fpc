@@ -49,10 +49,10 @@ How it connects:
 1. `FPC.fee_entrypoint(accepted_asset, authwit_nonce, fj_fee_amount, aa_payment_amount, valid_until, quote_sig)` expects the service quote fields directly.
 2. `FPC.assert_valid_quote(...)` recomputes the same hash preimage and verifies Schnorr signature against the stored operator pubkey.
 3. It enforces quote expiry and replay protection (`push_nullifier(quote_hash)`).
-4. It enforces `fj_fee_amount == get_max_gas_cost_no_teardown(...)`.
+4. It enforces `fj_fee_amount == get_max_gas_cost(...)`.
 5. It transfers exactly `aa_payment_amount` of `accepted_asset` from user to operator via authwit-backed `transfer_private_to_private`.
 
-Implication: for `FPC`, clients should request `/quote` with `fj_amount = max_gas_cost_no_teardown` for the transaction they are building.
+Implication: for `FPC`, clients should request `/quote` with `fj_amount = get_max_gas_cost` for the transaction they are building.
 
 ## Single-Instance vs Multi-Instance Setup
 

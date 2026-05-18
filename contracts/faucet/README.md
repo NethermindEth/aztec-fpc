@@ -100,7 +100,7 @@ Local mode writes the deployed address to `deploy.faucet.address` in the output 
 ## Implementation Notes
 
 **Why not make the Faucet the minter?**
-If the Faucet were the minter, it would need to be passed as the `minter` arg during token deployment — but the Faucet's address is not known until after it is deployed, and the Faucet needs the token address at its own deploy time. Making the operator the minter and having it top up the Faucet breaks the circular dependency cleanly.
+If the Faucet were the minter, it would need to be passed as the `minter` arg during token deployment, but the Faucet's address is not known until after it is deployed, and the Faucet needs the token address at its own deploy time. Making the operator the minter and having it top up the Faucet breaks the circular dependency cleanly.
 
 **Why `transfer_public_to_public` instead of `mint_to_public`?**
 `mint_to_public` requires `msg_sender == minter`. The Faucet is not the minter, so it cannot call `mint_to_public`. Instead it pre-holds a funded public balance and transfers from it. This also makes the Faucet's token supply finite and visible on-chain.

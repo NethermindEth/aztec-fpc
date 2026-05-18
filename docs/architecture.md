@@ -183,6 +183,6 @@ The operator earns revenue from the spread between Fee Juice cost and token paym
 ## Next Steps
 
 - Review the [Security Model](./security.md) for trust assumptions, threat mitigations, and the production checklist.
-- Explore the [Contracts](./contracts.md) page for detailed function signatures and on-chain verification logic.
+- Explore the [Contracts](./contracts.md) index for source links; per-contract detail in [`contracts/fpc/README.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/README.md) and the `.nr` sources.
 - Use the [SDK](./sdk.md) to integrate fee abstraction into a wallet or dApp.
 - Follow the [Quick Start](./quick-start.md) to deploy and test the full stack locally.

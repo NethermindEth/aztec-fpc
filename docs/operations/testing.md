@@ -186,5 +186,5 @@ The `noop` contract provides a baseline for measuring FPC-specific overhead. Re-
 
 - [Review the E2E test matrix](../reference/e2e-test-matrix.md) for the full list of required negative scenarios
 - [Set up Docker Compose](./docker.md) to run integration tests against the full stack
-- [Understand the contract internals](../contracts.md) that the contract-level tests exercise
+- Contract internals exercised by these tests: [`contracts/fpc/README.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/README.md) and [`contracts/fpc/src/main.nr`](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/src/main.nr)
 - [Check the security model](../security.md) to see which threat scenarios the tests enforce

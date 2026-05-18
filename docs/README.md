@@ -2,7 +2,7 @@
 
 ## TLDR
 
-FPC (Fee Payment Contract) is an Aztec primitive: a smart contract that pays Fee Juice on a user's behalf. The protocol supports several FPC designs (sponsored, private, third-party-token) and doesn't dictate what the operator receives in return.
+FPC (Fee Payment Contract) is an Aztec primitive: a smart contract that pays Fee Juice on a user's behalf. The protocol supports three FPC designs (sponsored, private, third-party-token) and doesn't dictate what the operator receives in return.
 
 Nethermind's `aztec-fpc` is one such implementation: a **private, multi-asset, quote-based FPC** deployed on testnet. Users pay the operator in any accepted token, at a rate locked by an operator-signed Schnorr quote. One contract instance serves any number of tokens; new tokens are added via the attestation service without redeploying.
 
@@ -41,7 +41,7 @@ FPC is the Aztec pattern for the second option: a smart contract that holds Fee 
 Nethermind's `aztec-fpc` is a **private, multi-asset, quote-based FPC** deployed on testnet. Three properties define it:
 
 - **Multi-asset**: one contract instance serves any number of accepted tokens. The asset is selected per-quote, not hard-coded at deploy time. New tokens are added through the attestation service's admin API without redeploying.
-- **Private**: fee payments move as private notes via `transfer_private_to_private`. Fee activity is not visible in public state. (Exception: the cold-start path calls `mint_to_private`, which enqueues a public `update_total_supply` call — the minted amount is visible even though the user's identity and balances remain private.)
+- **Private**: fee payments move as private notes via `transfer_private_to_private`. Fee activity is not visible in public state. (Exception: the cold-start path calls `mint_to_private`, which enqueues a public `increase_total_supply_internal` call, so the minted amount is visible even though the user's identity and balances remain private.)
 - **Quote-based**: an operator-run attestation service signs per-user quotes binding the FPC address, accepted asset, payment amount, Fee Juice amount, expiry, and user address. The on-chain contract verifies the Schnorr signature before executing the transfer.
 
 A **cold-start entrypoint** lets a brand-new account bridge tokens from L1, claim on L2, and pay the fee in one transaction.
@@ -128,7 +128,7 @@ const result = await fpcClient.executeColdStart({
 |---|---|
 | **Overview** | [Architecture](architecture.md), [Quote System](quote-system.md), [Security](security.md), [Quick Start](quick-start.md) |
 | **SDK** | [Getting Started](sdk.md), [API Reference](sdk.md#api-reference) |
-| **Contracts** | [Overview](contracts.md), [FPCMultiAsset](contracts.md#fpcmultiasset), [Faucet](contracts.md#faucet), [Token Bridge](contracts.md#tokenbridge) |
+| **Contracts** | [Overview](contracts.md), [FPCMultiAsset](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/fpc/README.md), [Faucet](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/faucet/README.md), [Token Bridge](https://github.com/NethermindEth/aztec-fpc/blob/main/contracts/token_bridge/src/main.nr) |
 | **Services** | [Attestation](services.md), [Top-up](services.md#top-up-service) |
 | **How-to** | [Run an Operator](./how-to/run-operator.md), [Integrate Wallet](./how-to/integrate-wallet.md), [Add Supported Asset](./how-to/add-supported-asset.md), [Cold-Start Flow](./how-to/cold-start-flow.md) |
 | **Operations** | [Configuration](./operations/configuration.md), [Deployment](./operations/deployment.md), [Docker](./operations/docker.md), [Testing](./operations/testing.md) |

@@ -40,7 +40,7 @@ The operator's margin is expressed in basis points (`fee_bips`), added on top of
 | 200 | 2% | 20,000 |
 | 300 | 3% | 30,000 |
 
-The final payment amount is computed using the [exchange rate formula](../quote-system.md#exchange-rate-formula). The `fee_bips` margin is folded into the rate before the payment amount is calculated.
+The final payment amount is computed using the [exchange rate](../quote-system.md#exchange-rate). The `fee_bips` margin is folded into the rate before the payment amount is calculated.
 
 ### Register the asset via admin API
 
@@ -157,7 +157,7 @@ The sweep endpoint accepts `accepted_asset` (required), `destination` (optional 
 
 ## Next Steps
 
-- [Exchange rate formula](../quote-system.md#exchange-rate-computation): how `fee_bips` translates to payment amounts
-- [Services](../services.md): full attestation API reference, including all admin endpoints
+- [Exchange rate](../quote-system.md#exchange-rate): how `fee_bips` translates to payment amounts
+- [Services](../services.md) for the index; full attestation REST surface in [`services/attestation/README.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/README.md)
 - [Configuration Reference](../operations/configuration.md): all attestation config keys and env vars
 - [Run an Operator](./run-operator.md): production deployment, monitoring, and checklist

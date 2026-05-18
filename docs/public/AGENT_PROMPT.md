@@ -5,7 +5,7 @@ Copy-paste the block below into any AI coding assistant (Claude, Cursor, Copilot
 ---
 
 ```
-You are about to work on the aztec-fpc project — a Fee Payment Contract system for Aztec L2.
+You are about to work on the aztec-fpc project, a Fee Payment Contract system for Aztec L2.
 
 Before answering any question or writing any code, read the project context below. It contains:
 - What FPC is and how it works

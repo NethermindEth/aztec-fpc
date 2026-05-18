@@ -136,5 +136,5 @@ Sources for the operator address:
 ## Next Steps
 
 - [Integrate wallet discovery into your wallet](../how-to/integrate-wallet.md) using the resolution order above
-- [Review the attestation service API](../services.md) that serves the discovery document and quote endpoints
+- Attestation REST surface that serves discovery + quote endpoints: [`services/attestation/README.md`](https://github.com/NethermindEth/aztec-fpc/blob/main/services/attestation/README.md)
 - [Check the testnet deployment](./testnet-deployment.md) for a live example of a discovery document and known addresses

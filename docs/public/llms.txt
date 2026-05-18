@@ -91,17 +91,34 @@ Base URL for all docs: docs/
 ### Contracts
 
   contracts.md
-    All Noir smart contracts. FPCMultiAsset (fee_entrypoint, cold_start_entrypoint,
-    storage layout, quote verification), Faucet (drip, admin_drip),
-    TokenBridge (claim_public, claim_private, exit_to_l1), dependency graph, build commands.
+    High-level overview: Contract Map, Dependency Graph, Build System.
+    For implementation detail (entrypoints, quote verification, storage), see the
+    source-folder READMEs listed below.
 
 ### Services
 
   services.md
-    Attestation service: REST endpoints (GET /quote, GET /cold-start-quote,
-    GET /.well-known/fpc.json, admin API), signing flow, auth modes, config keys.
-    Top-up service: balance monitoring, L1 bridging, LMDB crash recovery, auto-claim,
-    ops endpoints.
+    High-level overview: Service Map, endpoint summary table, Operational Flow
+    diagram, Authentication, Ops Endpoints.
+    For full endpoint specs, startup sequences, and module-level detail, see the
+    source-folder READMEs listed below.
+
+### Source-folder READMEs (implementation reference)
+
+  contracts/fpc/README.md
+    FPCMultiAsset: fee_entrypoint flow, quote model, wiring to attestation and
+    top-up, authwit requirements, test coverage.
+
+  contracts/faucet/README.md
+    Faucet: drip and admin_drip flows, deployment, setup, why design choices.
+
+  services/attestation/README.md
+    Full attestation REST surface: every endpoint with request/response shapes,
+    admin API key model, startup sequence, minimal local run.
+
+  services/topup/README.md
+    Top-up daemon: operational loop, ops endpoints, crash recovery, auto-claim,
+    runtime configuration keys.
 
 ### How-to guides
 
