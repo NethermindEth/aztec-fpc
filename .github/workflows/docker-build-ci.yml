@@ -18,7 +18,7 @@ on:
       - "tsconfig*.json"
       - ".github/workflows/docker-build-ci.yml"
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   workflow_dispatch:
 
 concurrency:
@@ -52,7 +52,12 @@ jobs:
 
   docker-build:
     needs: [changes]
-    if: github.event_name != 'pull_request' || needs.changes.outputs.relevant == 'true'
+    # ci-light (default): skip docker build + compose tests on PRs.
+    # Add the "ci-full" label to a PR to run the full suite.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (needs.changes.outputs.relevant == 'true' &&
+       contains(github.event.pull_request.labels.*.name, 'ci-full'))
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -202,6 +207,7 @@ jobs:
         run: docker compose --profile full down -v --remove-orphans
 
       - name: Deploy to testnet
+        if: github.ref == 'refs/heads/main'
         env:
           FPC_DEPLOYER_SECRET_KEY: ${{ secrets.FPC_DEPLOYER_SECRET_KEY }}
           FPC_OPERATOR_SECRET_KEY: ${{ secrets.FPC_OPERATOR_SECRET_KEY }}
