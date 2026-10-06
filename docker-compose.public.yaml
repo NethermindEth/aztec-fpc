@@ -14,7 +14,7 @@ services:
 
   postdeploy:
     image: nethermind/aztec-fpc-test:${TAG:-latest}
-    entrypoint: ["bun", "run", "--sequential"]
+    entrypoint: ["sh", "scripts/common/run-ts-runtime.sh"]
     command:
       - "scripts/contract/devnet-postdeploy-smoke.ts"
     volumes:
