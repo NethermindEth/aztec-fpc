@@ -7,12 +7,22 @@ on:
     tags:
       - "**"
     paths:
+      - ".aztecrc"
+      - ".dockerignore"
+      - "Nargo.toml"
       - "docker-compose.yaml"
       - "docker-bake.hcl"
       - "Dockerfile.test"
+      - "codegen/**"
+      - "contract-deployment/**"
       - "contracts/**"
+      - "examples/package.json"
+      - "mock/counter/**"
       - "scripts/**"
+      - "sdk/**"
       - "services/**"
+      - "vendor/**"
+      - "vitest.config.ts"
       - "package.json"
       - "bun.lock"
       - "tsconfig*.json"
@@ -33,18 +43,30 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+      - name: Validate Docker CI path coverage
+        run: node --test .github/tests/docker-build-ci-paths.test.mjs
       - name: Detect relevant changes
         id: filter
         uses: dorny/paths-filter@v3
         with:
           filters: |
             relevant:
+              - ".aztecrc"
+              - ".dockerignore"
+              - "Nargo.toml"
               - "docker-compose.yaml"
               - "docker-bake.hcl"
               - "Dockerfile.test"
+              - "codegen/**"
+              - "contract-deployment/**"
               - "contracts/**"
+              - "examples/package.json"
+              - "mock/counter/**"
               - "scripts/**"
+              - "sdk/**"
               - "services/**"
+              - "vendor/**"
+              - "vitest.config.ts"
               - "package.json"
               - "bun.lock"
               - "tsconfig*.json"
