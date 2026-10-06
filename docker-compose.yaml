@@ -165,6 +165,8 @@ services:
         condition: service_started
       deploy:
         condition: service_completed_successfully
+      configure-token:
+        condition: service_completed_successfully
 
   tests-services:
     image: ${REGISTRY:-nethermind/}aztec-fpc-test:${TAG:-local}

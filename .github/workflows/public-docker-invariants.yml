@@ -1,0 +1,32 @@
+name: Public Docker invariants
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docker-compose.yaml"
+      - "docker-compose.public.yaml"
+      - "docker-bake.hcl"
+      - ".github/workflows/docker-build-services.yml"
+      - ".github/tests/public-docker-invariants.test.mjs"
+  pull_request:
+    paths:
+      - "docker-compose.yaml"
+      - "docker-compose.public.yaml"
+      - "docker-bake.hcl"
+      - ".github/workflows/docker-build-services.yml"
+      - ".github/tests/public-docker-invariants.test.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Validate public Docker invariants
+        run: node --test .github/tests/public-docker-invariants.test.mjs

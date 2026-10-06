@@ -29,6 +29,8 @@ services:
     depends_on:
       deploy:
         condition: service_completed_successfully
+      configure-token:
+        condition: service_completed_successfully
 
   attestation:
     image: nethermind/aztec-fpc-attestation:${TAG:-latest}

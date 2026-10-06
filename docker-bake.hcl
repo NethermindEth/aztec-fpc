@@ -27,6 +27,10 @@ group "services" {
   targets = ["attestation", "topup", "deploy"]
 }
 
+group "public" {
+  targets = ["attestation", "topup", "deploy", "test"]
+}
+
 target "_labels" {
   labels = {
     "org.opencontainers.image.source"   = "https://github.com/nethermind/aztec-fpc"

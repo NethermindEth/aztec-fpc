@@ -7,14 +7,26 @@ on:
     tags:
       - "v*"
     paths:
-      - "services/attestation/**"
-      - "services/topup/**"
-      - "services/Dockerfile.common"
-      - "scripts/contract/**"
+      - ".aztecrc"
+      - ".dockerignore"
+      - ".gitmodules"
+      - "Nargo.toml"
+      - "docker-bake.hcl"
+      - "Dockerfile.test"
+      - "codegen/**"
+      - "contract-deployment/**"
       - "contracts/**"
+      - "examples/package.json"
+      - "mock/counter/**"
+      - "scripts/**"
+      - "sdk/**"
+      - "services/**"
+      - "vendor/**"
+      - "vitest.config.ts"
       - "package.json"
       - "bun.lock"
       - "tsconfig*.json"
+      - ".github/workflows/docker-build-services.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -66,7 +78,7 @@ jobs:
           PLATFORMS: 'linux/amd64,linux/arm64'
         with:
           source: .
-          targets: services
+          targets: public
           push: true
           set: |
             *.cache-from=type=gha
@@ -82,6 +94,8 @@ jobs:
           echo "- nethermind/aztec-fpc-topup:${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
           echo "- nethermind/aztec-fpc-contract-deployment:${TAG}" >> $GITHUB_STEP_SUMMARY
           echo "- nethermind/aztec-fpc-contract-deployment:${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
+          echo "- nethermind/aztec-fpc-test:${TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "- nethermind/aztec-fpc-test:${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
           echo "### Platforms" >> $GITHUB_STEP_SUMMARY
           echo "- linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
           echo "### Commit" >> $GITHUB_STEP_SUMMARY
